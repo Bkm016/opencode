@@ -30,7 +30,6 @@ import {
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
-import { inlineCodeKind } from "./markdown-inline-code-kind"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -95,19 +94,6 @@ type CopyButtonState = {
 
 const copyButtonState = new WeakMap<HTMLElement, CopyButtonState>()
 
-const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
-
-function codeUrl(text: string) {
-  const href = text.trim().replace(/[),.;!?]+$/, "")
-  if (!urlPattern.test(href)) return
-  try {
-    const url = new URL(href)
-    return url.toString()
-  } catch {
-    return
-  }
-}
-
 function createCopyButton(labels: CopyLabels) {
   const host = document.createElement("div")
   host.setAttribute("data-slot", "markdown-copy-button")
@@ -171,35 +157,6 @@ function disposeCopyButtons(root: Element) {
   hosts.forEach(disposeCopyButton)
 }
 
-const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
-
-function codeKind(language: string | undefined) {
-  const value = language?.toLowerCase()
-  if (!value) return
-  if (shellLanguages.has(value)) return "shell"
-}
-
-function codeLanguage(block: HTMLPreElement) {
-  const code = block.querySelector("code")
-  if (!(code instanceof HTMLElement)) return
-  return code.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
-}
-
-function applyCodeMetadata(wrapper: HTMLElement, language: string | undefined) {
-  if (!document.body.hasAttribute("data-new-layout")) {
-    delete wrapper.dataset.language
-    delete wrapper.dataset.codeKind
-    return
-  }
-
-  if (language) wrapper.dataset.language = language
-  else delete wrapper.dataset.language
-
-  const kind = codeKind(language)
-  if (kind) wrapper.dataset.codeKind = kind
-  else delete wrapper.dataset.codeKind
-}
-
 function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
   const parent = block.parentElement
   if (!parent) return
@@ -207,14 +164,11 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
   if (!wrapped) {
     const wrapper = document.createElement("div")
     wrapper.setAttribute("data-component", "markdown-code")
-    applyCodeMetadata(wrapper, codeLanguage(block))
     parent.replaceChild(wrapper, block)
     wrapper.appendChild(block)
     wrapper.appendChild(createCopyButton(labels))
     return
   }
-
-  applyCodeMetadata(parent, codeLanguage(block))
 
   const buttons = Array.from(parent.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
     (el): el is HTMLButtonElement => el instanceof HTMLButtonElement,
@@ -231,53 +185,11 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
   }
 }
 
-function markCodeLinks(root: HTMLDivElement) {
-  const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
-  for (const code of codeNodes) {
-    const href = codeUrl(code.textContent ?? "")
-    const parentLink =
-      code.parentElement instanceof HTMLAnchorElement && code.parentElement.classList.contains("external-link")
-        ? code.parentElement
-        : null
-
-    if (!href) {
-      if (parentLink) parentLink.replaceWith(code)
-      continue
-    }
-
-    if (parentLink) {
-      parentLink.href = href
-      continue
-    }
-
-    const link = document.createElement("a")
-    link.href = href
-    link.className = "external-link"
-    link.target = "_blank"
-    link.rel = "noopener noreferrer"
-    code.parentNode?.replaceChild(link, code)
-    link.appendChild(code)
-  }
-}
-
-function markInlineCode(root: HTMLDivElement) {
-  const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
-  for (const code of codeNodes) {
-    if (!(code instanceof HTMLElement)) continue
-    delete code.dataset.inlineCodeKind
-    const kind = inlineCodeKind(code.textContent ?? "")
-    if (kind) code.dataset.inlineCodeKind = kind
-  }
-}
-
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
-  if (!document.body.hasAttribute("data-new-layout")) return
-  markInlineCode(root)
-  markCodeLinks(root)
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -609,8 +521,6 @@ function updateCodeBlock(
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {
-    const wrapper = code.closest('[data-component="markdown-code"]')
-    if (wrapper instanceof HTMLElement) applyCodeMetadata(wrapper, block.language)
     code.className = `language-${block.language}`
     const previous = renderedCodeTokens.get(next)
     const reset = shouldResetCodeTokens(previous, {
@@ -641,7 +551,6 @@ function updateCodeBlock(
 
   const wrapper = document.createElement("div")
   wrapper.setAttribute("data-component", "markdown-code")
-  applyCodeMetadata(wrapper, block.language)
   const pre = document.createElement("pre")
   pre.className = "shiki OpenCode"
   const codeElement = document.createElement("code")

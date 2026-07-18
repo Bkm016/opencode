@@ -104,7 +104,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="accordion"] {
+[data-component="accordion"] {
   [data-slot="accordion-item"] [data-slot="accordion-header"] [data-slot="accordion-trigger"] {
     background-color: var(--background-stronger);
     border-width: 1px;

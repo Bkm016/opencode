@@ -93,7 +93,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="card"] {
+[data-component="card"] {
   color: var(--text-strong);
   --card-accent: var(--icon-active);
 

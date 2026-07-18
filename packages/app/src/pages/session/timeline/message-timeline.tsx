@@ -323,7 +323,6 @@ export function MessageTimeline(props: {
     parts: getMsgParts,
     status: sessionStatus,
     showReasoningSummaries: settings.general.showReasoningSummaries,
-    inlineComments: () => false,
   })
   const activeMessageID = projection.activeMessageID
   const assistantMessagesByParent = projection.assistantMessagesByParent
@@ -987,7 +986,6 @@ export function MessageTimeline(props: {
                 message={message()}
                 showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
                 turnDurationMs={turnDurationMs(row().userMessageID)}
-                useV2Actions={false}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
@@ -1081,7 +1079,6 @@ export function MessageTimeline(props: {
           const m = messageByID().get(userMessageRow().userMessageID)
           if (m?.role === "user") return m
         })
-        const messageComments = createMemo(() => [])
         return (
           <TimelineRowFrame row={userMessageRow}>
             <Show when={message()}>
@@ -1092,8 +1089,6 @@ export function MessageTimeline(props: {
                       message={message()}
                       parts={getMsgParts(userMessageRow().userMessageID)}
                       actions={props.actions}
-                      useV2Actions={false}
-                      comments={messageComments()}
                     />
                   </div>
                 </div>

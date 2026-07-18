@@ -236,7 +236,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="session-review"] {
+[data-component="session-review"] {
   [data-slot="session-review-header"] {
     background-color: var(--background-stronger);
   }

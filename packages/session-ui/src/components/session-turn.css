@@ -226,7 +226,7 @@
   }
 }
 
-body:not([data-new-layout]) [data-component="session-turn"] {
+[data-component="session-turn"] {
   .error-card {
     color: var(--text-on-critical-base);
   }

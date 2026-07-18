@@ -611,7 +611,16 @@ function fromLLMError(
   ctx: { providerID: ProviderV2.ID },
   cause: unknown,
 ): NonNullable<Assistant["error"]> {
-  if (isContextOverflowFailure(e) || (e.reason._tag === "InvalidRequest" && e.reason.classification === "context-overflow")) {
+  if (isContextOverflowFailure(e)) {
+    return new ContextOverflowError(
+      {
+        message: e.reason.message,
+        responseBody: "http" in e.reason ? e.reason.http?.body : undefined,
+      },
+      { cause },
+    ).toObject()
+  }
+  if (e.reason._tag === "InvalidRequest" && e.reason.classification === "context-overflow") {
     return new ContextOverflowError(
       {
         message: e.reason.message,

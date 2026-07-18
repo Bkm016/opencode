@@ -378,7 +378,7 @@ const live: Layer.Layer<
             )
           }),
         ),
-      )
+      ) as Stream.Stream<LLMEvent, unknown>
 
     return Service.of({ stream })
   }),

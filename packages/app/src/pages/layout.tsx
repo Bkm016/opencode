@@ -894,28 +894,6 @@ export default function LegacyLayout(props: ParentProps) {
     }
   }
 
-  async function reloadProject() {
-    const directory = currentDir()
-    if (!directory) return
-    const project = getFilename(directory)
-    const result = await serverSDK()
-      .client.instance.reload({ directory })
-      .then((x) => x.data)
-      .catch((err) => {
-        showToast({
-          variant: "error",
-          title: language.t("toast.project.reloadFailed.title", { project }),
-          description: errorMessage(err, language.t("common.requestFailed")),
-        })
-        return undefined
-      })
-    if (result === undefined) return
-    showToast({
-      title: language.t("toast.project.reload.success.title"),
-      description: language.t("toast.project.reload.success.description", { project }),
-    })
-  }
-
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
@@ -945,17 +923,6 @@ export default function LegacyLayout(props: ParentProps) {
         category: language.t("command.category.project"),
         keybind: "mod+alt+arrowdown",
         onSelect: () => navigateProjectByOffset(1),
-      },
-      {
-        id: "project.reload",
-        title: language.t("command.project.reload"),
-        description: language.t("command.project.reload.description"),
-        category: language.t("command.category.project"),
-        slash: "reload",
-        disabled: !currentDir(),
-        onSelect: () => {
-          void reloadProject()
-        },
       },
       {
         id: "provider.connect",

@@ -14,6 +14,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
 import { findLast } from "@opencode-ai/core/util/array"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
@@ -131,12 +132,34 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const focusInput = actions.focusInput
 
   const sessionCommand = withCategory(language.t("command.category.session"))
+  const projectCommand = withCategory(language.t("command.category.project"))
   const fileCommand = withCategory(language.t("command.category.file"))
   const contextCommand = withCategory(language.t("command.category.context"))
   const viewCommand = withCategory(language.t("command.category.view"))
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const mcpCommand = withCategory(language.t("command.category.mcp"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
+
+  const reloadProject = async () => {
+    const directory = sdk().directory
+    const project = getFilename(directory)
+    const result = await sdk()
+      .client.instance.reload({ directory })
+      .then((x) => x.data)
+      .catch(() => {
+        showToast({
+          variant: "error",
+          title: language.t("toast.project.reloadFailed.title", { project }),
+          description: language.t("common.requestFailed"),
+        })
+        return undefined
+      })
+    if (result === undefined) return
+    showToast({
+      title: language.t("toast.project.reload.success.title"),
+      description: language.t("toast.project.reload.success.description", { project }),
+    })
+  }
 
   const isAutoAcceptActive = () => {
     const sessionID = params.id
@@ -593,9 +616,22 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
+  const projectCmds = () => [
+    projectCommand({
+      id: "project.reload",
+      title: language.t("command.project.reload"),
+      description: language.t("command.project.reload.description"),
+      slash: "reload",
+      onSelect: () => {
+        void reloadProject()
+      },
+    }),
+  ]
+
   command.register("session", () => [
     ...sessionCmds(),
     ...shareCmds(),
+    ...projectCmds(),
     ...fileCmds(),
     ...contextCmds(),
     ...viewCmds(),

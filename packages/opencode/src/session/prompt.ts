@@ -511,7 +511,7 @@ const layer = Layer.effect(
 
           const cfg = yield* config.get()
           const sh = Shell.preferred(cfg.shell)
-          const args = Shell.args(sh, input.command, cwd)
+          const launch = Shell.launch(sh, input.command, cwd)
           let output = ""
           let aborted = false
 
@@ -546,7 +546,7 @@ const layer = Layer.effect(
                 { cwd, sessionID: input.sessionID, callID: part.callID },
                 { env: {} },
               )
-              const cmd = ChildProcess.make(sh, args, {
+              const cmd = ChildProcess.make(launch.command, launch.args, {
                 cwd,
                 extendEnv: true,
                 env: { ...shellEnv.env, TERM: "dumb" },
@@ -558,7 +558,7 @@ const layer = Layer.effect(
                 Effect.gen(function* () {
                   output += chunk
                   if (part.state.status === "running") {
-                    part.state.metadata = { output }
+                    part.state.metadata = { output: Shell.plain(output) }
                     yield* sessions.updatePart(part)
                   }
                 }),
@@ -570,6 +570,7 @@ const layer = Layer.effect(
           if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause) && !Cause.hasDies(exit.cause)) {
             aborted = true
           }
+          output = Shell.plain(output)
           yield* finish
 
           if (Exit.isFailure(exit) && !aborted && !Cause.hasInterruptsOnly(exit.cause)) {

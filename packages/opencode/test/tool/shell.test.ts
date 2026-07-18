@@ -194,6 +194,43 @@ describe("tool.shell", () => {
     ),
   )
 
+  if (process.platform === "win32" && ps.length > 0) {
+    for (const item of ps) {
+      it.live(`preserves Chinese PowerShell output [${item.label}]`, () =>
+        withShell(
+          item,
+          runIn(
+            projectRoot,
+            Effect.gen(function* () {
+              const result = yield* run({
+                command: 'Write-Host "开始"; Write-Error "错误消息" -ErrorAction Continue',
+              })
+              expect(result.metadata.output).toContain("开始")
+              expect(result.metadata.output).toContain("错误消息")
+              expect(result.output).toContain("开始")
+            }),
+          ),
+        ),
+      )
+
+      it.live(`preserves Chinese PowerShell parse errors [${item.label}]`, () =>
+        withShell(
+          item,
+          runIn(
+            projectRoot,
+            Effect.gen(function* () {
+              const result = yield* run({
+                command: 'if ($true { "语法错误" }',
+              })
+              expect(result.metadata.exit).not.toBe(0)
+              expect(result.metadata.output).toContain("语法错误")
+            }),
+          ),
+        ),
+      )
+    }
+  }
+
   it.live("falls back from terminal-only configured shell", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ config: { shell: "fish" } })

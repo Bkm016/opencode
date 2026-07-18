@@ -292,7 +292,8 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
 
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
-    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+    const launch = Shell.launch(shell, command, cwd)
+    return ChildProcess.make(launch.command, launch.args, {
       cwd,
       env,
       stdin: "ignore",
@@ -421,6 +422,14 @@ export const ShellTool = Tool.define(
       )
       return {
         ...process.env,
+        ...(process.platform === "win32"
+          ? {
+              PYTHONIOENCODING: "utf-8",
+              LC_ALL: "C.UTF-8",
+              LC_CTYPE: "C.UTF-8",
+              LANG: "C.UTF-8",
+            }
+          : {}),
         ...extra.env,
       }
     })
@@ -439,6 +448,7 @@ export const ShellTool = Tool.define(
       const keep = limits.maxBytes * 2
       let full = ""
       let last = ""
+      let shown = ""
       const list: Chunk[] = []
       let used = 0
       let file = ""
@@ -496,6 +506,7 @@ export const ShellTool = Tool.define(
               }
 
               last = preview(last + chunk)
+              shown = Shell.plain(last)
 
               if (file) {
                 sink?.write(chunk)
@@ -514,7 +525,7 @@ export const ShellTool = Tool.define(
                     Effect.andThen(
                       ctx.metadata({
                         metadata: {
-                          output: last,
+                          output: shown,
                         },
                       }),
                     ),
@@ -524,7 +535,7 @@ export const ShellTool = Tool.define(
 
               return ctx.metadata({
                 metadata: {
-                  output: last,
+                  output: shown,
                 },
               })
             }),
@@ -565,7 +576,7 @@ export const ShellTool = Tool.define(
         )
       }
       if (aborted) meta.push("User aborted the command")
-      const raw = list.map((item) => item.text).join("")
+      const raw = Shell.plain(list.map((item) => item.text).join(""))
       const end = tail(raw, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true
       if (!file && end.cut) {
@@ -585,7 +596,7 @@ export const ShellTool = Tool.define(
       return {
         title: input.command,
         metadata: {
-          output: last || preview(output),
+          output: Shell.plain(last) || preview(output),
           exit: code,
           truncated: cut,
           ...(cut && file ? { outputPath: file } : {}),

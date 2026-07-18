@@ -195,8 +195,120 @@ export function args(file: string, command: string, cwd: string) {
     ]
   }
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoProfile", "-Command", command]
+  if (ps(file)) return psArgs(command)
   return ["-c", command]
+}
+
+/** Spawn target for running `command` in `file` (bin + argv). */
+export function launch(file: string, command: string, cwd: string): { command: string; args: string[] } {
+  if (process.platform === "win32" && ps(file)) {
+    // chcp must run in the parent console before powershell.exe starts: parser
+    // errors emit before any in-script UTF-8 preamble can take effect. EncodedCommand
+    // carries the script as UTF-16LE base64 so CJK in the source is not mangled by
+    // the ANSI CreateProcess command line.
+    const encoded = Buffer.from(psBody(command), "utf16le").toString("base64")
+    const shell = /[\s"]/.test(file) ? `"${file.replaceAll('"', "")}"` : file
+    return {
+      command: process.env.COMSPEC || "cmd.exe",
+      args: ["/d", "/c", `chcp 65001>nul & ${shell} -NoLogo -NoProfile -NonInteractive -EncodedCommand ${encoded}`],
+    }
+  }
+  return { command: file, args: args(file, command, cwd) }
+}
+
+function psBody(command: string) {
+  if (process.platform !== "win32") return command
+  return `[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); ${command}`
+}
+
+function psArgs(command: string) {
+  if (process.platform !== "win32") {
+    return ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
+  }
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-EncodedCommand",
+    Buffer.from(psBody(command), "utf16le").toString("base64"),
+  ]
+}
+
+const CLIXML_START = "#< CLIXML"
+const CLIXML_OBJS = "<Objs"
+const CLIXML_END = "</Objs>"
+const CLIXML_ERROR = /<S S="Error">([\s\S]*?)<\/S>/g
+
+function decodeClixml(text: string) {
+  return text
+    .replaceAll("_x000D_", "\r")
+    .replaceAll("_x000A_", "\n")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+}
+
+/** Flatten PowerShell CLIXML stderr into plain text for model/UI display. */
+export function plain(output: string) {
+  if (!output.includes(CLIXML_START) && !output.includes(CLIXML_OBJS)) return output
+
+  let result = ""
+  let rest = output
+  while (rest.length > 0) {
+    const marker = rest.indexOf(CLIXML_START)
+    const objs = rest.indexOf(CLIXML_OBJS)
+    const start =
+      marker >= 0 && objs >= 0 ? Math.min(marker, objs) : marker >= 0 ? marker : objs >= 0 ? objs : -1
+    if (start < 0) {
+      result += rest
+      break
+    }
+
+    result += rest.slice(0, start)
+    let after = rest.slice(start)
+
+    // Keep stdout that arrived between the CLIXML banner and the XML body.
+    if (after.startsWith(CLIXML_START)) {
+      after = after.slice(CLIXML_START.length).replace(/^\r?\n/, "")
+      const xmlAt = after.indexOf(CLIXML_OBJS)
+      if (xmlAt < 0) {
+        // Incomplete stream: drop the banner, keep the rest for later chunks.
+        result += after
+        break
+      }
+      result += after.slice(0, xmlAt)
+      after = after.slice(xmlAt)
+    }
+
+    if (!after.startsWith(CLIXML_OBJS)) {
+      const xmlAt = after.indexOf(CLIXML_OBJS)
+      if (xmlAt < 0) {
+        result += after
+        break
+      }
+      result += after.slice(0, xmlAt)
+      after = after.slice(xmlAt)
+    }
+
+    const end = after.indexOf(CLIXML_END)
+    if (end < 0) break
+
+    const xml = after.slice(0, end + CLIXML_END.length)
+    const errors: string[] = []
+    for (const match of xml.matchAll(CLIXML_ERROR)) {
+      if (match[1]) errors.push(decodeClixml(match[1]))
+    }
+    if (errors.length > 0) {
+      result += errors.join("").replace(/\n+$/, "") + "\n"
+    }
+    rest = after.slice(end + CLIXML_END.length)
+  }
+
+  return result
 }
 
 let defaultPreferred: string | undefined

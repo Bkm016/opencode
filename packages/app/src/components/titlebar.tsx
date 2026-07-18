@@ -213,13 +213,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       onMouseDown={drag}
       onDblClick={maximize}
     >
-        <div
-          class="grid h-full min-h-full w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center"
-          style={{ zoom: counterZoom() }}
-        >
+        <div class="relative h-full min-h-full w-full" style={{ zoom: counterZoom() }}>
+          <div class="flex h-full w-full items-center">
           <div
+            data-titlebar-side="left"
             classList={{
-              "flex items-center min-w-0": true,
+              "relative z-10 flex min-w-0 flex-1 items-center": true,
               "pl-2": !mac(),
             }}
           >
@@ -351,16 +350,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             </div>
           </div>
 
-          <div class="min-w-0 flex items-center justify-center pointer-events-none">
-            <div
-              id="opencode-titlebar-center"
-              class="pointer-events-auto min-w-0 flex justify-center w-fit max-w-full"
-            />
-          </div>
-
           <div
+            data-titlebar-side="right"
             classList={{
-              "flex items-center min-w-0 justify-end": true,
+              "relative z-10 flex min-w-0 flex-1 items-center justify-end": true,
               "pr-2": !windows(),
             }}
             data-tauri-drag-region
@@ -371,6 +364,14 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
               <div data-tauri-decorum-tb class="flex flex-row" />
             </Show>
+          </div>
+          </div>
+
+          <div class="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
+            <div
+              id="opencode-titlebar-center"
+              class="pointer-events-auto flex min-w-0 max-w-full justify-center"
+            />
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@/utils/toast"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
@@ -27,6 +28,21 @@ import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover } from "../status-popover"
 import { useTitlebarRightMount } from "../titlebar"
+
+/** 居中搜索框固定宽；与左右真实控件碰撞时隐藏，显示/隐藏分阈值防抖 */
+const TITLEBAR_SEARCH_WIDTH = 240
+const TITLEBAR_SEARCH_HIDE_PAD = 4
+const TITLEBAR_SEARCH_SHOW_PAD = 16
+
+function titlebarContentEdge(el: HTMLElement, edge: "right" | "left") {
+  let value = edge === "right" ? -Infinity : Infinity
+  for (const kid of Array.from(el.children) as HTMLElement[]) {
+    const rect = kid.getBoundingClientRect()
+    if (rect.width <= 0) continue
+    value = edge === "right" ? Math.max(value, rect.right) : Math.min(value, rect.left)
+  }
+  return Number.isFinite(value) ? value : undefined
+}
 
 const OPEN_APPS = [
   "vscode",
@@ -265,14 +281,53 @@ export function SessionHeader() {
   }
 
   const [centerMount, setCenterMount] = createSignal<HTMLElement | null>(null)
+  const [searchFits, setSearchFits] = createSignal(true)
   const rightMount = useTitlebarRightMount()
   onMount(() => {
     setCenterMount(document.getElementById("opencode-titlebar-center"))
   })
 
+  // 搜索绝对居中：左右真实控件边界侵入搜索半宽则隐藏（相对 zoom 层测量）
+  const titlebarEl = () => centerMount()?.closest("header") ?? null
+  const measureSearchFit = () => {
+    const header = titlebarEl()
+    const shell = header?.firstElementChild as HTMLElement | null | undefined
+    if (!header || !shell) {
+      setSearchFits(true)
+      return
+    }
+    const left = shell.querySelector<HTMLElement>('[data-titlebar-side="left"]')
+    const right = shell.querySelector<HTMLElement>('[data-titlebar-side="right"]')
+    if (!left || !right) {
+      setSearchFits(true)
+      return
+    }
+    const rect = shell.getBoundingClientRect()
+    const scale = rect.width > 0 ? rect.width / shell.clientWidth : 1
+    const half = (TITLEBAR_SEARCH_WIDTH * scale) / 2
+    const centerX = rect.left + rect.width / 2
+    const searchLeft = centerX - half
+    const searchRight = centerX + half
+    const leftEdge = titlebarContentEdge(left, "right") ?? rect.left
+    const rightEdge = titlebarContentEdge(right, "left") ?? rect.right
+    const clearance = Math.min(searchLeft - leftEdge, rightEdge - searchRight)
+    setSearchFits((fits) => {
+      if (fits) return clearance >= TITLEBAR_SEARCH_HIDE_PAD * scale
+      return clearance >= TITLEBAR_SEARCH_SHOW_PAD * scale
+    })
+  }
+
+  createResizeObserver(titlebarEl, measureSearchFit)
+  createEffect(() => {
+    centerMount()
+    rightMount()
+    measureSearchFit()
+    requestAnimationFrame(measureSearchFit)
+  })
+
   return (
     <>
-      <Show when={search() && centerMount()}>
+      <Show when={search() && searchFits() && centerMount()}>
         {(mount) => (
           <Portal mount={mount()}>
             <Button
@@ -287,7 +342,7 @@ export function SessionHeader() {
               onClick={() => command.trigger("file.open")}
               aria-label={language.t("session.header.searchFiles")}
             >
-              <div class="flex min-w-0 flex-1 items-center overflow-visible">
+              <div class="flex min-w-0 flex-1 items-center overflow-hidden">
                 <span class="flex-1 min-w-0 text-12-regular text-text-weak truncate text-left">
                   {language.t("session.header.search.placeholder", {
                     project: name(),

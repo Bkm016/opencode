@@ -23,6 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 out/
+out-test-main/
+src/renderer/out-test-main/
 
 resources/opencode-cli*
 resources/icons

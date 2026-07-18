@@ -42,6 +42,10 @@ import type {
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
+  ExperimentalStorageCompactErrors,
+  ExperimentalStorageCompactResponses,
+  ExperimentalStorageGetErrors,
+  ExperimentalStorageGetResponses,
   ExperimentalSessionBackgroundErrors,
   ExperimentalSessionBackgroundResponses,
   ExperimentalSessionListErrors,
@@ -924,6 +928,91 @@ export class Resource extends HeyApiClient {
   }
 }
 
+export class Storage extends HeyApiClient {
+  /**
+   * Get local storage budget
+   *
+   * Report SQLite size, reclaimable freelist space, and expired tool-output / log files.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalStorageGetResponses,
+      ExperimentalStorageGetErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/storage",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Compact local storage
+   *
+   * Safely reclaim disk space without deleting sessions or credentials.
+   */
+  public compact<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      checkpoint?: boolean
+      vacuum?: boolean
+      toolOutput?: boolean
+      logs?: boolean
+      retentionDays?: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "checkpoint" },
+            { in: "body", key: "vacuum" },
+            { in: "body", key: "toolOutput" },
+            { in: "body", key: "logs" },
+            { in: "body", key: "retentionDays" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalStorageCompactResponses,
+      ExperimentalStorageCompactErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/storage/compact",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class ProjectCopy extends HeyApiClient {
   /**
    * Generate project copy name
@@ -1266,6 +1355,11 @@ export class Experimental extends HeyApiClient {
   private _resource?: Resource
   get resource(): Resource {
     return (this._resource ??= new Resource({ client: this.client }))
+  }
+
+  private _storage?: Storage
+  get storage(): Storage {
+    return (this._storage ??= new Storage({ client: this.client }))
   }
 
   private _projectCopy?: ProjectCopy

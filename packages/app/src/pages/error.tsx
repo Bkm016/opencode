@@ -217,6 +217,9 @@ function formatError(error: unknown, t: Translator): string {
 
 interface ErrorPageProps {
   error: unknown
+  /** Reset the nearest ErrorBoundary and re-render the failed subtree without restarting the app. */
+  onDismiss?: () => void
+  dismissLabel?: string
 }
 
 export const ErrorPage: Component<ErrorPageProps> = (props) => {
@@ -276,7 +279,14 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           hideLabel
         />
         <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
-          <Button size="large" onClick={platform.restart}>
+          <Show when={props.onDismiss}>
+            {(dismiss) => (
+              <Button size="large" onClick={() => dismiss()()}>
+                {props.dismissLabel ?? language.t("error.page.action.dismiss")}
+              </Button>
+            )}
+          </Show>
+          <Button size="large" variant={props.onDismiss ? "ghost" : undefined} onClick={platform.restart}>
             {language.t("error.page.action.restart")}
           </Button>
           <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>

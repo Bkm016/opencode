@@ -169,13 +169,27 @@ export function SessionRouteErrorBoundary(
   props: ParentProps<{ sessionID?: string; serverKey?: ServerConnection.Key; padded?: boolean }>,
 ) {
   return (
-    <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+    <ErrorBoundary
+      fallback={(error, reset) => (
+        <SessionErrorFallback
+          error={error}
+          sessionID={props.sessionID}
+          serverKey={props.serverKey}
+          onDismiss={reset}
+        />
+      )}
+    >
       {props.children}
     </ErrorBoundary>
   )
 }
 
-function SessionErrorFallback(props: { error: unknown; sessionID?: string; serverKey?: ServerConnection.Key }) {
+function SessionErrorFallback(props: {
+  error: unknown
+  sessionID?: string
+  serverKey?: ServerConnection.Key
+  onDismiss?: () => void
+}) {
   const language = useLanguage()
   const server = useServer()
   const tabs = useTabs()
@@ -215,7 +229,7 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
       </div>
     )
   }
-  return <ErrorPage error={props.error} />
+  return <ErrorPage error={props.error} onDismiss={props.onDismiss} />
 }
 
 function ResolvedTargetSessionRoute() {

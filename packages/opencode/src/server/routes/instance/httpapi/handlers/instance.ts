@@ -16,7 +16,7 @@ import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
 
-const COUNTED_TABLES = new Set(["session", "project", "workspace", "account", "todo", "migration"])
+// Count every user table so the Database settings page can show what fills the SQLite file.
 
 async function fileSize(path: string) {
   return fs.stat(path).then(
@@ -83,15 +83,16 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         tableNames,
         (table) =>
           Effect.gen(function* () {
-            if (!COUNTED_TABLES.has(table.name)) return { name: table.name }
-            const count = yield* db.get<{ count: number }>(sql`SELECT COUNT(*) AS count FROM ${sql.identifier(table.name)}`).pipe(
-              Effect.map((row) => row?.count),
-              Effect.catch(() => Effect.succeed(undefined)),
-            )
+            const count = yield* db
+              .get<{ count: number }>(sql`SELECT COUNT(*) AS count FROM ${sql.identifier(table.name)}`)
+              .pipe(
+                Effect.map((row) => row?.count),
+                Effect.catch(() => Effect.succeed(undefined)),
+              )
             return { name: table.name, rows: count }
           }),
         { concurrency: 1 },
-      )
+      ).pipe(Effect.map((rows) => rows.sort((a, b) => (b.rows ?? 0) - (a.rows ?? 0))))
       return {
         home: Global.Path.home,
         state: Global.Path.state,

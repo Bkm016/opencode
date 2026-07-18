@@ -126,6 +126,34 @@ const scenarios: Scenario[] = [
     check(typeof database.path === "string", "database.path should be present")
     check(Array.isArray(database.tables), "database.tables should be an array")
   }),
+  http.protected.get("/experimental/storage", "experimental.storage.get").json(200, (body) => {
+    object(body)
+    object(body.database)
+    object(body.toolOutput)
+    object(body.logs)
+    check(typeof body.retentionDays === "number", "retentionDays should be present")
+    check(typeof body.database.path === "string", "database.path should be present")
+    check(typeof body.toolOutput.bytes === "number", "toolOutput.bytes should be present")
+    check(typeof body.logs.expiredFiles === "number", "logs.expiredFiles should be present")
+    check(typeof body.dataRoot === "string", "dataRoot should be present")
+    check(typeof body.dataBytes === "number", "dataBytes should be present")
+    check(Array.isArray(body.entries), "entries should be an array")
+    check(Array.isArray(body.tables), "tables should be an array")
+  }),
+  http.protected
+    .post("/experimental/storage/compact", "experimental.storage.compact")
+    .at((ctx) => ({
+      path: "/experimental/storage/compact",
+      headers: ctx.headers(),
+      body: { checkpoint: true },
+    }))
+    .json(200, (body) => {
+      object(body)
+      object(body.before)
+      object(body.after)
+      check(typeof body.durationMs === "number", "durationMs should be present")
+      check(body.checkpoint === true, "checkpoint should run when requested")
+    }),
   http.protected.get("/vcs", "vcs.get").json(),
   http.protected.get("/vcs/status", "vcs.status").json(200, array),
   http.protected

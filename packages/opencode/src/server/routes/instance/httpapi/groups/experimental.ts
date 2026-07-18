@@ -87,6 +87,68 @@ export const SessionListQuery = Schema.Struct({
   archived: Schema.optional(QueryBoolean),
 })
 
+const StorageFileStats = Schema.Struct({
+  path: Schema.String,
+  bytes: Schema.Number,
+  files: Schema.Number,
+  expiredBytes: Schema.Number,
+  expiredFiles: Schema.Number,
+}).annotate({ identifier: "StorageFileStats" })
+
+const StorageDatabaseStats = Schema.Struct({
+  path: Schema.String,
+  size: Schema.optional(Schema.Number),
+  walSize: Schema.optional(Schema.Number),
+  shmSize: Schema.optional(Schema.Number),
+  pageCount: Schema.optional(Schema.Number),
+  pageSize: Schema.optional(Schema.Number),
+  freelistCount: Schema.optional(Schema.Number),
+  reclaimableBytes: Schema.optional(Schema.Number),
+}).annotate({ identifier: "StorageDatabaseStats" })
+
+const StorageEntry = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  kind: Schema.Literals(["file", "directory"]),
+  bytes: Schema.Number,
+}).annotate({ identifier: "StorageEntry" })
+
+const StorageTableStats = Schema.Struct({
+  name: Schema.String,
+  rows: Schema.optional(Schema.Number),
+}).annotate({ identifier: "StorageTableStats" })
+
+export const StorageBudget = Schema.Struct({
+  database: StorageDatabaseStats,
+  toolOutput: StorageFileStats,
+  logs: StorageFileStats,
+  retentionDays: Schema.Number,
+  dataRoot: Schema.String,
+  dataBytes: Schema.Number,
+  entries: Schema.Array(StorageEntry),
+  tables: Schema.Array(StorageTableStats),
+}).annotate({ identifier: "StorageBudget" })
+
+export const StorageCompactPayload = Schema.Struct({
+  checkpoint: Schema.optional(Schema.Boolean),
+  vacuum: Schema.optional(Schema.Boolean),
+  toolOutput: Schema.optional(Schema.Boolean),
+  logs: Schema.optional(Schema.Boolean),
+  retentionDays: Schema.optional(Schema.Number),
+}).annotate({ identifier: "StorageCompactPayload" })
+
+const StorageCompactResult = Schema.Struct({
+  checkpoint: Schema.optional(Schema.Boolean),
+  vacuum: Schema.optional(Schema.Boolean),
+  toolOutputRemoved: Schema.optional(Schema.Number),
+  toolOutputBytes: Schema.optional(Schema.Number),
+  logsRemoved: Schema.optional(Schema.Number),
+  logsBytes: Schema.optional(Schema.Number),
+  before: StorageBudget,
+  after: StorageBudget,
+  durationMs: Schema.Number,
+}).annotate({ identifier: "StorageCompactResult" })
+
 export const ExperimentalPaths = {
   capabilities: "/experimental/capabilities",
   console: "/experimental/console",
@@ -99,6 +161,8 @@ export const ExperimentalPaths = {
   session: "/experimental/session",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
+  storage: "/experimental/storage",
+  storageCompact: "/experimental/storage/compact",
 } as const
 
 export const ExperimentalApi = HttpApi.make("experimental")
@@ -253,6 +317,30 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.resource.list",
             summary: "Get MCP resources",
             description: "Get all available MCP resources from connected servers. Optionally filter by name.",
+          }),
+        ),
+        HttpApiEndpoint.get("storage", ExperimentalPaths.storage, {
+          query: WorkspaceRoutingQuery,
+          success: described(StorageBudget, "Local storage budget"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.storage.get",
+            summary: "Get local storage budget",
+            description:
+              "Report SQLite size, reclaimable freelist space, and expired tool-output / log files. Safe read-only diagnostics for storage maintenance.",
+          }),
+        ),
+        HttpApiEndpoint.post("storageCompact", ExperimentalPaths.storageCompact, {
+          query: WorkspaceRoutingQuery,
+          payload: StorageCompactPayload,
+          success: described(StorageCompactResult, "Storage compact result"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.storage.compact",
+            summary: "Compact local storage",
+            description:
+              "Safely reclaim disk space: WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Does not delete sessions or credentials.",
           }),
         ),
       )

@@ -7907,6 +7907,126 @@ export type ExperimentalResourceListResponses = {
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
 
+export type StorageFileStats = {
+  path: string
+  bytes: number
+  files: number
+  expiredBytes: number
+  expiredFiles: number
+}
+
+export type StorageDatabaseStats = {
+  path: string
+  size?: number
+  walSize?: number
+  shmSize?: number
+  pageCount?: number
+  pageSize?: number
+  freelistCount?: number
+  reclaimableBytes?: number
+}
+
+export type StorageEntry = {
+  name: string
+  path: string
+  kind: "file" | "directory"
+  bytes: number
+}
+
+export type StorageTableStats = {
+  name: string
+  rows?: number
+}
+
+export type StorageBudget = {
+  database: StorageDatabaseStats
+  toolOutput: StorageFileStats
+  logs: StorageFileStats
+  retentionDays: number
+  dataRoot: string
+  dataBytes: number
+  entries: Array<StorageEntry>
+  tables: Array<StorageTableStats>
+}
+
+export type StorageCompactPayload = {
+  checkpoint?: boolean
+  vacuum?: boolean
+  toolOutput?: boolean
+  logs?: boolean
+  retentionDays?: number
+}
+
+export type StorageCompactResult = {
+  checkpoint?: boolean
+  vacuum?: boolean
+  toolOutputRemoved?: number
+  toolOutputBytes?: number
+  logsRemoved?: number
+  logsBytes?: number
+  before: StorageBudget
+  after: StorageBudget
+  durationMs: number
+}
+
+export type ExperimentalStorageGetData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/storage"
+}
+
+export type ExperimentalStorageGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalStorageGetError = ExperimentalStorageGetErrors[keyof ExperimentalStorageGetErrors]
+
+export type ExperimentalStorageGetResponses = {
+  /**
+   * Local storage budget
+   */
+  200: StorageBudget
+}
+
+export type ExperimentalStorageGetResponse = ExperimentalStorageGetResponses[keyof ExperimentalStorageGetResponses]
+
+export type ExperimentalStorageCompactData = {
+  body?: StorageCompactPayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/storage/compact"
+}
+
+export type ExperimentalStorageCompactErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalStorageCompactError =
+  ExperimentalStorageCompactErrors[keyof ExperimentalStorageCompactErrors]
+
+export type ExperimentalStorageCompactResponses = {
+  /**
+   * Storage compact result
+   */
+  200: StorageCompactResult
+}
+
+export type ExperimentalStorageCompactResponse =
+  ExperimentalStorageCompactResponses[keyof ExperimentalStorageCompactResponses]
+
 export type FindTextData = {
   body?: never
   path?: never

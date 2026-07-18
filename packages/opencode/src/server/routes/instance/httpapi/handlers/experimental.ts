@@ -11,9 +11,15 @@ import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
+import { Database } from "@opencode-ai/core/database/database"
+import { Global } from "@opencode-ai/core/global"
+import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
+import { sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import fs from "fs/promises"
+import path from "path"
 import { InstanceHttpApi } from "../api"
 import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
 
@@ -21,6 +27,121 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
     Effect.mapError((error) => new WorktreeApiError({ name: error._tag, data: { message: error.message } })),
   )
+}
+
+const DEFAULT_RETENTION_DAYS = 7
+
+async function fileSize(target: string) {
+  return fs.stat(target).then(
+    (stat) => stat.size,
+    () => undefined,
+  )
+}
+
+async function treeBytes(root: string) {
+  let bytes = 0
+  const stack = [root]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const full = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      const stat = await fs.stat(full).catch(() => undefined)
+      if (!stat) continue
+      bytes += stat.size
+    }
+  }
+  return bytes
+}
+
+async function dataRootBreakdown(root: string) {
+  const listing = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+  const entries = await Promise.all(
+    listing.map(async (entry) => {
+      const full = path.join(root, entry.name)
+      if (entry.isDirectory()) {
+        return {
+          name: entry.name,
+          path: full,
+          kind: "directory" as const,
+          bytes: await treeBytes(full),
+        }
+      }
+      if (!entry.isFile()) return undefined
+      const size = await fileSize(full)
+      return {
+        name: entry.name,
+        path: full,
+        kind: "file" as const,
+        bytes: size ?? 0,
+      }
+    }),
+  )
+  return entries
+    .flatMap((entry) => (entry ? [entry] : []))
+    .sort((a, b) => b.bytes - a.bytes)
+}
+
+async function directoryStats(root: string, input: { retentionDays: number; prefix?: string }) {
+  const cutoff = Date.now() - input.retentionDays * 24 * 60 * 60 * 1000
+  let bytes = 0
+  let files = 0
+  let expiredBytes = 0
+  let expiredFiles = 0
+  const stack = [root]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const full = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (input.prefix && !entry.name.startsWith(input.prefix)) continue
+      const stat = await fs.stat(full).catch(() => undefined)
+      if (!stat) continue
+      files += 1
+      bytes += stat.size
+      if (stat.mtimeMs < cutoff) {
+        expiredFiles += 1
+        expiredBytes += stat.size
+      }
+    }
+  }
+  return { path: root, bytes, files, expiredBytes, expiredFiles }
+}
+
+async function removeExpiredFiles(root: string, input: { retentionDays: number; prefix?: string }) {
+  const cutoff = Date.now() - input.retentionDays * 24 * 60 * 60 * 1000
+  let removed = 0
+  let bytes = 0
+  const stack = [root]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const full = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(full)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (input.prefix && !entry.name.startsWith(input.prefix)) continue
+      const stat = await fs.stat(full).catch(() => undefined)
+      if (!stat || stat.mtimeMs >= cutoff) continue
+      await fs.unlink(full).catch(() => undefined)
+      removed += 1
+      bytes += stat.size
+    }
+  }
+  return { removed, bytes }
 }
 
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
@@ -35,6 +156,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const { db } = yield* Database.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
       return { backgroundSubagents: flags.experimentalBackgroundSubagents }
@@ -175,6 +297,152 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
+    const storageBudget = Effect.fn("ExperimentalHttpApi.storage")(function* (retentionDays = DEFAULT_RETENTION_DAYS) {
+      const days = Number.isFinite(retentionDays) && retentionDays > 0 ? retentionDays : DEFAULT_RETENTION_DAYS
+      const dbPath = Database.path()
+      const dataRoot = Global.Path.data
+      const [size, walSize, shmSize, entries] = yield* Effect.promise(() =>
+        Promise.all([
+          fileSize(dbPath),
+          fileSize(`${dbPath}-wal`),
+          fileSize(`${dbPath}-shm`),
+          dataRootBreakdown(dataRoot),
+        ]),
+      )
+      const pageCount = yield* db.get<{ page_count: number }>(sql`PRAGMA page_count`).pipe(
+        Effect.map((row) => row?.page_count),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const pageSize = yield* db.get<{ page_size: number }>(sql`PRAGMA page_size`).pipe(
+        Effect.map((row) => row?.page_size),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const freelistCount = yield* db.get<{ freelist_count: number }>(sql`PRAGMA freelist_count`).pipe(
+        Effect.map((row) => row?.freelist_count),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const reclaimableBytes =
+        pageSize !== undefined && freelistCount !== undefined ? pageSize * freelistCount : undefined
+      const tableNames = yield* db
+        .all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+        )
+        .pipe(Effect.catch(() => Effect.succeed([] as { name: string }[])))
+      const tables = yield* Effect.forEach(
+        tableNames,
+        (table) =>
+          Effect.gen(function* () {
+            const count = yield* db
+              .get<{ count: number }>(sql`SELECT COUNT(*) AS count FROM ${sql.identifier(table.name)}`)
+              .pipe(
+                Effect.map((row) => row?.count),
+                Effect.catch(() => Effect.succeed(undefined)),
+              )
+            return { name: table.name, rows: count }
+          }),
+        { concurrency: 1 },
+      )
+      const toolOutput = yield* Effect.promise(() =>
+        directoryStats(path.join(dataRoot, ToolOutputStore.MANAGED_DIRECTORY), {
+          retentionDays: days,
+          prefix: "tool_",
+        }),
+      )
+      const logs = yield* Effect.promise(() => directoryStats(Global.Path.log, { retentionDays: days }))
+      const dataBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0)
+      return {
+        database: {
+          path: dbPath,
+          size,
+          walSize,
+          shmSize,
+          pageCount,
+          pageSize,
+          freelistCount,
+          reclaimableBytes,
+        },
+        toolOutput,
+        logs,
+        retentionDays: days,
+        dataRoot,
+        dataBytes,
+        entries,
+        tables: tables.sort((a, b) => (b.rows ?? 0) - (a.rows ?? 0)),
+      }
+    })
+
+    const storageCompact = Effect.fn("ExperimentalHttpApi.storageCompact")(function* (ctx: {
+      payload: {
+        checkpoint?: boolean
+        vacuum?: boolean
+        toolOutput?: boolean
+        logs?: boolean
+        retentionDays?: number
+      }
+    }) {
+      const payload = ctx.payload
+      const actions = {
+        checkpoint: payload.checkpoint === true,
+        vacuum: payload.vacuum === true,
+        toolOutput: payload.toolOutput === true,
+        logs: payload.logs === true,
+      }
+      if (!actions.checkpoint && !actions.vacuum && !actions.toolOutput && !actions.logs) {
+        return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      }
+      const retentionDays =
+        payload.retentionDays !== undefined && Number.isFinite(payload.retentionDays) && payload.retentionDays > 0
+          ? payload.retentionDays
+          : DEFAULT_RETENTION_DAYS
+      const started = Date.now()
+      const before = yield* storageBudget(retentionDays)
+      let checkpoint: boolean | undefined
+      let vacuum: boolean | undefined
+      let toolOutputRemoved: number | undefined
+      let toolOutputBytes: number | undefined
+      let logsRemoved: number | undefined
+      let logsBytes: number | undefined
+
+      if (actions.checkpoint || actions.vacuum) {
+        yield* db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`).pipe(Effect.catch(() => Effect.void))
+        checkpoint = true
+      }
+      if (actions.vacuum) {
+        const vacuumed = yield* db.run(sql`VACUUM`).pipe(
+          Effect.as(true),
+          Effect.catch(() => Effect.succeed(false)),
+        )
+        if (!vacuumed) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+        vacuum = true
+      }
+      if (actions.toolOutput) {
+        const result = yield* Effect.promise(() =>
+          removeExpiredFiles(path.join(Global.Path.data, ToolOutputStore.MANAGED_DIRECTORY), {
+            retentionDays,
+            prefix: "tool_",
+          }),
+        )
+        toolOutputRemoved = result.removed
+        toolOutputBytes = result.bytes
+      }
+      if (actions.logs) {
+        const result = yield* Effect.promise(() => removeExpiredFiles(Global.Path.log, { retentionDays }))
+        logsRemoved = result.removed
+        logsBytes = result.bytes
+      }
+
+      const after = yield* storageBudget(retentionDays)
+      return {
+        ...(checkpoint !== undefined ? { checkpoint } : {}),
+        ...(vacuum !== undefined ? { vacuum } : {}),
+        ...(toolOutputRemoved !== undefined ? { toolOutputRemoved, toolOutputBytes } : {}),
+        ...(logsRemoved !== undefined ? { logsRemoved, logsBytes } : {}),
+        before,
+        after,
+        durationMs: Date.now() - started,
+      }
+    })
+
     return handlers
       .handle("capabilities", capabilities)
       .handle("console", getConsole)
@@ -189,5 +457,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
+      .handle("storage", () => storageBudget())
+      .handle("storageCompact", storageCompact)
   }),
 )

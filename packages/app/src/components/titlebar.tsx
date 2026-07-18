@@ -367,7 +367,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           </div>
           </div>
 
-          <div class="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
+          <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
             <div
               id="opencode-titlebar-center"
               class="pointer-events-auto flex min-w-0 max-w-full justify-center"

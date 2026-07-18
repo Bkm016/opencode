@@ -161,6 +161,7 @@ export const dict = {
   "ui.message.copy": "コピー",
   "ui.message.copyMessage": "メッセージをコピー",
   "ui.message.forkMessage": "新しいセッションにフォーク",
+  "ui.message.replayMessage": "再実行",
   "ui.message.revertMessage": "この時点までリセット",
   "ui.message.copyResponse": "応答をコピー",
   "ui.message.copied": "コピーしました！",

@@ -166,6 +166,7 @@ export const dict = {
   "ui.message.copy": "Kopiraj",
   "ui.message.copyMessage": "Kopiraj poruku",
   "ui.message.forkMessage": "Forkaj u novu sesiju",
+  "ui.message.replayMessage": "Ponovo pošalji",
   "ui.message.revertMessage": "Resetuj na ovu tačku",
   "ui.message.copyResponse": "Kopiraj odgovor",
   "ui.message.copied": "Kopirano!",

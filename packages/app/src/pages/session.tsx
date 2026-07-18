@@ -1870,6 +1870,53 @@ export default function Page() {
     return revertMutation.mutateAsync(input)
   }
 
+  const replay = async (input: { sessionID: string; messageID: string }) => {
+    if (reverting()) return
+    const message = userMessages().find((item) => item.id === input.messageID)
+    if (!message) return
+
+    const value = draft(input.messageID)
+    const text = value.map((part) => ("content" in part ? part.content : "")).join("")
+    const images = value.filter((part) => part.type === "image")
+    if (text.trim().length === 0 && images.length === 0) return
+
+    await revertMutation.mutateAsync(input)
+    if (sync().session.get(input.sessionID)?.revert?.messageID !== input.messageID) return
+
+    const agent = local.agent.current()?.name
+    const current = local.model.current()
+    if (!agent || !current) {
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: language.t("prompt.toast.modelAgentRequired.description"),
+      })
+      return
+    }
+
+    const directory = sdk().directory
+    const promptSession = prompt.capture()
+    promptSession.reset()
+    resumeScroll()
+    await sendFollowupDraft({
+      client: sdk().client,
+      sync: sync(),
+      serverSync: serverSync(),
+      draft: {
+        sessionID: input.sessionID,
+        sessionDirectory: directory,
+        prompt: value,
+        context: [],
+        agent,
+        model: { providerID: current.provider.id, modelID: current.id },
+        variant: local.model.variant.current(),
+      },
+      optimisticBusy: true,
+    }).catch((err) => {
+      fail(err)
+      promptSession.set(value)
+    })
+  }
+
   const restore = (id: string) => {
     if (!params.id || reverting()) return
     return restoreMutation.mutateAsync(id)
@@ -1906,7 +1953,7 @@ export default function Page() {
     download()
   }
 
-  const actions = { revert, openAttachment }
+  const actions = { revert, replay, openAttachment }
 
   createEffect(() => {
     const sessionID = params.id

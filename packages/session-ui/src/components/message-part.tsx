@@ -165,6 +165,7 @@ export type SessionAction = (input: { sessionID: string; messageID: string }) =>
 export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
+  replay?: SessionAction
   openAttachment?: (file: FilePart) => void
 }
 
@@ -184,7 +185,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset"
+    icon: "arrow-up" | "check" | "copy" | "reset"
     label: JSX.Element
   },
 ) {
@@ -1307,8 +1308,7 @@ export function UserMessageDisplay(props: {
     }
   }
 
-  const revert = () => {
-    const act = props.actions?.revert
+  const runAction = (act: SessionAction | undefined) => {
     if (!act || busy()) return
     setState("busy", true)
     void Promise.resolve()
@@ -1320,6 +1320,9 @@ export function UserMessageDisplay(props: {
       )
       .finally(() => setState("busy", false))
   }
+
+  const revert = () => runAction(props.actions?.revert)
+  const replay = () => runAction(props.actions?.replay)
 
   const renderAttachments = () => (
     <Show when={attachments().length > 0}>
@@ -1388,6 +1391,19 @@ export function UserMessageDisplay(props: {
                 </span>
               </Show>
             </span>
+          </Show>
+          <Show when={props.actions?.replay}>
+            <MessageActionButton
+              icon="arrow-up"
+              label={i18n.t("ui.message.replayMessage")}
+              disabled={!!busy()}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation()
+                replay()
+              }}
+              aria-label={i18n.t("ui.message.replayMessage")}
+            />
           </Show>
           <Show when={props.actions?.revert}>
             <MessageActionButton

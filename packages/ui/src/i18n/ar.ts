@@ -162,6 +162,7 @@ export const dict = {
   "ui.message.copy": "نسخ",
   "ui.message.copyMessage": "نسخ الرسالة",
   "ui.message.forkMessage": "تشعب إلى جلسة جديدة",
+  "ui.message.replayMessage": "إعادة الإرسال",
   "ui.message.revertMessage": "إعادة التعيين إلى هذه النقطة",
   "ui.message.copyResponse": "نسخ الرد",
   "ui.message.copied": "تم النسخ!",

@@ -175,6 +175,7 @@ export const dict: Record<string, string> = {
   "ui.message.copy": "Копіювати",
   "ui.message.copyMessage": "Копіювати повідомлення",
   "ui.message.forkMessage": "Відгалузити в нову сесію",
+  "ui.message.replayMessage": "Повторити",
   "ui.message.revertMessage": "Скинути до цього моменту",
   "ui.message.copyResponse": "Копіювати відповідь",
   "ui.message.copied": "Скопійовано",

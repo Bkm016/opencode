@@ -162,6 +162,7 @@ export const dict = {
   "ui.message.copy": "Copier",
   "ui.message.copyMessage": "Copier le message",
   "ui.message.forkMessage": "Bifurquer vers une nouvelle session",
+  "ui.message.replayMessage": "Relancer",
   "ui.message.revertMessage": "Réinitialiser à ce point",
   "ui.message.copyResponse": "Copier la réponse",
   "ui.message.copied": "Copié !",

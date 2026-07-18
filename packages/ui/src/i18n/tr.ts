@@ -168,6 +168,7 @@ export const dict = {
   "ui.message.copy": "Kopyala",
   "ui.message.copyMessage": "Mesajı kopyala",
   "ui.message.forkMessage": "Yeni oturuma dallandır",
+  "ui.message.replayMessage": "Yeniden gönder",
   "ui.message.revertMessage": "Bu noktaya sıfırla",
   "ui.message.copyResponse": "Yanıtı kopyala",
   "ui.message.copied": "Kopyalandı",

@@ -52,32 +52,42 @@ async function copyServerDist() {
       await fs.copyFile(from, to)
     }),
   )
-  // Server bundle leaves jsonc-parser external (UMD + relative requires). Copy
-  // the package next to node.js so Node can resolve it from out/main/server.
-  await copyJsoncParser()
+  // Server bundle leaves these packages external. Copy them next to node.js so
+  // Node can resolve them from out/main/server at runtime (including packaged asar).
+  await copyServerNodeModule("jsonc-parser")
+  await copyServerNodeModule("@lydell/node-pty")
+  await copyServerNodeModule(nodePtyPkg)
 }
 
-async function copyJsoncParser() {
-  // Bun installs jsonc-parser as a junction into node_modules/.bun/...; resolve
-  // the real path and wipe the dest first so Windows fs.cp does not hit ENOTDIR.
+async function resolveNodeModule(name: string) {
+  // Bun installs packages as junctions into node_modules/.bun/...; resolve the
+  // real path so Windows fs.cp does not hit ENOTDIR on junctions.
+  const parts = name.split("/")
   const candidates = [
-    path.resolve(packageDir, "../opencode/node_modules/jsonc-parser"),
-    path.resolve(packageDir, "../../node_modules/jsonc-parser"),
+    path.resolve(packageDir, "node_modules", ...parts),
+    path.resolve(packageDir, "../opencode/node_modules", ...parts),
+    path.resolve(packageDir, "../core/node_modules", ...parts),
+    path.resolve(packageDir, "../../node_modules", ...parts),
   ]
-  let src: string | undefined
   for (const dir of candidates) {
     try {
       const st = await fs.stat(dir)
-      if (st.isDirectory()) {
-        src = await fs.realpath(dir)
-        break
-      }
+      if (st.isDirectory()) return await fs.realpath(dir)
     } catch {
       // try next
     }
   }
-  if (!src) throw new Error("jsonc-parser not found (expected under packages/opencode or repo root node_modules)")
-  const to = path.join(SERVER_OUT, "node_modules", "jsonc-parser")
+  return undefined
+}
+
+async function copyServerNodeModule(name: string) {
+  const src = await resolveNodeModule(name)
+  if (!src) {
+    throw new Error(
+      `${name} not found (expected under packages/desktop, opencode, core, or repo root node_modules)`,
+    )
+  }
+  const to = path.join(SERVER_OUT, "node_modules", ...name.split("/"))
   await fs.rm(to, { recursive: true, force: true })
   await fs.mkdir(path.dirname(to), { recursive: true })
   await fs.cp(src, to, { recursive: true })

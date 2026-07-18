@@ -53,6 +53,8 @@ const getBase = (appId: string): Configuration => ({
     desktopName: `${appId}.desktop`,
   },
   files: ["out/**/*", "resources/**/*"],
+  // Native pty prebuilds must stay outside asar; server loads them from out/main/server/node_modules.
+  asarUnpack: ["**/node_modules/@lydell/node-pty*/**"],
   extraResources: [
     {
       from: "native/",

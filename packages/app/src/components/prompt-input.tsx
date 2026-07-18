@@ -1655,6 +1655,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     >
                       <Select
                         size="normal"
+                        surface="tray"
                         options={props.controls.agents.options}
                         current={props.controls.agents.current}
                         onSelect={(value) => {
@@ -1759,6 +1760,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         >
                           <Select
                             size="normal"
+                            surface="tray"
                             options={variants()}
                             current={props.controls.model.selection.variant.current() ?? "default"}
                             label={(x) => (x === "default" ? language.t("common.default") : x)}

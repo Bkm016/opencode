@@ -16,15 +16,9 @@
     outline: none;
   }
 
-  animation: contextMenuContentHide var(--transition-duration) var(--transition-easing) forwards;
-
-  @starting-style {
-    animation: none;
-  }
-
+  /* Enter motion owned by gsap-surface. */
   &[data-expanded] {
     pointer-events: auto;
-    animation: contextMenuContentShow var(--transition-duration) var(--transition-easing) forwards;
   }
 }
 

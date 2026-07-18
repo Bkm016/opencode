@@ -19,12 +19,9 @@
     outline: none;
   }
 
+  /* Enter motion owned by gsap-surface; keep exit instant to avoid double-anim. */
   &[data-closed] {
-    animation: popover-close 0.15s ease-out;
-  }
-
-  &[data-expanded] {
-    animation: popover-open 0.15s ease-out;
+    opacity: 0;
   }
 
   [data-slot="popover-header"] {

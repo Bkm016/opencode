@@ -1,5 +1,6 @@
 import { HoverCard as Kobalte } from "@kobalte/core/hover-card"
 import { createSignal, Show, type JSXElement } from "solid-js"
+import { bindSurfaceMotion } from "@opencode-ai/ui/hooks/gsap-surface"
 import "./titlebar-tab-popover.css"
 
 // Initial hover delay before the preview appears, per design.
@@ -63,6 +64,7 @@ export function TabPreviewPopover(props: {
             // active theme like the v2 tooltip does.
             const theme = triggerEl?.closest("[data-theme]")?.getAttribute("data-theme")
             if (theme) el.setAttribute("data-theme", theme)
+            if (!instant()) bindSurfaceMotion(el, { preset: "tooltip", y: 6, duration: 0.16 })
           }}
           data-component="session-tab-popover"
           data-instant={instant() || undefined}

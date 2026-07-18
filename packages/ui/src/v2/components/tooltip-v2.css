@@ -31,11 +31,11 @@
   user-select: none;
   pointer-events: none;
 
-  animation: tooltipV2In 120ms ease-out;
+  /* Enter motion owned by gsap-surface. */
   transform-origin: var(--kb-tooltip-content-transform-origin);
 
   &[data-closed] {
-    animation: tooltipV2Out 80ms ease-in forwards;
+    opacity: 0;
   }
 }
 

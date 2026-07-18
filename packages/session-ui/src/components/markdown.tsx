@@ -372,6 +372,7 @@ export function Markdown(
     const result = html.latest ?? html()
     const projected = projection()
     const content = local.text ? pendingBlocks(result, projected, local.cacheKey, owner) : []
+    const streaming = !!local.streaming
     if (!container) return
     if (isServer) return
     if (content.length === 0) {
@@ -390,13 +391,18 @@ export function Markdown(
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels))
-    while (container.children.length > content.length) {
-      const child = container.lastElementChild
-      if (!child) break
-      disposeCopyButtons(child)
-      child.remove()
-    }
+    // Content updates stay instant — stream motion is the caret only (CSS pulse).
+    const blocks = () =>
+      [...container.children].filter(
+        (node): node is HTMLElement => node instanceof HTMLElement && node.dataset.markdownBlock !== undefined,
+      )
+    content.forEach((block, index) => updateBlock(container, blocks()[index], block, labels))
+    blocks()
+      .slice(content.length)
+      .forEach((node) => {
+        disposeCopyButtons(node)
+        node.remove()
+      })
     container
       .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
@@ -405,6 +411,7 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
+    syncStreamCaret(container, streaming)
   })
 
   onCleanup(() => {
@@ -416,6 +423,7 @@ export function Markdown(
   return (
     <div
       data-component="markdown"
+      data-streaming={local.streaming ? "true" : undefined}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -424,6 +432,49 @@ export function Markdown(
       {...others}
     />
   )
+}
+
+function streamCaretHost(container: HTMLElement) {
+  const blocks = [...container.children].filter(
+    (node): node is HTMLElement => node instanceof HTMLElement && node.dataset.markdownBlock !== undefined,
+  )
+  const last = blocks.at(-1)
+  if (!last) return container
+
+  // Prefer the deepest last text-bearing element so the caret sits inline
+  // after the current stream end, not on the next layout line.
+  const skip = "script, style, [data-slot='markdown-copy-button'], [data-slot='markdown-stream-caret']"
+  const candidates = last.querySelectorAll<HTMLElement>("p, li, td, th, h1, h2, h3, h4, h5, h6, pre code, code, span, a, em, strong, blockquote")
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const el = candidates[i]
+    if (!el || el.matches(skip) || el.closest(skip)) continue
+    if (el.closest("[data-component='markdown-code']") && el.tagName !== "CODE") continue
+    if ((el.textContent?.length ?? 0) === 0 && el.children.length === 0) continue
+    return el
+  }
+
+  // display:contents block wrappers — walk their element children.
+  const kids = [...last.children].filter((node): node is HTMLElement => node instanceof HTMLElement)
+  return kids.at(-1) ?? last
+}
+
+function syncStreamCaret(container: HTMLElement, streaming: boolean) {
+  const existing = container.querySelector<HTMLElement>('[data-slot="markdown-stream-caret"]')
+  if (!streaming) {
+    existing?.remove()
+    return
+  }
+  // Reuse the same node so CSS pulse never restarts mid-stream.
+  const caret =
+    existing ??
+    (() => {
+      const el = document.createElement("span")
+      el.dataset.slot = "markdown-stream-caret"
+      el.setAttribute("aria-hidden", "true")
+      return el
+    })()
+  const host = streamCaretHost(container)
+  if (caret.parentElement !== host || host.lastChild !== caret) host.appendChild(caret)
 }
 
 function pendingBlocks(
@@ -459,8 +510,12 @@ function disposeCode(key: string) {
   disposeStreamingCode(key)
 }
 
-function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
-  const current = container.children[index]
+function updateBlock(
+  container: HTMLDivElement,
+  current: Element | undefined,
+  block: RenderedBlock,
+  labels: CopyLabels,
+) {
   if (block.mode === "code") {
     updateCodeBlock(container, current, block, labels)
     return
@@ -499,6 +554,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
     onBeforeNodeDiscarded: (node) => {
+      if (node instanceof HTMLElement && node.dataset.slot === "markdown-stream-caret") return false
       if (node instanceof Element) disposeCopyButtons(node)
       return true
     },
@@ -535,10 +591,8 @@ function updateCodeBlock(
     const prefix = prior.findIndex((token, index) => !sameToken(token, tail[index]))
     const keep = stableCount + (prefix < 0 ? Math.min(prior.length, tail.length) : prefix)
     while (code.children.length > keep) code.lastElementChild?.remove()
-    tail
-      .slice(keep - stableCount)
-      .map(createTokenSpan)
-      .forEach((span) => code.appendChild(span))
+    const incoming = tail.slice(keep - stableCount).map(createTokenSpan)
+    incoming.forEach((span) => code.appendChild(span))
     renderedCodeTokens.set(next, {
       language: block.language,
       generation: block.generation,

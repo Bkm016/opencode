@@ -1,5 +1,6 @@
 import { HoverCard as Kobalte } from "@kobalte/core/hover-card"
 import { ComponentProps, JSXElement, ParentProps, splitProps } from "solid-js"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 
 export interface HoverCardProps extends ParentProps, Omit<ComponentProps<typeof Kobalte>, "children"> {
   trigger: JSXElement
@@ -23,6 +24,7 @@ export function HoverCard(props: HoverCardProps) {
             ...local.classList,
             [local.class ?? ""]: !!local.class,
           }}
+          ref={(el) => bindSurfaceMotion(el, { preset: "tooltip" })}
         >
           <div data-slot="hover-card-body">{local.children}</div>
         </Kobalte.Content>

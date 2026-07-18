@@ -52,12 +52,9 @@
     gap: 10px;
   }
 
-  &[data-opened] {
-    animation: toastPopIn 150ms ease-out;
-  }
-
+  /* Enter motion owned by gsap-surface. */
   &[data-closed] {
-    animation: toastPopOut 100ms ease-in forwards;
+    opacity: 0;
   }
 
   &[data-swipe="move"] {

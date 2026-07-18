@@ -327,4 +327,44 @@
       animation-range: 0 0.1px;
     }
   }
+
+  /* Model tray: keep sticky group headers on the same surface as the popover. */
+  .prompt-model-tray {
+    --prompt-tray-bg: var(--v2-background-bg-layer-01, var(--surface-raised-stronger-non-alpha));
+    background: var(--prompt-tray-bg);
+  }
+
+  .prompt-model-tray [data-slot="list-header"] {
+    background: var(--prompt-tray-bg) !important;
+    color: var(--text-weak);
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    padding: 6px 10px 4px;
+  }
+
+  /* Sticky header fade reads as a floating shadow in the compact tray. */
+  .prompt-model-tray [data-slot="list-header"]::after {
+    content: none !important;
+    display: none !important;
+    opacity: 0 !important;
+  }
+
+  .prompt-model-tray [data-slot="list-scroll"] {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .prompt-model-tray [data-slot="list-scroll"]::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .prompt-model-tray [data-slot="list-item"] {
+    border-radius: 6px;
+  }
+
+  .prompt-model-tray [data-slot="list-group"]:last-child {
+    padding-bottom: 4px;
+  }
 }

@@ -16,12 +16,9 @@
     outline: none;
   }
 
+  /* Enter motion owned by gsap-surface. */
   &[data-closed] {
-    animation: dropdown-menu-close 0.15s ease-out;
-  }
-
-  &[data-expanded] {
-    animation: dropdown-menu-open 0.15s ease-out;
+    opacity: 0;
   }
 }
 

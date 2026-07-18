@@ -32,6 +32,7 @@ import {
   For,
   type JSX,
   onCleanup,
+  onMount,
   type ParentProps,
   Show,
 } from "solid-js"
@@ -60,6 +61,7 @@ import { createSessionLineage } from "@/pages/session/session-lineage"
 
 import { SessionPage, SessionRouteErrorBoundary } from "@/pages/session"
 import { LegacyHome } from "@/pages/home"
+import { gsapEnter, gsapSplash } from "@/utils/gsap-motion"
 
 const SessionRoute = () => {
   const params = useParams()
@@ -357,7 +359,15 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
       </Show>
       <Show when={loading()}>
         <div class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background-base">
-          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+          <div
+            class="w-16 h-20"
+            ref={(el) => {
+              const tween = gsapSplash(el)
+              onCleanup(() => tween?.kill())
+            }}
+          >
+            <Splash class="w-full h-full" />
+          </div>
         </div>
       </Show>
     </>
@@ -375,8 +385,16 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   const timer = setInterval(() => props.onRetry?.(), 1000)
   onCleanup(() => clearInterval(timer))
 
+  let root: HTMLDivElement | undefined
+  onMount(() => {
+    gsapEnter(root, { from: "children", y: 16, stagger: 0.08, duration: 0.5 })
+  })
+
   return (
-    <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
+    <div
+      ref={root}
+      class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6"
+    >
       <div class="flex flex-col items-center max-w-md text-center">
         <Splash class="w-12 h-15 mb-4" />
         <p class="text-14-regular text-text-base">

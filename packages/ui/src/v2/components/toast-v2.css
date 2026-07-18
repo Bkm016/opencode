@@ -47,12 +47,9 @@
   background: var(--v2-background-bg-layer-01);
   box-shadow: var(--v2-elevation-floating);
 
-  &[data-opened] {
-    animation: toastV2PopIn 140ms ease-out;
-  }
-
+  /* Enter motion owned by gsap-surface. */
   &[data-closed] {
-    animation: toastV2PopOut 100ms ease-in forwards;
+    opacity: 0;
   }
 
   [data-slot="toast-v2-header"] {

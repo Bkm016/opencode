@@ -15,6 +15,7 @@ import {
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 
 type DialogElement = () => JSX.Element
 
@@ -100,6 +101,7 @@ function init() {
                 data-component="dialog-overlay"
                 style={{ "z-index": String(zIndex) }}
                 onClick={() => close(id)}
+                ref={(el) => bindSurfaceMotion(el, { preset: "overlay" })}
               />
               <div
                 data-dialog-layer={layer}

@@ -3,6 +3,7 @@ import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from
 import { pipe, groupBy, entries, map } from "remeda"
 import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
+import { animateSurfaceIn, animateSurfaceItems } from "../hooks/gsap-surface"
 
 export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
   placeholder?: string
@@ -19,6 +20,8 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   children?: (item: T | undefined) => JSX.Element
   triggerStyle?: JSX.CSSProperties
   triggerVariant?: "settings"
+  /** Composer tray selectors open upward by default when set. */
+  surface?: "default" | "tray"
   triggerProps?: Record<string, string | number | boolean | undefined>
 }
 
@@ -39,8 +42,17 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
     "children",
     "triggerStyle",
     "triggerVariant",
+    "surface",
     "triggerProps",
   ])
+
+  const tray = () => local.surface === "tray"
+  const placement = () => {
+    if (others.placement) return others.placement
+    if (tray()) return "top-start" as const
+    if (local.triggerVariant === "settings") return "bottom-end" as const
+    return "bottom-start" as const
+  }
 
   const state = {
     key: undefined as string | undefined,
@@ -88,16 +100,17 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       {...others}
       data-component="select"
       data-trigger-style={local.triggerVariant}
-      placement={local.triggerVariant === "settings" ? "bottom-end" : "bottom-start"}
-      gutter={4}
+      data-surface={local.surface}
+      placement={placement()}
+      gutter={tray() ? 8 : 4}
       value={local.current}
       options={grouped()}
       optionValue={(x) => (local.value ? local.value(x) : (x as string))}
       optionTextValue={(x) => (local.label ? local.label(x) : (x as string))}
       optionGroupChildren="options"
       placeholder={local.placeholder}
-      sectionComponent={(local) => (
-        <Kobalte.Section data-slot="select-section">{local.section.rawValue.category}</Kobalte.Section>
+      sectionComponent={(section) => (
+        <Kobalte.Section data-slot="select-section">{section.section.rawValue.category}</Kobalte.Section>
       )}
       itemComponent={(itemProps) => (
         <Kobalte.Item
@@ -164,7 +177,21 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
             [local.class ?? ""]: !!local.class,
           }}
           data-component="select-content"
+          data-surface={local.surface ?? "default"}
           data-trigger-style={local.triggerVariant}
+          ref={(el) => {
+            if (!el) return
+            // Keep overflow clipped during enter so Windows never paints a transient scrollbar.
+            const list = el.querySelector<HTMLElement>("[data-slot='select-select-content-list']")
+            if (list) list.style.overflowY = "hidden"
+            requestAnimationFrame(() => {
+              animateSurfaceIn(el, { y: tray() ? 10 : -6, scale: 0.97, duration: 0.2 })
+              requestAnimationFrame(() => {
+                animateSurfaceItems(el)
+                if (list) list.style.overflowY = ""
+              })
+            })
+          }}
         >
           <Kobalte.Listbox data-slot="select-select-content-list" />
         </Kobalte.Content>

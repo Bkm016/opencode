@@ -3,6 +3,7 @@ import type { ToastRootProps, ToastCloseButtonProps, ToastTitleProps, ToastDescr
 import type { ComponentProps, JSX } from "solid-js"
 import { Show, children } from "solid-js"
 import { Portal } from "solid-js/web"
+import { bindSurfaceMotion } from "../../hooks/gsap-surface"
 import { ButtonV2 } from "./button-v2"
 import "./toast-v2.css"
 
@@ -33,6 +34,11 @@ function ToastV2Root(props: ToastV2RootComponentProps) {
         [props.class ?? ""]: !!props.class,
       }}
       {...props}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "toast" })
+        const r = props.ref
+        if (typeof r === "function") r(el)
+      }}
     />
   )
 }

@@ -17,11 +17,11 @@
   border-radius: 6px;
   box-shadow: var(--v2-elevation-floating);
   transform-origin: top center;
-  animation: select-v2-content-in 120ms ease-out;
+  /* Enter motion owned by gsap-surface. */
 }
 
 [data-component="menu-v2-content"][data-slot="select-v2-content"][data-closed] {
-  animation: select-v2-content-out 80ms ease-in forwards;
+  opacity: 0;
 }
 
 @keyframes select-v2-content-in {

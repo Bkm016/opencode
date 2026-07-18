@@ -40,6 +40,7 @@ import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { animateOutputEnter } from "@opencode-ai/ui/hooks/gsap-surface"
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -124,11 +125,18 @@ const markBoundaryGesture = (input: {
   }
 }
 
-function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
+function TimelineThinkingRow(props: {
+  userMessageID: string
+  reasoningHeading?: string
+  showReasoningSummaries: boolean
+}) {
   const language = useLanguage()
 
   return (
-    <div data-slot="session-turn-thinking">
+    <div
+      data-slot="session-turn-thinking"
+      ref={(el) => animateOutputEnter(el, `thinking:${props.userMessageID}`, { y: 4, duration: 0.22 })}
+    >
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
@@ -1136,6 +1144,7 @@ export function MessageTimeline(props: {
           <TimelineRowFrame row={thinkingRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <TimelineThinkingRow
+                userMessageID={thinkingRow().userMessageID}
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
               />

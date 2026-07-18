@@ -1,12 +1,10 @@
 import { TextField } from "@opencode-ai/ui/text-field"
-import * as Sentry from "@sentry/solid"
 import { Logo } from "@opencode-ai/ui/logo"
 import { Button } from "@opencode-ai/ui/button"
-import { Component, createSignal, onMount, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { Component, onMount, Show } from "solid-js"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { Icon } from "@opencode-ai/ui/icon"
+import { gsapEnter } from "@/utils/gsap-motion"
 import { errorDescriptionKey } from "./error-description"
 
 export type InitError = {
@@ -226,44 +224,27 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const platform = usePlatform()
   const language = useLanguage()
   const formattedError = () => formatError(props.error, language.t)
-  let recordedFatalError: Promise<void> | undefined
-  const [store, setStore] = createStore({
-    actionError: undefined as string | undefined,
-  })
+  let content: HTMLDivElement | undefined
 
-  function ensureFatalErrorRecorded() {
-    recordedFatalError ??=
-      platform.recordFatalRendererError?.({
+  onMount(() => {
+    gsapEnter(content, { from: "children", y: 20, scale: 0.96, stagger: 0.07, duration: 0.5 })
+    void platform
+      .recordFatalRendererError?.({
         error: formattedError(),
         url: location.href,
         version: platform.version,
         platform: platform.platform,
         os: platform.os,
-      }) ?? Promise.resolve()
-    return recordedFatalError
-  }
-
-  onMount(() => {
-    void ensureFatalErrorRecorded().catch(() => undefined)
-  })
-
-  async function exportDebugLogs() {
-    const exportLogs = platform.exportDebugLogs
-    if (!exportLogs) return
-    await ensureFatalErrorRecorded()
-      .then(() => exportLogs())
-      .then(() => setStore("actionError", undefined))
-      .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
       })
-  }
+      ?.catch(() => undefined)
+  })
 
   return (
     <div
       class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center font-sans"
       data-tauri-drag-region
     >
-      <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
+      <div ref={content} class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
         <Logo class="w-58.5 opacity-12 shrink-0" />
         <div class="flex flex-col items-center gap-2 text-center">
           <h1 class="text-lg font-medium text-text-strong">{language.t("error.page.title")}</h1>
@@ -289,50 +270,12 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           <Button size="large" variant={props.onDismiss ? "ghost" : undefined} onClick={platform.restart}>
             {language.t("error.page.action.restart")}
           </Button>
-          <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>
-            <Button size="large" variant="ghost" onClick={exportDebugLogs}>
-              {language.t("error.page.action.exportLogs")}
-            </Button>
-          </Show>
-          <Show when={Sentry.isEnabled}>
-            {(_) => {
-              const [reported, setReported] = createSignal(false)
-              return (
-                <Button
-                  size="large"
-                  disabled={reported()}
-                  onClick={() => {
-                    Sentry.captureException(props.error)
-                    setReported(true)
-                  }}
-                >
-                  {language.t(reported() ? "error.page.action.reported" : "error.page.action.report")}
-                </Button>
-              )
-            }}
-          </Show>
         </div>
-        <Show when={store.actionError}>
-          {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
+        <Show when={platform.version}>
+          {(version) => (
+            <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
+          )}
         </Show>
-        <div class="flex flex-col items-center gap-2">
-          <div class="flex items-center justify-center gap-1">
-            {language.t("error.page.report.prefix")}
-            <button
-              type="button"
-              class="flex items-center text-text-interactive-base gap-1"
-              onClick={() => platform.openLink("https://opencode.ai/desktop-feedback")}
-            >
-              <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
-            </button>
-          </div>
-          <Show when={platform.version}>
-            {(version) => (
-              <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
-            )}
-          </Show>
-        </div>
       </div>
     </div>
   )

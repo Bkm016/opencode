@@ -352,3 +352,33 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+[data-component="markdown"] [data-slot="markdown-stream-caret"] {
+  display: inline-block;
+  width: 0.45em;
+  height: 1.05em;
+  margin-left: 0.08em;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--v2-text-text-base) 72%, transparent);
+  pointer-events: none;
+  user-select: none;
+  animation: markdown-stream-caret 1.05s ease-in-out infinite;
+}
+
+@keyframes markdown-stream-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="markdown"] [data-slot="markdown-stream-caret"] {
+    animation: none;
+    opacity: 1;
+  }
+}

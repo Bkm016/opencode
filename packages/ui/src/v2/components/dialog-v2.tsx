@@ -1,5 +1,6 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
+import { bindSurfaceMotion } from "../../hooks/gsap-surface"
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
@@ -96,6 +97,7 @@ export function Dialog(props: DialogProps) {
             ...local.classList,
             [local.class ?? ""]: !!local.class,
           }}
+          ref={(el) => bindSurfaceMotion(el, { preset: "dialog" })}
           onOpenAutoFocus={(e) => {
             const target = e.currentTarget as HTMLElement | null
             const autofocusEl = target?.querySelector("[autofocus]") as HTMLElement | null

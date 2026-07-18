@@ -135,12 +135,9 @@
   }
 }
 
-[data-component="dialog"][data-transition] [data-slot="dialog-content"] {
-  animation: contentHide 100ms ease-in forwards;
-
-  &[data-expanded] {
-    animation: contentShow 150ms ease-out;
-  }
+/* Enter motion owned by gsap-surface. */
+[data-component="dialog"][data-transition] [data-slot="dialog-content"][data-closed] {
+  opacity: 0;
 }
 
 @keyframes overlayShow {

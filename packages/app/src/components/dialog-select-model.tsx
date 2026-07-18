@@ -27,6 +27,7 @@ import { decode64 } from "@/utils/base64"
 import { handleDocumentSearchKeydown } from "@/utils/search-keydown"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { matchesModelSearch } from "./dialog-select-model-search"
+import { animateSurfaceIn, animateSurfaceItems } from "@opencode-ai/ui/hooks/gsap-surface"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
@@ -175,7 +176,19 @@ export function ModelSelectorPopover(props: {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
-          class="w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
+          data-component="prompt-tray-surface"
+          data-surface="tray"
+          class="prompt-model-tray w-72 h-80 flex flex-col p-1.5 rounded-lg border border-border-base/50 bg-[var(--v2-background-bg-layer-01,var(--surface-raised-stronger-non-alpha))] shadow-[var(--v2-elevation-floating,var(--shadow-md))] z-[60] outline-none overflow-hidden"
+          ref={(el) => {
+            if (!el) return
+            requestAnimationFrame(() => {
+              animateSurfaceIn(el, { y: 10, scale: 0.97, duration: 0.22 })
+              // List rows mount one frame later than the surface shell.
+              requestAnimationFrame(() => {
+                animateSurfaceItems(el, "[data-slot='list-item']")
+              })
+            })
+          }}
           onEscapeKeyDown={(event) => {
             close("escape")
             event.preventDefault()

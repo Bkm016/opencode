@@ -2,6 +2,7 @@ import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 
 export interface TooltipProps extends ComponentProps<typeof KobalteTooltip> {
   value: JSX.Element
@@ -145,6 +146,7 @@ export function Tooltip(props: TooltipProps) {
               data-force-open={local.forceOpen}
               class={local.contentClass}
               style={local.contentStyle}
+              ref={(el) => bindSurfaceMotion(el, { preset: "tooltip" })}
               onPointerDownOutside={(e) => {
                 if (ref === e.target || (e.target instanceof Node && ref?.contains(e.target))) {
                   justClickedTrigger = true

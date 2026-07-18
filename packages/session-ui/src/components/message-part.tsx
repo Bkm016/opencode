@@ -58,8 +58,8 @@ import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
-import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
+import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
 
@@ -93,14 +93,7 @@ function ShellSubmessage(props: { text: string; animate?: boolean }) {
 
   onMount(() => {
     if (!props.animate) return
-    requestAnimationFrame(() => {
-      if (widthRef) {
-        animate(widthRef, { width: "auto" }, { type: "spring", visualDuration: 0.25, bounce: 0 })
-      }
-      if (valueRef) {
-        animate(valueRef, { opacity: 1, filter: "blur(0px)" }, { duration: 0.32, ease: [0.16, 1, 0.3, 1] })
-      }
-    })
+    requestAnimationFrame(() => animateShellSubtitle(widthRef, valueRef))
   })
 
   return (
@@ -214,35 +207,29 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
-const TEXT_RENDER_PACE_MS = 24
-const TEXT_RENDER_IMMEDIATE = 512
 const TEXT_RENDER_SNAP = /[\s.,!?;:)\]]/
 
-function step(size: number) {
-  if (size <= 12) return 2
-  if (size <= 48) return 4
-  if (size <= 96) return 8
-  return Math.min(256, Math.ceil(size / 4))
-}
-
-function next(text: string, start: number) {
-  const end = Math.min(text.length, start + step(text.length - start))
-  const max = Math.min(text.length, end + 8)
-  for (let i = end; i < max; i++) {
-    if (TEXT_RENDER_SNAP.test(text[i] ?? "")) return i + 1
-  }
-  return end
+/** chars/sec — higher backlog = faster catch-up, never hard-snap (that stutters). */
+function streamCps(backlog: number) {
+  if (backlog > 800) return 520
+  if (backlog > 320) return 280
+  if (backlog > 120) return 160
+  if (backlog > 40) return 110
+  return 72
 }
 
 function createPacedValue(getValue: () => string, live?: () => boolean) {
   const [value, setValue] = createSignal(getValue())
   let shown = getValue()
-  let timeout: ReturnType<typeof setTimeout> | undefined
+  let raf = 0
+  let last = 0
+  let carry = 0
 
   const clear = () => {
-    if (!timeout) return
-    clearTimeout(timeout)
-    timeout = undefined
+    if (raf) cancelAnimationFrame(raf)
+    raf = 0
+    last = 0
+    carry = 0
   }
 
   const sync = (text: string) => {
@@ -250,24 +237,44 @@ function createPacedValue(getValue: () => string, live?: () => boolean) {
     setValue(text)
   }
 
-  const run = () => {
-    timeout = undefined
+  const tick = (now: number) => {
+    raf = 0
     const text = getValue()
     if (!live?.()) {
       sync(text)
       return
     }
-    if (!text.startsWith(shown) || text.length <= shown.length) {
+    if (!text.startsWith(shown) || text.length < shown.length) {
       sync(text)
       return
     }
-    if (text.length - shown.length <= TEXT_RENDER_IMMEDIATE) {
-      sync(text)
+    if (text.length === shown.length) {
+      last = 0
+      carry = 0
       return
     }
-    const end = next(text, shown.length)
+
+    const dt = last === 0 ? 1 / 60 : Math.min(0.048, (now - last) / 1000)
+    last = now
+    const backlog = text.length - shown.length
+    carry += streamCps(backlog) * dt
+    let advance = Math.floor(carry)
+    if (advance < 1) {
+      raf = requestAnimationFrame(tick)
+      return
+    }
+    carry -= advance
+    // Prefer breaking on punctuation/space within a tiny window.
+    let end = Math.min(text.length, shown.length + advance)
+    const max = Math.min(text.length, end + 6)
+    for (let i = end; i < max; i++) {
+      if (TEXT_RENDER_SNAP.test(text[i] ?? "")) {
+        end = i + 1
+        break
+      }
+    }
     sync(text.slice(0, end))
-    if (end < text.length) timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
+    if (end < text.length) raf = requestAnimationFrame(tick)
   }
 
   createEffect(() => {
@@ -282,13 +289,9 @@ function createPacedValue(getValue: () => string, live?: () => boolean) {
       sync(text)
       return
     }
-    if (text.length - shown.length <= TEXT_RENDER_IMMEDIATE) {
-      clear()
-      sync(text)
-      return
-    }
-    if (text.length === shown.length || timeout) return
-    timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
+    if (text.length === shown.length) return
+    if (raf) return
+    raf = requestAnimationFrame(tick)
   })
 
   onCleanup(() => {
@@ -1444,20 +1447,29 @@ export function Part(props: MessagePartProps) {
   const component = createMemo(() => PART_MAPPING[props.part.type])
   return (
     <Show when={component()}>
-      <Dynamic
-        component={component()}
-        part={props.part}
-        message={props.message}
-        hideDetails={props.hideDetails}
-        defaultOpen={props.defaultOpen}
-        toolOpen={props.toolOpen}
-        onToolOpenChange={props.onToolOpenChange}
-        deferToolContent={props.deferToolContent}
-        virtualizeDiff={props.virtualizeDiff}
-        onContentRendered={props.onContentRendered}
-        showAssistantCopyPartID={props.showAssistantCopyPartID}
-        turnDurationMs={props.turnDurationMs}
-      />
+      <div
+        data-slot="message-part-motion"
+        ref={(el) => {
+          // One-shot enter for newly streamed/completed parts; bulk loads are skipped.
+          // Opacity-only — y on streaming rows fights the scroller and looks like flicker.
+          animateOutputEnter(el, props.part.id, { y: 0, duration: 0.22 })
+        }}
+      >
+        <Dynamic
+          component={component()}
+          part={props.part}
+          message={props.message}
+          hideDetails={props.hideDetails}
+          defaultOpen={props.defaultOpen}
+          toolOpen={props.toolOpen}
+          onToolOpenChange={props.onToolOpenChange}
+          deferToolContent={props.deferToolContent}
+          virtualizeDiff={props.virtualizeDiff}
+          onContentRendered={props.onContentRendered}
+          showAssistantCopyPartID={props.showAssistantCopyPartID}
+          turnDurationMs={props.turnDurationMs}
+        />
+      </div>
     </Show>
   )
 }

@@ -1,4 +1,5 @@
-import { createMemo, For, Match, Switch } from "solid-js"
+import { createMemo, For, Match, onMount, Switch } from "solid-js"
+import { gsapEnter } from "@/utils/gsap-motion"
 import { Button } from "@opencode-ai/ui/button"
 import { Logo } from "@opencode-ai/ui/logo"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -67,8 +68,13 @@ export function LegacyHome() {
     })
   }
 
+  let root: HTMLDivElement | undefined
+  onMount(() => {
+    gsapEnter(root, { from: "children", y: 18, scale: 0.98, stagger: 0.08, duration: 0.55 })
+  })
+
   return (
-    <div class="mx-auto mt-55 w-full md:w-auto px-4">
+    <div ref={root} class="mx-auto mt-55 w-full md:w-auto px-4">
       <Logo class="md:w-xl opacity-12" />
       <Button
         size="large"

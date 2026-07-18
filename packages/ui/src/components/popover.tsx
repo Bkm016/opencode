@@ -3,6 +3,7 @@ import { ComponentProps, JSXElement, ParentProps, Show, createEffect, splitProps
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 import { IconButton } from "./icon-button"
 
 export interface PopoverProps<T extends ValidComponent = "div">
@@ -103,7 +104,10 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
 
   const content = () => (
     <Kobalte.Content
-      ref={(el: HTMLElement | undefined) => setState("contentRef", el)}
+      ref={(el: HTMLElement | undefined) => {
+        setState("contentRef", el)
+        if (el) bindSurfaceMotion(el, { preset: "panel" })
+      }}
       data-component="popover-content"
       classList={{
         ...local.classList,

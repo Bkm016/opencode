@@ -24,7 +24,7 @@
   text-rendering: geometricPrecision;
 
   transform-origin: var(--kb-menu-content-transform-origin);
-  animation: menu-v2-in 120ms ease-out;
+  /* Enter motion owned by gsap-surface. */
 
   &:focus-visible {
     outline: none;

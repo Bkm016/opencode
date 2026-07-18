@@ -1,6 +1,7 @@
 import { DropdownMenu } from "@kobalte/core/dropdown-menu"
 import { ContextMenu } from "@kobalte/core/context-menu"
 import { Show, splitProps, type Component, type ComponentProps, type JSX, type ParentProps } from "solid-js"
+import { bindSurfaceMotion } from "../../hooks/gsap-surface"
 import "./menu-v2.css"
 
 const ChevronRight: Component = () => (
@@ -139,10 +140,15 @@ function MenuV2SubTrigger(props: ParentProps<MenuV2SubTriggerProps>) {
 }
 
 function MenuV2SubContent(props: ComponentProps<typeof DropdownMenu.SubContent>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
+  const [s, r] = splitProps(props, ["class", "classList", "ref"])
   return (
     <DropdownMenu.SubContent
       {...r}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "menu", items: true, y: 0, scale: 0.98 })
+        const ref = s.ref
+        if (typeof ref === "function") ref(el)
+      }}
       data-component="menu-v2-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
@@ -172,10 +178,15 @@ function MenuV2Separator(props: ComponentProps<typeof DropdownMenu.Separator>) {
 }
 
 function MenuV2Content(props: ComponentProps<typeof DropdownMenu.Content>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
+  const [s, r] = splitProps(props, ["class", "classList", "ref"])
   return (
     <DropdownMenu.Content
       {...r}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "menu", items: true })
+        const ref = s.ref
+        if (typeof ref === "function") ref(el)
+      }}
       data-component="menu-v2-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />
@@ -191,10 +202,15 @@ function MenuV2ContextRoot(props: ComponentProps<typeof ContextMenu>) {
 }
 
 function MenuV2ContextContent(props: ComponentProps<typeof ContextMenu.Content>) {
-  const [s, r] = splitProps(props, ["class", "classList"])
+  const [s, r] = splitProps(props, ["class", "classList", "ref"])
   return (
     <ContextMenu.Content
       {...r}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "menu", items: true })
+        const ref = s.ref
+        if (typeof ref === "function") ref(el)
+      }}
       data-component="menu-v2-content"
       classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
     />

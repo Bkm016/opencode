@@ -23,12 +23,9 @@
     outline: none;
   }
 
+  /* Enter motion owned by gsap-surface. */
   &[data-closed] {
-    animation: hover-card-close 0.15s ease-out;
-  }
-
-  &[data-expanded] {
-    animation: hover-card-open 0.15s ease-out;
+    opacity: 0;
   }
 
   [data-slot="hover-card-body"] {

@@ -2,6 +2,7 @@ import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { createStore } from "solid-js/store"
+import { bindSurfaceMotion } from "../../hooks/gsap-surface"
 import "./tooltip-v2.css"
 
 export interface TooltipV2Props extends ComponentProps<typeof KobalteTooltip> {
@@ -124,6 +125,7 @@ export function TooltipV2(props: TooltipV2Props) {
               ref={(el) => {
                 const theme = ref?.closest("[data-theme]")?.getAttribute("data-theme")
                 if (theme) el.setAttribute("data-theme", theme)
+                bindSurfaceMotion(el, { preset: "tooltip" })
               }}
               data-component="tooltip-v2"
               data-placement={props.placement}

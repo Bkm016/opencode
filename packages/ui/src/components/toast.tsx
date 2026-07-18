@@ -4,6 +4,7 @@ import type { ComponentProps, JSX } from "solid-js"
 import { Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useI18n } from "../context/i18n"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
 
@@ -34,6 +35,11 @@ function ToastRoot(props: ToastRootComponentProps) {
         [props.class ?? ""]: !!props.class,
       }}
       {...props}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "toast" })
+        const r = props.ref
+        if (typeof r === "function") r(el)
+      }}
     />
   )
 }

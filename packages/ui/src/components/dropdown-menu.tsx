@@ -1,6 +1,7 @@
 import { DropdownMenu as Kobalte } from "@kobalte/core/dropdown-menu"
 import { splitProps } from "solid-js"
 import type { ComponentProps, ParentProps } from "solid-js"
+import { bindSurfaceMotion } from "../hooks/gsap-surface"
 
 export interface DropdownMenuProps extends ComponentProps<typeof Kobalte> {}
 export interface DropdownMenuTriggerProps extends ComponentProps<typeof Kobalte.Trigger> {}
@@ -63,10 +64,15 @@ function DropdownMenuPortal(props: DropdownMenuPortalProps) {
 }
 
 function DropdownMenuContent(props: ParentProps<DropdownMenuContentProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const [local, rest] = splitProps(props, ["class", "classList", "children", "ref"])
   return (
     <Kobalte.Content
       {...rest}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "menu", items: true })
+        const r = local.ref
+        if (typeof r === "function") r(el)
+      }}
       data-component="dropdown-menu-content"
       classList={{
         ...local.classList,
@@ -271,10 +277,15 @@ function DropdownMenuSubTrigger(props: ParentProps<DropdownMenuSubTriggerProps>)
 }
 
 function DropdownMenuSubContent(props: ParentProps<DropdownMenuSubContentProps>) {
-  const [local, rest] = splitProps(props, ["class", "classList", "children"])
+  const [local, rest] = splitProps(props, ["class", "classList", "children", "ref"])
   return (
     <Kobalte.SubContent
       {...rest}
+      ref={(el) => {
+        bindSurfaceMotion(el, { preset: "menu", items: true, y: 0, scale: 0.98 })
+        const r = local.ref
+        if (typeof r === "function") r(el)
+      }}
       data-component="dropdown-menu-sub-content"
       classList={{
         ...local.classList,

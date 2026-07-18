@@ -54,6 +54,7 @@
     "diff": "catalog:",
     "dompurify": "3.3.1",
     "fuzzysort": "catalog:",
+    "gsap": "3.15.0",
     "katex": "0.16.27",
     "luxon": "catalog:",
     "marked": "catalog:",

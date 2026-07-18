@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { hasNonBlockingServiceIssue, serverStatusDotClass } from "./status-popover-indicator"
+import {
+  hasNonBlockingServiceIssue,
+  pluginFilePath,
+  pluginLabel,
+  serverStatusDotClass,
+} from "./status-popover-indicator"
 
 describe("serverStatusDotClass", () => {
   test("uses the success token while the server and services are healthy", () => {
@@ -32,5 +37,32 @@ describe("hasNonBlockingServiceIssue", () => {
   test("detects LSP failures that do not block chatting", () => {
     expect(hasNonBlockingServiceIssue({ mcp: [], lsp: ["error"] })).toBe(true)
     expect(hasNonBlockingServiceIssue({ mcp: [], lsp: ["connected"] })).toBe(false)
+  })
+})
+
+describe("pluginLabel", () => {
+  test("keeps npm package specs unchanged", () => {
+    expect(pluginLabel("opencode-wakatime@1.3.0")).toBe("opencode-wakatime@1.3.0")
+  })
+
+  test("shows a local prefix and basename for file plugins", () => {
+    expect(pluginLabel("file:///C:/Users/sky/.config/opencode/plugin/foo.ts")).toBe("local: foo.ts")
+    expect(pluginLabel("file:///home/user/.config/opencode/plugin/bar.js")).toBe("local: bar.js")
+  })
+
+  test("decodes percent-encoded path segments", () => {
+    expect(pluginLabel("file:///C:/Users/sky/.config/opencode/plugin/my%20plugin.ts")).toBe("local: my plugin.ts")
+  })
+})
+
+describe("pluginFilePath", () => {
+  test("returns undefined for non-file specs", () => {
+    expect(pluginFilePath("opencode-wakatime@1.3.0")).toBeUndefined()
+  })
+
+  test("strips the file URL prefix and Windows drive slash", () => {
+    expect(pluginFilePath("file:///C:/Users/sky/.config/opencode/plugin/foo.ts")).toBe(
+      "C:/Users/sky/.config/opencode/plugin/foo.ts",
+    )
   })
 })

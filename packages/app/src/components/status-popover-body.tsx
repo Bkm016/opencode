@@ -15,6 +15,7 @@ import { useSync } from "@/context/sync"
 import { type ServerHealth } from "@/utils/server-health"
 import { useGlobal } from "@/context/global"
 import { useMcpToggle } from "@/context/mcp"
+import { pluginFilePath, pluginLabel } from "./status-popover-indicator"
 
 const pluginEmptyMessage = (value: string, file: string): JSXElement => {
   const parts = value.split(file)
@@ -480,12 +481,28 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                 fallback={<div class="text-14-regular text-text-base text-center my-auto">{pluginEmpty()}</div>}
               >
                 <For each={plugins()}>
-                  {(plugin) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                      <span class="text-14-regular text-text-base truncate">{plugin}</span>
-                    </div>
-                  )}
+                  {(plugin) => {
+                    const path = pluginFilePath(plugin)
+                    const openable = !!path && !!platform.revealPath
+                    return (
+                      <button
+                        type="button"
+                        class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md transition-colors text-left"
+                        classList={{
+                          "hover:bg-surface-raised-base-hover cursor-pointer": openable,
+                          "cursor-default": !openable,
+                        }}
+                        title={path ?? plugin}
+                        onClick={() => {
+                          if (!path || !platform.revealPath) return
+                          void platform.revealPath(path)
+                        }}
+                      >
+                        <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
+                        <span class="text-14-regular text-text-base truncate">{pluginLabel(plugin)}</span>
+                      </button>
+                    )
+                  }}
                 </For>
               </Show>
             </div>

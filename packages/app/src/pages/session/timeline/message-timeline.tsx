@@ -168,10 +168,12 @@ function TimelineProcessSummaryHeader(props: {
   durationMs?: number
   open: boolean
   onToggle: () => void
+  kind?: "process" | "compaction"
 }) {
   const language = useLanguage()
   const duration = () => formatTurnDuration(props.durationMs, language.t)
   const label = () => {
+    if (props.kind === "compaction") return language.t("ui.messagePart.compaction")
     const value = duration()
     if (!value) return language.t("ui.sessionTurn.status.processed")
     return language.t("ui.sessionTurn.status.processedWithDuration", { duration: value })
@@ -182,24 +184,49 @@ function TimelineProcessSummaryHeader(props: {
     animateProcessChevron(chevron, props.open)
   })
 
+  const chevronEl = () => (
+    <span
+      data-slot="session-turn-process-summary-chevron"
+      ref={(el) => {
+        chevron = el
+        animateProcessChevron(el, props.open)
+      }}
+    >
+      <Icon name="chevron-right" size="small" class="session-turn-process-summary-chevron" />
+    </span>
+  )
+
+  // Compaction: full-width —— label —— divider, distinct from process chips.
+  if (props.kind === "compaction") {
+    return (
+      <button
+        type="button"
+        data-slot="session-turn-process-summary"
+        data-kind="compaction"
+        data-open={props.open ? "true" : undefined}
+        aria-expanded={props.open}
+        onClick={() => props.onToggle()}
+      >
+        <span data-slot="session-turn-process-summary-line" aria-hidden="true" />
+        <span data-slot="session-turn-process-summary-center">
+          <span data-slot="session-turn-process-summary-label">{label()}</span>
+        </span>
+        <span data-slot="session-turn-process-summary-line" aria-hidden="true" />
+      </button>
+    )
+  }
+
   return (
     <button
       type="button"
       data-slot="session-turn-process-summary"
+      data-kind="process"
       data-open={props.open ? "true" : undefined}
       aria-expanded={props.open}
       onClick={() => props.onToggle()}
     >
       <span data-slot="session-turn-process-summary-label">{label()}</span>
-      <span
-        data-slot="session-turn-process-summary-chevron"
-        ref={(el) => {
-          chevron = el
-          animateProcessChevron(el, props.open)
-        }}
-      >
-        <Icon name="chevron-right" size="small" class="session-turn-process-summary-chevron" />
-      </span>
+      {chevronEl()}
     </button>
   )
 }
@@ -1372,9 +1399,10 @@ export function MessageTimeline(props: {
     return (
       <TimelineRowFrame row={props.row}>
         <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-          <div data-slot="session-turn-process">
+          <div data-slot="session-turn-process" data-kind={props.row().kind ?? "process"}>
             <TimelineProcessSummaryHeader
               durationMs={props.row().durationMs}
+              kind={props.row().kind}
               open={open()}
               onToggle={() => {
                 if (toggling()) return

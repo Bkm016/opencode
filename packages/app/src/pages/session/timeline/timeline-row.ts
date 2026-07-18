@@ -29,6 +29,8 @@ export namespace TimelineRow {
     userMessageID: string
     durationMs?: number
     groups: PartGroup[]
+    /** Compaction turns fold the whole summary, not only intermediate process. */
+    kind?: "process" | "compaction"
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string

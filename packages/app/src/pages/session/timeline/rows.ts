@@ -28,6 +28,7 @@ export type TimelineRowMap = {
     userMessageID: string
     durationMs?: number
     groups: PartGroup[]
+    kind?: "process" | "compaction"
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -92,15 +93,6 @@ export namespace Timeline {
       }),
     )
 
-    if (compaction) {
-      rows.push(
-        new TimelineRow.TurnDivider({
-          userMessageID: userMessage.id,
-          label: "compaction",
-        }),
-      )
-    }
-
     const resolvePart = (ref: { messageID: string; partID: string }) =>
       getMessageParts(ref.messageID).find((part) => part.id === ref.partID)
     const turnComplete = !isActive || status === "idle"
@@ -117,16 +109,28 @@ export namespace Timeline {
       return end - start
     })()
 
+    // Incomplete compaction keeps the divider; completed ones fold into ProcessSummary.
+    if (compaction && !turnComplete) {
+      rows.push(
+        new TimelineRow.TurnDivider({
+          userMessageID: userMessage.id,
+          label: "compaction",
+        }),
+      )
+    }
+
     let assistantGroupIndex = 0
-    const pushProcess = (groups: PartGroup[]) => {
+    const pushProcess = (groups: PartGroup[], kind: "process" | "compaction" = "process") => {
       if (groups.length === 0) return
       // Single virtual row owns all process UI so collapse never leaves ghost heights.
       // Intermediate status text is folded too; only the trailing final answer stays out.
+      // Compaction folds the whole assistant turn, including the summary text.
       rows.push(
         new TimelineRow.ProcessSummary({
           userMessageID: userMessage.id,
           durationMs: turnDurationMs,
           groups,
+          kind,
         }),
       )
       assistantGroupIndex += 1
@@ -143,6 +147,10 @@ export namespace Timeline {
     }
     const pushCompletedSegment = (groups: PartGroup[]) => {
       if (groups.length === 0) return
+      if (compaction) {
+        pushProcess(groups, "compaction")
+        return
+      }
       // Keep only the trailing non-process suffix (final answer / question) visible.
       let finalStart = groups.length
       while (finalStart > 0 && !isProcessGroup(groups[finalStart - 1]!, resolvePart)) {
@@ -182,6 +190,15 @@ export namespace Timeline {
         segment.push(item.group)
       }
       pushCompletedSegment(segment)
+      // Compaction with no assistant output still needs a compact marker.
+      if (compaction && segment.length === 0 && assistantGroupIndex === 0) {
+        rows.push(
+          new TimelineRow.TurnDivider({
+            userMessageID: userMessage.id,
+            label: "compaction",
+          }),
+        )
+      }
     }
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {

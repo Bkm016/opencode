@@ -9,8 +9,6 @@ import {
   createMemo,
   createSignal,
   createResource,
-  Switch,
-  Match,
   type JSX,
 } from "solid-js"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -1191,6 +1189,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return permission.isAutoAccepting(id, sdk().directory)
   })
 
+  const toggleBypassPermission = () => {
+    const sessionID = props.controls.session.id
+    if (sessionID) {
+      permission.toggleAutoAccept(sessionID, sdk().directory)
+      return
+    }
+    permission.toggleAutoAcceptDirectory(sdk().directory)
+  }
+
   const { abort, handleSubmit } =
     props.submission ??
     createPromptSubmit({
@@ -1768,6 +1775,40 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         </TooltipKeybind>
                       </div>
                     </Show>
+                    <div
+                      data-component="prompt-bypass-permission"
+                      classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
+                    >
+                      <TooltipKeybind
+                        placement="top"
+                        gutter={4}
+                        title={
+                          accepting()
+                            ? language.t("command.permissions.autoaccept.disable")
+                            : language.t("command.permissions.autoaccept.enable")
+                        }
+                        keybind={command.keybind("permissions.autoaccept")}
+                      >
+                        <Button
+                          data-action="prompt-bypass-permission"
+                          data-active={accepting() ? "true" : undefined}
+                          variant="ghost"
+                          size="normal"
+                          icon="shield"
+                          aria-pressed={accepting()}
+                          aria-label={language.t("prompt.action.bypassPermission")}
+                          classList={{
+                            "text-13-regular max-w-[120px]": true,
+                            "text-text-weak": !accepting(),
+                            "text-text-strong": accepting(),
+                          }}
+                          style={control()}
+                          onClick={toggleBypassPermission}
+                        >
+                          <span class="truncate">{language.t("prompt.action.bypassPermission")}</span>
+                        </Button>
+                      </TooltipKeybind>
+                    </div>
                   </Show>
                 </Show>
               </div>

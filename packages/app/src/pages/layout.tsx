@@ -43,7 +43,6 @@ import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { retry } from "@opencode-ai/core/util/retry"
 import { playSoundById } from "@/utils/sound"
-import { createAim } from "@/utils/aim"
 import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
@@ -110,6 +109,7 @@ export default function LegacyLayout(props: ParentProps) {
   const serverSync = useServerSync()
   const layout = useLayout()
   const layoutReady = createMemo(() => layout.ready())
+  const isDesktop = layout.isDesktop
   const platform = usePlatform()
   const pickDirectory = useDirectoryPicker()
   const settings = useSettings()
@@ -152,11 +152,8 @@ export default function LegacyLayout(props: ParentProps) {
     busyWorkspaces: {} as Record<string, boolean>,
     hoverProject: undefined as string | undefined,
     scrollSessionKey: undefined as string | undefined,
-    nav: undefined as HTMLElement | undefined,
     sortNow: Date.now(),
     sizing: false,
-    peek: undefined as string | undefined,
-    peeked: false,
   })
 
   const editor = createInlineEditorController()
@@ -174,7 +171,6 @@ export default function LegacyLayout(props: ParentProps) {
     )
   }
   const isBusy = (directory: string) => !!state.busyWorkspaces[pathKey(directory)]
-  const navLeave = { current: undefined as number | undefined }
   const sortNow = () => state.sortNow
   let sizet: number | undefined
   let sortNowInterval: ReturnType<typeof setInterval> | undefined
@@ -186,109 +182,36 @@ export default function LegacyLayout(props: ParentProps) {
     60_000 - (Date.now() % 60_000),
   )
 
-  const aim = createAim({
-    enabled: () => !layout.sidebar.opened(),
-    active: () => state.hoverProject,
-    el: () => state.nav?.querySelector<HTMLElement>("[data-component='sidebar-rail']") ?? state.nav,
-    onActivate: (directory) => {
-      serverSync().child(directory)
-      setState("hoverProject", directory)
-    },
-  })
-
   onCleanup(() => {
     dialogDead = true
     dialogRun += 1
-    if (navLeave.current !== undefined) clearTimeout(navLeave.current)
     clearTimeout(sortNowTimeout)
     if (sortNowInterval) clearInterval(sortNowInterval)
     if (sizet !== undefined) clearTimeout(sizet)
-    if (peekt !== undefined) clearTimeout(peekt)
-    aim.reset()
   })
 
   onMount(() => {
     const stop = () => setState("sizing", false)
-    const blur = () => reset()
+    const clearHover = () => setState("hoverProject", undefined)
     const hide = () => {
       if (document.visibilityState !== "hidden") return
-      reset()
+      clearHover()
     }
     makeEventListener(window, "pointerup", stop)
     makeEventListener(window, "pointercancel", stop)
     makeEventListener(window, "blur", stop)
-    makeEventListener(window, "blur", blur)
+    makeEventListener(window, "blur", clearHover)
     makeEventListener(document, "visibilitychange", hide)
   })
 
-  const sidebarHovering = createMemo(() => !layout.sidebar.opened() && state.hoverProject !== undefined)
-  const sidebarExpanded = createMemo(() => layout.sidebar.opened() || sidebarHovering())
-  const setHoverProject = (value: string | undefined) => {
-    setState("hoverProject", value)
-    if (value !== undefined) return
-    aim.reset()
-  }
-  const clearHoverProjectSoon = () => queueMicrotask(() => setHoverProject(undefined))
+  // Desktop closed rail is icons-only; expanded only when sidebar is opened.
+  const sidebarHovering = () => false
+  const sidebarExpanded = createMemo(() => layout.sidebar.opened())
+  const clearHoverProjectSoon = () => queueMicrotask(() => setState("hoverProject", undefined))
 
-  const disarm = () => {
-    if (navLeave.current === undefined) return
-    clearTimeout(navLeave.current)
-    navLeave.current = undefined
-  }
-
-  const reset = () => {
-    disarm()
-    setHoverProject(undefined)
-  }
-
-  const arm = () => {
+  createEffect(() => {
     if (layout.sidebar.opened()) return
-    if (state.hoverProject === undefined) return
-    disarm()
-    navLeave.current = window.setTimeout(() => {
-      navLeave.current = undefined
-      setHoverProject(undefined)
-    }, 300)
-  }
-
-  let peekt: number | undefined
-
-  const hoverProjectData = createMemo(() => {
-    const id = state.hoverProject
-    if (!id) return
-    return layout.projects.list().find((project) => project.worktree === id)
-  })
-
-  const peekProject = createMemo(() => {
-    const id = state.peek
-    if (!id) return
-    return layout.projects.list().find((project) => project.worktree === id)
-  })
-
-  createEffect(() => {
-    const p = hoverProjectData()
-    if (p) {
-      if (peekt !== undefined) {
-        clearTimeout(peekt)
-        peekt = undefined
-      }
-      setState("peek", p.worktree)
-      setState("peeked", true)
-      return
-    }
-
-    setState("peeked", false)
-    if (state.peek === undefined) return
-    if (peekt !== undefined) clearTimeout(peekt)
-    peekt = window.setTimeout(() => {
-      peekt = undefined
-      setState("peek", undefined)
-    }, 180)
-  })
-
-  createEffect(() => {
-    if (!layout.sidebar.opened()) return
-    setHoverProject(undefined)
+    setState("hoverProject", undefined)
   })
 
   createEffect(() => {
@@ -306,13 +229,8 @@ export default function LegacyLayout(props: ParentProps) {
   const setEditor = editor.setEditor
   const InlineEditor = editor.InlineEditor
 
-  const clearSidebarHoverState = () => {
-    if (layout.sidebar.opened()) return
-    reset()
-  }
-
   const navigateWithSidebarReset = (href: string) => {
-    clearSidebarHoverState()
+    setState("hoverProject", undefined)
     navigate(href)
     layout.mobileSidebar.hide()
   }
@@ -1772,7 +1690,7 @@ export default function LegacyLayout(props: ParentProps) {
   function handleDragStart(event: unknown) {
     const id = getDraggableId(event)
     if (!id) return
-    setHoverProject(undefined)
+    setState("hoverProject", undefined)
     setStore("activeProject", id)
   }
 
@@ -1811,12 +1729,7 @@ export default function LegacyLayout(props: ParentProps) {
     return [...ordered, extra]
   }
 
-  const sidebarProject = createMemo(() => {
-    if (layout.sidebar.opened()) return currentProject()
-    const hovered = hoverProjectData()
-    if (hovered) return hovered
-    return currentProject()
-  })
+  const sidebarProject = createMemo(() => currentProject())
 
   function handleWorkspaceDragStart(event: unknown) {
     const id = getDraggableId(event)
@@ -1853,7 +1766,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const createWorkspace = async (project: LocalProject) => {
-    clearSidebarHoverState()
+    setState("hoverProject", undefined)
     const created = await serverSDK()
       .client.worktree.create({ directory: project.worktree })
       .then((x) => x.data)
@@ -1923,11 +1836,7 @@ export default function LegacyLayout(props: ParentProps) {
     currentDir,
     currentProject,
     sidebarOpened: () => layout.sidebar.opened(),
-    sidebarHovering,
     hoverProject: () => state.hoverProject,
-    onProjectMouseEnter: (worktree, event) => aim.enter(worktree, event),
-    onProjectMouseLeave: (worktree) => aim.leave(worktree),
-    onProjectFocus: (worktree) => aim.activate(worktree),
     onHoverOpenChanged: (worktree, hoverOpen) => {
       if (!hoverOpen && state.hoverProject && state.hoverProject !== worktree) return
       setState("hoverProject", hoverOpen ? worktree : undefined)
@@ -1952,11 +1861,9 @@ export default function LegacyLayout(props: ParentProps) {
   const SidebarPanel = (panelProps: {
     project: Accessor<LocalProject | undefined>
     mobile?: boolean
-    merged?: boolean
   }) => {
     const project = panelProps.project
-    const merged = createMemo(() => panelProps.mobile || (panelProps.merged ?? layout.sidebar.opened()))
-    const hover = createMemo(() => !panelProps.mobile && panelProps.merged === false && !layout.sidebar.opened())
+    const merged = createMemo(() => !!panelProps.mobile || layout.sidebar.opened())
     const empty = createMemo(() => !params.dir && layout.projects.list().length === 0)
     const projectName = createMemo(() => {
       const item = project()
@@ -2001,8 +1908,8 @@ export default function LegacyLayout(props: ParentProps) {
           "flex flex-col min-h-0 min-w-0 box-border rounded-tl-[12px] px-3": true,
           "border border-b-0 border-border-weak-base": !merged(),
           "border-l border-t border-border-weaker-base": merged(),
-          "bg-background-base": merged() || hover(),
-          "bg-background-stronger": !merged() && !hover(),
+          "bg-background-base": merged(),
+          "bg-background-stronger": !merged(),
           "flex-1 min-w-0": panelProps.mobile,
           "max-w-full overflow-hidden": panelProps.mobile,
         }}
@@ -2063,19 +1970,14 @@ export default function LegacyLayout(props: ParentProps) {
                     </Tooltip>
                   </div>
 
-                  <DropdownMenu modal={!sidebarHovering()}>
+                  <DropdownMenu modal>
                     <DropdownMenu.Trigger
                       as={IconButton}
                       icon="dot-grid"
                       variant="ghost"
                       data-action="project-menu"
                       data-project={slug()}
-                      class="shrink-0 size-6 rounded-md transition-opacity data-[expanded]:bg-surface-base-active"
-                      classList={{
-                        "opacity-100": panelProps.mobile || merged(),
-                        "opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 data-[expanded]:opacity-100":
-                          !panelProps.mobile && !merged(),
-                      }}
+                      class="shrink-0 size-6 rounded-md opacity-100 data-[expanded]:bg-surface-base-active"
                       aria-label={language.t("common.moreOptions")}
                     />
                     <DropdownMenu.Portal>
@@ -2270,7 +2172,6 @@ export default function LegacyLayout(props: ParentProps) {
     <SidebarContent
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
-      aimMove={aim.move}
       projects={projects}
       renderProject={(project) => (
         <SortableProject ctx={projectSidebarCtx} project={project} sortNow={sortNow} mobile={mobile} />
@@ -2287,9 +2188,7 @@ export default function LegacyLayout(props: ParentProps) {
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
-      renderPanel={() =>
-        mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
-      }
+      renderPanel={() => <SidebarPanel project={currentProject} mobile={mobile} />}
     />
   )
 
@@ -2300,58 +2199,48 @@ export default function LegacyLayout(props: ParentProps) {
       <div class="flex-1 min-h-0 min-w-0 flex">
         <div class="flex-1 min-h-0 relative">
           <div class="size-full relative overflow-x-hidden">
-            <nav
-              aria-label={language.t("sidebar.nav.projectsAndSessions")}
-              data-component="sidebar-nav-desktop"
-              classList={{
-                "hidden xl:block": true,
-                "absolute inset-y-0 left-0": true,
-                "z-10": true,
-              }}
-              style={{ width: `${side()}px` }}
-              ref={(el) => {
-                setState("nav", el)
-              }}
-              onMouseEnter={() => {
-                disarm()
-              }}
-              onMouseLeave={() => {
-                aim.reset()
-                if (!sidebarHovering()) return
-
-                arm()
-              }}
-            >
-              <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
-            </nav>
-
-            <Show when={layout.sidebar.opened()}>
-              <div
-                class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
-                style={{ left: `${side()}px` }}
-                onPointerDown={() => setState("sizing", true)}
+            <Show when={isDesktop()}>
+              <nav
+                aria-label={language.t("sidebar.nav.projectsAndSessions")}
+                data-component="sidebar-nav-desktop"
+                classList={{
+                  "absolute inset-y-0 left-0": true,
+                  "z-10": true,
+                  "overflow-hidden": true,
+                }}
+                style={{ width: layout.sidebar.opened() ? `${side()}px` : "4rem" }}
               >
-                <ResizeHandle
-                  direction="horizontal"
-                  size={layout.sidebar.width()}
-                  min={244}
-                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
-                  onResize={(w) => {
-                    setState("sizing", true)
-                    if (sizet !== undefined) clearTimeout(sizet)
-                    sizet = window.setTimeout(() => setState("sizing", false), 120)
-                    layout.sidebar.resize(w)
-                  }}
-                />
-              </div>
+                <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
+              </nav>
+
+              <Show when={layout.sidebar.opened()}>
+                <div
+                  class="absolute inset-y-0 z-30 w-0 overflow-visible"
+                  style={{ left: `${side()}px` }}
+                  onPointerDown={() => setState("sizing", true)}
+                >
+                  <ResizeHandle
+                    direction="horizontal"
+                    size={layout.sidebar.width()}
+                    min={244}
+                    max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
+                    onResize={(w) => {
+                      setState("sizing", true)
+                      if (sizet !== undefined) clearTimeout(sizet)
+                      sizet = window.setTimeout(() => setState("sizing", false), 120)
+                      layout.sidebar.resize(w)
+                    }}
+                  />
+                </div>
+              </Show>
+
+              <div
+                class="pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
+                style={{ left: "calc(4rem + 12px)" }}
+              />
             </Show>
 
-            <div
-              class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
-              style={{ left: "calc(4rem + 12px)" }}
-            />
-
-            <div class="xl:hidden">
+            <Show when={!isDesktop()}>
               <div
                 classList={{
                   "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
@@ -2374,67 +2263,34 @@ export default function LegacyLayout(props: ParentProps) {
               >
                 {sidebarContent(true)}
               </nav>
-            </div>
+            </Show>
 
             <div
               classList={{
                 "absolute inset-0": true,
-                "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
+                "inset-y-0 right-0": isDesktop(),
                 "z-20": true,
                 "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
                   !state.sizing,
               }}
               style={{
-                "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
+                left: isDesktop()
+                  ? layout.sidebar.opened()
+                    ? `${side()}px`
+                    : "4rem"
+                  : undefined,
               }}
             >
               <main
                 classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
+                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base": true,
+                  "border-l rounded-tl-[12px]": isDesktop(),
                 }}
               >
                 <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
                   {props.children}
                 </Show>
               </main>
-            </div>
-
-            <div
-              classList={{
-                "hidden xl:flex absolute inset-y-0 left-16 z-30": true,
-                "opacity-100 translate-x-0 pointer-events-auto": state.peeked && !layout.sidebar.opened(),
-                "opacity-0 -translate-x-2 pointer-events-none": !state.peeked || layout.sidebar.opened(),
-                "transition-[opacity,transform] motion-reduce:transition-none": true,
-                "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-              }}
-              onMouseMove={disarm}
-              onMouseEnter={() => {
-                disarm()
-                aim.reset()
-              }}
-              onPointerDown={disarm}
-              onMouseLeave={() => {
-                arm()
-              }}
-            >
-              <Show when={peekProject()}>
-                <SidebarPanel project={peekProject} merged={false} />
-              </Show>
-            </div>
-
-            <div
-              classList={{
-                "hidden xl:block pointer-events-none absolute inset-y-0 right-0 z-25 overflow-hidden": true,
-                "opacity-100 translate-x-0": state.peeked && !layout.sidebar.opened(),
-                "opacity-0 -translate-x-2": !state.peeked || layout.sidebar.opened(),
-                "transition-[opacity,transform] motion-reduce:transition-none": true,
-                "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-              }}
-              style={{ left: `calc(4rem + ${panel()}px)` }}
-            >
-              <div class="h-full w-px" style={{ "box-shadow": "var(--shadow-sidebar-overlay)" }} />
             </div>
           </div>
         </div>

@@ -140,6 +140,7 @@ export function SessionHeader() {
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
+  const isDesktop = layout.isDesktop
   const { params, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
@@ -278,7 +279,11 @@ export function SessionHeader() {
               type="button"
               variant="ghost"
               size="small"
-              class="hidden md:flex w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default"
+              classList={{
+                "w-[240px] max-w-full min-w-0 items-center gap-2 justify-between rounded-md border border-border-weak-base bg-surface-panel shadow-none cursor-default": true,
+                hidden: !isDesktop(),
+                flex: isDesktop(),
+              }}
               onClick={() => command.trigger("file.open")}
               aria-label={language.t("session.header.searchFiles")}
             >
@@ -305,8 +310,8 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
               <div class="flex items-center gap-2">
-                <Show when={projectDirectory()}>
-                  <div class="hidden xl:flex items-center">
+                <Show when={projectDirectory() && isDesktop()}>
+                  <div class="flex items-center">
                     <Show
                       when={canOpen()}
                       fallback={
@@ -440,7 +445,13 @@ export function SessionHeader() {
                     </Button>
                   </TooltipKeybind>
 
-                  <div class="hidden md:flex items-center gap-1 shrink-0">
+                  <div
+                    classList={{
+                      "items-center gap-1 shrink-0": true,
+                      hidden: !isDesktop(),
+                      flex: isDesktop(),
+                    }}
+                  >
                     <TooltipKeybind
                       title={language.t("command.review.toggle")}
                       keybind={command.keybind("review.toggle")}

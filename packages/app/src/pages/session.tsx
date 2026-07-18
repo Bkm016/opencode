@@ -19,7 +19,7 @@ import {
   untrack,
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { createMediaQuery } from "@solid-primitives/media"
+
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
@@ -420,7 +420,7 @@ export default function Page() {
     ),
   )
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = layout.isDesktop
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(
@@ -2047,12 +2047,20 @@ export default function Page() {
   return (
     <SessionRouteFrame>
       <SessionHeader />
-      <div ref={panelRow} class="flex-1 min-h-0 flex flex-col md:flex-row">
+      <div
+        ref={panelRow}
+        classList={{
+          "flex-1 min-h-0 flex flex-col": true,
+          "flex-row": isDesktop(),
+        }}
+      >
         <Show when={!isDesktop() && !!params.id}>{mobileTabs()}</Show>
 
         <div
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
+            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 transition-[width]": true,
+            "flex-none": isDesktop(),
+
             "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !size.active() && !ui.reviewSnap,
           }}

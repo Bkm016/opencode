@@ -1,6 +1,7 @@
 import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { gsapEnter } from "@/utils/gsap-motion"
 import { createStore } from "solid-js/store"
-import { createMediaQuery } from "@solid-primitives/media"
+
 import {
   DragDropProvider,
   DragDropSensors,
@@ -79,7 +80,7 @@ export function SessionSidePanel(props: {
   const dialog = useDialog()
   const { sessionKey, tabs, view } = useSessionLayout()
 
-  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isDesktop = layout.isDesktop
   const shown = settings.visibility.fileTree
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
@@ -256,7 +257,12 @@ export function SessionSidePanel(props: {
         style={{ width: panelWidth() }}
       >
         <Show when={open()}>
-          <div class="size-full flex border-l border-border-weaker-base">
+          <div
+            class="size-full flex border-l border-border-weaker-base"
+            ref={(el) => {
+              gsapEnter(el, { x: 24, y: 0, duration: 0.38 })
+            }}
+          >
             <Show when={reviewOpen()}>
               <div class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base">
                 <div class="size-full min-w-0 h-full bg-background-base">

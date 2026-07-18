@@ -3,6 +3,7 @@ import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } fr
 import { useLocation } from "@solidjs/router"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useServerSync } from "./server-sync"
 import { useServerSDK } from "./server-sdk"
 import { RECENTLY_CLOSED_DISPLAY_LIMIT, ServerConnection, useServer } from "./server"
@@ -599,9 +600,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       if (sessionTimer !== undefined) window.clearTimeout(sessionTimer)
     })
 
+    // PC when wide enough that session mobileTabs (会话/更改) are hidden.
+    const isDesktop = createMediaQuery("(min-width: 512px)")
+
     return {
       route,
       ready,
+      isDesktop,
       home: {
         selection: createMemo(() => store.home.selection),
         setSelection(selection: HomeProjectSelection) {

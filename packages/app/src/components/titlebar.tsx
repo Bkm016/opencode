@@ -62,6 +62,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
+  const isDesktop = layout.isDesktop
   const bottom = createMemo(() => false)
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
@@ -225,9 +226,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             <Show when={windows() || linux()}>
               <WindowsAppMenu command={command} platform={platform} />
             </Show>
-            <Show when={mac()}>
-              {/*<div class="h-full shrink-0" style={{ width: `${72 / zoom()}px` }} />*/}
-              <div class="xl:hidden w-10 shrink-0 flex items-center justify-center">
+            <Show when={!isDesktop() && mac()}>
+              <div class="w-10 shrink-0 flex items-center justify-center">
                 <IconButton
                   icon="menu"
                   variant="ghost"
@@ -238,8 +238,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 />
               </div>
             </Show>
-            <Show when={!mac()}>
-              <div class="xl:hidden w-[48px] shrink-0 flex items-center justify-center">
+            <Show when={!isDesktop() && !mac()}>
+              <div class="w-[48px] shrink-0 flex items-center justify-center">
                 <IconButton
                   icon="menu"
                   variant="ghost"
@@ -251,23 +251,31 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               </div>
             </Show>
             <div class="flex items-center gap-1 shrink-0">
-              <TooltipKeybind
-                class={web() ? "hidden xl:flex shrink-0 ml-14" : "hidden xl:flex shrink-0 ml-2"}
-                placement="bottom"
-                title={language.t("command.sidebar.toggle")}
-                keybind={command.keybind("sidebar.toggle")}
-              >
-                <Button
-                  variant="ghost"
-                  class="group/sidebar-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                  onClick={layout.sidebar.toggle}
-                  aria-label={language.t("command.sidebar.toggle")}
-                  aria-expanded={layout.sidebar.opened()}
+              <Show when={isDesktop()}>
+                <TooltipKeybind
+                  class={web() ? "shrink-0 ml-14" : "shrink-0 ml-2"}
+                  placement="bottom"
+                  title={language.t("command.sidebar.toggle")}
+                  keybind={command.keybind("sidebar.toggle")}
                 >
-                  <Icon size="small" name={layout.sidebar.opened() ? "sidebar-active" : "sidebar"} />
-                </Button>
-              </TooltipKeybind>
-              <div class="hidden xl:flex items-center shrink-0">
+                  <Button
+                    variant="ghost"
+                    class="group/sidebar-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                    onClick={layout.sidebar.toggle}
+                    aria-label={language.t("command.sidebar.toggle")}
+                    aria-expanded={layout.sidebar.opened()}
+                  >
+                    <Icon size="small" name={layout.sidebar.opened() ? "sidebar-active" : "sidebar"} />
+                  </Button>
+                </TooltipKeybind>
+              </Show>
+              <div
+                classList={{
+                  "items-center shrink-0": true,
+                  hidden: !isDesktop(),
+                  flex: isDesktop(),
+                }}
+              >
                 <Show when={params.dir}>
                   <div
                     class="flex items-center shrink-0 w-8 mr-1"

@@ -18,11 +18,7 @@ export type ProjectSidebarContext = {
   currentDir: Accessor<string>
   currentProject: Accessor<LocalProject | undefined>
   sidebarOpened: Accessor<boolean>
-  sidebarHovering: Accessor<boolean>
   hoverProject: Accessor<string | undefined>
-  onProjectMouseEnter: (worktree: string, event: MouseEvent) => void
-  onProjectMouseLeave: (worktree: string) => void
-  onProjectFocus: (worktree: string) => void
   onHoverOpenChanged: (worktree: string, hovered: boolean) => void
   navigateToProject: (directory: string) => void
   openSidebar: () => void
@@ -54,16 +50,11 @@ export const ProjectDragOverlay = (props: {
 const ProjectTile = (props: {
   project: LocalProject
   mobile?: boolean
-  sidebarHovering: Accessor<boolean>
   selected: Accessor<boolean>
   active: Accessor<boolean>
   isWorking: Accessor<boolean>
-  overlay: Accessor<boolean>
   suppressHover: Accessor<boolean>
   dirs: Accessor<string[]>
-  onProjectMouseEnter: (worktree: string, event: MouseEvent) => void
-  onProjectMouseLeave: (worktree: string) => void
-  onProjectFocus: (worktree: string) => void
   navigateToProject: (directory: string) => void
   showEditProjectDialog: (project: LocalProject) => void
   toggleProjectWorkspaces: (project: LocalProject) => void
@@ -88,7 +79,7 @@ const ProjectTile = (props: {
 
   return (
     <ContextMenu
-      modal={!props.sidebarHovering()}
+      modal
       onOpenChange={(value) => {
         props.setMenu(value)
         props.setSuppressHover(value)
@@ -112,28 +103,10 @@ const ProjectTile = (props: {
           if (event.button === 0 && !event.ctrlKey) {
             props.setOpen(false)
             props.setSuppressHover(true)
-            return
           }
-          if (!props.overlay()) return
-          if (event.button !== 2 && !(event.button === 0 && event.ctrlKey)) return
-          props.setOpen(false)
-          props.setSuppressHover(true)
-          event.preventDefault()
-        }}
-        onMouseEnter={(event: MouseEvent) => {
-          if (!props.overlay()) return
-          if (props.suppressHover()) return
-          props.onProjectMouseEnter(props.project.worktree, event)
         }}
         onMouseLeave={() => {
           if (props.suppressHover()) props.setSuppressHover(false)
-          if (!props.overlay()) return
-          props.onProjectMouseLeave(props.project.worktree)
-        }}
-        onFocus={() => {
-          if (!props.overlay()) return
-          if (props.suppressHover()) return
-          props.onProjectFocus(props.project.worktree)
         }}
         onClick={() => {
           props.setOpen(false)
@@ -288,9 +261,9 @@ export const SortableProject = (props: {
   })
 
   const isHoverProject = () => props.ctx.hoverProject() === props.project.worktree
+  // HoverCard recent-sessions preview only when desktop sidebar is opened.
   const preview = createMemo(() => !props.mobile && props.ctx.sidebarOpened())
-  const overlay = createMemo(() => !props.mobile && !props.ctx.sidebarOpened())
-  const active = createMemo(() => state.menu || (preview() ? isHoverProject() : overlay() && isHoverProject()))
+  const active = createMemo(() => state.menu || (preview() && isHoverProject()))
 
   const hoverOpen = () => isHoverProject() && preview() && !selected() && !state.menu
 
@@ -322,16 +295,11 @@ export const SortableProject = (props: {
     <ProjectTile
       project={props.project}
       mobile={props.mobile}
-      sidebarHovering={props.ctx.sidebarHovering}
       selected={selected}
       active={active}
       isWorking={isWorking}
-      overlay={overlay}
       suppressHover={() => state.suppressHover}
       dirs={dirs}
-      onProjectMouseEnter={props.ctx.onProjectMouseEnter}
-      onProjectMouseLeave={props.ctx.onProjectMouseLeave}
-      onProjectFocus={props.ctx.onProjectFocus}
       navigateToProject={props.ctx.navigateToProject}
       showEditProjectDialog={props.ctx.showEditProjectDialog}
       toggleProjectWorkspaces={props.ctx.toggleProjectWorkspaces}

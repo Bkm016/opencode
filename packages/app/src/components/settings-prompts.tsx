@@ -245,25 +245,25 @@ async function loadCatalog(sdk: ReturnType<ReturnType<typeof useServerSDK>>): Pr
   try {
     const result = await sdk.client.config.prompts()
     if (result.error || !Array.isArray(result.data)) return undefined
-    return result.data
-      .map((row) => {
-        if (!row || typeof row !== "object") return undefined
-        const item = row as Record<string, unknown>
-        if (typeof item.id !== "string") return undefined
-        if (typeof item.group !== "string" || !isPromptGroup(item.group)) return undefined
-        if (typeof item.title !== "string") return undefined
-        if (typeof item.description !== "string") return undefined
-        return {
-          id: item.id,
-          group: item.group,
-          title: item.title,
-          description: item.description,
-          default: typeof item.default === "string" ? item.default : undefined,
-          value: typeof item.value === "string" ? item.value : undefined,
-          overridden: typeof item.overridden === "boolean" ? item.overridden : undefined,
-        } satisfies PromptCatalogItem
+    const items: PromptCatalogItem[] = []
+    for (const row of result.data) {
+      if (!row || typeof row !== "object") continue
+      const item = row as Record<string, unknown>
+      if (typeof item.id !== "string") continue
+      if (typeof item.group !== "string" || !isPromptGroup(item.group)) continue
+      if (typeof item.title !== "string") continue
+      if (typeof item.description !== "string") continue
+      items.push({
+        id: item.id,
+        group: item.group,
+        title: item.title,
+        description: item.description,
+        default: typeof item.default === "string" ? item.default : undefined,
+        value: typeof item.value === "string" ? item.value : undefined,
+        overridden: typeof item.overridden === "boolean" ? item.overridden : undefined,
       })
-      .filter((item): item is PromptCatalogItem => !!item)
+    }
+    return items
   } catch {
     return undefined
   }

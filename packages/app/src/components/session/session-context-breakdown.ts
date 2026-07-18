@@ -87,9 +87,7 @@ const toolParts = (part: Extract<Part, { type: "tool" }>) => {
   const inputChars =
     rawInput && typeof rawInput === "object" && !Array.isArray(rawInput)
       ? Object.keys(rawInput).length * 16
-      : typeof rawInput === "string"
-        ? rawInput.length
-        : 0
+      : 0
   if (part.state?.status === "pending") {
     return { input: inputChars, output: 0, error: 0, total: inputChars + (part.state.raw?.length ?? 0) }
   }
@@ -175,7 +173,10 @@ const addUserPart = (bucket: Bucket, messageID: string, part: Part) => {
   }
   if (part.type === "file") {
     const chars = part.source?.text.value.length ?? 0
-    const label = part.filename || part.source?.path || part.url || "file"
+    const source = part.source
+    const sourceLabel =
+      source && "path" in source ? source.path : source && source.type === "resource" ? source.uri : undefined
+    const label = part.filename || sourceLabel || part.url || "file"
     addContent(bucket.file, messageID, chars, typeof label === "string" ? label : "file")
     bucket.chars += chars
     return
@@ -297,10 +298,10 @@ const detailsFor = (
 ): SessionContextBreakdownDetail[] => {
   if (key === "other") return tokens > 0 ? [{ kind: "overhead" }] : []
   if (key === "system") {
-    return [
-      { kind: "text", tokens },
-      ...(bucket?.messages ? [{ kind: "messages" as const, count: bucket.messages }] : []),
-    ].filter((item) => ("tokens" in item ? item.tokens > 0 : true))
+    const details: SessionContextBreakdownDetail[] = []
+    if (tokens > 0) details.push({ kind: "text", tokens })
+    if (bucket?.messages) details.push({ kind: "messages", count: bucket.messages })
+    return details
   }
   if (!bucket || tokens <= 0) return []
 

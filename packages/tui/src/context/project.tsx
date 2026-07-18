@@ -11,13 +11,17 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
   init: () => {
     const sdk = useSDK()
 
-    const defaultPath = {
+    const defaultPath: Path = {
       home: "",
       state: "",
       config: "",
       worktree: "",
       directory: sdk.directory ?? "",
-    } satisfies Path
+      data: "",
+      cache: "",
+      log: "",
+      database: { path: "", data: "", tables: [] },
+    }
 
     const [store, setStore] = createStore({
       project: {

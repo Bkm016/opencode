@@ -15,12 +15,34 @@ import {
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
+const DatabaseTableInfo = Schema.Struct({
+  name: Schema.String,
+  rows: Schema.optional(Schema.Number),
+}).annotate({ identifier: "DatabaseTable" })
+
+const DatabaseInfo = Schema.Struct({
+  path: Schema.String,
+  data: Schema.String,
+  size: Schema.optional(Schema.Number),
+  walSize: Schema.optional(Schema.Number),
+  shmSize: Schema.optional(Schema.Number),
+  journalMode: Schema.optional(Schema.String),
+  pageCount: Schema.optional(Schema.Number),
+  pageSize: Schema.optional(Schema.Number),
+  freelistCount: Schema.optional(Schema.Number),
+  tables: Schema.Array(DatabaseTableInfo),
+}).annotate({ identifier: "DatabaseInfo" })
+
 const PathInfo = Schema.Struct({
   home: Schema.String,
   state: Schema.String,
   config: Schema.String,
   worktree: Schema.String,
   directory: Schema.String,
+  data: Schema.String,
+  cache: Schema.String,
+  log: Schema.String,
+  database: DatabaseInfo,
 }).annotate({ identifier: "Path" })
 
 export const VcsDiffQuery = Schema.Struct({

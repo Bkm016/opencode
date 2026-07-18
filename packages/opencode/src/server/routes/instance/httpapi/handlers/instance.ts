@@ -3,15 +3,27 @@ import { Command } from "@/command"
 import { Config } from "@/config/config"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
+import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
+import { sql } from "drizzle-orm"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import fs from "fs/promises"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
+
+const COUNTED_TABLES = new Set(["session", "project", "workspace", "account", "todo", "migration"])
+
+async function fileSize(path: string) {
+  return fs.stat(path).then(
+    (stat) => stat.size,
+    () => undefined,
+  )
+}
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
@@ -22,6 +34,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const lsp = yield* LSP.Service
     const skill = yield* Skill.Service
     const vcs = yield* Vcs.Service
+    const { db } = yield* Database.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
       yield* markInstanceForDisposal(yield* InstanceState.context)
@@ -41,12 +54,65 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
 
     const getPath = Effect.fn("InstanceHttpApi.path")(function* () {
       const ctx = yield* InstanceState.context
+      const dbPath = Database.path()
+      const [size, walSize, shmSize] = yield* Effect.promise(() =>
+        Promise.all([fileSize(dbPath), fileSize(`${dbPath}-wal`), fileSize(`${dbPath}-shm`)]),
+      )
+      const journalMode = yield* db.get<{ journal_mode: string }>(sql`PRAGMA journal_mode`).pipe(
+        Effect.map((row) => row?.journal_mode),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const pageCount = yield* db.get<{ page_count: number }>(sql`PRAGMA page_count`).pipe(
+        Effect.map((row) => row?.page_count),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const pageSize = yield* db.get<{ page_size: number }>(sql`PRAGMA page_size`).pipe(
+        Effect.map((row) => row?.page_size),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const freelistCount = yield* db.get<{ freelist_count: number }>(sql`PRAGMA freelist_count`).pipe(
+        Effect.map((row) => row?.freelist_count),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const tableNames = yield* db
+        .all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+        )
+        .pipe(Effect.catch(() => Effect.succeed([] as { name: string }[])))
+      const tables = yield* Effect.forEach(
+        tableNames,
+        (table) =>
+          Effect.gen(function* () {
+            if (!COUNTED_TABLES.has(table.name)) return { name: table.name }
+            const count = yield* db.get<{ count: number }>(sql`SELECT COUNT(*) AS count FROM ${sql.identifier(table.name)}`).pipe(
+              Effect.map((row) => row?.count),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
+            return { name: table.name, rows: count }
+          }),
+        { concurrency: 1 },
+      )
       return {
         home: Global.Path.home,
         state: Global.Path.state,
         config: Global.Path.config,
         worktree: ctx.worktree,
         directory: ctx.directory,
+        data: Global.Path.data,
+        cache: Global.Path.cache,
+        log: Global.Path.log,
+        database: {
+          path: dbPath,
+          data: Global.Path.data,
+          size,
+          walSize,
+          shmSize,
+          journalMode,
+          pageCount,
+          pageSize,
+          freelistCount,
+          tables,
+        },
       }
     })
 

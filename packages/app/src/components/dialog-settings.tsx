@@ -10,6 +10,7 @@ import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsServers } from "./settings-servers"
+import { SettingsDatabase } from "./settings-database"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
@@ -49,6 +50,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="server" />
                       {language.t("status.popover.tab.servers")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="database">
+                      <Icon name="console" />
+                      {language.t("settings.tab.database")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
 
@@ -81,6 +86,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="servers" class="no-scrollbar">
           <SettingsServers />
+        </Tabs.Content>
+        <Tabs.Content value="database" class="no-scrollbar">
+          <SettingsDatabase />
         </Tabs.Content>
         <Tabs.Content value="providers" class="no-scrollbar">
           <SettingsProviders onBack={showProviders} />

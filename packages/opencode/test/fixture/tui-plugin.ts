@@ -307,7 +307,19 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
         return opts.state?.provider ?? []
       },
       get path() {
-        return opts.state?.path ?? { home: "", state: "", config: "", worktree: "", directory: "" }
+        return (
+          opts.state?.path ?? {
+            home: "",
+            state: "",
+            config: "",
+            worktree: "",
+            directory: "",
+            data: "",
+            cache: "",
+            log: "",
+            database: { path: "", data: "", tables: [] },
+          }
+        )
       },
       get vcs() {
         return opts.state?.vcs

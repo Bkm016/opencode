@@ -119,6 +119,12 @@ const scenarios: Scenario[] = [
     object(body)
     check(body.directory === ctx.directory, "directory should resolve from x-opencode-directory")
     check(body.worktree === ctx.directory, "worktree should resolve from x-opencode-directory")
+    check(typeof body.data === "string", "data directory should be present")
+    const database = body.database
+    check(typeof database === "object" && database !== null, "database info should be present")
+    object(database)
+    check(typeof database.path === "string", "database.path should be present")
+    check(Array.isArray(database.tables), "database.tables should be an array")
   }),
   http.protected.get("/vcs", "vcs.get").json(),
   http.protected.get("/vcs/status", "vcs.status").json(200, array),

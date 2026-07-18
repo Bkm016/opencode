@@ -2296,12 +2296,34 @@ export type File = {
   status: "added" | "deleted" | "modified"
 }
 
+export type DatabaseTable = {
+  name: string
+  rows?: number
+}
+
+export type DatabaseInfo = {
+  path: string
+  data: string
+  size?: number
+  walSize?: number
+  shmSize?: number
+  journalMode?: string
+  pageCount?: number
+  pageSize?: number
+  freelistCount?: number
+  tables: Array<DatabaseTable>
+}
+
 export type Path = {
   home: string
   state: string
   config: string
   worktree: string
   directory: string
+  data: string
+  cache: string
+  log: string
+  database: DatabaseInfo
 }
 
 export type VcsInfo = {

@@ -37,7 +37,6 @@ type Deps = {
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   resolveAppPath: (appName: string) => Promise<string | null>
   updater: UpdaterController
-  showUpdater: () => Promise<void> | void
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
@@ -259,7 +258,6 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action, {
-      checkForUpdates: () => void deps.showUpdater(),
       relaunch: deps.relaunch,
     })
   })

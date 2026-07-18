@@ -32,7 +32,7 @@ import {
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
-import { setupAutoUpdater, showUpdaterDialog } from "./updater"
+import { setupAutoUpdater } from "./updater"
 import { safeWebContentsURL } from "./window-state"
 import {
   getLastFocusedWindow,
@@ -294,16 +294,11 @@ const main = Effect.gen(function* () {
     checkAppExists: (appName) => checkAppExists(appName),
     resolveAppPath: async (appName) => resolveAppPath(appName),
     updater,
-    showUpdater: () => showUpdaterDialog(updater, true),
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
   })
   registerWslIpcHandlers(wslServers)
-  void updater.start()
-  const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
-  updateTimer.unref()
-  app.once("will-quit", () => clearInterval(updateTimer))
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -385,9 +380,6 @@ const main = Effect.gen(function* () {
       trigger: (id) => {
         const win = getLastFocusedWindow()
         if (win) sendMenuCommand(win, id)
-      },
-      checkForUpdates: () => {
-        void showUpdaterDialog(updater, true)
       },
       relaunch: () => {
         relaunch()

@@ -10,6 +10,7 @@ import { type Session } from "@opencode-ai/sdk/v2/client"
 import {
   childSessionOnPath,
   closeHomeProject,
+  directChildSessions,
   displayName,
   effectiveWorkspaceOrder,
   errorMessage,
@@ -18,6 +19,7 @@ import {
   homeProjectDirectories,
   homeSessionServerStatus,
   latestRootSession,
+  sidebarChildSessions,
   toggleHomeProjectSelection,
 } from "./helpers"
 import { pathKey } from "@/utils/path-key"
@@ -218,6 +220,45 @@ describe("layout workspace helpers", () => {
     expect(childSessionOnPath(list, "child", "leaf")?.id).toBe("leaf")
     expect(childSessionOnPath(list, "root", "root")).toBeUndefined()
     expect(childSessionOnPath(list, "root", "other")).toBeUndefined()
+  })
+
+  test("lists direct children newest first and skips archived", () => {
+    const list = [
+      session({ id: "root", directory: "/workspace" }),
+      session({ id: "old", directory: "/workspace", parentID: "root", time: { created: 1, updated: 1 } }),
+      session({ id: "new", directory: "/workspace", parentID: "root", time: { created: 2, updated: 10 } }),
+      session({
+        id: "archived",
+        directory: "/workspace",
+        parentID: "root",
+        time: { created: 3, updated: 20, archived: 30 },
+      }),
+      session({ id: "other", directory: "/workspace", parentID: "new" }),
+    ]
+
+    expect(directChildSessions(list, "root").map((item) => item.id)).toEqual(["new", "old"])
+  })
+
+  test("sidebar nests all running children and keeps the active path child", () => {
+    const list = [
+      session({ id: "root", directory: "/workspace" }),
+      session({ id: "run-a", directory: "/workspace", parentID: "root", time: { created: 1, updated: 3 } }),
+      session({ id: "run-b", directory: "/workspace", parentID: "root", time: { created: 2, updated: 2 } }),
+      session({ id: "idle", directory: "/workspace", parentID: "root", time: { created: 3, updated: 1 } }),
+    ]
+    const working = new Set(["run-a", "run-b"])
+
+    expect(
+      sidebarChildSessions(list, "root", "root", (id) => working.has(id)).map((item) => item.id),
+    ).toEqual(["run-a", "run-b"])
+
+    expect(
+      sidebarChildSessions(list, "root", "idle", (id) => working.has(id)).map((item) => item.id),
+    ).toEqual(["run-a", "run-b", "idle"])
+
+    expect(
+      sidebarChildSessions(list, "root", "run-a", (id) => working.has(id)).map((item) => item.id),
+    ).toEqual(["run-a", "run-b"])
   })
 
   test("formats fallback project display name", () => {

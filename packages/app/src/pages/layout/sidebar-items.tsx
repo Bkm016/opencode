@@ -16,7 +16,7 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
+import { getProjectAvatarSource, hasProjectPermissions, sidebarChildSessions } from "./helpers"
 
 export const ProjectIcon = (props: {
   project: LocalProject
@@ -172,9 +172,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     messageAgentColor(serverSync().session.data.message[props.session.id], sessionStore.agent),
   )
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
-  const currentChild = createMemo(() => {
-    if (!props.showChild) return
-    return childSessionOnPath(sessionStore.session, props.session.id, params.id)
+  const childSessions = createMemo(() => {
+    if (!props.showChild) return []
+    return sidebarChildSessions(sessionStore.session, props.session.id, params.id, (id) =>
+      serverSync().session.data.session_working(id),
+    )
   })
 
   const warm = (span: number, priority: "high" | "low") => {
@@ -268,13 +270,13 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
           </Show>
         </div>
       </div>
-      <Show when={currentChild()} keyed>
+      <For each={childSessions()}>
         {(child) => (
           <div class="w-full">
             <SessionItem {...props} session={child} level={(props.level ?? 0) + 1} />
           </div>
         )}
-      </Show>
+      </For>
     </>
   )
 }

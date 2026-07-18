@@ -54,6 +54,32 @@ export const childSessionOnPath = (sessions: Session[] | undefined, rootID: stri
   }
 }
 
+/** Direct non-archived children of parentID, newest first. */
+export const directChildSessions = (sessions: Session[] | undefined, parentID: string) =>
+  (sessions ?? [])
+    .filter((session) => session.parentID === parentID && !session.time?.archived)
+    .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+
+/**
+ * Children to nest under a session row in the sidebar list:
+ * all currently working direct children, plus the on-path child when navigating into an idle one.
+ */
+export const sidebarChildSessions = (
+  sessions: Session[] | undefined,
+  parentID: string,
+  activeID: string | undefined,
+  isWorking: (id: string) => boolean,
+) => {
+  const children = directChildSessions(sessions, parentID)
+  if (children.length === 0) return []
+
+  const running = children.filter((session) => isWorking(session.id))
+  const path = childSessionOnPath(sessions, parentID, activeID)
+  if (!path) return running
+  if (running.some((session) => session.id === path.id)) return running
+  return [...running, path]
+}
+
 export const displayName = (project: { name?: string; worktree: string }) =>
   project.name || getFilename(project.worktree) || project.worktree
 

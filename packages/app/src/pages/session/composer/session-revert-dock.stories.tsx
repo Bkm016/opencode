@@ -1,7 +1,7 @@
 import { For } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
-import { SettingsProvider, useSettings } from "@/context/settings"
+import { SettingsProvider } from "@/context/settings"
 
 export default {
   title: "Composer/Revert Dock",
@@ -20,9 +20,6 @@ Real \`SessionRevertDock\` from app code, rendered above a mock composer card.
 The live composer overlaps the dock's bottom by 18px (\`session-composer-region-controller.ts\` \`lift()\`).
 The card below reproduces that overlap so the collapsed/expanded cutoff behavior can be verified in isolation.
 
-### Layout split
-Use the **Layout** button to toggle \`newLayoutDesigns\` and preview both the v2 dock and the legacy (v1) \`DockTray\` fallback.
-
 ### Notes
 - \`onRestore\` only mutates local story state, so nothing in the real session is affected.
 - Click the header to expand/collapse. Click "Restore message" to remove a row.`,
@@ -40,23 +37,20 @@ const messages = [
   "reduce re-renders in the timeline component",
 ]
 
-const btn = (accent?: boolean) =>
-  ({
-    padding: "6px 12px",
-    "border-radius": "6px",
-    border: "1px solid var(--v2-border-border-base, #0000001a)",
-    background: accent ? "var(--v2-background-bg-contrast, #242424)" : "var(--v2-background-bg-base, #fff)",
-    color: accent ? "var(--v2-text-text-contrast, #fafafa)" : "var(--v2-text-text-base, #161616)",
-    cursor: "pointer",
-    "font-size": "13px",
-  }) as const
+const btn = {
+  padding: "6px 12px",
+  "border-radius": "6px",
+  border: "1px solid var(--border-weak-base, #0000001a)",
+  background: "var(--background-base, #fff)",
+  color: "var(--text-base, #161616)",
+  cursor: "pointer",
+  "font-size": "13px",
+} as const
 
 function Stage(props: { count: number }) {
-  const settings = useSettings()
   const seed = () => messages.slice(0, props.count).map((text, index) => ({ id: `rolled-${index}`, text }))
   const [store, setStore] = createStore({ items: seed() })
 
-  const v2 = () => settings.general.newLayoutDesigns()
   const reset = () => setStore("items", seed())
   const restore = (id: string) =>
     setStore(
@@ -67,11 +61,8 @@ function Stage(props: { count: number }) {
   return (
     <div style={{ display: "grid", gap: "16px", "max-width": "720px" }}>
       <div style={{ display: "flex", gap: "8px" }}>
-        <button style={btn()} onClick={reset}>
+        <button style={btn} onClick={reset}>
           Reset ({props.count})
-        </button>
-        <button style={btn(v2())} onClick={() => settings.general.setNewLayoutDesigns(!v2())}>
-          Layout: {v2() ? "v2" : "v1"}
         </button>
       </div>
 
@@ -80,13 +71,13 @@ function Stage(props: { count: number }) {
         <SessionRevertDock items={store.items} onRestore={restore} />
         <div
           style={{ position: "relative", "z-index": 70, "margin-top": "-18px" }}
-          class="min-h-24 w-full rounded-[12px] border border-v2-border-border-base bg-v2-background-bg-base px-4 py-3 text-[13px] text-v2-text-text-faint"
+          class="min-h-24 w-full rounded-[12px] border border-border-weak-base bg-background-base px-4 py-3 text-[13px] text-text-weak"
         >
           Ask anything...
         </div>
       </div>
 
-      <div class="text-[12px] text-v2-text-text-faint">
+      <div class="text-[12px] text-text-weak">
         Restored so far:{" "}
         <For each={seed()}>
           {(item) => <span>{store.items.some((current) => current.id === item.id) ? "" : `“${item.text}” `}</span>}

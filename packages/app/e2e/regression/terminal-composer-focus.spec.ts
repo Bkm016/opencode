@@ -66,7 +66,6 @@ test.beforeEach(async ({ page }) => {
   )
   await page.routeWebSocket(new RegExp(`/pty/${ptyID}/connect`), () => undefined)
   await page.addInitScript(() => {
-    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
   })
 })
 

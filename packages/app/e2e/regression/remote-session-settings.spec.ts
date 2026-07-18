@@ -19,8 +19,9 @@ test("session settings use the remote server context", async ({ page }) => {
   await expect(page.getByText(sessionB.title).first()).toBeVisible()
   await page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,")
 
-  const dialog = page.locator(".settings-v2-dialog")
+  const dialog = page.locator(".settings-dialog")
   const autoAccept = dialog.locator('[data-action="settings-auto-accept-permissions"]')
+
   const input = autoAccept.getByRole("switch")
   await expect(autoAccept).toBeVisible()
   await expect(input).toBeEnabled()
@@ -59,7 +60,7 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
   await page.goto(`/server/${base64Encode(serverA)}/session/${sessionA.id}`)
   await expect(page.getByText(sessionA.title).first()).toBeVisible()
   await page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,")
-  const autoAccept = page.locator(".settings-v2-dialog").locator('[data-action="settings-auto-accept-permissions"]')
+  const autoAccept = page.locator(".settings-dialog").locator('[data-action="settings-auto-accept-permissions"]')
   await autoAccept.locator('[data-slot="switch-control"]').click()
   await expect(autoAccept.getByRole("switch")).toBeChecked()
   await expect
@@ -152,7 +153,6 @@ type PermissionResponse = {
 async function configureServers(page: Page, tabs: { type: "session"; server: string; sessionId: string }[] = []) {
   await page.addInitScript(
     ({ serverB, tabs }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
       localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
       localStorage.setItem("opencode.window.browser.dat:tabs", JSON.stringify(tabs))
     },

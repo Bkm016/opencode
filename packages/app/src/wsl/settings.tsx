@@ -16,6 +16,7 @@ import { showToast } from "@/utils/toast"
 import { DialogAddWslServer } from "./dialog-add-server"
 import { useWslServers } from "./context"
 import { wslOpencodeAction, wslRuntimeRetryable } from "./settings-model"
+import "./settings-v2.css"
 
 type Controller = ReturnType<typeof useServerManagementController>
 

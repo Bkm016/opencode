@@ -11,7 +11,6 @@ test("closing the active server's last tab opens the remaining server tab", asyn
   await mockServers(page, requests)
   await page.addInitScript(
     ({ serverB, sessionA, sessionB }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
       localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
       localStorage.setItem(
         "opencode.window.browser.dat:tabs",
@@ -49,7 +48,6 @@ test("legacy session routes preserve an existing tab's server", async ({ page })
   await mockServers(page, [])
   await page.addInitScript(
     ({ serverB, sessionB }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
       localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
       localStorage.setItem(
         "opencode.window.browser.dat:tabs",

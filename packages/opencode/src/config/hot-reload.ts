@@ -40,4 +40,5 @@ export function isConfigHotReloadPath(file: string) {
   return false
 }
 
-export const DEBOUNCE_MS = 300
+// Broad skill trees (e.g. ~/.claude/skills) can churn; debounce full instance reloads.
+export const DEBOUNCE_MS = 1000

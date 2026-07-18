@@ -911,6 +911,17 @@ export default function LegacyLayout(props: ParentProps) {
         onSelect: () => chooseProject(),
       },
       {
+        id: "project.reload",
+        title: language.t("command.project.reload"),
+        description: language.t("command.project.reload.description"),
+        category: language.t("command.category.project"),
+        slash: "reload",
+        disabled: !currentDir(),
+        onSelect: () => {
+          void reloadProject()
+        },
+      },
+      {
         id: "project.previous",
         title: language.t("command.project.previous"),
         category: language.t("command.category.project"),
@@ -1111,12 +1122,31 @@ export default function LegacyLayout(props: ParentProps) {
 
   function openSettings() {
     const run = ++dialogRun
-    const module = settings.general.newLayoutDesigns()
-      ? import("@/components/settings-v2")
-      : import("@/components/dialog-settings")
-    void module.then((x) => {
+    void import("@/components/dialog-settings").then((x) => {
       if (dialogDead || dialogRun !== run) return
       dialog.show(() => <x.DialogSettings />)
+    })
+  }
+
+  const reloadProject = async () => {
+    const directory = currentDir()
+    if (!directory) return
+    const project = getFilename(directory)
+    const result = await serverSDK()
+      .client.instance.reload({ directory })
+      .then((x) => x.data)
+      .catch(() => {
+        showToast({
+          variant: "error",
+          title: language.t("toast.project.reloadFailed.title", { project }),
+          description: language.t("common.requestFailed"),
+        })
+        return undefined
+      })
+    if (result === undefined) return
+    showToast({
+      title: language.t("toast.project.reload.success.title"),
+      description: language.t("toast.project.reload.success.description", { project }),
     })
   }
 

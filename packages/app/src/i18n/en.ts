@@ -783,6 +783,8 @@ export const dict = {
   "common.rename": "Rename",
   "common.reset": "Reset",
   "common.archive": "Archive",
+  "common.pin": "Pin",
+  "common.unpin": "Unpin",
   "common.delete": "Delete",
   "common.close": "Close",
   "common.edit": "Edit",

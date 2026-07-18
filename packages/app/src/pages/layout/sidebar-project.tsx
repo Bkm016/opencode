@@ -11,6 +11,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ProjectIcon, SessionItem, type SessionItemProps } from "./sidebar-items"
+import { pinnedSessionIds } from "@/utils/session-pin"
 import { displayName, sortedRootSessions } from "./helpers"
 
 export type ProjectSidebarContext = {
@@ -310,10 +311,12 @@ export const SortableProject = (props: {
       })
     }),
   )
-  const projectSessions = createMemo(() => sortedRootSessions(projectStore(), props.sortNow()))
+  const projectSessions = createMemo(() =>
+    sortedRootSessions(projectStore(), props.sortNow(), pinnedSessionIds(props.project.worktree)),
+  )
   const workspaceSessions = (directory: string) => {
     const [data] = serverSync().child(directory, { bootstrap: false })
-    return sortedRootSessions(data, props.sortNow())
+    return sortedRootSessions(data, props.sortNow(), pinnedSessionIds(directory))
   }
   const tile = () => (
     <ProjectTile

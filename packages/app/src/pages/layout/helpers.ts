@@ -29,7 +29,19 @@ const isRootVisibleSession = (session: Session, directory: string) =>
 export const roots = (store: SessionStore) =>
   (store.session ?? []).filter((session) => isRootVisibleSession(session, store.path.directory))
 
-export const sortedRootSessions = (store: SessionStore, now: number) => roots(store).sort(sortSessions(now))
+/** Root sessions: pinned block (pin order) first, then recent sort for the rest. */
+export const sortedRootSessions = (store: SessionStore, now: number, pinnedIds: string[] = []) => {
+  const list = roots(store).sort(sortSessions(now))
+  if (pinnedIds.length === 0) return list
+
+  const pinSet = new Set(pinnedIds)
+  const order = new Map(pinnedIds.map((id, index) => [id, index]))
+  const pinned = list
+    .filter((session) => pinSet.has(session.id))
+    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  const rest = list.filter((session) => !pinSet.has(session.id))
+  return [...pinned, ...rest]
+}
 
 export const latestRootSession = (stores: SessionStore[], now: number) =>
   stores.flatMap(roots).sort(sortSessions(now))[0]

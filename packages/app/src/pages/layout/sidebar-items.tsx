@@ -1,5 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -14,6 +15,7 @@ import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
+import { isSessionPinned, toggleSessionPin } from "@/utils/session-pin"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { getProjectAvatarSource, hasProjectPermissions, sidebarChildSessions } from "./helpers"
@@ -94,6 +96,7 @@ const SessionRow = (props: {
   slug: string
   mobile?: boolean
   dense?: boolean
+  pinned: Accessor<boolean>
   tint: Accessor<string | undefined>
   isWorking: Accessor<boolean>
   hasPermissions: Accessor<boolean>
@@ -105,6 +108,8 @@ const SessionRow = (props: {
   warmFocus: () => void
 }): JSX.Element => {
   const title = () => sessionTitle(props.session.title)
+  const showLeading = () =>
+    props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0
 
   return (
     <A
@@ -117,7 +122,7 @@ const SessionRow = (props: {
         props.clearHoverProjectSoon()
       }}
     >
-      <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
+      <Show when={showLeading()}>
         <div
           class="shrink-0 size-6 flex items-center justify-center"
           style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
@@ -138,7 +143,15 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>
+      <span
+        classList={{
+          "min-w-0 flex-1 truncate text-text-strong": true,
+          "text-14-medium": props.pinned(),
+          "text-14-regular": !props.pinned(),
+        }}
+      >
+        {title()}
+      </span>
     </A>
   )
 }
@@ -199,12 +212,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     }
   }
 
+  const pinned = createMemo(() => !props.level && isSessionPinned(props.session.directory, props.session.id))
   const item = (
     <SessionRow
       session={props.session}
       slug={props.slug}
       mobile={props.mobile}
       dense={props.dense}
+      pinned={pinned}
       tint={tint}
       isWorking={isWorking}
       hasPermissions={hasPermissions}
@@ -217,59 +232,90 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     />
   )
 
-  return (
-    <>
-      <div
-        data-session-id={props.session.id}
-        class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
-        style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
-      >
-        <div class="flex min-w-0 items-center gap-1">
-          <div class="min-w-0 flex-1">
-            <Show
-              when={!tooltip()}
-              fallback={
-                <Tooltip
-                  placement={props.mobile ? "bottom" : "right"}
-                  value={sessionTitle(props.session.title)}
-                  gutter={10}
-                  class="min-w-0 w-full"
-                >
-                  {item}
-                </Tooltip>
-              }
-            >
-              {item}
-            </Show>
-          </div>
-
-          <Show when={!props.level}>
-            <div
-              class="shrink-0 overflow-hidden transition-[width,opacity]"
-              classList={{
-                "w-6 opacity-100 pointer-events-auto": !!props.mobile,
-                "w-0 opacity-0 pointer-events-none": !props.mobile,
-                "group-hover/session:w-6 group-hover/session:opacity-100 group-hover/session:pointer-events-auto": true,
-                "group-focus-within/session:w-6 group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto": true,
-              }}
-            >
-              <Tooltip value={language.t("common.archive")} placement="top">
-                <IconButton
-                  icon="archive"
-                  variant="ghost"
-                  class="size-6 rounded-md"
-                  aria-label={language.t("common.archive")}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    void props.archiveSession(props.session)
-                  }}
-                />
+  const row = (
+    <div
+      data-session-id={props.session.id}
+      data-pinned={pinned() ? "true" : undefined}
+      class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
+      style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
+    >
+      <Show when={pinned()}>
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-icon-interactive-base"
+        />
+      </Show>
+      <div class="flex min-w-0 items-center gap-1">
+        <div class="min-w-0 flex-1">
+          <Show
+            when={!tooltip()}
+            fallback={
+              <Tooltip
+                placement={props.mobile ? "bottom" : "right"}
+                value={sessionTitle(props.session.title)}
+                gutter={10}
+                class="min-w-0 w-full"
+              >
+                {item}
               </Tooltip>
-            </div>
+            }
+          >
+            {item}
           </Show>
         </div>
+
+        <Show when={!props.level}>
+          <div
+            class="shrink-0 overflow-hidden transition-[width,opacity]"
+            classList={{
+              "w-6 opacity-100 pointer-events-auto": !!props.mobile,
+              "w-0 opacity-0 pointer-events-none": !props.mobile,
+              "group-hover/session:w-6 group-hover/session:opacity-100 group-hover/session:pointer-events-auto": true,
+              "group-focus-within/session:w-6 group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto": true,
+            }}
+          >
+            <Tooltip value={language.t("common.archive")} placement="top">
+              <IconButton
+                icon="archive"
+                variant="ghost"
+                class="size-6 rounded-md"
+                aria-label={language.t("common.archive")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void props.archiveSession(props.session)
+                }}
+              />
+            </Tooltip>
+          </div>
+        </Show>
       </div>
+    </div>
+  )
+
+  return (
+    <>
+      <Show when={!props.level} fallback={row}>
+        <ContextMenu>
+          <ContextMenu.Trigger as="div" class="w-full min-w-0">
+            {row}
+          </ContextMenu.Trigger>
+          <ContextMenu.Portal>
+            <ContextMenu.Content>
+              <ContextMenu.Item
+                onSelect={() => toggleSessionPin(props.session.directory, props.session.id)}
+              >
+                <ContextMenu.ItemLabel>
+                  {pinned() ? language.t("common.unpin") : language.t("common.pin")}
+                </ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+              <ContextMenu.Item onSelect={() => void props.archiveSession(props.session)}>
+                <ContextMenu.ItemLabel>{language.t("common.archive")}</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu>
+      </Show>
       <For each={childSessions()}>
         {(child) => (
           <div class="w-full">

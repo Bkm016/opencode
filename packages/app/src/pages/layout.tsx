@@ -60,6 +60,7 @@ import { useDirectoryPicker } from "@/components/directory-picker"
 import { ServerConnection, useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
+import { pinnedSessionIds, removeSessionPin } from "@/utils/session-pin"
 import {
   displayName,
   effectiveWorkspaceOrder,
@@ -609,7 +610,7 @@ export default function LegacyLayout(props: ParentProps) {
     const result: Session[] = []
     for (const dir of dirs) {
       const [dirStore] = serverSync().child(dir, { bootstrap: true })
-      const dirSessions = sortedRootSessions(dirStore, now)
+      const dirSessions = sortedRootSessions(dirStore, now, pinnedSessionIds(dir))
       result.push(...dirSessions)
     }
     return result
@@ -867,6 +868,7 @@ export default function LegacyLayout(props: ParentProps) {
       sessionID: session.id,
       time: { archived: Date.now() },
     })
+    removeSessionPin(session.directory, session.id)
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, session.id, (s) => s.id)

@@ -24,6 +24,7 @@ export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
   setActiveMessage: (message: UserMessage | undefined) => void
   focusInput: () => void
+  openFind?: () => void
   review?: () => boolean
   fileBrowser?: () => boolean
 }
@@ -129,6 +130,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const navigateMessageByOffset = actions.navigateMessageByOffset
   const setActiveMessage = actions.setActiveMessage
   const focusInput = actions.focusInput
+  const openFind = actions.openFind
 
   const sessionCommand = withCategory(language.t("command.category.session"))
   const fileCommand = withCategory(language.t("command.category.file"))
@@ -389,6 +391,15 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
+  const openChildSessions = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    void openDialog(
+      () => import("@/components/dialog-child-sessions"),
+      (x) => dialog.show(() => <x.DialogChildSessions parentID={sessionID} />),
+    )
+  }
+
   const shareCmds = () => {
     if (sync().data.config.share === "disabled") return []
     return [
@@ -454,6 +465,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "fork",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: fork,
+    }),
+    sessionCommand({
+      id: "session.children",
+      title: language.t("command.session.children"),
+      description: language.t("command.session.children.description"),
+      slash: "children",
+      disabled: !params.id,
+      onSelect: openChildSessions,
     }),
   ]
 
@@ -548,6 +567,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   ]
 
   const messageCmds = () => [
+    sessionCommand({
+      id: "session.find",
+      title: language.t("command.session.find"),
+      description: language.t("command.session.find.description"),
+      keybind: "mod+f",
+      disabled: !params.id || !openFind,
+      onSelect: () => openFind?.(),
+    }),
     sessionCommand({
       id: "message.previous",
       title: language.t("command.message.previous"),

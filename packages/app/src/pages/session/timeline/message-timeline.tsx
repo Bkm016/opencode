@@ -1,6 +1,7 @@
 import {
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   For,
   Index,
@@ -31,6 +32,7 @@ import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
@@ -74,6 +76,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
+import { directChildSessions } from "@/pages/layout/helpers"
 import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
@@ -382,6 +385,32 @@ export function MessageTimeline(props: {
     return language.t("command.session.new")
   })
   const showHeader = createMemo(() => !!(titleValue() || parentID()))
+  const childSessions = createMemo(() => {
+    const id = sessionID()
+    if (!id) return []
+    return directChildSessions(sync().data.session, id)
+  })
+  const [remoteChildren] = createResource(sessionID, async (id) => {
+    if (!id) return [] as Awaited<ReturnType<typeof import("@/components/dialog-child-sessions").loadChildSessions>>
+    const mod = await import("@/components/dialog-child-sessions")
+    return mod
+      .loadChildSessions({
+        parentID: id,
+        client: sdk().client,
+        directory: sdk().directory,
+        remember: (session) => sync().session.remember(session),
+      })
+      .catch(() => [])
+  })
+  const childCount = createMemo(() => Math.max(childSessions().length, remoteChildren()?.length ?? 0))
+  const hasChildSessions = createMemo(() => childCount() > 0)
+  const openChildSessions = () => {
+    const id = sessionID()
+    if (!id) return
+    void import("@/components/dialog-child-sessions").then((mod) => {
+      dialog.show(() => <mod.DialogChildSessions parentID={id} />)
+    })
+  }
   const projection = createTimelineProjection({
     messages: sessionMessages,
     userMessages: () => props.userMessages,
@@ -1586,6 +1615,25 @@ export function MessageTimeline(props: {
                       "shrink-0 flex items-center gap-3": true,
                     }}
                   >
+                    <Show when={hasChildSessions()}>
+                      <Tooltip
+                        value={language.t("dialog.childSessions.description", {
+                          count: String(childCount()),
+                        })}
+                        placement="bottom"
+                      >
+                        <button
+                          type="button"
+                          data-slot="session-children"
+                          class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
+                          aria-label={language.t("session.children.open")}
+                          onClick={openChildSessions}
+                        >
+                          <Icon name="task" class="size-3.5" />
+                          <span class="text-11-regular tabular-nums">{childCount()}</span>
+                        </button>
+                      </Tooltip>
+                    </Show>
                     <SessionContextUsage
                       placement="bottom"
                       buttonAppearance="default"

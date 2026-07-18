@@ -790,6 +790,20 @@ export function renderable(part: PartType, showReasoningSummaries = true) {
   return !!PART_MAPPING[part.type]
 }
 
+/** Tools / reasoning are intermediate process; final text answers stay outside the collapse. */
+export function isProcessPart(part: PartType) {
+  if (part.type === "reasoning") return true
+  // Keep interactive/completed question UI outside the process fold.
+  if (part.type === "tool") return part.tool !== "question"
+  return false
+}
+
+export function isProcessGroup(group: PartGroup, resolve: (ref: PartRef) => PartType | undefined) {
+  if (group.type === "context") return true
+  const part = resolve(group.ref)
+  return !!part && isProcessPart(part)
+}
+
 function toolDefaultOpen(tool: string, shell = false, edit = false) {
   if (tool === "bash") return shell
   if (tool === "edit" || tool === "write" || tool === "apply_patch") return edit

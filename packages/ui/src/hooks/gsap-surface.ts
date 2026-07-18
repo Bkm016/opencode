@@ -195,6 +195,69 @@ export function animateOutputEnter(
   })
 }
 
+/** Soft enter when expanding collapsed process steps. */
+export function animateProcessReveal(nodes: ArrayLike<Element> | Element | null | undefined) {
+  return safe(() => {
+    if (!nodes || prefersReducedMotion()) return
+    const list = "length" in nodes ? Array.from(nodes as ArrayLike<Element>) : [nodes]
+    const targets = list.filter((node): node is HTMLElement => node instanceof HTMLElement && node.isConnected)
+    if (targets.length === 0) return
+    const batch = targets.length > 16 ? targets.slice(0, 16) : targets
+    gsap.killTweensOf(batch)
+    return gsap.fromTo(
+      batch,
+      { opacity: 0, y: 6 },
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.24,
+        stagger: 0.03,
+        ease: "power2.out",
+        clearProps: "opacity,transform",
+      },
+    )
+  })
+}
+
+/** Soft exit before collapsing process steps; resolves when finished. */
+export function animateProcessHide(nodes: ArrayLike<Element> | Element | null | undefined) {
+  return safe(() => {
+    if (!nodes || prefersReducedMotion()) return Promise.resolve()
+    const list = "length" in nodes ? Array.from(nodes as ArrayLike<Element>) : [nodes]
+    const targets = list.filter((node): node is HTMLElement => node instanceof HTMLElement && node.isConnected)
+    if (targets.length === 0) return Promise.resolve()
+    const batch = targets.length > 16 ? targets.slice(0, 16) : targets
+    gsap.killTweensOf(batch)
+    return new Promise<void>((resolve) => {
+      gsap.to(batch, {
+        opacity: 0,
+        y: -4,
+        duration: 0.16,
+        stagger: 0.012,
+        ease: "power1.in",
+        onComplete: () => resolve(),
+      })
+    })
+  }) ?? Promise.resolve()
+}
+
+/** Chevron rotate for process summary expand/collapse. */
+export function animateProcessChevron(el: HTMLElement | null | undefined, open: boolean) {
+  return safe(() => {
+    if (!el) return
+    if (prefersReducedMotion()) {
+      gsap.set(el, { rotate: open ? 90 : 0 })
+      return
+    }
+    gsap.to(el, {
+      rotate: open ? 90 : 0,
+      duration: 0.18,
+      ease: "power2.out",
+      overwrite: "auto",
+    })
+  })
+}
+
 /** Shell / status subtitle: width spring + blur clear. */
 export function animateShellSubtitle(
   widthEl: HTMLElement | null | undefined,

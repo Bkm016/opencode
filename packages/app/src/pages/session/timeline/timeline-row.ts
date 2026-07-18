@@ -24,6 +24,12 @@ export namespace TimelineRow {
     group: PartGroup
     previousAssistantPart: boolean
   }> {}
+  /** One virtual row: collapsed header + optional in-row process groups (tools/tasks). */
+  export class ProcessSummary extends Data.TaggedClass("ProcessSummary")<{
+    userMessageID: string
+    durationMs?: number
+    groups: PartGroup[]
+  }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
     reasoningHeading?: string
@@ -46,6 +52,7 @@ export namespace TimelineRow {
     | UserMessage
     | TurnDivider
     | AssistantPart
+    | ProcessSummary
     | Thinking
     | DiffSummary
     | Error
@@ -63,6 +70,8 @@ export namespace TimelineRow {
         return `turn-divider:${row.userMessageID}:${row.label}`
       case "AssistantPart":
         return `assistant-part:${row.userMessageID}:${row.group.key}`
+      case "ProcessSummary":
+        return `process-summary:${row.userMessageID}`
       case "Thinking":
         return `thinking:${row.userMessageID}`
       case "DiffSummary":

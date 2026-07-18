@@ -94,6 +94,8 @@ export const dict = {
   "ui.sessionTurn.status.thinkingWithTopic": "思考 - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "正在整理思緒",
   "ui.sessionTurn.status.consideringNextSteps": "正在考慮下一步",
+  "ui.sessionTurn.status.processed": "已處理",
+  "ui.sessionTurn.status.processedWithDuration": "已處理 {{duration}}",
 
   "ui.messagePart.questions.dismissed": "問題已略過",
   "ui.messagePart.compaction": "工作階段已壓縮",

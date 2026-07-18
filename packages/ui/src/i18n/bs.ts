@@ -95,6 +95,8 @@ export const dict = {
   "ui.sessionTurn.status.thinkingWithTopic": "Razmišljanje - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Sređivanje misli",
   "ui.sessionTurn.status.consideringNextSteps": "Razmatranje sljedećih koraka",
+  "ui.sessionTurn.status.processed": "Processed",
+  "ui.sessionTurn.status.processedWithDuration": "Processed {{duration}}",
 
   "ui.messagePart.questions.dismissed": "Pitanja odbačena",
   "ui.messagePart.compaction": "Sesija sažeta",

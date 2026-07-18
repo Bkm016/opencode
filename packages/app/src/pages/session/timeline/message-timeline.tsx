@@ -40,7 +40,13 @@ import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import { animateOutputEnter } from "@opencode-ai/ui/hooks/gsap-surface"
+import {
+  animateOutputEnter,
+  animateProcessChevron,
+  animateProcessHide,
+  animateProcessReveal,
+} from "@opencode-ai/ui/hooks/gsap-surface"
+import type { PartGroup } from "@opencode-ai/session-ui/message-part"
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -142,6 +148,56 @@ function TimelineThinkingRow(props: {
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
     </div>
+  )
+}
+
+function formatTurnDuration(ms: number | undefined, t: (key: string, params?: Record<string, string>) => string) {
+  if (!(typeof ms === "number" && ms >= 0)) return ""
+  const total = Math.round(ms / 1000)
+  if (total < 60) return t("ui.message.duration.seconds", { count: String(total) })
+  return t("ui.message.duration.minutesSeconds", {
+    minutes: String(Math.floor(total / 60)),
+    seconds: String(total % 60),
+  })
+}
+
+function TimelineProcessSummaryHeader(props: {
+  durationMs?: number
+  open: boolean
+  onToggle: () => void
+}) {
+  const language = useLanguage()
+  const duration = () => formatTurnDuration(props.durationMs, language.t)
+  const label = () => {
+    const value = duration()
+    if (!value) return language.t("ui.sessionTurn.status.processed")
+    return language.t("ui.sessionTurn.status.processedWithDuration", { duration: value })
+  }
+  let chevron: HTMLElement | undefined
+
+  createEffect(() => {
+    animateProcessChevron(chevron, props.open)
+  })
+
+  return (
+    <button
+      type="button"
+      data-slot="session-turn-process-summary"
+      data-open={props.open ? "true" : undefined}
+      aria-expanded={props.open}
+      onClick={() => props.onToggle()}
+    >
+      <span data-slot="session-turn-process-summary-label">{label()}</span>
+      <span
+        data-slot="session-turn-process-summary-chevron"
+        ref={(el) => {
+          chevron = el
+          animateProcessChevron(el, props.open)
+        }}
+      >
+        <Icon name="chevron-right" size="small" class="session-turn-process-summary-chevron" />
+      </span>
+    </button>
   )
 }
 
@@ -339,8 +395,7 @@ export function MessageTimeline(props: {
   const messageByID = projection.messageByID
   const messageLastRowIndex = projection.messageLastRowIndex
   const messageRowIndex = projection.messageRowIndex
-  const timelineRowByKey = projection.rowByKey
-  const timelineRows = projection.rows
+  const projectedRows = projection.rows
 
   let prependAnchor: { key: string; offset: number } | undefined
   let prependAnchorFrame: number | undefined
@@ -403,6 +458,10 @@ export function MessageTimeline(props: {
   }
 
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
+  // ProcessSummary is one virtual row; open only expands content inside that row.
+  const [processOpen, setProcessOpen] = createStore<Record<string, boolean | undefined>>({})
+  const timelineRows = projectedRows
+  const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
   let resizePinnedIndexes: number[] = []
   let resizePinFrame: number | undefined
@@ -450,12 +509,14 @@ export function MessageTimeline(props: {
   })
   const resizeItem = virtualizer.resizeItem
   let resizeAnchorScheduled = false
+  // While expanding/collapsing ProcessSummary, keep that row's top fixed so growth is downward.
+  let processSizePin: { key: string; top: number } | undefined
   const anchorResizedBottom = () => {
-    if (resizeAnchorScheduled || props.hasScrollGesture()) return
+    if (processSizePin || resizeAnchorScheduled || props.hasScrollGesture()) return
     resizeAnchorScheduled = true
     queueMicrotask(() => {
       resizeAnchorScheduled = false
-      if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
+      if (processSizePin || !props.shouldAnchorBottom() || props.hasScrollGesture()) return
       virtualizer.scrollToEnd()
     })
   }
@@ -943,43 +1004,35 @@ export function MessageTimeline(props: {
     }
   }
 
-  const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
-    if (row().group.type === "context") {
-      const parts = createMemo(() => {
-        const group = row().group
-        if (group.type !== "context") return emptyTools
-        return group.refs
-          .map((ref) => getMsgPart(ref.messageID, ref.partID))
-          .filter((part): part is ToolPart => part?.type === "tool")
-      })
-      const contextOpenKey = () => `context:${row().group.key}`
-      const open = createMemo(() => {
-        return toolOpen[contextOpenKey()] === true
-      })
-
+  const renderPartGroup = (input: {
+    userMessageID: string
+    group: PartGroup
+    onSizeChange?: () => void
+  }) => {
+    if (input.group.type === "context") {
+      const parts = createMemo(() =>
+        input.group.type === "context"
+          ? input.group.refs
+              .map((ref) => getMsgPart(ref.messageID, ref.partID))
+              .filter((part): part is ToolPart => part?.type === "tool")
+          : emptyTools,
+      )
+      const contextOpenKey = `context:${input.group.key}`
       return (
         <ContextToolGroup
           parts={parts()}
-          open={open()}
-          onOpenChange={(value) => setToolOpen(contextOpenKey(), value)}
-          busy={
-            workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
-          }
-          onSizeChange={onSizeChange}
+          open={toolOpen[contextOpenKey] === true}
+          onOpenChange={(value) => setToolOpen(contextOpenKey, value)}
+          busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
+          onSizeChange={input.onSizeChange}
         />
       )
     }
 
-    const message = createMemo(() => {
-      const group = row().group
-      if (group.type !== "part") return
-      return messageByID().get(group.ref.messageID)
-    })
-    const part = createMemo(() => {
-      const group = row().group
-      if (group.type !== "part") return
-      return getMsgPart(group.ref.messageID, group.ref.partID)
-    })
+    const ref = input.group.type === "part" ? input.group.ref : undefined
+    if (!ref) return null
+    const message = createMemo(() => messageByID().get(ref.messageID))
+    const part = createMemo(() => getMsgPart(ref.messageID, ref.partID))
     const defaultOpen = createMemo(() => {
       const item = part()
       if (!item) return
@@ -994,14 +1047,14 @@ export function MessageTimeline(props: {
               <MessagePart
                 part={part()}
                 message={message()}
-                showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
-                turnDurationMs={turnDurationMs(row().userMessageID)}
+                showAssistantCopyPartID={assistantCopyPartID(input.userMessageID)}
+                turnDurationMs={turnDurationMs(input.userMessageID)}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
                 deferToolContent
                 virtualizeDiff={false}
-                onContentRendered={onSizeChange}
+                onContentRendered={input.onSizeChange}
               />
             )}
           </Show>
@@ -1009,6 +1062,13 @@ export function MessageTimeline(props: {
       </Show>
     )
   }
+
+  const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) =>
+    renderPartGroup({
+      userMessageID: row().userMessageID,
+      group: row().group,
+      onSizeChange,
+    })
 
   function TimelineRowFrame(input: { row: Accessor<FramedTimelineRow>; children: JSX.Element }) {
     const anchor = () => {
@@ -1042,7 +1102,8 @@ export function MessageTimeline(props: {
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
     switch (row()._tag) {
       case "TurnGap":
-        return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
+        // Kept for type exhaustiveness; new rows no longer emit TurnGap.
+        return null
       case "CommentStrip": {
         const commentStripRow = row as Accessor<TimelineRowByTag<"CommentStrip">>
         const comments = createMemo(() =>
@@ -1138,6 +1199,10 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+      case "ProcessSummary": {
+        const processSummaryRow = row as Accessor<TimelineRowByTag<"ProcessSummary">>
+        return <TimelineProcessSummaryView row={processSummaryRow} onSizeChange={onSizeChange} />
+      }
       case "Thinking": {
         const thinkingRow = row as Accessor<TimelineRowByTag<"Thinking">>
         return (
@@ -1185,6 +1250,135 @@ export function MessageTimeline(props: {
         )
       }
     }
+  }
+
+  function TimelineProcessSummaryView(props: {
+    row: Accessor<TimelineRowByTag<"ProcessSummary">>
+    onSizeChange?: () => void
+  }) {
+    const open = () => processOpen[props.row().userMessageID] === true
+    // Stay mounted through hide tween so collapse is not an instant DOM cut.
+    const [bodyMounted, setBodyMounted] = createSignal(open())
+    const [toggling, setToggling] = createSignal(false)
+    let bodyEl: HTMLDivElement | undefined
+    const rowKey = () => TimelineRow.key(props.row())
+    const pinRowTop = () => {
+      const key = rowKey()
+      const root = listRoot()
+      const host = root?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(key)}"]`)
+      if (!root || !host) return
+      processSizePin = {
+        key,
+        top: host.getBoundingClientRect().top - root.getBoundingClientRect().top,
+      }
+    }
+    const forceMeasure = () => {
+      // Virtual rows pin outer height to item.size. Stale cache (or measuring before
+      // collapse paints) leaves a permanent gap before the final answer.
+      const key = rowKey()
+      const index = timelineRows().findIndex((item) => TimelineRow.key(item) === key)
+      const root = listRoot()
+      const host = root?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(key)}"]`)
+      const el = host?.querySelector<HTMLElement>("[data-index]")
+      if (!el || index < 0) {
+        props.onSizeChange?.()
+        return
+      }
+      // Keep this row's top fixed so open/close always grows/shrinks downward.
+      if ((!processSizePin || processSizePin.key !== key) && root && host) {
+        processSizePin = {
+          key,
+          top: host.getBoundingClientRect().top - root.getBoundingClientRect().top,
+        }
+      }
+      // scrollHeight ignores the pinned outer height and matches real content.
+      const height = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height))
+      resizeItem(index, Math.max(1, height))
+      if (virtualContent) virtualContent.style.height = `${virtualizer.getTotalSize()}px`
+      const activePin = processSizePin?.key === key ? processSizePin : undefined
+      if (activePin && root && host) {
+        const nextTop = host.getBoundingClientRect().top - root.getBoundingClientRect().top
+        const delta = nextTop - activePin.top
+        if (Math.abs(delta) > 0.5) root.scrollTop += delta
+      }
+    }
+    const scheduleMeasure = (clearPin = true) => {
+      requestAnimationFrame(() => {
+        forceMeasure()
+        requestAnimationFrame(() => {
+          forceMeasure()
+          if (clearPin) processSizePin = undefined
+        })
+      })
+    }
+    const playOpen = () => {
+      pinRowTop()
+      setProcessOpen(props.row().userMessageID, true)
+      setBodyMounted(true)
+      requestAnimationFrame(() => {
+        const targets = bodyEl ? Array.from(bodyEl.children) : []
+        animateProcessReveal(targets.length > 0 ? targets : bodyEl)
+        scheduleMeasure()
+      })
+    }
+    const playClose = async () => {
+      if (toggling()) return
+      setToggling(true)
+      pinRowTop()
+      const targets = bodyEl ? Array.from(bodyEl.children) : []
+      await animateProcessHide(targets.length > 0 ? targets : bodyEl)
+      setProcessOpen(props.row().userMessageID, false)
+      setBodyMounted(false)
+      setToggling(false)
+      scheduleMeasure()
+    }
+    onMount(scheduleMeasure)
+    createEffect(
+      on(
+        () => [bodyMounted(), props.row().groups.length] as const,
+        () => scheduleMeasure(false),
+        { defer: true },
+      ),
+    )
+    return (
+      <TimelineRowFrame row={props.row}>
+        <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+          <div data-slot="session-turn-process">
+            <TimelineProcessSummaryHeader
+              durationMs={props.row().durationMs}
+              open={open()}
+              onToggle={() => {
+                if (toggling()) return
+                if (open()) void playClose()
+                else playOpen()
+              }}
+            />
+            <Show when={bodyMounted()}>
+              <div
+                ref={(el) => {
+                  bodyEl = el
+                }}
+                data-slot="session-turn-process-body"
+                class="flex flex-col gap-3 pt-2"
+              >
+                <For each={props.row().groups}>
+                  {(group) =>
+                    renderPartGroup({
+                      userMessageID: props.row().userMessageID,
+                      group,
+                      onSizeChange: () => {
+                        props.onSizeChange?.()
+                        scheduleMeasure(false)
+                      },
+                    })
+                  }
+                </For>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </TimelineRowFrame>
+    )
   }
 
   function TimelineRowView(props: { row: TimelineRow.TimelineRow; onSizeChange?: () => void }) {

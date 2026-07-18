@@ -88,6 +88,57 @@
     gap: 12px;
   }
 
+  [data-slot="session-turn-process"] {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  [data-slot="session-turn-process-body"] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  [data-slot="session-turn-process-summary"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-weak);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  [data-slot="session-turn-process-summary"]:hover {
+    color: var(--text-base);
+  }
+
+  [data-slot="session-turn-process-summary-chevron"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: currentColor;
+    will-change: transform;
+  }
+
+  [data-slot="session-turn-process-summary"] .session-turn-process-summary-chevron {
+    width: 14px;
+    height: 14px;
+    color: currentColor;
+  }
+
   [data-slot="session-turn-diffs"] {
     width: 100%;
     min-width: 0;

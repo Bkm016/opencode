@@ -1,6 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2"
-import { groupParts, renderable, type PartGroup } from "@opencode-ai/session-ui/message-part"
+import { groupParts, isProcessGroup, renderable, type PartGroup } from "@opencode-ai/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
 
@@ -24,6 +24,11 @@ export type TimelineRowMap = {
     group: PartGroup
     previousAssistantPart: boolean
   }
+  ProcessSummary: {
+    userMessageID: string
+    durationMs?: number
+    groups: PartGroup[]
+  }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
@@ -35,14 +40,13 @@ export namespace Timeline {
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],
     assistantMessages: AssistantMessage[],
-    index: number,
+    _index: number,
     showReasoning: boolean,
     status: SessionStatus["type"],
     isActive: boolean,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
-    const previousUserMessage = index > 0
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
@@ -73,7 +77,6 @@ export namespace Timeline {
             ),
           ]
         : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
-    if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
       rows.push(
@@ -98,27 +101,88 @@ export namespace Timeline {
       )
     }
 
-    let assistantGroupIndex = 0
-    assistantItems.forEach((item) => {
-      if (item.type === "interrupted") {
-        rows.push(
-          new TimelineRow.TurnDivider({
-            userMessageID: userMessage.id,
-            label: "interrupted",
-          }),
-        )
-        return
-      }
+    const resolvePart = (ref: { messageID: string; partID: string }) =>
+      getMessageParts(ref.messageID).find((part) => part.id === ref.partID)
+    const turnComplete = !isActive || status === "idle"
+    const turnDurationMs = (() => {
+      const start = userMessage.time.created
+      if (typeof start !== "number") return
+      const end = assistantMessages.reduce<number | undefined>((max, item) => {
+        const completed = item.time.completed
+        if (typeof completed !== "number") return max
+        if (max === undefined) return completed
+        return Math.max(max, completed)
+      }, undefined)
+      if (typeof end !== "number" || end < start) return
+      return end - start
+    })()
 
+    let assistantGroupIndex = 0
+    const pushProcess = (groups: PartGroup[]) => {
+      if (groups.length === 0) return
+      // Single virtual row owns all process UI so collapse never leaves ghost heights.
+      // Intermediate status text is folded too; only the trailing final answer stays out.
+      rows.push(
+        new TimelineRow.ProcessSummary({
+          userMessageID: userMessage.id,
+          durationMs: turnDurationMs,
+          groups,
+        }),
+      )
+      assistantGroupIndex += 1
+    }
+    const pushPart = (group: PartGroup) => {
       rows.push(
         new TimelineRow.AssistantPart({
           userMessageID: userMessage.id,
-          group: item.group,
+          group,
           previousAssistantPart: assistantGroupIndex > 0,
         }),
       )
       assistantGroupIndex += 1
-    })
+    }
+    const pushCompletedSegment = (groups: PartGroup[]) => {
+      if (groups.length === 0) return
+      // Keep only the trailing non-process suffix (final answer / question) visible.
+      let finalStart = groups.length
+      while (finalStart > 0 && !isProcessGroup(groups[finalStart - 1]!, resolvePart)) {
+        finalStart -= 1
+      }
+      pushProcess(groups.slice(0, finalStart))
+      for (const group of groups.slice(finalStart)) pushPart(group)
+    }
+
+    if (!turnComplete) {
+      for (const item of assistantItems) {
+        if (item.type === "interrupted") {
+          rows.push(
+            new TimelineRow.TurnDivider({
+              userMessageID: userMessage.id,
+              label: "interrupted",
+            }),
+          )
+          continue
+        }
+        pushPart(item.group)
+      }
+    } else {
+      let segment: PartGroup[] = []
+      for (const item of assistantItems) {
+        if (item.type === "interrupted") {
+          pushCompletedSegment(segment)
+          segment = []
+          rows.push(
+            new TimelineRow.TurnDivider({
+              userMessageID: userMessage.id,
+              label: "interrupted",
+            }),
+          )
+          continue
+        }
+        segment.push(item.group)
+      }
+      pushCompletedSegment(segment)
+    }
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages

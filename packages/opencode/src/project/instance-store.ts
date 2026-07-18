@@ -43,6 +43,8 @@ interface HotReloadWatch {
   readonly watchers: FSWatcher[]
   timer: ReturnType<typeof setTimeout> | undefined
   paused: boolean
+  // Windows recursive watch often emits a burst when the watcher is first attached.
+  ignoreUntil: number
 }
 
 function collectWatchRoots(ctx: InstanceContext) {
@@ -153,10 +155,16 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       if (process.env.OPENCODE_TEST_HOME) return
       if (Flag.OPENCODE_DISABLE_CONFIG_HOT_RELOAD) return
       stopHotReload(ctx.directory)
-      const state: HotReloadWatch = { watchers: [], timer: undefined, paused: false }
+      const state: HotReloadWatch = {
+        watchers: [],
+        timer: undefined,
+        paused: false,
+        ignoreUntil: Date.now() + 4000,
+      }
       for (const root of collectWatchRoots(ctx)) {
         try {
           const watcher = watch(root, { recursive: isDirectory(root) }, (_event, filename) => {
+            if (Date.now() < state.ignoreUntil) return
             const file = filename ? path.join(root, filename.toString()) : root
             if (!isConfigHotReloadPath(file)) return
             scheduleHotReload(ctx.directory, file)

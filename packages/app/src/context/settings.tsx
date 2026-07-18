@@ -35,6 +35,8 @@ export interface Settings {
     showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     shouldDisplayTabsToast?: boolean
+    /** Desktop: true when this machine already had app state before first-launch onboarding. */
+    oldLayoutEligible?: boolean
   }
   appearance: {
     fontSize: number
@@ -210,10 +212,16 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     createEffect(() => {
       if (!ready() || !launchState.classified) return
       if (typeof store.general?.shouldDisplayTabsToast === "boolean") return
+      // Wait for desktop onboarding to report install age when available.
+      if (platform.platform === "desktop" && typeof store.general?.oldLayoutEligible !== "boolean") return
       setStore(
         "general",
         "shouldDisplayTabsToast",
-        shouldDisplayTabsToast(launchState.previous, platform.version, false),
+        shouldDisplayTabsToast(
+          launchState.previous,
+          platform.version,
+          store.general?.oldLayoutEligible === true,
+        ),
       )
     })
 
@@ -305,6 +313,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         shouldDisplayTabsToast: withFallback(() => store.general?.shouldDisplayTabsToast, false),
         dismissTabsToast() {
           setStore("general", "shouldDisplayTabsToast", false)
+        },
+        oldLayoutEligible: withFallback(() => store.general?.oldLayoutEligible, false),
+        setOldLayoutEligible(value: boolean) {
+          setStore("general", "oldLayoutEligible", value)
         },
       },
       visibility: {

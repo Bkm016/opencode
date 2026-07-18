@@ -1,6 +1,6 @@
 import { useDragDropContext } from "@thisbeyond/solid-dnd"
 import type { Transformer } from "@thisbeyond/solid-dnd"
-import { createRoot, onCleanup, type JSXElement } from "solid-js"
+import type { JSXElement } from "solid-js"
 
 type DragEvent = { draggable?: { id?: unknown } }
 
@@ -27,20 +27,22 @@ const createAxisConstraint = (axis: "x" | "y", transformerId: string) => (): JSX
   if (!context) return null
   const [, { onDragStart, onDragEnd, addTransformer, removeTransformer }] = context
   const transformer = createTransformer(transformerId, axis)
-  const dispose = createRoot((dispose) => {
-    onDragStart((event) => {
-      const id = getDraggableId(event)
-      if (!id) return
-      addTransformer("draggables", id, transformer)
-    })
-    onDragEnd((event) => {
-      const id = getDraggableId(event)
-      if (!id) return
-      removeTransformer("draggables", id, transformer.id)
-    })
-    return dispose
+  // Register on the existing provider owner — do not nest createRoot (causes cleanup warnings).
+  onDragStart((event) => {
+    const id = getDraggableId(event)
+    if (!id) return
+    addTransformer("draggables", id, transformer)
   })
-  onCleanup(dispose)
+  onDragEnd((event) => {
+    const id = getDraggableId(event)
+    if (!id) return
+    // Item may already be unregistered if the list re-rendered mid-drag.
+    try {
+      removeTransformer("draggables", id, transformer.id)
+    } catch {
+      // solid-dnd throws when the target was already removed
+    }
+  })
   return null
 }
 

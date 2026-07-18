@@ -1928,44 +1928,47 @@ export default function Page() {
             </div>
           </Match>
           <Match when={params.id}>
-            <Show when={messagesReady() ? params.id : undefined} keyed>
+            {/* Always key on session id so chat remounts even while messages are still loading. */}
+            <Show when={params.id} keyed>
               {(_id) => (
-                <MessageTimeline
-                  actions={actions}
-                  scroll={ui.scroll}
-                  onResumeScroll={resumeScroll}
-                  setScrollRef={setScrollRef}
-                  onScheduleScrollState={scheduleScrollState}
-                  onAutoScrollHandleScroll={autoScroll.handleScroll}
-                  onMarkScrollGesture={markScrollGesture}
-                  hasScrollGesture={hasScrollGesture}
-                  onUserScroll={markUserScroll}
-                  onHistoryScroll={onHistoryScroll}
-                  onAutoScrollInteraction={autoScroll.handleInteraction}
-                  shouldAnchorBottom={() =>
-                    !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
-                  }
-                  centered={centered()}
-                  setContentRef={(el) => {
-                    content = el
-                    autoScroll.contentRef(el)
+                <Show when={messagesReady()}>
+                  <MessageTimeline
+                    actions={actions}
+                    scroll={ui.scroll}
+                    onResumeScroll={resumeScroll}
+                    setScrollRef={setScrollRef}
+                    onScheduleScrollState={scheduleScrollState}
+                    onAutoScrollHandleScroll={autoScroll.handleScroll}
+                    onMarkScrollGesture={markScrollGesture}
+                    hasScrollGesture={hasScrollGesture}
+                    onUserScroll={markUserScroll}
+                    onHistoryScroll={onHistoryScroll}
+                    onAutoScrollInteraction={autoScroll.handleInteraction}
+                    shouldAnchorBottom={() =>
+                      !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                    }
+                    centered={centered()}
+                    setContentRef={(el) => {
+                      content = el
+                      autoScroll.contentRef(el)
 
-                    const root = scroller
-                    if (root) scheduleScrollState(root)
-                  }}
-                  userMessages={visibleUserMessages()}
-                  setHistoryAnchor={(handlers) => {
-                    captureHistoryAnchor = handlers.capture
-                    restoreHistoryAnchor = handlers.restore
-                  }}
-                  anchor={anchor}
-                  setRevealMessage={(fn) => {
-                    revealMessage = fn
-                  }}
-                  setScrollToEnd={(fn) => {
-                    scrollToEnd = fn
-                  }}
-                />
+                      const root = scroller
+                      if (root) scheduleScrollState(root)
+                    }}
+                    userMessages={visibleUserMessages()}
+                    setHistoryAnchor={(handlers) => {
+                      captureHistoryAnchor = handlers.capture
+                      restoreHistoryAnchor = handlers.restore
+                    }}
+                    anchor={anchor}
+                    setRevealMessage={(fn) => {
+                      revealMessage = fn
+                    }}
+                    setScrollToEnd={(fn) => {
+                      scrollToEnd = fn
+                    }}
+                  />
+                </Show>
               )}
             </Show>
           </Match>

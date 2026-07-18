@@ -2203,7 +2203,8 @@ export default function LegacyLayout(props: ParentProps) {
                 data-component="sidebar-nav-desktop"
                 classList={{
                   "absolute inset-y-0 left-0": true,
-                  "z-10": true,
+                  // Above main (z-20): otherwise the content pane can steal clicks on the rail/session list.
+                  "z-30": true,
                   "overflow-hidden": true,
                 }}
                 style={{ width: layout.sidebar.opened() ? `${side()}px` : "4rem" }}
@@ -2213,7 +2214,7 @@ export default function LegacyLayout(props: ParentProps) {
 
               <Show when={layout.sidebar.opened()}>
                 <div
-                  class="absolute inset-y-0 z-30 w-0 overflow-visible"
+                  class="absolute inset-y-0 z-40 w-0 overflow-visible"
                   style={{ left: `${side()}px` }}
                   onPointerDown={() => setState("sizing", true)}
                 >

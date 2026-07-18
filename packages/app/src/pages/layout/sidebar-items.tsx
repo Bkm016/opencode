@@ -7,7 +7,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { A, useParams } from "@solidjs/router"
+import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -107,6 +107,7 @@ const SessionRow = (props: {
   warmPress: () => void
   warmFocus: () => void
 }): JSX.Element => {
+  const navigate = useNavigate()
   const title = () => sessionTitle(props.session.title)
   const showLeading = () =>
     props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0
@@ -117,9 +118,22 @@ const SessionRow = (props: {
       class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
-      onClick={() => {
-        if (props.sidebarOpened()) return
-        props.clearHoverProjectSoon()
+      onClick={(event) => {
+        // Force route change even if a parent layer ate the default <A> navigation.
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          if (!props.sidebarOpened()) props.clearHoverProjectSoon()
+          return
+        }
+        event.preventDefault()
+        navigate(`/${props.slug}/session/${props.session.id}`)
+        if (!props.sidebarOpened()) props.clearHoverProjectSoon()
       }}
     >
       <Show when={showLeading()}>
@@ -336,6 +350,7 @@ export const NewSessionItem = (props: {
 }): JSX.Element => {
   const layout = useLayout()
   const language = useLanguage()
+  const navigate = useNavigate()
   const label = language.t("command.session.new")
   const tooltip = () => props.mobile || !props.sidebarExpanded()
   const item = (
@@ -343,9 +358,21 @@ export const NewSessionItem = (props: {
       href={`/${props.slug}/session`}
       end
       class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      onClick={() => {
-        if (layout.sidebar.opened()) return
-        props.clearHoverProjectSoon()
+      onClick={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          if (!layout.sidebar.opened()) props.clearHoverProjectSoon()
+          return
+        }
+        event.preventDefault()
+        navigate(`/${props.slug}/session`)
+        if (!layout.sidebar.opened()) props.clearHoverProjectSoon()
       }}
     >
       <div class="shrink-0 size-6 flex items-center justify-center">

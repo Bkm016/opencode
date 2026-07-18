@@ -368,3 +368,8 @@
     padding-bottom: 4px;
   }
 }
+
+[data-component="session-find-highlight-layer"] [data-slot="session-find-hit"],
+[data-component="session-find-highlight-layer"] [data-slot="session-find-active"] {
+  pointer-events: none;
+}

@@ -1,4 +1,4 @@
-import type { FilePart, Project, UserMessage } from "@opencode-ai/sdk/v2"
+import type { FilePart, Message, Project, UserMessage } from "@opencode-ai/sdk/v2"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
@@ -66,6 +66,9 @@ import {
 import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
+import { collectSessionFindMatches } from "@/pages/session/session-find"
+import { SessionFindBar } from "@/pages/session/session-find-bar"
+import { clearSessionFindHighlights, scheduleSessionFindHighlights } from "@/pages/session/session-find-highlight"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -797,6 +800,56 @@ export default function Page() {
   let scrollMark = 0
   let messageMark = 0
 
+  const [findOpen, setFindOpen] = createSignal(false)
+  const [findQuery, setFindQuery] = createSignal("")
+  const [findIndex, setFindIndex] = createSignal(0)
+  const [findFocus, setFindFocus] = createSignal(0)
+
+  const sessionMessages = createMemo(() => {
+    const id = params.id
+    if (!id) return [] as Message[]
+    return sync().data.message[id] ?? []
+  })
+
+  const findMatches = createMemo(() => {
+    if (!findOpen()) return []
+    const query = findQuery()
+    if (!query.trim()) return []
+    return collectSessionFindMatches({
+      messages: sessionMessages(),
+      parts: (messageID) => sync().data.part[messageID],
+      query,
+    })
+  })
+
+  const closeFind = () => {
+    setFindOpen(false)
+    clearSessionFindHighlights()
+  }
+
+  const openFind = () => {
+    if (!params.id) return
+    // Second Ctrl+F collapses the bar.
+    if (findOpen()) {
+      closeFind()
+      return
+    }
+    setFindOpen(true)
+    setFindFocus((n) => n + 1)
+  }
+
+  createEffect(
+    on(
+      () => params.id,
+      () => {
+        setFindOpen(false)
+        setFindQuery("")
+        setFindIndex(0)
+        clearSessionFindHighlights()
+      },
+    ),
+  )
+
   const scrollGestureWindowMs = 250
 
   const markScrollGesture = (target?: EventTarget | null) => {
@@ -1061,6 +1114,7 @@ export default function Page() {
     navigateMessageByOffset,
     setActiveMessage,
     focusInput,
+    openFind,
     review: reviewTab,
   })
   command.register("session-palette", () => [
@@ -1366,6 +1420,76 @@ export default function Page() {
         if (!id || !previous || id === previous) return
         if (location.hash || store.messageId || ui.pendingMessage) return
         autoScroll.resume()
+      },
+    ),
+  )
+
+  const jumpFind = (index: number) => {
+    const matches = findMatches()
+    if (matches.length === 0) {
+      setFindIndex(0)
+      return
+    }
+    const next = ((index % matches.length) + matches.length) % matches.length
+    setFindIndex(next)
+    const match = matches[next]
+    if (!match) return
+    autoScroll.pause()
+    revealMessage(match.userMessageID)
+    // Re-apply after virtualizer mounts the target row.
+    scheduleSessionFindHighlights({
+      host: scroller,
+      query: findQuery(),
+      matches,
+      activeIndex: next,
+    })
+  }
+
+  const findNext = () => {
+    if (findMatches().length === 0) return
+    jumpFind(findIndex() + 1)
+  }
+
+  const findPrev = () => {
+    if (findMatches().length === 0) return
+    jumpFind(findIndex() - 1)
+  }
+
+  createEffect(
+    on(findQuery, () => {
+      if (!findOpen()) return
+      setFindIndex(0)
+      if (findMatches().length === 0) return
+      jumpFind(0)
+    }),
+  )
+
+  createEffect(
+    on(findMatches, (matches) => {
+      if (!findOpen()) return
+      if (matches.length === 0) {
+        setFindIndex(0)
+        return
+      }
+      if (findIndex() >= matches.length) setFindIndex(0)
+    }),
+  )
+
+  createEffect(
+    on(
+      () => [findOpen(), findQuery(), findIndex(), findMatches()] as const,
+      ([open, query, index, matches]) => {
+        if (!open) {
+          clearSessionFindHighlights()
+          return
+        }
+        const stop = scheduleSessionFindHighlights({
+          host: scroller,
+          query,
+          matches,
+          activeIndex: index,
+        })
+        onCleanup(stop)
       },
     ),
   )
@@ -1862,6 +1986,7 @@ export default function Page() {
   })
 
   onCleanup(() => {
+    clearSessionFindHighlights()
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
     if (todoFrame !== undefined) cancelAnimationFrame(todoFrame)
     if (todoTimer !== undefined) window.clearTimeout(todoTimer)
@@ -1911,7 +2036,18 @@ export default function Page() {
   const sessionPanelContent = () => (
     <>
       {sessionSync() ?? ""}
-      <div class="flex-1 min-h-0 overflow-hidden">
+      <div class="relative flex-1 min-h-0 overflow-hidden">
+        <SessionFindBar
+          open={findOpen()}
+          focusToken={findFocus()}
+          query={findQuery()}
+          matchIndex={findIndex()}
+          matchCount={findMatches().length}
+          onQuery={setFindQuery}
+          onClose={closeFind}
+          onNext={findNext}
+          onPrev={findPrev}
+        />
         <Switch>
           <Match when={params.id && mobileChanges()}>
             <div class="relative h-full overflow-hidden">

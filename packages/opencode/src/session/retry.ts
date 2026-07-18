@@ -65,14 +65,72 @@ export function delay(attempt: number, error?: SessionV1.APIError) {
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
+function isAuthFailure(status: number | undefined) {
+  return status === 401 || status === 403
+}
+
+function shouldRetryApiError(error: SessionV1.APIError) {
+  if (error.data.isRetryable) return true
+  const status = error.data.statusCode
+  if (status === undefined) return false
+  // Auth failures need a new credential, not another attempt.
+  if (isAuthFailure(status)) return false
+  // 5xx and common transient client/gateway statuses keep retrying without a cap.
+  // 400 is included: providers often surface transient upstream faults as Bad Request.
+  if (status >= 500) return true
+  return status === 400 || status === 408 || status === 409 || status === 425 || status === 429
+}
+
+function messageText(error: Err) {
+  const msg = isRecord(error.data) ? error.data.message : undefined
+  return typeof msg === "string" ? msg : undefined
+}
+
+function isTransientMessage(msg: string) {
+  const lower = msg.toLowerCase()
+  if (
+    lower.includes("rate increased too quickly") ||
+    lower.includes("rate limit") ||
+    lower.includes("too many requests") ||
+    lower.includes("overloaded") ||
+    lower.includes("econnreset") ||
+    lower.includes("econnrefused") ||
+    lower.includes("etimedout") ||
+    lower.includes("socket hang up") ||
+    lower.includes("network connection was lost") ||
+    lower.includes("network request failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("fetch failed") ||
+    lower.includes("connection reset") ||
+    lower.includes("connection ended") ||
+    lower.includes("connection closed") ||
+    lower.includes("other side closed") ||
+    lower === "terminated" ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("temporarily unavailable") ||
+    lower.includes("service unavailable") ||
+    lower.includes("bad gateway") ||
+    lower.includes("gateway timeout") ||
+    lower.includes("internal server error") ||
+    lower.includes("provider unavailable")
+  ) {
+    return true
+  }
+  if (lower.includes("stream") && (lower.includes("closed") || lower.includes("aborted") || lower.includes("interrupted"))) {
+    return true
+  }
+  return lower.includes("failed to read") && lower.includes("stream")
+}
+
 export function retryable(error: Err, provider: string) {
   // context overflow errors should not be retried
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
+  // User abort and missing credentials are terminal.
+  if (SessionV1.AbortedError.isInstance(error)) return undefined
+  if (SessionV1.AuthError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
-    const status = error.data.statusCode
-    // 5xx errors are transient server failures and should always be retried,
-    // even when the provider SDK doesn't explicitly mark them as retryable.
-    if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
+    if (!shouldRetryApiError(error)) return undefined
     if (error.data.responseBody?.includes("FreeUsageLimitError")) {
       return {
         message: GO_UPSELL_MESSAGE,
@@ -122,17 +180,10 @@ export function retryable(error: Err, provider: string) {
     return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
   }
 
-  // Check for rate limit patterns in plain text error messages
-  const msg = isRecord(error.data) ? error.data.message : undefined
-  if (typeof msg === "string") {
-    const lower = msg.toLowerCase()
-    if (
-      lower.includes("rate increased too quickly") ||
-      lower.includes("rate limit") ||
-      lower.includes("too many requests")
-    ) {
-      return { message: msg }
-    }
+  // Check for rate limit / transport patterns in plain text error messages
+  const msg = messageText(error)
+  if (typeof msg === "string" && isTransientMessage(msg)) {
+    return { message: msg }
   }
 
   const json = parseJSON(msg)

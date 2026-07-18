@@ -127,7 +127,8 @@ export class TransportReason extends Schema.Class<TransportReason>("LLM.Error.Tr
   http: Schema.optional(HttpContext),
 }) {
   get retryable() {
-    return false
+    // Disconnect / hangup / timeout are transient; session layer retries without a cap.
+    return true
   }
 }
 
@@ -141,7 +142,8 @@ export class InvalidProviderOutputReason extends Schema.Class<InvalidProviderOut
   providerMetadata: Schema.optional(ProviderMetadata),
 }) {
   get retryable() {
-    return false
+    // Mid-stream framing/parse faults often follow a dropped connection.
+    return true
   }
 }
 

@@ -35,6 +35,7 @@ import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { Effect, Schema } from "effect"
+import { isContextOverflowFailure, LLMError } from "@opencode-ai/llm"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
@@ -600,6 +601,89 @@ export function latest(msgs: WithParts[]) {
   return { user, assistant, finished, tasks }
 }
 
+function headerRecord(headers: Record<string, string> | undefined) {
+  if (!headers) return undefined
+  return Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
+}
+
+function fromLLMError(
+  e: LLMError,
+  ctx: { providerID: ProviderV2.ID },
+  cause: unknown,
+): NonNullable<Assistant["error"]> {
+  if (isContextOverflowFailure(e) || (e.reason._tag === "InvalidRequest" && e.reason.classification === "context-overflow")) {
+    return new ContextOverflowError(
+      {
+        message: e.reason.message,
+        responseBody: e.reason.http?.body,
+      },
+      { cause },
+    ).toObject()
+  }
+
+  const reason = e.reason
+  const status =
+    "http" in reason && reason.http?.response?.status !== undefined
+      ? reason.http.response.status
+      : "status" in reason
+        ? reason.status
+        : undefined
+  const responseHeaders =
+    "http" in reason && reason.http?.response?.headers ? headerRecord(reason.http.response.headers) : undefined
+  const responseBody = "http" in reason ? reason.http?.body : undefined
+  const retryAfterMs = "retryAfterMs" in reason ? reason.retryAfterMs : undefined
+  const headers =
+    retryAfterMs === undefined
+      ? responseHeaders
+      : {
+          ...(responseHeaders ?? {}),
+          "retry-after-ms": String(retryAfterMs),
+        }
+
+  // Auth / quota / policy / missing route need user action, not another attempt.
+  const terminal =
+    reason._tag === "Authentication" ||
+    reason._tag === "QuotaExceeded" ||
+    reason._tag === "ContentPolicy" ||
+    reason._tag === "NoRoute"
+  // Transport disconnects, mid-stream parse faults, 400 Bad Request, and other
+  // provider faults keep retrying at the session layer until success or abort.
+  const isRetryable =
+    !terminal &&
+    (reason._tag === "Transport" ||
+      reason._tag === "InvalidProviderOutput" ||
+      reason._tag === "UnknownProvider" ||
+      reason._tag === "InvalidRequest" ||
+      reason.retryable ||
+      status === 400 ||
+      (status !== undefined && status >= 500))
+
+  if (reason._tag === "Authentication") {
+    return new AuthError(
+      {
+        providerID: ctx.providerID,
+        message: reason.message,
+      },
+      { cause },
+    ).toObject()
+  }
+
+  return new APIError(
+    {
+      message: reason.message,
+      statusCode: status,
+      isRetryable,
+      responseHeaders: headers,
+      responseBody,
+      metadata: {
+        tag: reason._tag,
+        ...("kind" in reason && reason.kind ? { kind: reason.kind } : {}),
+      },
+    },
+    { cause },
+  ).toObject()
+}
+
 export function fromError(
   e: unknown,
   ctx: { providerID: ProviderV2.ID; aborted?: boolean },
@@ -614,6 +698,14 @@ export function fromError(
       ).toObject()
     case OutputLengthError.isInstance(e):
       return e
+    case APIError.isInstance(e):
+      return e.toObject()
+    case ContextOverflowError.isInstance(e):
+      return e.toObject()
+    case AbortedError.isInstance(e):
+      return e.toObject()
+    case AuthError.isInstance(e):
+      return e.toObject()
     case LoadAPIKeyError.isInstance(e):
       return new AuthError(
         {
@@ -673,6 +765,8 @@ export function fromError(
         },
         { cause: e },
       ).toObject()
+    case e instanceof LLMError:
+      return fromLLMError(e, ctx, e)
     case APICallError.isInstance(e):
       const parsed = ProviderError.parseAPICallError({
         providerID: ctx.providerID,
@@ -699,8 +793,31 @@ export function fromError(
         },
         { cause: e },
       ).toObject()
-    case e instanceof Error:
-      return new NamedError.Unknown({ message: errorMessage(e) }, { cause: e }).toObject()
+    case e instanceof Error: {
+      const message = errorMessage(e)
+      const lower = message.toLowerCase()
+      // Mid-stream TCP drop from undici/fetch surfaces as TypeError: terminated
+      // (or "other side closed"). Treat as retryable transport, not a terminal Unknown.
+      if (
+        lower === "terminated" ||
+        lower.includes("other side closed") ||
+        lower.includes("socket hang up") ||
+        (e.name === "TypeError" && (lower.includes("fetch") || lower.includes("network") || lower.includes("terminated")))
+      ) {
+        return new APIError(
+          {
+            message,
+            isRetryable: true,
+            metadata: {
+              code: e.name || "Transport",
+              message,
+            },
+          },
+          { cause: e },
+        ).toObject()
+      }
+      return new NamedError.Unknown({ message }, { cause: e }).toObject()
+    }
     default:
       try {
         const parsed = ProviderError.parseStreamError(e)

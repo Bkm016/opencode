@@ -113,6 +113,9 @@ const layer = Layer.effect(
         reasoningMap: {},
       }
       let aborted = false
+      // True once this attempt produced any assistant text, reasoning, or tool work.
+      // Empty drains (mid-stream drop surfaced as a quiet finish) must retry, not idle.
+      let hasOutput = false
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -294,6 +297,7 @@ const layer = Layer.effect(
           case "reasoning-delta":
             // Match dev: silently drop orphan deltas (no preceding reasoning-start).
             if (!(value.id in ctx.reasoningMap)) return
+            if (value.text) hasOutput = true
             ctx.reasoningMap[value.id].text += value.text
             if (value.providerMetadata) ctx.reasoningMap[value.id].metadata = value.providerMetadata
             yield* session.updatePartDelta({
@@ -316,6 +320,7 @@ const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
+            hasOutput = true
             yield* ensureToolCall(value)
             return
 
@@ -332,6 +337,7 @@ const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
+            hasOutput = true
             yield* ensureToolCall(value)
             const input = isRecord(value.input) ? value.input : { value: value.input }
             yield* updateToolCall(value.id, (match) => ({
@@ -418,8 +424,18 @@ const layer = Layer.effect(
             return
           }
 
-          case "provider-error":
-            throw new Error(value.message)
+          case "provider-error": {
+            // Preserve retryability so SessionRetry can keep going on disconnect / 400.
+            if (value.classification === "context-overflow") {
+              throw new SessionV1.ContextOverflowError({
+                message: value.message,
+              })
+            }
+            throw new SessionV1.APIError({
+              message: value.message,
+              isRetryable: value.retryable !== false,
+            })
+          }
 
           case "step-start":
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
@@ -498,6 +514,7 @@ const layer = Layer.effect(
 
           case "text-delta":
             if (!ctx.currentText) return
+            if (value.text) hasOutput = true
             ctx.currentText.text += value.text
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
@@ -630,12 +647,16 @@ const layer = Layer.effect(
           messageID: input.assistantMessage.id,
         })
         ctx.needsCompaction = false
-        ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        const cfg = yield* config.get()
+        ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
             ctx.currentText = undefined
             ctx.reasoningMap = {}
+            hasOutput = false
+            // Drop stale finish from a previous incomplete attempt so retries start clean.
+            ctx.assistantMessage.finish = undefined
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 
@@ -643,6 +664,27 @@ const layer = Layer.effect(
               Stream.tap((event) => handleEvent(event)),
               Stream.takeUntil(() => ctx.needsCompaction),
               Stream.runDrain,
+            )
+
+            // Quiet incomplete turns (0-token drop / unknown finish) must not idle the session.
+            // Treat them as retryable stream failures so SessionRetry keeps going until real output or abort.
+            if (aborted || ctx.needsCompaction || ctx.blocked || ctx.assistantMessage.error) return
+            const finish = ctx.assistantMessage.finish
+            const incomplete =
+              !finish ||
+              finish === "unknown" ||
+              finish === "other" ||
+              (!hasOutput && finish !== "tool-calls" && finish !== "content-filter")
+            if (!incomplete) return
+            ctx.assistantMessage.finish = undefined
+            // Must fail (not throw): throws become defects and bypass Effect.retry.
+            return yield* Effect.fail(
+              new SessionV1.APIError({
+                message: hasOutput
+                  ? `Provider stream ended incompletely (${finish ?? "no-finish"})`
+                  : "Provider stream ended without output",
+                isRetryable: true,
+              }),
             )
           }).pipe(
             Effect.onInterrupt(() =>

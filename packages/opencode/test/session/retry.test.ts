@@ -228,7 +228,7 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Service unavailable" })
   })
 
-  test("does not retry 4xx errors when isRetryable is false", () => {
+  test("retries 400 errors even when isRetryable is false", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
         message: "Bad request",
@@ -237,6 +237,42 @@ describe("session.retry.retryable", () => {
       }).toObject(),
     )
 
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Bad request" })
+  })
+
+  test("does not retry auth 401 errors when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "Unauthorized",
+        isRetryable: false,
+        statusCode: 401,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
+  })
+
+  test("retries stream disconnect messages", () => {
+    const error = wrap("Failed to read openai/responses stream: connection reset")
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({
+      message: "Failed to read openai/responses stream: connection reset",
+    })
+  })
+
+  test("retries undici terminated mid-stream errors", () => {
+    const request = MessageV2.fromError(new TypeError("terminated"), { providerID })
+    expect(SessionV1.APIError.isInstance(request)).toBe(true)
+    expect(SessionRetry.retryable(request, retryProvider)).toEqual({ message: "terminated" })
+  })
+
+  test("retries other side closed transport errors", () => {
+    const request = MessageV2.fromError(new TypeError("other side closed"), { providerID })
+    expect(SessionV1.APIError.isInstance(request)).toBe(true)
+    expect(SessionRetry.retryable(request, retryProvider)).toEqual({ message: "other side closed" })
+  })
+
+  test("does not retry aborted errors", () => {
+    const error = new SessionV1.AbortedError({ message: "Aborted" }).toObject()
     expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
   })
 

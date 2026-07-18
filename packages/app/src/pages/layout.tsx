@@ -150,7 +150,6 @@ export default function LegacyLayout(props: ParentProps) {
   const [state, setState] = createStore({
     autoselect: !initialDirectory,
     busyWorkspaces: {} as Record<string, boolean>,
-    hoverProject: undefined as string | undefined,
     scrollSessionKey: undefined as string | undefined,
     sortNow: Date.now(),
     sizing: false,
@@ -192,27 +191,14 @@ export default function LegacyLayout(props: ParentProps) {
 
   onMount(() => {
     const stop = () => setState("sizing", false)
-    const clearHover = () => setState("hoverProject", undefined)
-    const hide = () => {
-      if (document.visibilityState !== "hidden") return
-      clearHover()
-    }
     makeEventListener(window, "pointerup", stop)
     makeEventListener(window, "pointercancel", stop)
     makeEventListener(window, "blur", stop)
-    makeEventListener(window, "blur", clearHover)
-    makeEventListener(document, "visibilitychange", hide)
   })
 
   // Desktop closed rail is icons-only; expanded only when sidebar is opened.
   const sidebarHovering = () => false
   const sidebarExpanded = createMemo(() => layout.sidebar.opened())
-  const clearHoverProjectSoon = () => queueMicrotask(() => setState("hoverProject", undefined))
-
-  createEffect(() => {
-    if (layout.sidebar.opened()) return
-    setState("hoverProject", undefined)
-  })
 
   createEffect(() => {
     if (!state.autoselect) return
@@ -230,7 +216,6 @@ export default function LegacyLayout(props: ParentProps) {
   const InlineEditor = editor.InlineEditor
 
   const navigateWithSidebarReset = (href: string) => {
-    setState("hoverProject", undefined)
     navigate(href)
     layout.mobileSidebar.hide()
   }
@@ -1690,7 +1675,6 @@ export default function LegacyLayout(props: ParentProps) {
   function handleDragStart(event: unknown) {
     const id = getDraggableId(event)
     if (!id) return
-    setState("hoverProject", undefined)
     setStore("activeProject", id)
   }
 
@@ -1766,7 +1750,6 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const createWorkspace = async (project: LocalProject) => {
-    setState("hoverProject", undefined)
     const created = await serverSDK()
       .client.worktree.create({ directory: project.worktree })
       .then((x) => x.data)
@@ -1810,7 +1793,6 @@ export default function LegacyLayout(props: ParentProps) {
     navList: currentSessions,
     sidebarExpanded,
     sidebarHovering,
-    clearHoverProjectSoon,
     prefetchSession,
     archiveSession,
     workspaceName,
@@ -1833,29 +1815,13 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const projectSidebarCtx: ProjectSidebarContext = {
-    currentDir,
     currentProject,
-    sidebarOpened: () => layout.sidebar.opened(),
-    hoverProject: () => state.hoverProject,
-    onHoverOpenChanged: (worktree, hoverOpen) => {
-      if (!hoverOpen && state.hoverProject && state.hoverProject !== worktree) return
-      setState("hoverProject", hoverOpen ? worktree : undefined)
-    },
     navigateToProject,
-    openSidebar: () => layout.sidebar.open(),
     closeProject,
     showEditProjectDialog: (proj) => showEditProjectDialog(server.current!, proj),
     toggleProjectWorkspaces,
     workspacesEnabled: (project) => project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
     workspaceIds,
-    workspaceLabel,
-    sessionProps: {
-      navList: currentSessions,
-      sidebarExpanded,
-      clearHoverProjectSoon,
-      prefetchSession,
-      archiveSession,
-    },
   }
 
   const SidebarPanel = (panelProps: {
@@ -2174,7 +2140,7 @@ export default function LegacyLayout(props: ParentProps) {
       opened={() => layout.sidebar.opened()}
       projects={projects}
       renderProject={(project) => (
-        <SortableProject ctx={projectSidebarCtx} project={project} sortNow={sortNow} mobile={mobile} />
+        <SortableProject ctx={projectSidebarCtx} project={project} />
       )}
       handleDragStart={handleDragStart}
       handleDragEnd={handleDragEnd}

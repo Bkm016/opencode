@@ -624,8 +624,6 @@ export const dict = {
   "sidebar.gettingStarted.title": "Kom i gang",
   "sidebar.gettingStarted.line1": "OpenCode inkluderer gratis modeller så du kan starte umiddelbart.",
   "sidebar.gettingStarted.line2": "Koble til en leverandør for å bruke modeller, inkl. Claude, GPT, Gemini osv.",
-  "sidebar.project.recentSessions": "Nylige sesjoner",
-  "sidebar.project.viewAllSessions": "Vis alle sesjoner",
   "sidebar.project.clearNotifications": "Fjern varsler",
 
   "app.name.desktop": "OpenCode Desktop",

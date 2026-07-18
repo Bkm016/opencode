@@ -40,7 +40,6 @@ export type WorkspaceSidebarContext = {
   navList: Accessor<Session[]>
   sidebarExpanded: Accessor<boolean>
   sidebarHovering: Accessor<boolean>
-  clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
   workspaceName: (directory: string, projectId?: string, branch?: string) => string | undefined
@@ -154,7 +153,6 @@ const WorkspaceActions = (props: {
   showResetWorkspaceDialog: WorkspaceSidebarContext["showResetWorkspaceDialog"]
   showDeleteWorkspaceDialog: WorkspaceSidebarContext["showDeleteWorkspaceDialog"]
   root: string
-  clearHoverProjectSoon: WorkspaceSidebarContext["clearHoverProjectSoon"]
   navigateToNewSession: () => void
 }): JSX.Element => (
   <div
@@ -228,7 +226,6 @@ const WorkspaceActions = (props: {
           onClick={(event) => {
             event.preventDefault()
             event.stopPropagation()
-            props.clearHoverProjectSoon()
             props.navigateToNewSession()
           }}
         />
@@ -254,7 +251,6 @@ const WorkspaceSessionList = (props: {
         slug={props.slug()}
         mobile={props.mobile}
         sidebarExpanded={props.ctx.sidebarExpanded}
-        clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
       />
     </Show>
     <Show when={props.loading()}>
@@ -270,7 +266,6 @@ const WorkspaceSessionList = (props: {
           mobile={props.mobile}
           showChild
           sidebarExpanded={props.ctx.sidebarExpanded}
-          clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
           prefetchSession={props.ctx.prefetchSession}
           archiveSession={props.ctx.archiveSession}
         />
@@ -421,7 +416,6 @@ export const SortableWorkspace = (props: {
                 showResetWorkspaceDialog={props.ctx.showResetWorkspaceDialog}
                 showDeleteWorkspaceDialog={props.ctx.showDeleteWorkspaceDialog}
                 root={props.project.worktree}
-                clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
                 navigateToNewSession={() => navigate(`/${slug()}/session`)}
               />
             </div>

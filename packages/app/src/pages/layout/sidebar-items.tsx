@@ -86,7 +86,6 @@ export type SessionItemProps = {
   showChild?: boolean
   level?: number
   sidebarExpanded: Accessor<boolean>
-  clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
 }
@@ -102,8 +101,6 @@ const SessionRow = (props: {
   hasPermissions: Accessor<boolean>
   hasError: Accessor<boolean>
   unseenCount: Accessor<number>
-  clearHoverProjectSoon: () => void
-  sidebarOpened: Accessor<boolean>
   warmPress: () => void
   warmFocus: () => void
 }): JSX.Element => {
@@ -128,12 +125,10 @@ const SessionRow = (props: {
           event.shiftKey ||
           event.altKey
         ) {
-          if (!props.sidebarOpened()) props.clearHoverProjectSoon()
           return
         }
         event.preventDefault()
         navigate(`/${props.slug}/session/${props.session.id}`)
-        if (!props.sidebarOpened()) props.clearHoverProjectSoon()
       }}
     >
       <Show when={showLeading()}>
@@ -239,8 +234,6 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       hasPermissions={hasPermissions}
       hasError={hasError}
       unseenCount={unseenCount}
-      clearHoverProjectSoon={props.clearHoverProjectSoon}
-      sidebarOpened={layout.sidebar.opened}
       warmPress={() => warm(2, "high")}
       warmFocus={() => warm(2, "high")}
     />
@@ -346,7 +339,6 @@ export const NewSessionItem = (props: {
   mobile?: boolean
   dense?: boolean
   sidebarExpanded: Accessor<boolean>
-  clearHoverProjectSoon: () => void
 }): JSX.Element => {
   const layout = useLayout()
   const language = useLanguage()
@@ -367,12 +359,10 @@ export const NewSessionItem = (props: {
           event.shiftKey ||
           event.altKey
         ) {
-          if (!layout.sidebar.opened()) props.clearHoverProjectSoon()
           return
         }
         event.preventDefault()
         navigate(`/${props.slug}/session`)
-        if (!layout.sidebar.opened()) props.clearHoverProjectSoon()
       }}
     >
       <div class="shrink-0 size-6 flex items-center justify-center">

@@ -8105,6 +8105,34 @@ export type InstanceDisposeResponses = {
 
 export type InstanceDisposeResponse = InstanceDisposeResponses[keyof InstanceDisposeResponses]
 
+export type InstanceReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/instance/reload"
+}
+
+export type InstanceReloadErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type InstanceReloadError = InstanceReloadErrors[keyof InstanceReloadErrors]
+
+export type InstanceReloadResponses = {
+  /**
+   * Instance reloaded
+   */
+  200: boolean
+}
+
+export type InstanceReloadResponse = InstanceReloadResponses[keyof InstanceReloadResponses]
+
 export type PathGetData = {
   body?: never
   path?: never

@@ -29,11 +29,15 @@ mistakes as they type.
 
 ## Applying changes
 
-Config is loaded once when opencode starts and is not hot-reloaded. After
-saving changes to `opencode.json`, an agent file, a skill, a plugin, or any
-other config-time file, **tell the user to quit and restart opencode** for
-the changes to take effect. The running session will keep using the
-already-loaded config until then.
+Config, skills, and plugins under the watched config roots are **hot-reloaded**.
+After you save `opencode.json` / `opencode.jsonc`, a skill (`SKILL.md`), a
+local plugin under `plugin(s)/`, or an agent/command markdown file, opencode
+debounces (~300ms) then reloads the project instance automatically. Clients
+receive `server.instance.disposed` and reconnect with the new config.
+
+If a change does not appear (rare: unwatchable network path, npm-only plugin
+cache, or a file outside the watched roots), tell the user to restart
+opencode.
 
 ## Where files live
 

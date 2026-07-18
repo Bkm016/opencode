@@ -630,6 +630,9 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
+    // Drop cached global config so the next instance boot re-reads disk.
+    // Per-directory instance config lives in InstanceState and is cleared by
+    // InstanceStore.reload/dispose via registerDisposer.
     const invalidate = Effect.fn("Config.invalidate")(function* () {
       yield* invalidateGlobal
     })

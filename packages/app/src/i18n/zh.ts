@@ -31,6 +31,8 @@ export const dict = {
   "command.project.previous": "上一个项目",
   "command.project.next": "下一个项目",
   "command.project.index": "切换到项目 {{index}}",
+  "command.project.reload": "重新加载配置",
+  "command.project.reload.description": "从磁盘重新加载配置、skills、plugins、agents 和 commands",
 
   "command.provider.connect": "连接提供商",
 
@@ -993,6 +995,8 @@ export const dict = {
   "dialog.releaseNotes.action.hideFuture": "不再显示",
   "dialog.releaseNotes.media.alt": "发布预览",
   "toast.project.reloadFailed.title": "无法重新加载 {{project}}",
+  "toast.project.reload.success.title": "配置已重新加载",
+  "toast.project.reload.success.description": "已为 {{project}} 重新加载配置、skills 和 plugins",
   "error.server.invalidConfiguration": "配置无效",
   "common.moreCountSuffix": " (还有 {{count}} 个)",
   "common.time.justNow": "刚刚",

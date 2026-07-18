@@ -133,10 +133,16 @@ export namespace PluginLoader {
   }
 
   // Import the resolved module only after all earlier validation has succeeded.
+  // File plugins append a cache-bust query so hot reload can re-import edited sources;
+  // Bun caches bare file URLs for the process lifetime.
   export async function load(row: Resolved): Promise<{ ok: true; value: Loaded } | { ok: false; error: unknown }> {
     let mod
     try {
-      mod = await import(row.entry)
+      const entry =
+        row.source === "file"
+          ? `${row.entry}${row.entry.includes("?") ? "&" : "?"}t=${Date.now()}`
+          : row.entry
+      mod = await import(entry)
     } catch (error) {
       return { ok: false, error }
     }

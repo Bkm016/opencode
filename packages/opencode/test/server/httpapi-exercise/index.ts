@@ -620,6 +620,12 @@ const scenarios: Scenario[] = [
       check(body === true, "instance dispose should return true")
     }),
   http.protected
+    .post("/instance/reload", "instance.reload")
+    .mutating()
+    .json(200, (body) => {
+      check(body === true, "instance reload should return true")
+    }),
+  http.protected
     .post("/log", "app.log")
     .global()
     .at(() => ({ path: "/log", body: { service: "httpapi-exercise", level: "info", message: "route coverage" } }))

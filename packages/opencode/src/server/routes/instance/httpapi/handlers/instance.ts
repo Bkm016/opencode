@@ -1,5 +1,6 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
+import { Config } from "@/config/config"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { Global } from "@opencode-ai/core/global"
@@ -10,12 +11,13 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
-import { markInstanceForDisposal } from "../lifecycle"
+import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
     const agent = yield* Agent.Service
     const command = yield* Command.Service
+    const config = yield* Config.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
     const skill = yield* Skill.Service
@@ -23,6 +25,17 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
       yield* markInstanceForDisposal(yield* InstanceState.context)
+      return true
+    })
+
+    const reload = Effect.fn("InstanceHttpApi.reload")(function* () {
+      const ctx = yield* InstanceState.context
+      yield* config.invalidate()
+      yield* markInstanceForReload(ctx, {
+        directory: ctx.directory,
+        worktree: ctx.worktree,
+        project: ctx.project,
+      })
       return true
     })
 
@@ -95,6 +108,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
 
     return handlers
       .handle("dispose", dispose)
+      .handle("reload", reload)
       .handle("path", getPath)
       .handle("vcs", getVcs)
       .handle("vcsStatus", getVcsStatus)

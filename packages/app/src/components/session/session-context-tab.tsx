@@ -1,13 +1,13 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
-import { checksum } from "@opencode-ai/core/util/encode"
 import { findLast } from "@opencode-ai/core/util/array"
 import { same } from "@/utils/same"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Button } from "@opencode-ai/ui/button"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { File } from "@opencode-ai/session-ui/file"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -16,7 +16,14 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContext } from "./session-context-metrics"
-import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
+import {
+  estimateSessionContextBreakdown,
+  type SessionContextBreakdownDetail,
+  type SessionContextBreakdownKey,
+  type SessionContextBreakdownSegment,
+  type SessionContextShare,
+  type SessionContextShareFact,
+} from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
@@ -25,6 +32,203 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   assistant: "var(--syntax-property)",
   tool: "var(--syntax-warning)",
   other: "var(--syntax-comment)",
+}
+
+const SHARE_COLOR: Record<SessionContextShare["kind"], string> = {
+  system: "var(--syntax-info)",
+  agent: "var(--syntax-keyword)",
+  user: "var(--syntax-success)",
+  synthetic: "var(--syntax-string)",
+  file: "var(--syntax-constant)",
+  subtask: "var(--syntax-function)",
+  assistant: "var(--syntax-property)",
+  reasoning: "var(--syntax-comment)",
+  tool: "var(--syntax-warning)",
+  overhead: "var(--syntax-comment)",
+}
+
+const ROLE_COLOR = {
+  user: "var(--syntax-success)",
+  assistant: "var(--syntax-property)",
+} as const
+
+const PREVIEW_MAX = 100
+
+function breakdownDetailLabel(
+  detail: SessionContextBreakdownDetail,
+  t: (key: string, vars?: Record<string, string>) => string,
+  number: (value: number) => string,
+) {
+  if (detail.kind === "text") return t("context.breakdown.detail.text", { tokens: number(detail.tokens) })
+  if (detail.kind === "reasoning") return t("context.breakdown.detail.reasoning", { tokens: number(detail.tokens) })
+  if (detail.kind === "file") {
+    return t("context.breakdown.detail.file", { tokens: number(detail.tokens), count: number(detail.count) })
+  }
+  if (detail.kind === "agent") {
+    return t("context.breakdown.detail.agent", { tokens: number(detail.tokens), count: number(detail.count) })
+  }
+  if (detail.kind === "subtask") {
+    return t("context.breakdown.detail.subtask", { tokens: number(detail.tokens), count: number(detail.count) })
+  }
+  if (detail.kind === "tool") {
+    return t("context.breakdown.detail.tool", {
+      name: detail.name,
+      tokens: number(detail.tokens),
+      count: number(detail.count),
+    })
+  }
+  if (detail.kind === "messages") return t("context.breakdown.detail.messages", { count: number(detail.count) })
+  if (detail.kind === "parts") return t("context.breakdown.detail.parts", { count: number(detail.count) })
+  return t("context.breakdown.detail.overhead")
+}
+
+function BreakdownTooltip(props: {
+  segment: SessionContextBreakdownSegment
+  label: string
+  number: (value: number) => string
+  t: (key: string, vars?: Record<string, string>) => string
+  children: JSX.Element
+  class?: string
+}) {
+  return (
+    <Tooltip
+      placement="top"
+      gutter={8}
+      openDelay={200}
+      class={props.class}
+      contentClass="max-w-72"
+      value={
+        <div class="flex flex-col gap-1.5 text-left">
+          <div class="text-12-medium text-text-strong">{props.label}</div>
+          <div class="text-11-regular text-text-weak">
+            {props.t("context.breakdown.tooltip.tokens", {
+              tokens: props.number(props.segment.tokens),
+              percent: props.segment.percent.toLocaleString(),
+            })}
+          </div>
+          <Show when={props.segment.details.length > 0}>
+            <div class="flex flex-col gap-0.5 pt-0.5 border-t border-border-weak-base">
+              <For each={props.segment.details}>
+                {(detail) => (
+                  <div class="text-11-regular text-text-weak">
+                    {breakdownDetailLabel(detail, props.t, props.number)}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
+      }
+    >
+      {props.children}
+    </Tooltip>
+  )
+}
+
+function shareLabel(
+  row: SessionContextShare,
+  t: (key: string, vars?: Record<string, string>) => string,
+) {
+  if (row.kind === "system") {
+    return t("context.breakdown.share.system", { name: row.name ?? "system" })
+  }
+  if (row.kind === "tool") return row.name ?? "tool"
+  if (row.kind === "agent") return t("context.breakdown.share.agent")
+  if (row.kind === "user") return t("context.breakdown.share.user")
+  if (row.kind === "synthetic") return t("context.breakdown.share.synthetic")
+  if (row.kind === "file") return t("context.breakdown.share.file")
+  if (row.kind === "subtask") return t("context.breakdown.share.subtask")
+  if (row.kind === "assistant") return t("context.breakdown.share.assistant")
+  if (row.kind === "reasoning") return t("context.breakdown.share.reasoning")
+  return t("context.breakdown.share.overhead")
+}
+
+function shareFactLabel(
+  fact: SessionContextShareFact,
+  t: (key: string, vars?: Record<string, string>) => string,
+  number: (value: number) => string,
+) {
+  if (fact.kind === "chars") return t("context.breakdown.share.fact.chars", { value: number(fact.value) })
+  if (fact.kind === "messages") return t("context.breakdown.share.fact.messages", { value: number(fact.value) })
+  if (fact.kind === "parts") return t("context.breakdown.share.fact.parts", { value: number(fact.value) })
+  if (fact.kind === "calls") return t("context.breakdown.share.fact.calls", { value: number(fact.value) })
+  if (fact.kind === "input") return t("context.breakdown.share.fact.input", { tokens: number(fact.tokens) })
+  if (fact.kind === "output") return t("context.breakdown.share.fact.output", { tokens: number(fact.tokens) })
+  if (fact.kind === "error") return t("context.breakdown.share.fact.error", { tokens: number(fact.tokens) })
+  return t("context.breakdown.share.fact.preview", { text: fact.text })
+}
+
+function ShareList(props: {
+  title: string
+  empty: string
+  rows: SessionContextShare[]
+  number: (value: number) => string
+  t: (key: string, vars?: Record<string, string>) => string
+  intl: string
+}) {
+  return (
+    <div class="flex flex-col gap-2">
+      <div class="text-12-regular text-text-weak">{props.title}</div>
+      <Show
+        when={props.rows.length > 0}
+        fallback={<div class="text-11-regular text-text-weaker">{props.empty}</div>}
+      >
+        <div class="border border-border-base rounded-md bg-surface-base divide-y divide-border-weak-base">
+          <For each={props.rows}>
+            {(row) => {
+              const meta = () => row.facts.filter((fact) => fact.kind !== "preview")
+              const previews = () => row.facts.filter((fact) => fact.kind === "preview")
+              return (
+                <div class="flex flex-col gap-1 px-3 py-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <div class="size-2 shrink-0 rounded-sm" style={{ "background-color": SHARE_COLOR[row.kind] }} />
+                    <div class="min-w-0 flex-1 text-12-regular text-text-strong truncate">
+                      {shareLabel(row, props.t)}
+                    </div>
+                    <Show when={row.count !== undefined}>
+                      <div class="text-11-regular text-text-weaker tabular-nums shrink-0">
+                        {props.t("context.breakdown.share.count", { count: props.number(row.count ?? 0) })}
+                      </div>
+                    </Show>
+                    <div class="text-11-regular text-text-weak tabular-nums shrink-0">
+                      {props.number(row.tokens)} · {row.percent.toLocaleString(props.intl)}%
+                    </div>
+                    <div class="w-16 h-1 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
+                      <div
+                        class="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.max(row.percent, row.tokens > 0 ? 2 : 0))}%`,
+                          "background-color": SHARE_COLOR[row.kind],
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <Show when={meta().length > 0}>
+                    <div class="flex flex-wrap gap-x-2 gap-y-0.5 pl-4 text-11-regular text-text-weaker">
+                      <For each={meta()}>
+                        {(fact) => <span>{shareFactLabel(fact, props.t, props.number)}</span>}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show when={previews().length > 0}>
+                    <div class="flex flex-col gap-0.5 pl-4">
+                      <For each={previews()}>
+                        {(fact) => (
+                          <div class="text-11-regular text-text-weaker truncate" title={fact.kind === "preview" ? fact.text : undefined}>
+                            {shareFactLabel(fact, props.t, props.number)}
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+              )
+            }}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
 }
 
 function Stat(props: { label: string; value: JSX.Element }) {
@@ -36,53 +240,156 @@ function Stat(props: { label: string; value: JSX.Element }) {
   )
 }
 
-function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
-  const file = createMemo(() => {
-    const parts = props.getParts(props.message.id)
-    const contents = JSON.stringify({ message: props.message, parts }, null, 2)
-    return {
-      name: `${props.message.role}-${props.message.id}.json`,
-      contents,
-      cacheKey: checksum(contents),
+function shortMessageId(id: string) {
+  if (id.length <= 10) return id
+  return id.slice(-8)
+}
+
+function collapsePreview(text: string) {
+  const collapsed = text.replace(/\s+/g, " ").trim()
+  if (!collapsed) return ""
+  if (collapsed.length <= PREVIEW_MAX) return collapsed
+  return `${collapsed.slice(0, PREVIEW_MAX - 1)}…`
+}
+
+function rawMessagePreview(parts: Part[], empty: string, partsCount: (count: number) => string) {
+  for (const part of parts) {
+    if (part.type === "text" && !part.synthetic) {
+      const preview = collapsePreview(part.text)
+      if (preview) return preview
     }
+    if (part.type === "reasoning") {
+      const preview = collapsePreview(part.text)
+      if (preview) return preview
+    }
+    if (part.type === "subtask") {
+      const preview = collapsePreview(part.description || part.prompt)
+      if (preview) return preview
+    }
+  }
+
+  const tools = parts.flatMap((part) => (part.type === "tool" ? [part.tool] : []))
+  if (tools.length > 0) {
+    const unique = [...new Set(tools)]
+    return collapsePreview(unique.join(", ")) || empty
+  }
+
+  const files = parts.filter((part) => part.type === "file").length
+  if (files > 0) return partsCount(parts.length)
+
+  if (parts.length === 0) return empty
+  return partsCount(parts.length)
+}
+
+function RawMessageContent(props: {
+  message: Message
+  getParts: (id: string) => Part[]
+  copyLabel: string
+  copiedLabel: string
+}) {
+  const language = useLanguage()
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+  const json = createMemo(() => {
+    const parts = props.getParts(props.message.id)
+    return JSON.stringify({ message: props.message, parts }, null, 2)
+  })
+
+  const copy = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(json()).then(() => {
+      setCopied(true)
+      if (copiedTimer !== undefined) clearTimeout(copiedTimer)
+      copiedTimer = setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  onCleanup(() => {
+    if (copiedTimer === undefined) return
+    clearTimeout(copiedTimer)
+  })
+
+  const parts = createMemo(() => props.getParts(props.message.id))
+  const summary = createMemo(() => {
+    const list = parts()
+    const tools = list.reduce((count, part) => count + (part.type === "tool" ? 1 : 0), 0)
+    const texts = list.reduce((count, part) => count + (part.type === "text" ? 1 : 0), 0)
+    const files = list.reduce((count, part) => count + (part.type === "file" ? 1 : 0), 0)
+    return language.t("context.rawMessages.summary", {
+      parts: String(list.length),
+      tools: String(tools),
+      texts: String(texts),
+      files: String(files),
+    })
   })
 
   return (
-    <File
-      mode="text"
-      file={file()}
-      overflow="wrap"
-      class="select-text"
-      onRendered={() => requestAnimationFrame(props.onRendered)}
-    />
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-11-regular text-text-weaker truncate">{summary()}</div>
+        <Button size="small" variant="ghost" class="shrink-0" onClick={copy}>
+          {copied() ? props.copiedLabel : props.copyLabel}
+        </Button>
+      </div>
+      <pre class="text-11-regular font-mono text-text-strong whitespace-pre-wrap break-words select-text max-h-96 overflow-auto rounded-md border border-border-weak-base bg-background-base px-3 py-2">
+        {json()}
+      </pre>
+    </div>
   )
 }
 
 function RawMessage(props: {
   message: Message
   getParts: (id: string) => Part[]
-  onRendered: () => void
+  opened: boolean
   time: (value: number | undefined) => string
+  roleLabel: string
+  emptyPreview: string
+  partsCount: (count: number) => string
+  copyLabel: string
+  copiedLabel: string
 }) {
+  const preview = createMemo(() => rawMessagePreview(props.getParts(props.message.id), props.emptyPreview, props.partsCount))
+  const roleColor = () => ROLE_COLOR[props.message.role]
+
   return (
     <Accordion.Item value={props.message.id}>
       <StickyAccordionHeader>
         <Accordion.Trigger>
-          <div class="flex items-center justify-between gap-2 w-full">
-            <div class="min-w-0 truncate">
-              {props.message.role} <span class="text-text-base">• {props.message.id}</span>
+          <div class="flex items-center justify-between gap-2 w-full min-w-0">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+              <span
+                class="shrink-0 rounded px-1.5 py-px text-11-medium"
+                style={{
+                  color: roleColor(),
+                  "background-color": `color-mix(in srgb, ${roleColor()} 14%, transparent)`,
+                }}
+              >
+                {props.roleLabel}
+              </span>
+              <span class="shrink-0 text-11-regular font-mono text-text-weak">{shortMessageId(props.message.id)}</span>
+              <span class="min-w-0 truncate text-12-regular text-text-weak">{preview()}</span>
             </div>
-            <div class="flex items-center gap-3">
-              <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
               <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
             </div>
           </div>
         </Accordion.Trigger>
       </StickyAccordionHeader>
       <Accordion.Content class="bg-background-base">
-        <div class="p-3">
-          <RawMessageContent message={props.message} getParts={props.getParts} onRendered={props.onRendered} />
-        </div>
+        <Show when={props.opened}>
+          <div class="p-3">
+            <RawMessageContent
+              message={props.message}
+              getParts={props.getParts}
+              copyLabel={props.copyLabel}
+              copiedLabel={props.copiedLabel}
+            />
+          </div>
+        </Show>
       </Accordion.Content>
     </Accordion.Item>
   )
@@ -173,21 +480,31 @@ export function SessionContextTab() {
     return c.modelLabel
   })
 
+  const emptyBreakdown = { segments: [], prompts: [], tools: [] }
+
   const breakdown = createMemo(
     on(
       () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
       () => {
         const c = ctx()
-        if (!c?.input) return []
-        return estimateSessionContextBreakdown({
-          messages: messages(),
-          parts: sync().data.part as Record<string, Part[] | undefined>,
-          input: c.input,
-          systemPrompt: systemPrompt(),
-        })
+        if (!c?.input) return emptyBreakdown
+        try {
+          return estimateSessionContextBreakdown({
+            messages: messages(),
+            parts: sync().data.part as Record<string, Part[] | undefined>,
+            input: c.input,
+            systemPrompt: systemPrompt(),
+          })
+        } catch {
+          return emptyBreakdown
+        }
       },
     ),
   )
+
+  const segments = createMemo(() => breakdown()?.segments ?? emptyBreakdown.segments)
+  const promptShares = createMemo(() => breakdown()?.prompts ?? emptyBreakdown.prompts)
+  const toolShares = createMemo(() => breakdown()?.tools ?? emptyBreakdown.tools)
 
   const breakdownLabel = (key: SessionContextBreakdownKey) => {
     if (key === "system") return language.t("context.breakdown.system")
@@ -196,6 +513,9 @@ export function SessionContextTab() {
     if (key === "tool") return language.t("context.breakdown.tool")
     return language.t("context.breakdown.other")
   }
+
+  const translate = (key: string, vars?: Record<string, string>) =>
+    language.t(key as Parameters<typeof language.t>[0], vars)
 
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
@@ -223,7 +543,13 @@ export function SessionContextTab() {
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
   let pending: { x: number; y: number } | undefined
+  const [expanded, setExpanded] = createSignal<string[]>([])
   const getParts = (id: string) => (sync().data.part[id] ?? []) as Part[]
+
+  const roleLabel = (role: Message["role"]) => {
+    if (role === "user") return language.t("context.rawMessages.role.user")
+    return language.t("context.rawMessages.role.assistant")
+  }
 
   const restoreScroll = () => {
     const el = scroll
@@ -264,6 +590,16 @@ export function SessionContextTab() {
     ),
   )
 
+  createEffect(
+    on(
+      () => expanded().join("\0"),
+      () => {
+        requestAnimationFrame(restoreScroll)
+      },
+      { defer: true },
+    ),
+  )
+
   onCleanup(() => {
     if (frame === undefined) return
     cancelAnimationFrame(frame)
@@ -285,34 +621,71 @@ export function SessionContextTab() {
           </For>
         </div>
 
-        <Show when={breakdown().length > 0}>
-          <div class="flex flex-col gap-2">
-            <div class="text-12-regular text-text-weak">{language.t("context.breakdown.title")}</div>
-            <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-              <For each={breakdown()}>
-                {(segment) => (
-                  <div
-                    class="h-full"
-                    style={{
-                      width: `${segment.width}%`,
-                      "background-color": BREAKDOWN_COLOR[segment.key],
-                    }}
-                  />
-                )}
-              </For>
+        <Show when={segments().length > 0}>
+          <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-2">
+              <div class="text-12-regular text-text-weak">{language.t("context.breakdown.title")}</div>
+              <div class="h-2.5 w-full rounded-full bg-surface-base overflow-hidden flex">
+                <For each={segments()}>
+                  {(segment) => (
+                    <div class="h-full min-w-0" style={{ width: `${segment.width}%` }}>
+                      <BreakdownTooltip
+                        segment={segment}
+                        label={breakdownLabel(segment.key)}
+                        number={formatter().number}
+                        t={translate}
+                        class="h-full w-full"
+                      >
+                        <div
+                          class="h-full w-full cursor-default"
+                          style={{ "background-color": BREAKDOWN_COLOR[segment.key] }}
+                        />
+                      </BreakdownTooltip>
+                    </div>
+                  )}
+                </For>
+              </div>
+              <div class="flex flex-wrap gap-x-3 gap-y-1">
+                <For each={segments()}>
+                  {(segment) => (
+                    <BreakdownTooltip
+                      segment={segment}
+                      label={breakdownLabel(segment.key)}
+                      number={formatter().number}
+                      t={translate}
+                    >
+                      <div class="flex items-center gap-1 text-11-regular text-text-weak cursor-default">
+                        <div class="size-2 rounded-sm" style={{ "background-color": BREAKDOWN_COLOR[segment.key] }} />
+                        <div>{breakdownLabel(segment.key)}</div>
+                        <div class="text-text-weaker tabular-nums">
+                          {formatter().number(segment.tokens)} · {segment.percent.toLocaleString(language.intl())}%
+                        </div>
+                      </div>
+                    </BreakdownTooltip>
+                  )}
+                </For>
+              </div>
+              <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
             </div>
-            <div class="flex flex-wrap gap-x-3 gap-y-1">
-              <For each={breakdown()}>
-                {(segment) => (
-                  <div class="flex items-center gap-1 text-11-regular text-text-weak">
-                    <div class="size-2 rounded-sm" style={{ "background-color": BREAKDOWN_COLOR[segment.key] }} />
-                    <div>{breakdownLabel(segment.key)}</div>
-                    <div class="text-text-weaker">{segment.percent.toLocaleString(language.intl())}%</div>
-                  </div>
-                )}
-              </For>
+
+            <div class="grid grid-cols-1 @[40rem]:grid-cols-2 gap-4">
+              <ShareList
+                title={language.t("context.breakdown.prompts.title")}
+                empty={language.t("context.breakdown.prompts.empty")}
+                rows={promptShares()}
+                number={formatter().number}
+                t={translate}
+                intl={language.intl()}
+              />
+              <ShareList
+                title={language.t("context.breakdown.tools.title")}
+                empty={language.t("context.breakdown.tools.empty")}
+                rows={toolShares()}
+                number={formatter().number}
+                t={translate}
+                intl={language.intl()}
+              />
             </div>
-            <div class="hidden text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
           </div>
         </Show>
 
@@ -329,10 +702,24 @@ export function SessionContextTab() {
 
         <div class="flex flex-col gap-2">
           <div class="text-12-regular text-text-weak">{language.t("context.rawMessages.title")}</div>
-          <Accordion multiple>
+          <Accordion
+            multiple
+            value={expanded()}
+            onChange={(value) => setExpanded(Array.isArray(value) ? value : value ? [value] : [])}
+          >
             <For each={messages()}>
               {(message) => (
-                <RawMessage message={message} getParts={getParts} onRendered={restoreScroll} time={formatter().time} />
+                <RawMessage
+                  message={message}
+                  getParts={getParts}
+                  opened={expanded().includes(message.id)}
+                  time={formatter().time}
+                  roleLabel={roleLabel(message.role)}
+                  emptyPreview={language.t("context.rawMessages.preview.empty")}
+                  partsCount={(count) => language.t("context.rawMessages.preview.parts", { count: String(count) })}
+                  copyLabel={language.t("context.rawMessages.copy")}
+                  copiedLabel={language.t("context.rawMessages.copied")}
+                />
               )}
             </For>
           </Accordion>

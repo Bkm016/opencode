@@ -25,11 +25,9 @@ import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
 import { FileProvider, selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
-import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Select } from "@opencode-ai/ui/select"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner } from "@opencode-ai/ui/scroll-view"
 import { Tabs } from "@opencode-ai/ui/tabs"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
@@ -37,7 +35,6 @@ import { showToast } from "@/utils/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
-import { ErrorPage } from "@/pages/error"
 import { CommentsProvider, useComments } from "@/context/comments"
 import { useCommand } from "@/context/command"
 import { DirectoryDataProvider } from "@/pages/directory-layout"
@@ -50,7 +47,7 @@ import { PromptProvider, usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
-import { ServerConnection, serverName, useServer } from "@/context/server"
+import { ServerConnection } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
@@ -168,6 +165,9 @@ function TargetSessionSettingsCommand() {
 export function SessionRouteErrorBoundary(
   props: ParentProps<{ sessionID?: string; serverKey?: ServerConnection.Key; padded?: boolean }>,
 ) {
+  // Must not call useLanguage/useServer/useTabs here: after HMR the boundary can re-render
+  // against a stale createContext identity and throw before children mount. Fallback UI is
+  // intentionally context-free English so it cannot cascade into another provider error.
   return (
     <ErrorBoundary
       fallback={(error, reset) => (
@@ -184,52 +184,64 @@ export function SessionRouteErrorBoundary(
   )
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  return "Something went wrong"
+}
+
 function SessionErrorFallback(props: {
   error: unknown
   sessionID?: string
   serverKey?: ServerConnection.Key
   onDismiss?: () => void
 }) {
-  const language = useLanguage()
-  const server = useServer()
-  const tabs = useTabs()
-  const displayServer = createMemo(() => {
-    const key = props.serverKey ?? server.key
-    const conn = server.list.find((item) => ServerConnection.key(item) === key)
-    return conn ? serverName(conn) : key
-  })
-  const closeTab = () => {
-    if (!props.sessionID) return
-    tabs.removeSessionTab({ server: props.serverKey ?? server.key, sessionId: props.sessionID })
-  }
   if (isCurrentSessionNotFoundError(props.error, props.sessionID)) {
     return (
       <div class="flex-1 min-h-0 overflow-hidden">
         <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-4">
           <div class="flex flex-col items-center gap-2">
-            <div class="text-16-medium text-text max-w-md">{language.t("session.error.notFound")}</div>
+            <div class="text-16-medium text-text max-w-md">This session cannot be found</div>
             <div class="text-13-regular text-text-weak max-w-md">
-              {language.t("session.error.notFound.description")}
+              This tab points to a session that no longer exists on this server.
             </div>
           </div>
+          <Show when={props.serverKey}>
+            {(serverKey) => <div class="max-w-full text-11-regular text-text-faint break-all">{serverKey()}</div>}
+          </Show>
           <Show when={props.sessionID}>
             {(sessionID) => (
-              <div class="max-w-full flex flex-col items-center gap-1">
-                <div class="max-w-full text-11-regular text-text-faint break-all">{displayServer()}</div>
-                <code class="max-w-full rounded-[4px] px-1 py-0.5 font-mono text-xs font-medium leading-4 text-text-base break-all bg-[color-mix(in_oklch,var(--v2-text-text-base)_8%,transparent)]">
-                  {sessionID()}
-                </code>
-              </div>
+              <code class="max-w-full rounded-[4px] px-1 py-0.5 font-mono text-xs font-medium leading-4 text-text-base break-all bg-[color-mix(in_oklch,var(--v2-text-text-base)_8%,transparent)]">
+                {sessionID()}
+              </code>
             )}
           </Show>
-          <ButtonV2 variant="neutral" size="normal" icon="xmark-small" onClick={closeTab}>
-            {language.t("session.error.notFound.closeTab")}
-          </ButtonV2>
+          <Show when={props.onDismiss}>
+            {(dismiss) => (
+              <Button size="large" onClick={() => dismiss()()}>
+                Dismiss
+              </Button>
+            )}
+          </Show>
         </div>
       </div>
     )
   }
-  return <ErrorPage error={props.error} onDismiss={props.onDismiss} />
+  return (
+    <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+      <div class="text-16-medium text-text-strong">Session error</div>
+      <pre class="max-w-xl max-h-48 overflow-auto whitespace-pre-wrap break-words text-12-regular text-text-weak">
+        {errorMessage(props.error)}
+      </pre>
+      <Show when={props.onDismiss}>
+        {(dismiss) => (
+          <Button size="large" onClick={() => dismiss()()}>
+            Dismiss
+          </Button>
+        )}
+      </Show>
+    </div>
+  )
 }
 
 function ResolvedTargetSessionRoute() {
@@ -431,8 +443,8 @@ export default function Page() {
         opened: layout.fileTree.opened(),
       }),
   )
-  const desktopSessionResizeOpen = desktopReviewOpen
-  const desktopSidePanelOpen = createMemo(() => desktopSessionResizeOpen() || desktopFileTreeOpen())
+  // One right sidebar for review and/or file tree — shared width, never stacked columns.
+  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(
@@ -449,7 +461,7 @@ export default function Page() {
     return sessionPanelWidthMax({ available, split: splitReview() })
   })
   // Clamp at render time so window or sidebar resizes squeeze the chat panel
-  // instead of the review pane, without overwriting the persisted width.
+  // instead of the side pane, without overwriting the persisted width.
   const sessionPanelResizedWidth = createMemo(() =>
     clampSessionPanelWidth({
       width: layout.session.width(),
@@ -459,10 +471,10 @@ export default function Page() {
   )
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
-    if (desktopSessionResizeOpen()) return `${sessionPanelResizedWidth()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    return `${sessionPanelResizedWidth()}px`
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+  // Chat layout reacts to the shared right rail, not review vs file-tree separately.
+  const centered = createMemo(() => isDesktop() && !desktopSidePanelOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -592,7 +604,7 @@ export default function Page() {
   let diffTimer: number | undefined
 
   createComputed((prev) => {
-    const open = desktopReviewOpen()
+    const open = desktopSidePanelOpen()
     if (prev === undefined || prev === open) return open
 
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
@@ -602,7 +614,7 @@ export default function Page() {
       setUi("reviewSnap", false)
     })
     return open
-  }, desktopReviewOpen())
+  }, desktopSidePanelOpen())
 
   const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
   const nogit = createMemo(() => {
@@ -2058,9 +2070,9 @@ export default function Page() {
 
         <div
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 transition-[width]": true,
+            "@container relative shrink-0 flex flex-col min-h-0 h-full transition-[width]": true,
+            "flex-1": !isDesktop(),
             "flex-none": isDesktop(),
-
             "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !size.active() && !ui.reviewSnap,
           }}
@@ -2069,21 +2081,6 @@ export default function Page() {
           }}
         >
           <SessionPanelFrame>{sessionPanelContent()}</SessionPanelFrame>
-
-          <Show when={desktopSessionResizeOpen()}>
-            <div onPointerDown={() => size.start()}>
-              <ResizeHandle
-                direction="horizontal"
-                size={sessionPanelResizedWidth()}
-                min={SESSION_PANEL_WIDTH_MIN}
-                max={sessionPanelMax()}
-                onResize={(width) => {
-                  size.touch()
-                  layout.session.resize(width)
-                }}
-              />
-            </div>
-          </Show>
         </div>
 
         <Show when={desktopSidePanelOpen()}>
@@ -2100,6 +2097,11 @@ export default function Page() {
             focusReviewDiff={focusReviewDiff}
             reviewSnap={ui.reviewSnap}
             size={size}
+            sessionWidth={sessionPanelResizedWidth}
+            sessionWidthMin={SESSION_PANEL_WIDTH_MIN}
+            sessionWidthMax={sessionPanelMax}
+            availableWidth={sessionPanelAvailable}
+            onSessionResize={(width) => layout.session.resize(width)}
           />
         </Show>
       </div>

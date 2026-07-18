@@ -15,6 +15,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
+import { SIDE_PANEL_WIDTH_MIN } from "@/pages/session/session-panel-width"
 import { Mark } from "@opencode-ai/ui/logo"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -71,6 +72,12 @@ export function SessionSidePanel(props: {
   reviewSnap: boolean
   size: Sizing
   stacked?: boolean
+  /** Session column width; right sidebar is the remainder, one shared resize edge. */
+  sessionWidth: () => number
+  sessionWidthMin: number
+  sessionWidthMax: () => number
+  onSessionResize: (width: number) => void
+  availableWidth: () => number | undefined
 }) {
   const layout = useLayout()
   const settings = useSettings()
@@ -94,12 +101,30 @@ export function SessionSidePanel(props: {
   )
   const open = createMemo(() => reviewOpen() || fileOpen())
   const reviewTab = createMemo(() => isDesktop())
+  // Single right-rail width driven by session column; never stack review + file tree.
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    if (reviewOpen()) return "auto"
-    return `${layout.fileTree.width()}px`
+    const available = props.availableWidth()
+    if (available === undefined) return "auto"
+    return `${Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidth())}px`
   })
-  const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
+  const sideResize = createMemo(() => {
+    if (!open()) return
+    const available = props.availableWidth()
+    if (available === undefined) return
+    const session = props.sessionWidth()
+    const sessionMin = props.sessionWidthMin
+    const sessionMax = props.sessionWidthMax()
+    return {
+      size: Math.max(SIDE_PANEL_WIDTH_MIN, available - session),
+      min: SIDE_PANEL_WIDTH_MIN,
+      max: Math.max(SIDE_PANEL_WIDTH_MIN, available - sessionMin),
+      onResize: (sideWidth: number) => {
+        props.size.touch()
+        props.onSessionResize(Math.min(sessionMax, Math.max(sessionMin, available - sideWidth)))
+      },
+    }
+  })
 
   const diffs = createMemo(() => props.diffs().filter(renderDiff))
   const diffFiles = createMemo(() => diffs().map((d) => d.file))
@@ -252,10 +277,23 @@ export function SessionSidePanel(props: {
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap,
-          "flex-1": reviewOpen(),
         }}
         style={{ width: panelWidth() }}
       >
+        <Show when={sideResize()}>
+          {(handle) => (
+            <div class="absolute inset-y-0 left-0 z-30 w-0" onPointerDown={() => props.size.start()}>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={handle().size}
+                min={handle().min}
+                max={handle().max}
+                onResize={handle().onResize}
+              />
+            </div>
+          )}
+        </Show>
         <Show when={open()}>
           <div
             class="size-full flex border-l border-border-weaker-base"
@@ -263,8 +301,76 @@ export function SessionSidePanel(props: {
               gsapEnter(el, { x: 24, y: 0, duration: 0.38 })
             }}
           >
-            <Show when={reviewOpen()}>
-              <div class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base">
+            <div class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base">
+              <Show
+                when={reviewOpen()}
+                fallback={
+                  <div id="file-tree-panel" class="h-full flex flex-col overflow-hidden group/filetree">
+                    <Tabs
+                      variant="pill"
+                      value={fileTreeTab()}
+                      onChange={setFileTreeTabValue}
+                      class="h-full"
+                      data-scope="filetree"
+                    >
+                      <Tabs.List>
+                        <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
+                          {props.reviewCount()}{" "}
+                          {language.t(
+                            props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other",
+                          )}
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
+                          {language.t("session.files.all")}
+                        </Tabs.Trigger>
+                      </Tabs.List>
+                      <Show when={fileTreeTab() === "changes"}>
+                        <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
+                          <Switch>
+                            <Match when={props.hasReview() || !props.diffsReady()}>
+                              <Show
+                                when={props.diffsReady()}
+                                fallback={
+                                  <div class="px-2 py-2 text-12-regular text-text-weak">
+                                    {language.t("common.loading")}
+                                    {language.t("common.loading.ellipsis")}
+                                  </div>
+                                }
+                              >
+                                <FileTree
+                                  path=""
+                                  class="pt-3"
+                                  allowed={diffFiles()}
+                                  kinds={kinds()}
+                                  draggable={false}
+                                  active={props.activeDiff}
+                                  onFileClick={(node) => props.focusReviewDiff(node.path)}
+                                />
+                              </Show>
+                            </Match>
+                          </Switch>
+                        </Tabs.Content>
+                      </Show>
+                      <Show when={fileTreeTab() === "all"}>
+                        <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
+                          <Switch>
+                            <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
+                            <Match when={true}>
+                              <FileTree
+                                path=""
+                                class="pt-3"
+                                modified={diffFiles()}
+                                kinds={kinds()}
+                                onFileClick={(node) => openTab(file.tab(node.path))}
+                              />
+                            </Match>
+                          </Switch>
+                        </Tabs.Content>
+                      </Show>
+                    </Tabs>
+                  </div>
+                }
+              >
                 <div class="size-full min-w-0 h-full bg-background-base">
                   <DragDropProvider
                     onDragStart={handleDragStart}
@@ -445,103 +551,8 @@ export function SessionSidePanel(props: {
                     </DragOverlay>
                   </DragDropProvider>
                 </div>
-              </div>
-            </Show>
-
-            <Show when={fileOpen()}>
-              <div
-                id="file-tree-panel"
-                class="relative min-w-0 h-full shrink-0 overflow-hidden"
-                classList={{
-                  "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                    !props.size.active(),
-                }}
-                style={{ width: treeWidth() }}
-              >
-                <div
-                  class="h-full flex flex-col overflow-hidden group/filetree"
-                  classList={{ "border-l border-border-weaker-base": reviewOpen() }}
-                >
-                  <Tabs
-                    variant="pill"
-                    value={fileTreeTab()}
-                    onChange={setFileTreeTabValue}
-                    class="h-full"
-                    data-scope="filetree"
-                  >
-                    <Tabs.List>
-                      <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
-                        {props.reviewCount()}{" "}
-                        {language.t(
-                          props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other",
-                        )}
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
-                        {language.t("session.files.all")}
-                      </Tabs.Trigger>
-                    </Tabs.List>
-                    <Show when={fileTreeTab() === "changes"}>
-                      <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
-                        <Switch>
-                          <Match when={props.hasReview() || !props.diffsReady()}>
-                            <Show
-                              when={props.diffsReady()}
-                              fallback={
-                                <div class="px-2 py-2 text-12-regular text-text-weak">
-                                  {language.t("common.loading")}
-                                  {language.t("common.loading.ellipsis")}
-                                </div>
-                              }
-                            >
-                              <FileTree
-                                path=""
-                                class="pt-3"
-                                allowed={diffFiles()}
-                                kinds={kinds()}
-                                draggable={false}
-                                active={props.activeDiff}
-                                onFileClick={(node) => props.focusReviewDiff(node.path)}
-                              />
-                            </Show>
-                          </Match>
-                        </Switch>
-                      </Tabs.Content>
-                    </Show>
-                    <Show when={fileTreeTab() === "all"}>
-                      <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
-                        <Switch>
-                          <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
-                          <Match when={true}>
-                            <FileTree
-                              path=""
-                              class="pt-3"
-                              modified={diffFiles()}
-                              kinds={kinds()}
-                              onFileClick={(node) => openTab(file.tab(node.path))}
-                            />
-                          </Match>
-                        </Switch>
-                      </Tabs.Content>
-                    </Show>
-                  </Tabs>
-                </div>
-                <Show when={fileOpen()}>
-                  <div onPointerDown={() => props.size.start()}>
-                    <ResizeHandle
-                      direction="horizontal"
-                      edge="start"
-                      size={layout.fileTree.width()}
-                      min={200}
-                      max={480}
-                      onResize={(width) => {
-                        props.size.touch()
-                        layout.fileTree.resize(width)
-                      }}
-                    />
-                  </div>
-                </Show>
-              </div>
-            </Show>
+              </Show>
+            </div>
           </div>
         </Show>
       </aside>

@@ -601,7 +601,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     })
 
     // PC when wide enough that session mobileTabs (会话/更改) are hidden.
-    const isDesktop = createMediaQuery("(min-width: 512px)")
+    const isDesktop = createMediaQuery("(min-width: 768px)")
 
     return {
       route,
@@ -700,17 +700,24 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         tab: createMemo(() => store.fileTree?.tab ?? "changes"),
         setTab(tab: "changes" | "all") {
           if (!store.fileTree) {
-            setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab })
+            batch(() => {
+              setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab })
+              if (store.review?.panelOpened) setStore("review", "panelOpened", false)
+            })
             return
           }
           setStore("fileTree", "tab", tab)
         },
         open() {
-          if (!store.fileTree) {
-            setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
-            return
-          }
-          setStore("fileTree", "opened", true)
+          batch(() => {
+            if (!store.fileTree) {
+              setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+            } else {
+              setStore("fileTree", "opened", true)
+            }
+            // Review and file tree share one right rail — opening one closes the other.
+            if (store.review?.panelOpened) setStore("review", "panelOpened", false)
+          })
         },
         close() {
           if (!store.fileTree) {
@@ -720,11 +727,23 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("fileTree", "opened", false)
         },
         toggle() {
-          if (!store.fileTree) {
-            setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+          const opened = store.fileTree?.opened ?? true
+          if (opened) {
+            if (!store.fileTree) {
+              setStore("fileTree", { opened: false, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+              return
+            }
+            setStore("fileTree", "opened", false)
             return
           }
-          setStore("fileTree", "opened", (x) => !x)
+          batch(() => {
+            if (!store.fileTree) {
+              setStore("fileTree", { opened: true, width: DEFAULT_FILE_TREE_WIDTH, tab: "changes" })
+            } else {
+              setStore("fileTree", "opened", true)
+            }
+            if (store.review?.panelOpened) setStore("review", "panelOpened", false)
+          })
         },
         resize(width: number) {
           if (!store.fileTree) {
@@ -833,6 +852,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             batch(() => {
               setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: next })
               setEphemeral("reviewPanelSource", nextSource)
+              // Review and file tree share one right rail — opening one closes the other.
+              if (next && store.fileTree?.opened) setStore("fileTree", "opened", false)
             })
             return
           }
@@ -840,11 +861,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const value = current.panelOpened ?? DEFAULT_REVIEW_PANEL_OPENED
           if (value === next) {
             if (ephemeral.reviewPanelSource !== nextSource) setEphemeral("reviewPanelSource", nextSource)
+            if (next && store.fileTree?.opened) setStore("fileTree", "opened", false)
             return
           }
           batch(() => {
             setStore("review", "panelOpened", next)
             setEphemeral("reviewPanelSource", nextSource)
+            if (next && store.fileTree?.opened) setStore("fileTree", "opened", false)
           })
         }
 

@@ -150,20 +150,29 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
+  it.instance("exposes task wait/background parameters and async management tools", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agent = yield* Agent.Service
       const build = yield* agent.get("build")
       if (!build) throw new Error("build agent not found")
-      const task = (yield* registry.tools({
+      const ids = yield* registry.ids()
+      const tools = yield* registry.tools({
         providerID: ProviderV2.ID.opencode,
         modelID: ModelV2.ID.make("test"),
         agent: build,
-      })).find((tool) => tool.id === "task")
+      })
+      const task = tools.find((tool) => tool.id === "task")
 
-      expect(task?.jsonSchema).toBeDefined()
-      expect((task?.jsonSchema?.properties as Record<string, unknown> | undefined)?.background).toBeUndefined()
+      expect(ids).toContain("task")
+      expect(ids).toContain("task_async")
+      expect(ids).toContain("task_async_status")
+      expect(ids).toContain("task_async_wait")
+      expect(ids).toContain("task_async_abort")
+      expect(ids).toContain("task_async_followup")
+      expect(task?.description).toContain("wait=true")
+      // Full parameter schema is exposed (no experimental gate on wait/background).
+      expect(task?.jsonSchema).toBeUndefined()
     }),
   )
 

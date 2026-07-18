@@ -239,12 +239,21 @@ describe("tool parameters", () => {
       const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general" })
       expect(parsed.subagent_type).toBe("general")
     })
-    test("accepts optional background flag", () => {
-      const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general", background: true })
-      expect(parsed.background).toBe(true)
+    test("accepts optional wait and background flags", () => {
+      const waited = parse(Task, { description: "d", prompt: "p", subagent_type: "general", wait: true })
+      expect(waited.wait).toBe(true)
+      const background = parse(Task, { description: "d", prompt: "p", subagent_type: "general", background: true })
+      expect(background.background).toBe(true)
     })
-    test("rejects missing prompt", () => {
-      expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(false)
+    test("accepts tasks batch without top-level prompt", () => {
+      const parsed = parse(Task, {
+        tasks: [{ description: "d", prompt: "p", subagent_type: "general" }],
+      })
+      expect(parsed.tasks?.length).toBe(1)
+    })
+    test("schema allows incomplete top-level fields (runtime validates description+prompt)", () => {
+      // Parameter schema keeps description/prompt optional so tasks[] batch form can omit them.
+      expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(true)
     })
   })
 

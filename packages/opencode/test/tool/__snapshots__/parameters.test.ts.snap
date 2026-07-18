@@ -301,8 +301,16 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "agent": {
+      "description": "Alias for subagent_type",
+      "type": "string",
+    },
+    "allow_nested_tasks": {
+      "description": "When true, allow the child to call task tools. Default false",
+      "type": "boolean",
+    },
     "background": {
-      "description": "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
+      "description": "Deprecated alias: background=false is equivalent to wait=true. Async is the default; omit this field for async launch.",
       "type": "boolean",
     },
     "command": {
@@ -310,27 +318,79 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "type": "string",
     },
     "description": {
-      "description": "A short (3-5 words) description of the task",
+      "description": "A short (3-5 words) description of the task (required unless tasks is set)",
       "type": "string",
     },
+    "inherit_context": {
+      "description": "When true, prepend recent parent transcript into the child prompt. Default false",
+      "type": "boolean",
+    },
     "prompt": {
-      "description": "The task for the agent to perform",
+      "description": "The task for the agent to perform (required unless tasks is set)",
       "type": "string",
     },
     "subagent_type": {
-      "description": "The type of specialized agent to use for this task",
+      "description": "The type of specialized agent to use (required unless set per tasks entry)",
       "type": "string",
     },
     "task_id": {
       "description": "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
       "type": "string",
     },
+    "tasks": {
+      "description": "Launch multiple child tasks in parallel (max 20). When set, top-level description/prompt are optional defaults are not required.",
+      "items": {
+        "properties": {
+          "agent": {
+            "description": "Alias for subagent_type",
+            "type": "string",
+          },
+          "allow_nested_tasks": {
+            "description": "When true, allow the child to call task tools. Default false",
+            "type": "boolean",
+          },
+          "command": {
+            "description": "The command that triggered this task",
+            "type": "string",
+          },
+          "description": {
+            "description": "A short (3-5 words) description of the task",
+            "type": "string",
+          },
+          "inherit_context": {
+            "description": "When true, prepend recent parent transcript into the child prompt. Default false",
+            "type": "boolean",
+          },
+          "prompt": {
+            "description": "The task for the agent to perform",
+            "type": "string",
+          },
+          "subagent_type": {
+            "description": "The type of specialized agent to use for this task",
+            "type": "string",
+          },
+          "title": {
+            "description": "Optional short session title; falls back to description",
+            "type": "string",
+          },
+        },
+        "required": [
+          "description",
+          "prompt",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "title": {
+      "description": "Optional short session title; falls back to description",
+      "type": "string",
+    },
+    "wait": {
+      "description": "When true, block until the task completes and return its result. Default false (async). Prefer this for rare foreground cases.",
+      "type": "boolean",
+    },
   },
-  "required": [
-    "description",
-    "prompt",
-    "subagent_type",
-  ],
   "type": "object",
 }
 `;

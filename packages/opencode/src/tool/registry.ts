@@ -3,6 +3,7 @@ import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
+import { SessionStatus } from "@/session/status"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
@@ -10,6 +11,12 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
+import {
+  TaskAsyncStatusTool,
+  TaskAsyncWaitTool,
+  TaskAsyncAbortTool,
+  TaskAsyncFollowupTool,
+} from "./task-async"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
@@ -95,6 +102,10 @@ const layer = Layer.effect(
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
+    const taskAsyncStatus = yield* TaskAsyncStatusTool
+    const taskAsyncWait = yield* TaskAsyncWaitTool
+    const taskAsyncAbort = yield* TaskAsyncAbortTool
+    const taskAsyncFollowup = yield* TaskAsyncFollowupTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -210,6 +221,10 @@ const layer = Layer.effect(
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),
+          taskAsyncStatus: Tool.init(taskAsyncStatus),
+          taskAsyncWait: Tool.init(taskAsyncWait),
+          taskAsyncAbort: Tool.init(taskAsyncAbort),
+          taskAsyncFollowup: Tool.init(taskAsyncFollowup),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -233,6 +248,12 @@ const layer = Layer.effect(
             tool.edit,
             tool.write,
             tool.task,
+            // Alias for models / plugins that call task_async; same launcher as task.
+            { ...tool.task, id: "task_async" },
+            tool.taskAsyncStatus,
+            tool.taskAsyncWait,
+            tool.taskAsyncAbort,
+            tool.taskAsyncFollowup,
             tool.fetch,
             tool.todo,
             tool.search,
@@ -430,6 +451,7 @@ export const node = LayerNode.make({
     Agent.node,
     Skill.node,
     Session.node,
+    SessionStatus.node,
     BackgroundJob.node,
     Provider.node,
     LSP.node,

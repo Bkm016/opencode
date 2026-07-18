@@ -47,7 +47,6 @@ import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Markdown } from "./markdown"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { AttachmentCardV2 } from "../v2/components/attachment-card-v2"
 import { CommentCardV2 } from "../v2/components/comment-card-v2"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -63,9 +62,8 @@ import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
-import { attached, inline, kind, typeLabel } from "./message-file"
+import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
-import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -456,14 +454,46 @@ function agentColor(value: string | undefined, themeColors: Record<string, strin
   return themeColors[value] ?? value
 }
 
-function newLayout() {
-  return typeof document !== "undefined" && document.body.hasAttribute("data-new-layout")
-}
-
 function webSearchProviderLabel(provider: unknown) {
   if (provider === "parallel") return "Parallel Web Search"
   if (provider === "exa") return "Exa Web Search"
   return "Web Search"
+}
+
+function shortId(value: string) {
+  if (value.length <= 18) return value
+  return `${value.slice(0, 10)}…${value.slice(-4)}`
+}
+
+function taskManageSubtitle(input: Record<string, any> = {}, metadata: Record<string, unknown> = {}) {
+  if (typeof input.batch_id === "string" && input.batch_id) return shortId(input.batch_id)
+  if (typeof metadata.batch_id === "string" && metadata.batch_id) return shortId(metadata.batch_id as string)
+  if (typeof input.task_id === "string" && input.task_id) return shortId(input.task_id)
+  if (typeof metadata.task_id === "string" && metadata.task_id) return shortId(metadata.task_id as string)
+  if (Array.isArray(input.task_ids) && input.task_ids.length > 0) {
+    if (input.task_ids.length === 1 && typeof input.task_ids[0] === "string") return shortId(input.task_ids[0])
+    return `${input.task_ids.length} tasks`
+  }
+  if (Array.isArray(metadata.task_ids) && metadata.task_ids.length > 0) {
+    if (metadata.task_ids.length === 1 && typeof metadata.task_ids[0] === "string") {
+      return shortId(metadata.task_ids[0] as string)
+    }
+    return `${metadata.task_ids.length} tasks`
+  }
+  if (typeof metadata.status === "string" && metadata.status) return metadata.status
+  if (typeof metadata.count === "number") return `${metadata.count} tasks`
+  return undefined
+}
+
+function taskManageSessionId(input: Record<string, any> = {}, metadata: Record<string, unknown> = {}) {
+  if (typeof input.task_id === "string" && input.task_id) return input.task_id
+  if (typeof metadata.task_id === "string" && metadata.task_id) return metadata.task_id as string
+  if (typeof metadata.session_id === "string" && metadata.session_id) return metadata.session_id as string
+  if (typeof metadata.sessionId === "string" && metadata.sessionId) return metadata.sessionId as string
+  if (Array.isArray(input.task_ids) && typeof input.task_ids[0] === "string") return input.task_ids[0] as string
+  if (Array.isArray(metadata.task_ids) && typeof metadata.task_ids[0] === "string") {
+    return metadata.task_ids[0] as string
+  }
 }
 
 export function getToolInfo(
@@ -509,15 +539,77 @@ export function getToolInfo(
         title: webSearchProviderLabel(metadata?.provider),
         subtitle: input.query,
       }
-    case "task": {
-      const type =
-        typeof input.subagent_type === "string" && input.subagent_type
-          ? input.subagent_type[0]!.toUpperCase() + input.subagent_type.slice(1)
-          : undefined
+    case "task":
+    case "task_async": {
+      const metaTasks = Array.isArray(metadata?.tasks) ? metadata.tasks : undefined
+      const inputTasks = Array.isArray(input.tasks) ? input.tasks : undefined
+      const batch = (metaTasks?.length ? metaTasks : inputTasks) as unknown[] | undefined
+      const first = batch?.[0] && typeof batch[0] === "object" ? (batch[0] as Record<string, unknown>) : undefined
+      const rawType =
+        (typeof input.subagent_type === "string" && input.subagent_type) ||
+        (typeof input.agent === "string" && input.agent) ||
+        (typeof metadata?.agent === "string" && metadata.agent) ||
+        (typeof first?.subagent_type === "string" && first.subagent_type) ||
+        (typeof first?.agent === "string" && first.agent) ||
+        undefined
+      const type = rawType ? rawType[0]!.toUpperCase() + rawType.slice(1) : undefined
+      const batchCount = batch?.length ?? 0
+      const description =
+        (typeof input.description === "string" && input.description) ||
+        (typeof metadata?.description === "string" && metadata.description) ||
+        (typeof metadata?.title === "string" && metadata.title) ||
+        (typeof first?.description === "string" && first.description) ||
+        (typeof first?.title === "string" && first.title) ||
+        undefined
+      const bg = metadata?.background === true ? " (background)" : ""
+      return {
+        icon: "task",
+        title: batchCount > 1 ? `${batchCount} tasks` : agentTitle(i18n, type),
+        subtitle:
+          batchCount > 1
+            ? `${batchCount} child sessions${bg}`
+            : description
+              ? `${description}${bg}`
+              : bg
+                ? bg.trim()
+                : undefined,
+      }
+    }
+    case "task_async_status":
+      return {
+        icon: "task",
+        title: i18n.t("ui.tool.task.status"),
+        subtitle: taskManageSubtitle(input, metadata),
+      }
+    case "task_async_wait":
+      return {
+        icon: "task",
+        title: i18n.t("ui.tool.task.wait"),
+        subtitle: taskManageSubtitle(input, metadata),
+      }
+    case "task_async_abort":
+      return {
+        icon: "task",
+        title: i18n.t("ui.tool.task.abort"),
+        subtitle: taskManageSubtitle(input, metadata),
+      }
+    case "task_async_followup": {
+      const rawType =
+        (typeof input.agent === "string" && input.agent) ||
+        (typeof metadata?.agent === "string" && metadata.agent) ||
+        undefined
+      const type = rawType ? rawType[0]!.toUpperCase() + rawType.slice(1) : undefined
+      const description = taskFollowupDescription(
+        (typeof metadata?.title === "string" && metadata.title) ||
+          (typeof input.title === "string" && input.title) ||
+          (typeof input.prompt === "string" && input.prompt) ||
+          taskManageSubtitle(input, metadata),
+      )
+      const bg = metadata?.background === true ? " (background)" : ""
       return {
         icon: "task",
         title: agentTitle(i18n, type),
-        subtitle: input.description,
+        subtitle: description ? `${description}${bg}` : bg ? bg.trim() : undefined,
       }
     }
     case "bash":
@@ -1228,7 +1320,7 @@ export function UserMessageDisplay(props: {
 
   const attachments = createMemo(() => files().filter(attached))
 
-  const messageComments = createMemo(() => (newLayout() ? (props.comments ?? []) : []))
+  const messageComments = createMemo(() => [])
 
   const inlineFiles = createMemo(() => files().filter(inline))
 
@@ -1293,41 +1385,27 @@ export function UserMessageDisplay(props: {
             const name = file.filename ?? i18n.t("ui.message.attachment.alt")
 
             return (
-              <Show
-                when={newLayout() && type === "file"}
-                fallback={
-                  <div
-                    data-slot="user-message-attachment"
-                    data-type={type}
-                    data-clickable={type === "image" ? "true" : undefined}
-                    title={type === "file" ? name : undefined}
-                    onClick={() => {
-                      if (type === "image") openImagePreview(file.url, name)
-                    }}
-                  >
-                    <Show
-                      when={type === "image"}
-                      fallback={
-                        <div data-slot="user-message-attachment-file">
-                          <FileIcon node={{ path: name, type: "file" }} />
-                          <span data-slot="user-message-attachment-name">{name}</span>
-                        </div>
-                      }
-                    >
-                      <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
-                    </Show>
-                  </div>
-                }
+              <div
+                data-slot="user-message-attachment"
+                data-type={type}
+                data-clickable={type === "image" ? "true" : undefined}
+                title={type === "file" ? name : undefined}
+                onClick={() => {
+                  if (type === "image") openImagePreview(file.url, name)
+                }}
               >
-                <AttachmentCardV2
-                  title={getFilename(name)}
-                  hover={name}
-                  clickable={!!props.actions?.openAttachment}
-                  onClick={() => props.actions?.openAttachment?.(file)}
+                <Show
+                  when={type === "image"}
+                  fallback={
+                    <div data-slot="user-message-attachment-file">
+                      <FileIcon node={{ path: name, type: "file" }} />
+                      <span data-slot="user-message-attachment-name">{name}</span>
+                    </div>
+                  }
                 >
-                  {typeLabel(name, file.mime)}
-                </AttachmentCardV2>
-              </Show>
+                  <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
+                </Show>
+              </div>
             )
           }}
         </For>
@@ -1566,19 +1644,29 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const input = () => part().state?.input ?? emptyInput
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
+  const isTaskTool = createMemo(() => part().tool === "task" || part().tool === "task_async")
   const taskId = createMemo(() => {
-    if (part().tool !== "task") return
-    const value = partMetadata().sessionId
-    if (typeof value === "string" && value) return value
+    if (!isTaskTool()) return
+    const meta = partMetadata()
+    if (typeof meta.sessionId === "string" && meta.sessionId) return meta.sessionId
+    if (Array.isArray(meta.taskIDs) && typeof meta.taskIDs[0] === "string") return meta.taskIDs[0]
   })
   const taskHref = createMemo(() => {
-    if (part().tool !== "task") return
+    if (!isTaskTool()) return
     return sessionLink(taskId(), useLocation().pathname, data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
-    if (part().tool !== "task") return undefined
-    const value = input().description
-    if (typeof value === "string" && value) return value
+    if (!isTaskTool()) return undefined
+    const meta = partMetadata()
+    const value =
+      (typeof input().description === "string" && input().description) ||
+      (typeof meta.description === "string" && meta.description) ||
+      (typeof meta.title === "string" && meta.title) ||
+      undefined
+    if (value) return meta.background === true ? `${value} (background)` : value
+    if (Array.isArray(meta.tasks) && meta.tasks.length > 1) {
+      return `${meta.tasks.length} child sessions${meta.background === true ? " (background)" : ""}`
+    }
     return taskId()
   })
 
@@ -1987,118 +2075,373 @@ ToolRegistry.register({
   },
 })
 
+function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
+  const metaTasks = Array.isArray(metadata.tasks) ? metadata.tasks : undefined
+  if (metaTasks && metaTasks.length > 0) {
+    return metaTasks.flatMap((item, index) => {
+      if (!item || typeof item !== "object") return []
+      const row = item as Record<string, unknown>
+      const sessionId =
+        (typeof row.sessionId === "string" && row.sessionId) ||
+        (typeof row.sessionID === "string" && row.sessionID) ||
+        (Array.isArray(metadata.taskIDs) && typeof metadata.taskIDs[index] === "string"
+          ? metadata.taskIDs[index]
+          : undefined)
+      return [
+        {
+          sessionId,
+          agent:
+            (typeof row.agent === "string" && row.agent) ||
+            (typeof row.subagent_type === "string" && row.subagent_type) ||
+            undefined,
+          description:
+            (typeof row.title === "string" && row.title) ||
+            (typeof row.description === "string" && row.description) ||
+            undefined,
+        },
+      ]
+    })
+  }
+
+  const inputTasks = Array.isArray(input.tasks) ? input.tasks : undefined
+  if (inputTasks && inputTasks.length > 0) {
+    return inputTasks.flatMap((item, index) => {
+      if (!item || typeof item !== "object") return []
+      const row = item as Record<string, unknown>
+      const sessionId =
+        (typeof metadata.sessionId === "string" && inputTasks.length === 1 && metadata.sessionId) ||
+        (Array.isArray(metadata.taskIDs) && typeof metadata.taskIDs[index] === "string"
+          ? metadata.taskIDs[index]
+          : undefined)
+      return [
+        {
+          sessionId,
+          agent:
+            (typeof row.subagent_type === "string" && row.subagent_type) ||
+            (typeof row.agent === "string" && row.agent) ||
+            undefined,
+          description:
+            (typeof row.description === "string" && row.description) ||
+            (typeof row.title === "string" && row.title) ||
+            undefined,
+        },
+      ]
+    })
+  }
+
+  return [
+    {
+      sessionId: typeof metadata.sessionId === "string" ? metadata.sessionId : undefined,
+      agent:
+        (typeof input.subagent_type === "string" && input.subagent_type) ||
+        (typeof input.agent === "string" && input.agent) ||
+        (typeof metadata.agent === "string" && metadata.agent) ||
+        undefined,
+      description:
+        (typeof input.description === "string" && input.description) ||
+        (typeof metadata.description === "string" && metadata.description) ||
+        (typeof metadata.title === "string" && metadata.title) ||
+        undefined,
+    },
+  ]
+}
+
+function taskFollowupDescription(value: string | undefined) {
+  if (!value) return value
+  return value.replace(/^(follow-up|followup|接力|续写)\s*[:：-]\s*/i, "").trim() || value
+}
+
+function TaskCard(props: {
+  status?: string
+  agent?: string
+  description?: string
+  sessionId?: string
+  background?: boolean
+  followup?: boolean
+  fallbackInput?: Record<string, any>
+}) {
+  const data = useData()
+  const i18n = useI18n()
+  const location = useLocation()
+  const running = createMemo(() => props.status === "pending" || props.status === "running")
+  const childSessionId = createMemo(() => {
+    if (props.sessionId) return props.sessionId
+    if (!props.fallbackInput) return
+    return taskSession(props.fallbackInput, location.pathname, data.store.session, data.store.agent)
+  })
+  const agent = createMemo(() => taskAgent(props.agent, data.store.agent))
+  const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
+  const tone = createMemo(() => agent().color)
+  const v2Tone = createMemo(() => agent().v2Color)
+  const subtitle = createMemo(() => {
+    const raw = props.followup ? taskFollowupDescription(props.description) : props.description
+    const value = raw || childSessionId()
+    if (!value) return props.background ? "background" : value
+    if (props.background) return `${value} (background)`
+    return value
+  })
+  const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
+  const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
+
+  const openSession = () => {
+    const id = childSessionId()
+    if (!id) return
+    if (data.navigateToSession) {
+      data.navigateToSession(id)
+      return
+    }
+    const value = href()
+    if (value) window.location.assign(value)
+  }
+
+  const navigate = (event: MouseEvent) => {
+    if (!data.navigateToSession) return
+    if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    event.preventDefault()
+    openSession()
+  }
+  const navigateKey = (event: KeyboardEvent) => {
+    if (!clickable() || href()) return
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    openSession()
+  }
+
+  const trigger = () => (
+    <div
+      data-component="task-tool-card"
+      data-kind={props.followup ? "followup" : "launch"}
+      style={{
+        "--task-agent-color": v2Tone(),
+        "--task-agent-legacy-color": tone(),
+      }}
+    >
+      <div data-component="task-tool-surface">
+        <div data-slot="basic-tool-tool-info-structured">
+          <div data-slot="basic-tool-tool-info-main">
+            <Show
+              when={running()}
+              fallback={
+                <span data-component="task-tool-icon">
+                  <Icon name={props.followup ? "enter" : "subagent"} size="small" />
+                </span>
+              }
+            >
+              <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
+                <Spinner />
+              </span>
+            </Show>
+            <span data-component="task-tool-title">{title()}</span>
+            <Show when={subtitle()}>
+              <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+            </Show>
+          </div>
+        </div>
+      </div>
+      <Show when={clickable()}>
+        <div data-component="task-tool-action">
+          <Icon name="square-arrow-top-right" size="small" />
+        </div>
+      </Show>
+    </div>
+  )
+
+  return (
+    <BasicTool
+      icon="task"
+      status={props.status}
+      trigger={trigger()}
+      hideDetails
+      triggerAsLink
+      triggerHref={href()}
+      clickable={clickable()}
+      onTriggerClick={navigate}
+      onTriggerKeyDown={navigateKey}
+    />
+  )
+}
+
+function TaskToolRender(props: ToolProps) {
+  const cards = createMemo(() => taskCards(props.input, props.metadata))
+  const background = createMemo(() => props.metadata.background === true)
+  const single = createMemo(() => cards().length === 1)
+
+  return (
+    <div data-component="task-tool-list">
+      <For each={cards()}>
+        {(card) => (
+          <TaskCard
+            status={props.status}
+            agent={card.agent}
+            description={card.description}
+            sessionId={card.sessionId}
+            background={background()}
+            fallbackInput={
+              single()
+                ? {
+                    ...props.input,
+                    description: card.description ?? props.input.description,
+                    subagent_type: card.agent ?? props.input.subagent_type,
+                  }
+                : undefined
+            }
+          />
+        )}
+      </For>
+    </div>
+  )
+}
+
 ToolRegistry.register({
   name: "task",
   render(props) {
-    const data = useData()
-    const i18n = useI18n()
-    const location = useLocation()
-    const childSessionId = createMemo(() => {
-      const value = props.metadata.sessionId
-      if (typeof value === "string" && value) return value
-      return taskSession(props.input, location.pathname, data.store.session, data.store.agent)
-    })
-    const agent = createMemo(() => taskAgent(props.input.subagent_type, data.store.agent))
-    const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
-    const tone = createMemo(() => agent().color)
-    const v2Tone = createMemo(() => agent().v2Color)
-    const subtitle = createMemo(() => {
-      const value =
-        typeof props.input.description === "string" && props.input.description
-          ? props.input.description
-          : childSessionId()
-      if (!value) return value
-      if (props.metadata.background === true) return `${value} (background)`
-      return value
-    })
-    const running = createMemo(() => props.status === "pending" || props.status === "running")
-
-    const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
-    const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
-
-    const open = () => {
-      const id = childSessionId()
-      if (!id) return
-      if (data.navigateToSession) {
-        data.navigateToSession(id)
-        return
-      }
-      const value = href()
-      if (value) window.location.assign(value)
-    }
-
-    const navigate = (event: MouseEvent) => {
-      if (!data.navigateToSession) return
-      if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      event.preventDefault()
-      open()
-    }
-    const navigateKey = (event: KeyboardEvent) => {
-      if (!clickable() || href()) return
-      if (event.key !== "Enter" && event.key !== " ") return
-      event.preventDefault()
-      open()
-    }
-
-    const trigger = () => (
-      <div
-        data-component="task-tool-card"
-        style={{
-          "--task-agent-color": v2Tone(),
-          "--task-agent-legacy-color": tone(),
-        }}
-      >
-        <div data-component="task-tool-surface">
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <Show
-                when={running()}
-                fallback={
-                  <Show when={newLayout()}>
-                    <span data-component="task-tool-icon">
-                      <Icon name="subagent" size="small" />
-                    </span>
-                  </Show>
-                }
-              >
-                <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
-                  <Show when={newLayout()} fallback={<Spinner />}>
-                    <SessionProgressIndicatorV2
-                      style={{ color: v2Tone() ?? "light-dark(var(--v2-text-text-base), #ffffff)" }}
-                    />
-                  </Show>
-                </span>
-              </Show>
-              <span data-component="task-tool-title">{title()}</span>
-              <Show when={subtitle()}>
-                <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
-              </Show>
-            </div>
-          </div>
-        </div>
-        <Show when={clickable()}>
-          <div data-component="task-tool-action">
-            <Icon name="square-arrow-top-right" size="small" />
-          </div>
-        </Show>
-      </div>
-    )
-
-    return (
-      <BasicTool
-        icon="task"
-        status={props.status}
-        trigger={trigger()}
-        hideDetails
-        triggerAsLink
-        triggerHref={href()}
-        clickable={clickable()}
-        onTriggerClick={navigate}
-        onTriggerKeyDown={navigateKey}
-      />
-    )
+    return <TaskToolRender {...props} />
   },
 })
+
+// Alias used by models / plugins that call task_async instead of task.
+ToolRegistry.register({
+  name: "task_async",
+  render(props) {
+    return <TaskToolRender {...props} />
+  },
+})
+
+function taskManageTitleKey(tool: string) {
+  if (tool === "task_async_status") return "ui.tool.task.status"
+  if (tool === "task_async_wait") return "ui.tool.task.wait"
+  if (tool === "task_async_abort") return "ui.tool.task.abort"
+  return "ui.tool.task.followup"
+}
+
+function TaskFollowupToolRender(props: ToolProps) {
+  const data = useData()
+  const sessionId = createMemo(() => {
+    if (typeof props.metadata.sessionId === "string" && props.metadata.sessionId) return props.metadata.sessionId
+    return taskManageSessionId(props.input, props.metadata)
+  })
+  const agent = createMemo(() => {
+    if (typeof props.input.agent === "string" && props.input.agent) return props.input.agent
+    if (typeof props.metadata.agent === "string" && props.metadata.agent) return props.metadata.agent
+    const id = sessionId()
+    if (!id) return
+    return data.store.session?.find((session) => session.id === id)?.agent
+  })
+  const description = createMemo(
+    () =>
+      (typeof props.metadata.title === "string" && props.metadata.title) ||
+      (typeof props.input.title === "string" && props.input.title) ||
+      (typeof props.input.prompt === "string" && props.input.prompt) ||
+      undefined,
+  )
+  const background = createMemo(() => props.metadata.background !== false)
+
+  return (
+    <div data-component="task-tool-list">
+      <TaskCard
+        status={props.status}
+        agent={agent()}
+        description={description()}
+        sessionId={sessionId()}
+        background={background()}
+        followup
+      />
+    </div>
+  )
+}
+
+function TaskManageToolRender(props: ToolProps) {
+  const data = useData()
+  const i18n = useI18n()
+  const location = useLocation()
+  const title = createMemo(() => i18n.t(taskManageTitleKey(props.tool)))
+  const subtitle = createMemo(() => taskManageSubtitle(props.input, props.metadata))
+  const childSessionId = createMemo(() => taskManageSessionId(props.input, props.metadata))
+  const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
+  const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
+  const output = createMemo(() => {
+    const text = typeof props.output === "string" ? props.output.trim() : ""
+    return text || undefined
+  })
+  const linkOnly = createMemo(() => clickable() && !output())
+
+  const openSession = () => {
+    const id = childSessionId()
+    if (!id) return
+    if (data.navigateToSession) {
+      data.navigateToSession(id)
+      return
+    }
+    const value = href()
+    if (value) window.location.assign(value)
+  }
+
+  const navigate = (event: MouseEvent) => {
+    if (!data.navigateToSession) return
+    if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    event.preventDefault()
+    openSession()
+  }
+  const navigateKey = (event: KeyboardEvent) => {
+    if (!linkOnly() || href()) return
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    openSession()
+  }
+
+  return (
+    <BasicTool
+      {...props}
+      icon="task"
+      hideDetails={!output()}
+      defaultOpen={false}
+      triggerAsLink={linkOnly()}
+      triggerHref={linkOnly() ? href() : undefined}
+      clickable={linkOnly()}
+      onTriggerClick={linkOnly() ? navigate : undefined}
+      onTriggerKeyDown={linkOnly() ? navigateKey : undefined}
+      trigger={{
+        title: title(),
+        subtitle: subtitle(),
+        subtitleClass: clickable() && output() ? "clickable subagent-link" : undefined,
+        action: clickable() ? (
+          <span data-component="tool-action">
+            <Icon name="square-arrow-top-right" size="small" />
+          </span>
+        ) : undefined,
+      }}
+      onSubtitleClick={clickable() && output() ? openSession : undefined}
+    >
+      <Show when={output()}>
+        <div
+          data-component="tool-output"
+          data-scrollable
+          tabIndex={0}
+          role="region"
+          aria-label={i18n.t("ui.scrollView.ariaLabel")}
+        >
+          <Markdown text={output()!} />
+        </div>
+      </Show>
+    </BasicTool>
+  )
+}
+
+ToolRegistry.register({
+  name: "task_async_followup",
+  render(props) {
+    return <TaskFollowupToolRender {...props} />
+  },
+})
+
+for (const name of ["task_async_status", "task_async_wait", "task_async_abort"] as const) {
+  ToolRegistry.register({
+    name,
+    render(props) {
+      return <TaskManageToolRender {...props} />
+    },
+  })
+}
 
 ToolRegistry.register({
   name: "bash",

@@ -36,6 +36,7 @@ export const dict = {
   "command.session.previous.unseen": "Previous unread session",
   "command.session.next.unseen": "Next unread session",
   "command.session.archive": "Archive session",
+  "command.session.archived": "Archived sessions",
 
   "command.palette": "Command palette",
 
@@ -315,6 +316,11 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
+
+  "dialog.archivedSessions.title": "Archived sessions",
+  "dialog.archivedSessions.description": "Open or restore archived sessions",
+  "dialog.archivedSessions.empty": "No archived sessions",
+  "dialog.archivedSessions.unarchive": "Restore",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in opencode.json",
@@ -814,6 +820,7 @@ export const dict = {
   "sidebar.gettingStarted.line2": "Connect any provider to use models, inc. Claude, GPT, Gemini etc.",
   "sidebar.project.recentSessions": "Recent sessions",
   "sidebar.project.viewAllSessions": "View all sessions",
+  "sidebar.project.archivedSessions": "Archived sessions",
   "sidebar.project.clearNotifications": "Clear notifications",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",

@@ -18,7 +18,7 @@ import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
-import { isNull } from "drizzle-orm"
+import { isNotNull, isNull } from "drizzle-orm"
 import { desc } from "drizzle-orm"
 import { like } from "drizzle-orm"
 import { sql } from "drizzle-orm"
@@ -154,7 +154,8 @@ export function toRow(info: Info) {
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
-    time_archived: info.time.archived,
+    // null clears the column; drizzle skips undefined fields.
+    time_archived: info.time.archived ?? null,
   }
 }
 
@@ -561,7 +562,8 @@ const layer: Layer.Layer<
       if (input?.start) conditions.push(gte(SessionTable.time_updated, input.start))
       if (input?.cursor) conditions.push(lt(SessionTable.time_updated, input.cursor))
       if (input?.search) conditions.push(like(SessionTable.title, `%${input.search}%`))
-      if (!input?.archived) conditions.push(isNull(SessionTable.time_archived))
+      if (input?.archived) conditions.push(isNotNull(SessionTable.time_archived))
+      else conditions.push(isNull(SessionTable.time_archived))
 
       const query =
         conditions.length > 0
@@ -757,6 +759,15 @@ const layer: Layer.Layer<
     })
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
+      if (input.time === undefined) {
+        const current = yield* get(input.sessionID)
+        const { archived: _archived, ...time } = current.time
+        yield* events.publish(SessionV1.Event.Updated, {
+          sessionID: input.sessionID,
+          info: { ...current, time },
+        }).pipe(Effect.orDie)
+        return
+      }
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
     })
 

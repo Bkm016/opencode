@@ -982,6 +982,19 @@ export default function LegacyLayout(props: ParentProps) {
         },
       },
       {
+        id: "session.archived",
+        title: language.t("command.session.archived"),
+        category: language.t("command.category.session"),
+        onSelect: () => {
+          const project = currentProject()
+          void import("@/components/dialog-archived-sessions").then((x) => {
+            dialog.show(() => (
+              <x.DialogArchivedSessions directory={currentDir() || project?.worktree} project={project} />
+            ))
+          })
+        },
+      },
+      {
         id: "workspace.new",
         title: language.t("workspace.new"),
         category: language.t("command.category.workspace"),
@@ -2094,6 +2107,21 @@ export default function LegacyLayout(props: ParentProps) {
                         >
                           <DropdownMenu.ItemLabel>
                             {language.t("sidebar.project.clearNotifications")}
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          data-action="project-archived-sessions"
+                          data-project={slug()}
+                          onSelect={() => {
+                            void import("@/components/dialog-archived-sessions").then((x) => {
+                              dialog.show(() => (
+                                <x.DialogArchivedSessions directory={worktree()} project={project} />
+                              ))
+                            })
+                          }}
+                        >
+                          <DropdownMenu.ItemLabel>
+                            {language.t("sidebar.project.archivedSessions")}
                           </DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
                         <DropdownMenu.Separator />

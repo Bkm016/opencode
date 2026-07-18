@@ -71,7 +71,8 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
-    time_archived: info.time.archived,
+    // null clears the column; drizzle skips undefined fields.
+    time_archived: info.time.archived ?? null,
   }
 }
 

@@ -16,7 +16,7 @@ import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
-import { MAX_STEPS_PROMPT } from "@opencode-ai/core/session/runner/max-steps"
+import { PromptCatalog } from "./prompt-catalog"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -70,16 +70,6 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/png",
   "image/webp",
 ])
-
-const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
-
-IMPORTANT:
-- You MUST call this tool exactly once at the end of your response
-- The input must be valid JSON matching the required schema
-- Complete all necessary research and tool calls BEFORE calling this tool
-- This tool provides your final answer - no further actions are taken after calling it`
-
-const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
 function mcpResourceBase64Size(value: string) {
   const trimmed = value.replace(/\s/g, "")
@@ -1240,9 +1230,11 @@ const layer = Layer.effect(
               Effect.provideService(RuntimeFlags.Service, flags),
             )
 
+            const cfg = yield* config.get()
             if (lastUser.format?.type === "json_schema") {
               tools["StructuredOutput"] = createStructuredOutputTool({
                 schema: lastUser.format.schema,
+                description: PromptCatalog.resolve("runtime.structured_output_tool", cfg.prompts),
                 onSuccess(output) {
                   structured = output
                 },
@@ -1268,7 +1260,9 @@ const layer = Layer.effect(
               ...(skills ? [skills] : []),
             ]
             const format = lastUser.format ?? { type: "text" as const }
-            if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            if (format.type === "json_schema") {
+              system.push(PromptCatalog.resolve("runtime.structured_output_system", cfg.prompts))
+            }
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1278,7 +1272,14 @@ const layer = Layer.effect(
               system,
               messages: [
                 ...modelMsgs,
-                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
+                ...(isLastStep
+                  ? [
+                      {
+                        role: "assistant" as const,
+                        content: PromptCatalog.resolve("runtime.max_steps", cfg.prompts),
+                      },
+                    ]
+                  : []),
               ],
               tools,
               model,
@@ -1565,12 +1566,13 @@ export type CommandInput = Schema.Schema.Type<typeof CommandInput>
 export function createStructuredOutputTool(input: {
   schema: Record<string, any>
   onSuccess: (output: unknown) => void
+  description?: string
 }): AITool {
   // Remove $schema property if present (not needed for tool input)
   const { $schema: _, ...toolSchema } = input.schema
 
   return tool({
-    description: STRUCTURED_OUTPUT_DESCRIPTION,
+    description: input.description ?? PromptCatalog.resolve("runtime.structured_output_tool"),
     inputSchema: jsonSchema(toolSchema as JSONSchema7),
     async execute(args) {
       // AI SDK validates args against inputSchema before calling execute()

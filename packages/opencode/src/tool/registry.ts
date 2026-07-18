@@ -61,6 +61,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { PromptCatalog } from "@/session/prompt-catalog"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
@@ -323,6 +324,7 @@ const layer = Layer.effect(
         : undefined
       const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
 
+      const cfg = yield* config.get()
       return yield* Effect.forEach(
         visible,
         Effect.fnUntraced(function* (tool: Tool.Def) {
@@ -330,6 +332,22 @@ const layer = Layer.effect(
             description: tool.description,
             parameters: tool.parameters,
             jsonSchema: tool.jsonSchema,
+          }
+          const toolPromptId = `tool.${tool.id}`
+          if (PromptCatalog.getDefault(toolPromptId)) {
+            if (tool.id === "bash") {
+              if (cfg.prompts?.[toolPromptId]) {
+                output.description = PromptCatalog.resolve(toolPromptId, cfg.prompts)
+              }
+            } else {
+              output.description = PromptCatalog.resolve(toolPromptId, cfg.prompts)
+              if (tool.id === "websearch") {
+                output.description = output.description.replace(
+                  "{{year}}",
+                  new Date().getFullYear().toString(),
+                )
+              }
+            }
           }
           yield* plugin.trigger("tool.definition", { toolID: tool.id }, output)
           const jsonSchema =

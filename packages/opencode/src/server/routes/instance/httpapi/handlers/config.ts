@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForDisposal } from "../lifecycle"
+import { PromptCatalog } from "@/session/prompt-catalog"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -29,6 +30,15 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       }
     })
 
-    return handlers.handle("get", get).handle("update", update).handle("providers", providers)
+    const prompts = Effect.fn("ConfigHttpApi.prompts")(function* () {
+      const cfg = yield* configSvc.get()
+      return PromptCatalog.catalog(cfg.prompts)
+    })
+
+    return handlers
+      .handle("get", get)
+      .handle("update", update)
+      .handle("providers", providers)
+      .handle("prompts", prompts)
   }),
 )

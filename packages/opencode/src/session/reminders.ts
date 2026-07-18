@@ -5,12 +5,10 @@ import { Agent } from "@/agent/agent"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Config } from "@/config/config"
 import { PartID } from "./schema"
-import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
-import PROMPT_PLAN from "./prompt/plan.txt"
-import BUILD_SWITCH from "./prompt/build-switch.txt"
-import PLAN_MODE from "./prompt/plan-mode.txt"
+import { PromptCatalog } from "./prompt-catalog"
 
 export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   messages: SessionV1.WithParts[]
@@ -20,6 +18,11 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const fsys = yield* FSUtil.Service
   const sessions = yield* Session.Service
+  const config = yield* Config.Service
+  const cfg = yield* config.get()
+  const planPrompt = PromptCatalog.resolve("session.plan", cfg.prompts)
+  const buildSwitch = PromptCatalog.resolve("session.build_switch", cfg.prompts)
+  const planMode = PromptCatalog.resolve("session.plan_mode", cfg.prompts)
   const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
   if (!userMessage) return input.messages
 
@@ -30,7 +33,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
         messageID: userMessage.info.id,
         sessionID: userMessage.info.sessionID,
         type: "text",
-        text: PROMPT_PLAN,
+        text: planPrompt,
         synthetic: true,
       })
     }
@@ -41,7 +44,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
         messageID: userMessage.info.id,
         sessionID: userMessage.info.sessionID,
         type: "text",
-        text: BUILD_SWITCH,
+        text: buildSwitch,
         synthetic: true,
       })
     }
@@ -59,8 +62,8 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
       sessionID: userMessage.info.sessionID,
       type: "text",
       text: exists
-        ? `${BUILD_SWITCH}\n\nA plan file exists at ${plan}. You should execute on the plan defined within it`
-        : BUILD_SWITCH,
+        ? `${buildSwitch}\n\nA plan file exists at ${plan}. You should execute on the plan defined within it`
+        : buildSwitch,
       synthetic: true,
     })
     userMessage.parts.push(part)
@@ -78,7 +81,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     messageID: userMessage.info.id,
     sessionID: userMessage.info.sessionID,
     type: "text",
-    text: PLAN_MODE.replace("${planInfo}", () =>
+    text: planMode.replace("${planInfo}", () =>
       exists
         ? `A plan file already exists at ${plan}. You can read it and make incremental edits using the edit tool.`
         : `No plan file exists yet. You should create your plan at ${plan} using the write tool.`,

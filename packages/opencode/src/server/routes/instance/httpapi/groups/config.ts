@@ -1,6 +1,6 @@
-import { Config } from "@/config/config"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Provider } from "@/provider/provider"
+import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
@@ -8,6 +8,16 @@ import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware
 import { described } from "./metadata"
 
 const root = "/config"
+
+export const PromptCatalogEntry = Schema.Struct({
+  id: Schema.String,
+  group: Schema.String,
+  title: Schema.String,
+  description: Schema.String,
+  default: Schema.String,
+  value: Schema.String,
+  overridden: Schema.Boolean,
+})
 
 export const ConfigApi = HttpApi.make("config")
   .add(
@@ -43,6 +53,16 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.providers",
             summary: "List config providers",
             description: "Get a list of all configured AI providers and their default models.",
+          }),
+        ),
+        HttpApiEndpoint.get("prompts", `${root}/prompts`, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(PromptCatalogEntry), "Prompt catalog entries"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.prompts",
+            summary: "List prompt catalog",
+            description: "List built-in prompts with effective values after config.prompts overrides.",
           }),
         ),
       )

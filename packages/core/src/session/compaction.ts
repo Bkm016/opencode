@@ -13,7 +13,7 @@ const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const SUMMARY_OUTPUT_TOKENS = 4_096
-const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+export const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Objective
 - [one or two brief sentences describing what the user is trying to accomplish]
@@ -158,14 +158,27 @@ const select = (
   }
 }
 
-export const buildPrompt = (input: { readonly previousSummary?: string; readonly context: readonly string[] }) =>
-  [
-    input.previousSummary
-      ? `Update the anchored summary below using the conversation history above.\nPreserve still-true details, remove stale details, and merge in the new facts.\n<previous-summary>\n${input.previousSummary}\n</previous-summary>`
-      : "Create a new anchored summary from the conversation history.",
-    SUMMARY_TEMPLATE,
-    ...input.context,
-  ].join("\n\n")
+const DEFAULT_FRESH_INTRO = "Create a new anchored summary from the conversation history."
+const DEFAULT_UPDATE_INTRO = `Update the anchored summary below using the conversation history above.
+Preserve still-true details, remove stale details, and merge in the new facts.
+<previous-summary>
+\${previousSummary}
+</previous-summary>`
+
+export const buildPrompt = (input: {
+  readonly previousSummary?: string
+  readonly context: readonly string[]
+  readonly template?: string
+  readonly freshIntro?: string
+  readonly updateIntro?: string
+}) => {
+  const template = input.template ?? SUMMARY_TEMPLATE
+  if (!input.previousSummary) {
+    return [input.freshIntro ?? DEFAULT_FRESH_INTRO, template, ...input.context].join("\n\n")
+  }
+  const intro = (input.updateIntro ?? DEFAULT_UPDATE_INTRO).replaceAll("${previousSummary}", input.previousSummary)
+  return [intro, template, ...input.context].join("\n\n")
+}
 
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)

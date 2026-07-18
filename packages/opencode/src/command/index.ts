@@ -7,9 +7,8 @@ import { Effect, Layer, Context, Schema } from "effect"
 import { Config } from "@/config/config"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
-import PROMPT_INITIALIZE from "./template/initialize.txt"
-import PROMPT_REVIEW from "./template/review.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
+import { PromptCatalog } from "@/session/prompt-catalog"
 
 type State = {
   commands: Record<string, Info>
@@ -67,24 +66,26 @@ const layer = Layer.effect(
       const bridge = yield* EffectBridge.make()
       const commands: Record<string, Info> = {}
 
+      const initTemplate = PromptCatalog.resolve("command.init", cfg.prompts)
+      const reviewTemplate = PromptCatalog.resolve("command.review", cfg.prompts)
       commands[Default.INIT] = {
         name: Default.INIT,
         description: "guided AGENTS.md setup",
         source: "command",
         get template() {
-          return PROMPT_INITIALIZE.replace("${path}", ctx.worktree)
+          return initTemplate.replace("${path}", ctx.worktree)
         },
-        hints: hints(PROMPT_INITIALIZE),
+        hints: hints(initTemplate),
       }
       commands[Default.REVIEW] = {
         name: Default.REVIEW,
         description: "review changes [commit|branch|pr], defaults to uncommitted",
         source: "command",
         get template() {
-          return PROMPT_REVIEW.replace("${path}", ctx.worktree)
+          return reviewTemplate.replace("${path}", ctx.worktree)
         },
         subtask: true,
-        hints: hints(PROMPT_REVIEW),
+        hints: hints(reviewTemplate),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {

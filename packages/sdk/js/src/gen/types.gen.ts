@@ -1322,6 +1322,12 @@ export type Config = {
    * Additional instruction files or patterns to include
    */
   instructions?: Array<string>
+  /**
+   * Override built-in prompts by catalog id. Empty string restores the default.
+   */
+  prompts?: {
+    [key: string]: string
+  }
   layout?: LayoutConfig
   permission?: {
     edit?: "ask" | "allow" | "deny"
@@ -2964,6 +2970,34 @@ export type ConfigProvidersResponses = {
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
+
+export type PromptCatalogEntry = {
+  id: string
+  group: string
+  title: string
+  description: string
+  default: string
+  value: string
+  overridden: boolean
+}
+
+export type ConfigPromptsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/config/prompts"
+}
+
+export type ConfigPromptsResponses = {
+  /**
+   * Prompt catalog entries
+   */
+  200: Array<PromptCatalogEntry>
+}
+
+export type ConfigPromptsResponse = ConfigPromptsResponses[keyof ConfigPromptsResponses]
 
 export type ProviderListData = {
   body?: never

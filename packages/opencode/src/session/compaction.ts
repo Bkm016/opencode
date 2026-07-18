@@ -22,6 +22,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
 import { SessionCompactionEvent } from "@opencode-ai/schema/session-compaction-event"
+import { PromptCatalog } from "./prompt-catalog"
 
 export const Event = SessionCompactionEvent
 
@@ -345,7 +346,15 @@ const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      const nextPrompt =
+        compacting.prompt ??
+        buildPrompt({
+          previousSummary,
+          context: compacting.context,
+          template: PromptCatalog.resolve("compaction.template", cfg.prompts),
+          freshIntro: PromptCatalog.resolve("compaction.fresh_intro", cfg.prompts),
+          updateIntro: PromptCatalog.resolve("compaction.update_intro", cfg.prompts),
+        })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {

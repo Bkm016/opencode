@@ -16,6 +16,7 @@ import { ConfigPluginV1 } from "./plugin"
 import { ConfigProviderV1 } from "./provider"
 import { ConfigServerV1 } from "./server"
 import { ConfigSkillsV1 } from "./skills"
+import { ConfigPromptsV1 } from "./prompts"
 
 export type Layout = ConfigLayoutV1.Layout
 
@@ -123,6 +124,10 @@ export const Info = Schema.Struct({
   }),
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
+  }),
+  prompts: Schema.optional(ConfigPromptsV1.Info).annotate({
+    description:
+      "Override built-in system, agent, session, tool, command, compaction, and runtime prompts by catalog id",
   }),
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),

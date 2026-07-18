@@ -6,6 +6,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { jsonSchema } from "ai"
+import { TestConfig } from "../fixture/config"
 
 describe("ProviderTransform.options - setCacheKey", () => {
   const sessionID = "test-session-123"
@@ -488,7 +489,7 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
         } as any,
         flags: { outputTokenMax: 32_000, client: "test" } as any,
         isWorkflow: false,
-      }),
+      }).pipe(Effect.provide(TestConfig.layer())),
     )
     expect(result.params.options.reasoningEffort).toBe("high")
     expect(result.params.options.reasoningSummary).toBeUndefined()

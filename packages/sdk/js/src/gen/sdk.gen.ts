@@ -116,6 +116,8 @@ import type {
   CommandListResponses,
   ConfigProvidersData,
   ConfigProvidersResponses,
+  ConfigPromptsData,
+  ConfigPromptsResponses,
   ProviderListData,
   ProviderListResponses,
   ProviderAuthData,
@@ -365,6 +367,16 @@ class Config extends _HeyApiClient {
   public providers<ThrowOnError extends boolean = false>(options?: Options<ConfigProvidersData, ThrowOnError>) {
     return (options?.client ?? this._client).get<ConfigProvidersResponses, unknown, ThrowOnError>({
       url: "/config/providers",
+      ...options,
+    })
+  }
+
+  /**
+   * List prompt catalog
+   */
+  public prompts<ThrowOnError extends boolean = false>(options?: Options<ConfigPromptsData, ThrowOnError>) {
+    return (options?.client ?? this._client).get<ConfigPromptsResponses, unknown, ThrowOnError>({
+      url: "/config/prompts",
       ...options,
     })
   }

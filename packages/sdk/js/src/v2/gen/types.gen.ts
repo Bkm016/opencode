@@ -1994,6 +1994,12 @@ export type Config = {
             }
       }
   instructions?: Array<string>
+  /**
+   * Override built-in prompts by catalog id. Empty string restores the default.
+   */
+  prompts?: {
+    [key: string]: string
+  }
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {
@@ -2023,6 +2029,16 @@ export type Config = {
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
   }
+}
+
+export type PromptCatalogEntry = {
+  id: string
+  group: string
+  title: string
+  description: string
+  default: string
+  value: string
+  overridden: boolean
 }
 
 export type Model = {
@@ -7511,6 +7527,34 @@ export type ConfigProvidersResponses = {
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
+
+export type ConfigPromptsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/prompts"
+}
+
+export type ConfigPromptsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigPromptsError = ConfigPromptsErrors[keyof ConfigPromptsErrors]
+
+export type ConfigPromptsResponses = {
+  /**
+   * Prompt catalog entries
+   */
+  200: Array<PromptCatalogEntry>
+}
+
+export type ConfigPromptsResponse = ConfigPromptsResponses[keyof ConfigPromptsResponses]
 
 export type ExperimentalCapabilitiesGetData = {
   body?: never

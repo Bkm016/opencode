@@ -1,5 +1,7 @@
 import * as http from "node:http"
+import * as path from "node:path"
 import * as tls from "node:tls"
+import { pathToFileURL } from "node:url"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -54,7 +56,19 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server } = await import("virtual:opencode-server")
+    // Load prebuilt server from out/main/server (copied by electron-vite, not rebundled).
+    const serverUrl = pathToFileURL(path.join(import.meta.dirname, "server", "node.js")).href
+    const { Server } = (await import(serverUrl)) as {
+      Server: {
+        listen: (input: {
+          port: number
+          hostname: string
+          username: string
+          password: string
+          cors: string[]
+        }) => Promise<Listener>
+      }
+    }
 
     listener = await Server.listen({
       port: command.port,

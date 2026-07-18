@@ -2,8 +2,12 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
+import * as path from "node:path"
+import { fileURLToPath } from "node:url"
 
-const OPENCODE_SERVER_DIST = "../opencode/dist/node"
+const packageDir = path.dirname(fileURLToPath(import.meta.url))
+const OPENCODE_SERVER_DIST = path.resolve(packageDir, "../opencode/dist/node")
+const SERVER_OUT = path.resolve(packageDir, "out/main/server")
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
@@ -30,6 +34,54 @@ const sentry =
         },
       })
     : false
+
+async function copyServerDist() {
+  await fs.mkdir(SERVER_OUT, { recursive: true })
+  // Skip linked sourcemaps (~50MB) — runtime only needs JS + wasm.
+  const entries = await fs.readdir(OPENCODE_SERVER_DIST)
+  await Promise.all(
+    entries.map(async (name) => {
+      if (name.endsWith(".map")) return
+      const from = path.join(OPENCODE_SERVER_DIST, name)
+      const to = path.join(SERVER_OUT, name)
+      const [src, dst] = await Promise.all([
+        fs.stat(from),
+        fs.stat(to).catch(() => undefined),
+      ])
+      if (dst && dst.size === src.size && dst.mtimeMs >= src.mtimeMs) return
+      await fs.copyFile(from, to)
+    }),
+  )
+  // Server bundle leaves jsonc-parser external (UMD + relative requires). Copy
+  // the package next to node.js so Node can resolve it from out/main/server.
+  await copyJsoncParser()
+}
+
+async function copyJsoncParser() {
+  // Bun installs jsonc-parser as a junction into node_modules/.bun/...; resolve
+  // the real path and wipe the dest first so Windows fs.cp does not hit ENOTDIR.
+  const candidates = [
+    path.resolve(packageDir, "../opencode/node_modules/jsonc-parser"),
+    path.resolve(packageDir, "../../node_modules/jsonc-parser"),
+  ]
+  let src: string | undefined
+  for (const dir of candidates) {
+    try {
+      const st = await fs.stat(dir)
+      if (st.isDirectory()) {
+        src = await fs.realpath(dir)
+        break
+      }
+    } catch {
+      // try next
+    }
+  }
+  if (!src) throw new Error("jsonc-parser not found (expected under packages/opencode or repo root node_modules)")
+  const to = path.join(SERVER_OUT, "node_modules", "jsonc-parser")
+  await fs.rm(to, { recursive: true, force: true })
+  await fs.mkdir(path.dirname(to), { recursive: true })
+  await fs.cp(src, to, { recursive: true })
+}
 
 export default defineConfig({
   main: {
@@ -62,19 +114,13 @@ const require = __cjs_mod__.createRequire(import.meta.url);
         },
       },
       {
-        name: "opencode:virtual-server-module",
-        enforce: "pre",
-        resolveId(id) {
-          if (id === "virtual:opencode-server") return this.resolve(`${OPENCODE_SERVER_DIST}/node.js`)
+        name: "opencode:copy-server-dist",
+        // Prebuilt server is ~30MB; copy next to sidecar and load at runtime (no Rollup reparse).
+        async buildStart() {
+          await copyServerDist()
         },
-      },
-      {
-        name: "opencode:copy-server-assets",
         async writeBundle() {
-          for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
-            if (!l.endsWith(".wasm")) continue
-            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
-          }
+          await copyServerDist()
         },
       },
     ],

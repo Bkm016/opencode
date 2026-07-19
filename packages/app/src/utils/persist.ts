@@ -463,7 +463,7 @@ function localStorageDirect(): SyncStorage {
   }
 }
 
-const DRAFT_PERSISTED_KEYS = ["prompt", "comments", "file-view", "layout"]
+const DRAFT_PERSISTED_KEYS = ["prompt", "comments", "layout"]
 
 export function draftPersistedKeys() {
   return DRAFT_PERSISTED_KEYS

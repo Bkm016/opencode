@@ -128,18 +128,6 @@ import type {
   ProviderOauthCallbackData,
   ProviderOauthCallbackResponses,
   ProviderOauthCallbackErrors,
-  FindTextData,
-  FindTextResponses,
-  FindFilesData,
-  FindFilesResponses,
-  FindSymbolsData,
-  FindSymbolsResponses,
-  FileListData,
-  FileListResponses,
-  FileReadData,
-  FileReadResponses,
-  FileStatusData,
-  FileStatusResponses,
   AppLogData,
   AppLogResponses,
   AppLogErrors,
@@ -785,70 +773,6 @@ class Provider extends _HeyApiClient {
   oauth = new Oauth({ client: this._client })
 }
 
-class Find extends _HeyApiClient {
-  /**
-   * Find text in files
-   */
-  public text<ThrowOnError extends boolean = false>(options: Options<FindTextData, ThrowOnError>) {
-    return (options.client ?? this._client).get<FindTextResponses, unknown, ThrowOnError>({
-      url: "/find",
-      ...options,
-    })
-  }
-
-  /**
-   * Find files
-   */
-  public files<ThrowOnError extends boolean = false>(options: Options<FindFilesData, ThrowOnError>) {
-    return (options.client ?? this._client).get<FindFilesResponses, unknown, ThrowOnError>({
-      url: "/find/file",
-      ...options,
-    })
-  }
-
-  /**
-   * Find workspace symbols
-   */
-  public symbols<ThrowOnError extends boolean = false>(options: Options<FindSymbolsData, ThrowOnError>) {
-    return (options.client ?? this._client).get<FindSymbolsResponses, unknown, ThrowOnError>({
-      url: "/find/symbol",
-      ...options,
-    })
-  }
-}
-
-class File extends _HeyApiClient {
-  /**
-   * List files and directories
-   */
-  public list<ThrowOnError extends boolean = false>(options: Options<FileListData, ThrowOnError>) {
-    return (options.client ?? this._client).get<FileListResponses, unknown, ThrowOnError>({
-      url: "/file",
-      ...options,
-    })
-  }
-
-  /**
-   * Read a file
-   */
-  public read<ThrowOnError extends boolean = false>(options: Options<FileReadData, ThrowOnError>) {
-    return (options.client ?? this._client).get<FileReadResponses, unknown, ThrowOnError>({
-      url: "/file/content",
-      ...options,
-    })
-  }
-
-  /**
-   * Get file status
-   */
-  public status<ThrowOnError extends boolean = false>(options?: Options<FileStatusData, ThrowOnError>) {
-    return (options?.client ?? this._client).get<FileStatusResponses, unknown, ThrowOnError>({
-      url: "/file/status",
-      ...options,
-    })
-  }
-}
-
 class App extends _HeyApiClient {
   /**
    * Write a log entry to the server logs
@@ -1197,8 +1121,6 @@ export class OpencodeClient extends _HeyApiClient {
   session = new Session({ client: this._client })
   command = new Command({ client: this._client })
   provider = new Provider({ client: this._client })
-  find = new Find({ client: this._client })
-  file = new File({ client: this._client })
   app = new App({ client: this._client })
   mcp = new Mcp({ client: this._client })
   lsp = new Lsp({ client: this._client })

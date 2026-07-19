@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@opencode-ai/plugin/tui"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import {
   TextAttributes,
   type BorderSides,
@@ -9,6 +9,7 @@ import {
   type ScrollBoxRenderable,
 } from "@opentui/core"
 import { LANGUAGE_EXTENSIONS } from "../../util/filetype"
+import { formatPatch, parsePatch } from "diff"
 import { useBindings, useCommandShortcut } from "../../keymap"
 import { useTheme } from "../../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
@@ -39,11 +40,10 @@ const ROUTE = "diff"
 const MIN_SPLIT_WIDTH = 100
 const FILE_TREE_WIDTH = 32
 const PLAIN_TEXT_FILETYPE = "opencode-plain-text"
-const VCS_DIFF_CONTEXT_LINES = 12
 const KV_SHOW_FILE_TREE = "diff_viewer_show_file_tree"
 const KV_SINGLE_PATCH = "diff_viewer_single_patch"
 const KV_VIEW = "diff_viewer_view"
-type DiffMode = "git" | "branch" | "last-turn"
+type DiffMode = "git" | "last-turn"
 type DiffViewerFocus = "patches" | "files"
 type DiffView = "split" | "unified"
 type SelectedHunk = { readonly fileIndex: number; readonly hunkIndex: number; readonly scrollTop: number }
@@ -56,7 +56,7 @@ type DiffFile = {
   readonly status: "added" | "deleted" | "modified"
 }
 
-const normalizeDiffs = (diffs: readonly (VcsFileDiff | SnapshotFileDiff)[]): DiffFile[] =>
+const normalizeDiffs = (diffs: readonly SnapshotFileDiff[]): DiffFile[] =>
   diffs.flatMap((item) =>
     item.file
       ? [
@@ -71,6 +71,22 @@ const normalizeDiffs = (diffs: readonly (VcsFileDiff | SnapshotFileDiff)[]): Dif
       : [],
   )
 
+const normalizeRawDiff = (raw: string): DiffFile[] =>
+  parsePatch(raw).flatMap((patch) => {
+    const file = [patch.newFileName, patch.oldFileName].find((item) => item && item !== "/dev/null")
+    if (!file) return []
+    const lines = patch.hunks.flatMap((hunk) => hunk.lines)
+    return [
+      {
+        file: file.replace(/^[ab]\//, ""),
+        patch: formatPatch(patch),
+        additions: lines.filter((line) => line.startsWith("+")).length,
+        deletions: lines.filter((line) => line.startsWith("-")).length,
+        status: patch.oldFileName === "/dev/null" ? "added" : patch.newFileName === "/dev/null" ? "deleted" : "modified",
+      },
+    ]
+  })
+
 function filetype(input?: string) {
   if (!input) return "none"
   const language = LANGUAGE_EXTENSIONS[path.extname(input)]
@@ -84,7 +100,6 @@ function storedView(value: unknown): DiffView | undefined {
 
 function diffSourceLabel(mode: DiffMode) {
   if (mode === "last-turn") return "last turn"
-  if (mode === "branch") return "main branch"
   return "working tree"
 }
 
@@ -122,11 +137,11 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       return normalizeDiffs(result.data ?? [])
     }
 
-    const result = await props.api.client.vcs.diff(
-      { directory: input.directory, mode: input.mode, context: VCS_DIFF_CONTEXT_LINES },
+    const result = await props.api.client.vcs.diff.raw(
+      { directory: input.directory },
       { throwOnError: true },
     )
-    return normalizeDiffs(result.data ?? [])
+    return normalizeRawDiff(result.data)
   })
   const files = createMemo(() => diff() ?? [])
   const [focus, setFocus] = createSignal<DiffViewerFocus>("patches")
@@ -682,22 +697,12 @@ function DiffViewer(props: { api: TuiPluginApi }) {
   ]
 
   const switchDiffOptions = createMemo(() => {
-    const vcs = props.api.state.vcs
     return [
       {
         title: "Working tree",
         value: "git" as const,
         description: "Show current git changes",
       },
-      ...(vcs?.branch && vcs.default_branch && vcs.branch !== vcs.default_branch
-        ? [
-            {
-              title: "Main branch",
-              value: "branch" as const,
-              description: "Show changes compared to main branch",
-            },
-          ]
-        : []),
       {
         title: "Last turn",
         value: "last-turn" as const,

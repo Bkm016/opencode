@@ -185,7 +185,6 @@ async function renderFooter(
       <OpencodeKeymapProvider keymap={keymap}>
         <RunFooterView
           directory="/tmp"
-          findFiles={async () => []}
           agents={() => []}
           resources={() => []}
           commands={() => input.commands ?? []}
@@ -968,7 +967,6 @@ test("direct footer shows editable prompts and additional queued work while runn
       <OpencodeKeymapProvider keymap={keymap}>
         <RunFooterView
           directory="/tmp"
-          findFiles={async () => []}
           agents={() => []}
           resources={() => []}
           commands={() => []}

@@ -3,11 +3,9 @@ import { pathToFileURL } from "bun"
 import fuzzysort from "fuzzysort"
 import path from "path"
 import { firstBy } from "remeda"
-import { createMemo, createResource, createEffect, onMount, onCleanup, Index, Show, createSignal } from "solid-js"
+import { createMemo, createEffect, onMount, onCleanup, Index, Show, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useEditorContext } from "../../context/editor"
-import { useProject } from "../../context/project"
-import { useSDK } from "../../context/sdk"
 import { useSync } from "../../context/sync"
 import { useData } from "../../context/data"
 import { getScrollAcceleration } from "../../util/scroll"
@@ -22,7 +20,6 @@ import type { PromptInfo } from "../../prompt/history"
 import { useFrecency } from "../../prompt/frecency"
 import { useBindings, useCommandSlashes, useOpencodeModeStack } from "../../keymap"
 import { displayCharAt, mentionTriggerIndex } from "../../prompt/display"
-import type { FileSystemEntry } from "@opencode-ai/sdk/v2"
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -67,7 +64,6 @@ export type AutocompleteOption = {
   aliases?: string[]
   disabled?: boolean
   description?: string
-  isDirectory?: boolean
   onSelect?: () => void
   path?: string
 }
@@ -85,10 +81,8 @@ export function Autocomplete(props: {
   promptPartTypeId: () => number
 }) {
   const editor = useEditorContext()
-  const sdk = useSDK()
   const sync = useSync()
   const data = useData()
-  const project = useProject()
   const slashes = useCommandSlashes()
   const modeStack = useOpencodeModeStack()
   const { theme } = useTheme()
@@ -240,7 +234,7 @@ export function Autocomplete(props: {
   }
 
   function createFilePart(
-    item: FileSystemEntry,
+    item: { path: string; type: "file" | "directory" },
     filePath: string,
     lineRange?: { startLine: number; endLine?: number },
   ) {
@@ -312,56 +306,6 @@ export function Autocomplete(props: {
     setStore("index", index)
     insertPart(filename, part)
   }
-
-  const [files] = createResource(
-    () => ({ query: search(), location: location() }),
-    async (input) => {
-      if (!store.visible || store.visible === "/") return []
-      if (referenceMatch()) return []
-      const { lineRange, baseQuery } = extractLineRange(input.query ?? "")
-
-      // Get files from SDK
-      const result = await sdk.client.v2.fs.find({
-        query: baseQuery,
-        limit: "20",
-        location: {
-          directory: input.location?.directory,
-          workspace: input.location?.workspaceID ?? project.workspace.current(),
-        },
-      })
-
-      const options: AutocompleteOption[] = []
-
-      // Add file options. Trust the order returned by fff (frecency, fuzzy
-      // score, filename bonus, etc. are already factored in).
-      if (!result.error && result.data) {
-        const width = props.anchor().width - 4
-        options.push(
-          ...result.data.data.map((item): AutocompleteOption => {
-            const { filename, part } = createFilePart(
-              item,
-              path.join(result.data.location.directory, item.path),
-              lineRange,
-            )
-            return {
-              display: Locale.truncateMiddle(filename, width),
-              value: filename,
-              isDirectory: item.type === "directory",
-              path: item.path,
-              onSelect: () => {
-                insertPart(filename, part)
-              },
-            }
-          }),
-        )
-      }
-
-      return options
-    },
-    {
-      initialValue: [],
-    },
-  )
 
   const mcpResources = createMemo(() => {
     if (!store.visible || store.visible === "/") return []
@@ -473,8 +417,7 @@ export function Autocomplete(props: {
     }))
   })
 
-  const options = createMemo((prev: AutocompleteOption[] | undefined) => {
-    const filesValue = files()
+  const options = createMemo(() => {
     const referenceMatchValue = referenceMatch()
     const agentsValue = agents()
     const referenceAliasesValue = referenceAliases()
@@ -485,18 +428,11 @@ export function Autocomplete(props: {
       return referenceAliasesValue.filter((item) => item.display === `@${referenceMatchValue.name}`)
     }
 
-    // Files come from fff already fuzzy ranked and filtered
-    // it shouldn't be additionally sorted by fuzzysort as it will loose the results
-    const fileOptions: AutocompleteOption[] = store.visible === "@" ? filesValue || [] : []
     const nonFileOptions: AutocompleteOption[] =
       store.visible === "@" ? [...referenceAliasesValue, ...agentsValue, ...mcpResources()] : [...commandsValue]
 
     if (!searchValue) {
-      return [...nonFileOptions, ...fileOptions]
-    }
-
-    if (files.loading && prev && prev.length > 0) {
-      return prev
+      return nonFileOptions
     }
 
     const fuzziedNonFiles = fuzzysort
@@ -521,7 +457,7 @@ export function Autocomplete(props: {
       })
       .map((arr) => arr.obj)
 
-    return [...fuzziedNonFiles, ...fileOptions].slice(0, 10)
+    return fuzziedNonFiles.slice(0, 10)
   })
 
   createEffect(() => {
@@ -555,27 +491,6 @@ export function Autocomplete(props: {
     if (!selected) return
     hide()
     selected.onSelect?.()
-  }
-
-  function expandDirectory() {
-    const selected = options()[store.selected]
-    if (!selected) return
-
-    const input = props.input()
-    const currentCursorOffset = input.cursorOffset
-
-    const displayText = (selected.value ?? selected.display).trimEnd()
-    const path = displayText.startsWith("@") ? displayText.slice(1) : displayText
-
-    input.cursorOffset = store.index
-    const startCursor = input.logicalCursor
-    input.cursorOffset = currentCursorOffset
-    const endCursor = input.logicalCursor
-
-    input.deleteRange(startCursor.row, startCursor.col, endCursor.row, endCursor.col)
-    input.insertText("@" + path + "/")
-
-    setStore("selected", 0)
   }
 
   useBindings(() => ({
@@ -621,12 +536,6 @@ export function Autocomplete(props: {
         title: "Complete autocomplete item",
         category: "Autocomplete",
         run() {
-          const selected = options()[store.selected]
-          if (selected?.isDirectory) {
-            expandDirectory()
-            return
-          }
-
           select()
         },
       },

@@ -227,11 +227,6 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 
   const shell = await (deps.createRuntimeLifecycle ?? createRuntimeLifecycle)({
     directory: ctx.directory,
-    findFiles: (query) =>
-      ctx.sdk.find
-        .files({ query, directory: ctx.directory })
-        .then((x) => x.data ?? [])
-        .catch(() => []),
     agents: [],
     resources: [],
     sessionID: state.sessionID,

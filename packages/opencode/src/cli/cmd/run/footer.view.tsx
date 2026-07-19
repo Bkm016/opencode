@@ -74,7 +74,6 @@ const EMPTY_BORDER = {
 
 type RunFooterViewProps = {
   directory: string
-  findFiles: (query: string) => Promise<string[]>
   agents: () => RunAgent[]
   resources: () => RunResource[]
   commands: () => RunCommand[] | undefined
@@ -358,7 +357,6 @@ export function RunFooterView(props: RunFooterViewProps) {
   }
   const composer = createPromptState({
     directory: props.directory,
-    findFiles: props.findFiles,
     agents: props.agents,
     resources: props.resources,
     commands: props.commands,

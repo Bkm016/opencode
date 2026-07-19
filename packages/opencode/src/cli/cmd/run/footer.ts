@@ -69,7 +69,6 @@ type CycleResult = {
 
 type RunFooterOptions = {
   directory: string
-  findFiles: (query: string) => Promise<string[]>
   agents: RunAgent[]
   resources: RunResource[]
   commands?: RunCommand[]
@@ -309,7 +308,6 @@ export class RunFooter implements FooterApi {
               view: footer.view,
               subagent: footer.subagent,
               queuedPrompts: footer.queuedPrompts,
-              findFiles: options.findFiles,
               agents: footer.agents,
               resources: footer.resources,
               commands: footer.commands,

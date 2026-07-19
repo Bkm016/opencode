@@ -1,17 +1,15 @@
 // Prompt composer and its state machine for direct interactive mode.
 //
 // createPromptState() wires keymap command layers, history navigation, and
-// `@` autocomplete for files, subagents, and MCP resources.
+// `@` autocomplete for subagents and MCP resources.
 // It produces a PromptState that RunPromptBody renders as a slim single-line
 // composer while the footer view renders any active menus below it.
 /** @jsxImportSource @opentui/solid */
-import { pathToFileURL } from "bun"
 import { StyledText, fg, type ColorInput, type KeyEvent, type TextareaRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/solid"
 import { normalizePromptContent } from "@opencode-ai/tui/editor"
 import fuzzysort from "fuzzysort"
-import path from "path"
-import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
 import * as Locale from "@/util/locale"
 import {
   createPromptHistory,
@@ -42,7 +40,6 @@ type Auto = RunFooterMenuItem & {
   kind: "mention"
   value: string
   part: Mention
-  directory?: boolean
 }
 
 type SlashOption = RunFooterMenuItem & {
@@ -57,7 +54,6 @@ type MenuMode = false | "mention" | "slash"
 
 type PromptInput = {
   directory: string
-  findFiles: (query: string) => Promise<string[]>
   agents: Accessor<RunAgent[]>
   resources: Accessor<RunResource[]>
   commands: Accessor<RunCommand[] | undefined>
@@ -119,24 +115,6 @@ function emptyPrompt(shell: boolean): RunPrompt {
 function removeLineRange(input: string) {
   const hash = input.lastIndexOf("#")
   return hash === -1 ? input : input.slice(0, hash)
-}
-
-function extractLineRange(input: string) {
-  const hash = input.lastIndexOf("#")
-  if (hash === -1) {
-    return { base: input }
-  }
-
-  const base = input.slice(0, hash)
-  const line = input.slice(hash + 1)
-  const match = line.match(/^(\d+)(?:-(\d*))?$/)
-  if (!match) {
-    return { base }
-  }
-
-  const start = Number(match[1])
-  const end = match[2] && start < Number(match[2]) ? Number(match[2]) : undefined
-  return { base, line: { start, end } }
 }
 
 function slashHead(text: string) {
@@ -357,52 +335,7 @@ export function createPromptState(input: PromptInput): PromptState {
       },
     }))
   })
-  const [files] = createResource(
-    query,
-    async (value) => {
-      if (!visible() || mode() !== "mention") {
-        return []
-      }
-
-      const next = extractLineRange(value)
-      const list = await input.findFiles(next.base)
-      return list.map((item): Auto => {
-        const url = pathToFileURL(path.resolve(input.directory, item))
-        let filename = item
-        if (next.line && !item.endsWith("/")) {
-          filename = `${item}#${next.line.start}${next.line.end ? `-${next.line.end}` : ""}`
-          url.searchParams.set("start", String(next.line.start))
-          if (next.line.end !== undefined) {
-            url.searchParams.set("end", String(next.line.end))
-          }
-        }
-
-        return {
-          kind: "mention",
-          display: Locale.truncateMiddle("@" + filename, width()),
-          value: filename,
-          directory: item.endsWith("/"),
-          part: {
-            type: "file",
-            mime: item.endsWith("/") ? "application/x-directory" : "text/plain",
-            filename,
-            url: url.href,
-            source: {
-              type: "file",
-              path: item,
-              text: {
-                start: 0,
-                end: 0,
-                value: "",
-              },
-            },
-          },
-        }
-      })
-    },
-    { initialValue: [] as Auto[] },
-  )
-  const mentionOptions = createMemo(() => [...agents(), ...files(), ...resources()])
+  const mentionOptions = createMemo(() => [...agents(), ...resources()])
   const skillCommands = createMemo(() => (input.commands() ?? []).filter((item) => item.source === "skill"))
   const hasSkillsCommand = createMemo(() =>
     (input.commands() ?? []).some((item) => item.source !== "skill" && item.name === "skills"),
@@ -461,7 +394,6 @@ export function createPromptState(input: PromptInput): PromptState {
     if (mode() === "mention") {
       return [
         ...fuzzysort.go(next, agents(), { keys: ["value", "display", "description"] }).map((item) => item.obj),
-        ...files(),
         ...fuzzysort.go(next, resources(), { keys: ["value", "display", "description"] }).map((item) => item.obj),
       ]
     }
@@ -947,23 +879,6 @@ export function createPromptState(input: PromptInput): PromptState {
     area.focus()
   }
 
-  const expand = () => {
-    const next = options()[menu.selected()]
-    if (!next || next.kind !== "mention" || !next.directory || !area || area.isDestroyed) {
-      return
-    }
-
-    const cursor = area.cursorOffset
-    area.cursorOffset = at()
-    const start = area.logicalCursor
-    area.cursorOffset = cursor
-    const end = area.logicalCursor
-    area.deleteRange(start.row, start.col, end.row, end.col)
-    area.insertText("@" + next.value)
-    syncDraft()
-    refresh()
-  }
-
   const baseBindingsEnabled = () => {
     const current = input.view()
     if (current === "command") return false
@@ -1134,11 +1049,6 @@ export function createPromptState(input: PromptInput): PromptState {
         run() {
           if (mode() === "slash" && options().length === 0) {
             hide()
-            return
-          }
-          const item = options()[menu.selected()]
-          if (item?.kind === "mention" && item.directory) {
-            expand()
             return
           }
           select()

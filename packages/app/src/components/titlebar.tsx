@@ -361,7 +361,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           >
             <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
             <Show when={windows()}>
-              {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
               <div data-tauri-decorum-tb class="flex flex-row" />
             </Show>
           </div>

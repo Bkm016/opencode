@@ -1,9 +1,12 @@
 ;(function () {
+  var DEFAULT_THEME_ID = "opencode"
+  var BUILT_IN_THEMES = { amoled: true, cursor: true, opencode: true, orng: true, vercel: true, vesper: true }
   var key = "opencode-theme-id"
-  var themeId = localStorage.getItem(key) || "oc-2"
+  var themeId = localStorage.getItem(key) || DEFAULT_THEME_ID
 
-  if (themeId === "oc-1") {
-    themeId = "oc-2"
+  // 已删除或无法识别的主题必须在挂载前回退，避免继续使用残留的缓存 CSS。
+  if (themeId === "oc-1" || themeId === "oc-2" || !BUILT_IN_THEMES[themeId]) {
+    themeId = DEFAULT_THEME_ID
     localStorage.setItem(key, themeId)
     localStorage.removeItem("opencode-theme-css-light")
     localStorage.removeItem("opencode-theme-css-dark")
@@ -20,8 +23,6 @@
   // Update theme-color meta tag to match app color scheme
   var metas = document.querySelectorAll("meta[name='theme-color']")
   if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#080808" : "#fafafa")
-
-  if (themeId === "oc-2") return
 
   var css = localStorage.getItem("opencode-theme-css-" + mode)
   if (css) {

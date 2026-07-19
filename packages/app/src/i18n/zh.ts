@@ -346,6 +346,11 @@ export const dict = {
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
+  "dialog.archivedSessions.title": "已归档会话",
+  "dialog.archivedSessions.description": "打开或恢复已归档的会话",
+  "dialog.archivedSessions.empty": "没有已归档的会话",
+  "dialog.archivedSessions.unarchive": "恢复",
+
   "dialog.mcp.empty": "未配置 MCPs",
 
   "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
@@ -794,6 +799,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "入门",
   "sidebar.gettingStarted.line1": "OpenCode 提供免费模型，你可以立即开始使用。",
   "sidebar.gettingStarted.line2": "连接任意提供商即可使用更多模型，如 Claude、GPT、Gemini 等。",
+  "sidebar.project.archivedSessions": "已归档会话",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 

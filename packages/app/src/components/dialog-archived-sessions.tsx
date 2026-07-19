@@ -98,8 +98,8 @@ export function DialogArchivedSessions(props: { directory?: string; project?: Lo
         }}
       >
         {(session) => (
-          <div class="w-full flex items-center justify-between gap-x-3 min-w-0">
-            <div class="flex flex-col gap-0.5 min-w-0">
+          <div class="flex items-center justify-between gap-x-3 min-w-0" style={{ width: "100%" }}>
+            <div class="flex flex-col gap-0.5 min-w-0 text-left">
               <span class="truncate text-14-medium text-text-strong">
                 {session.title || language.t("command.session.new")}
               </span>

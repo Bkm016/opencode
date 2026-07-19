@@ -226,7 +226,7 @@
       [data-slot="list-items"] {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
         align-self: stretch;
 
         [data-slot="list-item"] {

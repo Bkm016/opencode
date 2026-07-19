@@ -62,7 +62,7 @@ import { parseTaskNotification, TaskNotificationCard } from "./task-notification
 import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
-import { readPartText } from "./message-part-text"
+import { isLastTextualPart, readPartText } from "./message-part-text"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1790,16 +1790,17 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return items.filter((x) => !!x).join(" \u00B7 ")
   })
 
-  const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
-  )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
-  const isLastTextPart = createMemo(() => {
-    const last = (data.store.part?.[props.message.id] ?? [])
-      .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
-      .at(-1)
-    return last?.id === part().id
-  })
+  const isLastTextPart = createMemo(() =>
+    isLastTextualPart(data.store.part?.[props.message.id] ?? [], part().id, "text"),
+  )
+  const streaming = createMemo(
+    () =>
+      isLastTextPart() &&
+      props.message.role === "assistant" &&
+      typeof (props.message as AssistantMessage).time.completed !== "number" &&
+      part().time?.end === undefined,
+  )
   const showCopy = createMemo(() => {
     if (props.message.role !== "assistant") return isLastTextPart()
     if (props.showAssistantCopyPartID === null) return false
@@ -1849,8 +1850,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
+  const isLastReasoningPart = createMemo(() =>
+    isLastTextualPart(data.store.part?.[props.message.id] ?? [], part().id, "reasoning"),
+  )
   const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
+    () =>
+      isLastReasoningPart() &&
+      props.message.role === "assistant" &&
+      typeof (props.message as AssistantMessage).time.completed !== "number" &&
+      part().time.end === undefined,
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
 

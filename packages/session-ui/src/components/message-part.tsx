@@ -53,10 +53,10 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
+import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 import { patchFiles } from "./apply-patch-file"
 import { parseTaskNotification, TaskNotificationCard } from "./task-notification"
 import { useLocation } from "@solidjs/router"
@@ -2164,6 +2164,46 @@ function TaskCard(props: {
   const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
   const tone = createMemo(() => agent().color)
   const v2Tone = createMemo(() => agent().v2Color)
+  const childRunning = createMemo(() => {
+    const id = childSessionId()
+    if (id && data.store.session_status[id]) return data.store.session_status[id].type !== "idle"
+    return running()
+  })
+  const activity = createMemo(() => {
+    const id = childSessionId()
+    if (!id) return
+    const messages = data.store.message[id] ?? []
+    const part = messages
+      .flatMap((message) => data.store.part[message.id] ?? [])
+      .findLast((part) => {
+        if (part.type === "tool") return true
+        if (part.type !== "text" && part.type !== "reasoning") return false
+        return !!readPartText(data.store.part_text_accum_delta, part)
+      })
+    if (!part) return
+    if (part.type !== "tool") {
+      const value = stripAnsi(readPartText(data.store.part_text_accum_delta, part)).replace(/\s+/g, " ").trim()
+      return {
+        key: part.id,
+        text: value.slice(-240),
+      }
+    }
+    const state = part.state
+    const detail =
+      state.status === "completed"
+        ? state.output
+        : state.status === "error"
+          ? state.error
+          : state.status === "running"
+            ? state.title
+            : undefined
+    const value = typeof detail === "string" ? stripAnsi(detail).replace(/\s+/g, " ").trim() : ""
+    return {
+      key: `${part.id}:${state.status}`,
+      text: value ? `${part.tool} · ${value.slice(-240)}` : part.tool,
+    }
+  })
+  const activityKey = createMemo(() => activity()?.key)
   const subtitle = createMemo(() => {
     const raw = props.followup ? taskFollowupDescription(props.description) : props.description
     const value = raw || childSessionId()
@@ -2211,7 +2251,7 @@ function TaskCard(props: {
         <div data-slot="basic-tool-tool-info-structured">
           <div data-slot="basic-tool-tool-info-main">
             <Show
-              when={running()}
+              when={childRunning()}
               fallback={
                 <span data-component="task-tool-icon">
                   <Icon name={props.followup ? "enter" : "subagent"} size="small" />
@@ -2219,13 +2259,24 @@ function TaskCard(props: {
               }
             >
               <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
-                <Spinner />
+                <SessionProgressIndicatorV2 />
               </span>
             </Show>
-            <span data-component="task-tool-title">{title()}</span>
-            <Show when={subtitle()}>
-              <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
-            </Show>
+            <span data-component="task-tool-copy">
+              <span data-component="task-tool-heading">
+                <span data-component="task-tool-title">{title()}</span>
+                <Show when={subtitle()}>
+                  <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+                </Show>
+              </span>
+              <Show when={activityKey()} keyed>
+                {() => (
+                  <span data-component="task-tool-activity">
+                    <ShellSubmessage text={activity()?.text ?? ""} animate />
+                  </span>
+                )}
+              </Show>
+            </span>
           </div>
         </div>
       </div>

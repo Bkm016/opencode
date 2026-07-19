@@ -3,13 +3,11 @@ import {
   createMemo,
   createResource,
   For,
-  getOwner,
   on,
   onCleanup,
   onMount,
   ParentProps,
   Show,
-  runWithOwner,
   untrack,
   type Accessor,
 } from "solid-js"
@@ -119,7 +117,6 @@ export default function LegacyLayout(props: ParentProps) {
   const notification = useNotification()
   const permission = usePermission()
   const navigate = useNavigate()
-  const navigationOwner = getOwner()
   setNavigate(navigate)
   const providers = useProviders()
   const dialog = useDialog()
@@ -219,11 +216,8 @@ export default function LegacyLayout(props: ParentProps) {
   const InlineEditor = editor.InlineEditor
 
   const navigateWithSidebarReset = (href: string) => {
-    // 异步项目切换会丢失 Solid owner；路由 transition 必须在布局 owner 内启动。
-    runWithOwner(navigationOwner, () => {
-      navigate(href)
-      layout.mobileSidebar.hide()
-    })
+    navigate(href)
+    layout.mobileSidebar.hide()
   }
 
   function cycleTheme(direction = 1) {

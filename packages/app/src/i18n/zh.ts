@@ -752,6 +752,11 @@ export const dict = {
   "session.share.action.view": "查看",
   "session.share.copy.copied": "已复制",
   "session.share.copy.copyLink": "复制链接",
+  "session.export.action.export": "导出",
+  "session.export.action.summary": "摘要导出",
+  "session.export.action.full": "完整导出",
+  "session.export.toast.success.title": "会话已导出",
+  "session.export.toast.failed.title": "导出会话失败",
 
   "lsp.tooltip.none": "没有 LSP 服务器",
   "lsp.label.connected": "{{count}} LSP",
@@ -778,7 +783,6 @@ export const dict = {
   "common.delete": "删除",
   "common.close": "关闭",
   "common.edit": "编辑",
-  "common.loadMore": "加载更多",
   "common.key.esc": "ESC",
 
   "sidebar.menu.toggle": "切换菜单",

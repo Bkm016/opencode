@@ -1172,8 +1172,8 @@ export function MessageTimeline(props: {
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>, onSizeChange?: () => void) => {
     switch (row()._tag) {
       case "TurnGap":
-        // Kept for type exhaustiveness; new rows no longer emit TurnGap.
-        return null
+        // The virtualizer measures this explicit row, preserving 24px between completed and next user turns.
+        return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
       case "CommentStrip": {
         const commentStripRow = row as Accessor<TimelineRowByTag<"CommentStrip">>
         const comments = createMemo(() =>

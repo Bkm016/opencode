@@ -41,12 +41,16 @@ export namespace Timeline {
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],
     assistantMessages: AssistantMessage[],
-    _index: number,
+    index: number,
     showReasoning: boolean,
     status: SessionStatus["type"],
     isActive: boolean,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
+
+    // A fixed row keeps turn separation measurable by the virtualizer instead of relying on
+    // sibling margins that can be clipped or omitted as rows enter and leave the viewport.
+    if (index > 0) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])

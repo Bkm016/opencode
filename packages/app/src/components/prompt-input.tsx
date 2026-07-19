@@ -1659,6 +1659,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         options={props.controls.agents.options}
                         current={props.controls.agents.current}
                         onSelect={(value) => {
+                          // Plan stays discoverable in the selector even when agent switching is disabled, so explain why it cannot be selected.
+                          if (value === "plan" && !props.controls.agents.visible) {
+                            showToast({ title: language.t("prompt.agent.customAgentsDisabled") })
+                            restoreFocus()
+                            return
+                          }
                           props.controls.agents.select(value)
                           restoreFocus()
                         }}
@@ -1802,9 +1808,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           classList={{
                             "text-13-regular max-w-[120px]": true,
                             "text-text-weak": !accepting(),
-                            "text-text-strong": accepting(),
                           }}
-                          style={control()}
+                          // Bypass communicates state through color alone, so pressed/active backgrounds stay transparent.
+                          style={{
+                            ...control(),
+                            color: accepting() ? "#ea613f" : undefined,
+                            "--icon-base": accepting() ? "#ea613f" : undefined,
+                            "--surface-base-active": "transparent",
+                          }}
                           onClick={toggleBypassPermission}
                         >
                           <span class="truncate">{language.t("prompt.action.bypassPermission")}</span>

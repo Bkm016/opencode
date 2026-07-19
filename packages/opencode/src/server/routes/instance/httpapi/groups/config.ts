@@ -1,4 +1,5 @@
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { Instruction } from "@/session/instruction"
 import { Provider } from "@/provider/provider"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -18,6 +19,12 @@ export const PromptCatalogEntry = Schema.Struct({
   value: Schema.String,
   overridden: Schema.Boolean,
 })
+
+// 系统提示词条目:source 为本地绝对路径或远程 URL,content 为提示词正文
+export const InstructionEntry = Schema.Struct({
+  source: Schema.String,
+  content: Schema.String,
+}).annotate({ identifier: "InstructionEntry" })
 
 export const ConfigApi = HttpApi.make("config")
   .add(
@@ -63,6 +70,18 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.prompts",
             summary: "List prompt catalog",
             description: "List built-in prompts with effective values after config.prompts overrides.",
+          }),
+        ),
+        HttpApiEndpoint.get("instructions", `${root}/instructions`, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(InstructionEntry), "Resolved instruction entries"),
+          error: HttpApiError.InternalServerError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.instructions",
+            summary: "List resolved instructions",
+            description:
+              "List the resolved system instruction files and remote URLs for the current instance, with their content.",
           }),
         ),
       )

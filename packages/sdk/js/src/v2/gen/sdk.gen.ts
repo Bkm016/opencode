@@ -20,10 +20,12 @@ import type {
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
-  ConfigProvidersErrors,
-  ConfigProvidersResponses,
+  ConfigInstructionsErrors,
+  ConfigInstructionsResponses,
   ConfigPromptsErrors,
   ConfigPromptsResponses,
+  ConfigProvidersErrors,
+  ConfigProvidersResponses,
   ConfigUpdateErrors,
   ConfigUpdateResponses,
   EventSubscribeResponses,
@@ -44,14 +46,14 @@ import type {
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
-  ExperimentalStorageCompactErrors,
-  ExperimentalStorageCompactResponses,
-  ExperimentalStorageGetErrors,
-  ExperimentalStorageGetResponses,
   ExperimentalSessionBackgroundErrors,
   ExperimentalSessionBackgroundResponses,
   ExperimentalSessionListErrors,
   ExperimentalSessionListResponses,
+  ExperimentalStorageCompactErrors,
+  ExperimentalStorageCompactResponses,
+  ExperimentalStorageGetErrors,
+  ExperimentalStorageGetResponses,
   ExperimentalWorkspaceAdapterListErrors,
   ExperimentalWorkspaceAdapterListResponses,
   ExperimentalWorkspaceCreateErrors,
@@ -231,6 +233,7 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  StorageCompactPayload,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -934,7 +937,7 @@ export class Storage extends HeyApiClient {
   /**
    * Get local storage budget
    *
-   * Report SQLite size, reclaimable freelist space, and expired tool-output / log files.
+   * Report SQLite size, reclaimable freelist space, and expired tool-output / log files. Safe read-only diagnostics for storage maintenance.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -968,17 +971,13 @@ export class Storage extends HeyApiClient {
   /**
    * Compact local storage
    *
-   * Safely reclaim disk space without deleting sessions or credentials.
+   * Safely reclaim disk space: WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Does not delete sessions or credentials.
    */
   public compact<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
       workspace?: string
-      checkpoint?: boolean
-      vacuum?: boolean
-      toolOutput?: boolean
-      logs?: boolean
-      retentionDays?: number
+      storageCompactPayload?: StorageCompactPayload
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -989,11 +988,7 @@ export class Storage extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
-            { in: "body", key: "checkpoint" },
-            { in: "body", key: "vacuum" },
-            { in: "body", key: "toolOutput" },
-            { in: "body", key: "logs" },
-            { in: "body", key: "retentionDays" },
+            { key: "storageCompactPayload", map: "body" },
           ],
         },
       ],
@@ -1635,6 +1630,36 @@ export class Config2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ConfigPromptsResponses, ConfigPromptsErrors, ThrowOnError>({
       url: "/config/prompts",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List resolved instructions
+   *
+   * List the resolved system instruction files and remote URLs for the current instance, with their content.
+   */
+  public instructions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ConfigInstructionsResponses, ConfigInstructionsErrors, ThrowOnError>({
+      url: "/config/instructions",
       ...options,
       ...params,
     })

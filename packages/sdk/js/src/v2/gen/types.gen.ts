@@ -1995,7 +1995,7 @@ export type Config = {
       }
   instructions?: Array<string>
   /**
-   * Override built-in prompts by catalog id. Empty string restores the default.
+   * Override built-in prompts by id (system.*, agent.*, session.*, tool.*, command.*, compaction.*, runtime.*). Empty string restores the default.
    */
   prompts?: {
     [key: string]: string
@@ -2029,16 +2029,6 @@ export type Config = {
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
   }
-}
-
-export type PromptCatalogEntry = {
-  id: string
-  group: string
-  title: string
-  description: string
-  default: string
-  value: string
-  overridden: boolean
 }
 
 export type Model = {
@@ -2136,6 +2126,11 @@ export type Provider = {
   models: {
     [key: string]: Model
   }
+}
+
+export type InstructionEntry = {
+  source: string
+  content: string
 }
 
 export type ExperimentalCapabilities = {
@@ -2266,6 +2261,68 @@ export type McpResource = {
   client: string
 }
 
+export type StorageDatabaseStats = {
+  path: string
+  size?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  walSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  shmSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pageCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pageSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  freelistCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  reclaimableBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type StorageFileStats = {
+  path: string
+  bytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  files: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  expiredBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  expiredFiles: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type StorageEntry = {
+  name: string
+  path: string
+  kind: "file" | "directory"
+  bytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type StorageTableStats = {
+  name: string
+  rows?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type StorageBudget = {
+  database: StorageDatabaseStats
+  toolOutput: StorageFileStats
+  logs: StorageFileStats
+  retentionDays: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  dataRoot: string
+  dataBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  entries: Array<StorageEntry>
+  tables: Array<StorageTableStats>
+}
+
+export type StorageCompactPayload = {
+  checkpoint?: boolean
+  vacuum?: boolean
+  toolOutput?: boolean
+  logs?: boolean
+  retentionDays?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type StorageCompactResult = {
+  checkpoint?: boolean
+  vacuum?: boolean
+  toolOutputRemoved?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  toolOutputBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  logsRemoved?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  logsBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  before: StorageBudget
+  after: StorageBudget
+  durationMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type Symbol = {
   name: string
   kind: number
@@ -2314,19 +2371,19 @@ export type File = {
 
 export type DatabaseTable = {
   name: string
-  rows?: number
+  rows?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type DatabaseInfo = {
   path: string
   data: string
-  size?: number
-  walSize?: number
-  shmSize?: number
+  size?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  walSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  shmSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   journalMode?: string
-  pageCount?: number
-  pageSize?: number
-  freelistCount?: number
+  pageCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  pageSize?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  freelistCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   tables: Array<DatabaseTable>
 }
 
@@ -7551,10 +7608,46 @@ export type ConfigPromptsResponses = {
   /**
    * Prompt catalog entries
    */
-  200: Array<PromptCatalogEntry>
+  200: Array<{
+    id: string
+    group: string
+    title: string
+    description: string
+    default: string
+    value: string
+    overridden: boolean
+  }>
 }
 
 export type ConfigPromptsResponse = ConfigPromptsResponses[keyof ConfigPromptsResponses]
+
+export type ConfigInstructionsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/instructions"
+}
+
+export type ConfigInstructionsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigInstructionsError = ConfigInstructionsErrors[keyof ConfigInstructionsErrors]
+
+export type ConfigInstructionsResponses = {
+  /**
+   * Resolved instruction entries
+   */
+  200: Array<InstructionEntry>
+}
+
+export type ConfigInstructionsResponse = ConfigInstructionsResponses[keyof ConfigInstructionsResponses]
 
 export type ExperimentalCapabilitiesGetData = {
   body?: never
@@ -7951,68 +8044,6 @@ export type ExperimentalResourceListResponses = {
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
 
-export type StorageFileStats = {
-  path: string
-  bytes: number
-  files: number
-  expiredBytes: number
-  expiredFiles: number
-}
-
-export type StorageDatabaseStats = {
-  path: string
-  size?: number
-  walSize?: number
-  shmSize?: number
-  pageCount?: number
-  pageSize?: number
-  freelistCount?: number
-  reclaimableBytes?: number
-}
-
-export type StorageEntry = {
-  name: string
-  path: string
-  kind: "file" | "directory"
-  bytes: number
-}
-
-export type StorageTableStats = {
-  name: string
-  rows?: number
-}
-
-export type StorageBudget = {
-  database: StorageDatabaseStats
-  toolOutput: StorageFileStats
-  logs: StorageFileStats
-  retentionDays: number
-  dataRoot: string
-  dataBytes: number
-  entries: Array<StorageEntry>
-  tables: Array<StorageTableStats>
-}
-
-export type StorageCompactPayload = {
-  checkpoint?: boolean
-  vacuum?: boolean
-  toolOutput?: boolean
-  logs?: boolean
-  retentionDays?: number
-}
-
-export type StorageCompactResult = {
-  checkpoint?: boolean
-  vacuum?: boolean
-  toolOutputRemoved?: number
-  toolOutputBytes?: number
-  logsRemoved?: number
-  logsBytes?: number
-  before: StorageBudget
-  after: StorageBudget
-  durationMs: number
-}
-
 export type ExperimentalStorageGetData = {
   body?: never
   path?: never
@@ -8053,13 +8084,12 @@ export type ExperimentalStorageCompactData = {
 
 export type ExperimentalStorageCompactErrors = {
   /**
-   * Bad request
+   * BadRequest | InvalidRequestError
    */
-  400: BadRequestError
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
-export type ExperimentalStorageCompactError =
-  ExperimentalStorageCompactErrors[keyof ExperimentalStorageCompactErrors]
+export type ExperimentalStorageCompactError = ExperimentalStorageCompactErrors[keyof ExperimentalStorageCompactErrors]
 
 export type ExperimentalStorageCompactResponses = {
   /**

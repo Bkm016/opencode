@@ -11,6 +11,7 @@ import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsServers } from "./settings-servers"
 import { SettingsDatabase } from "./settings-database"
+import { SettingsInstructions } from "./settings-instructions"
 import { SettingsPrompts } from "./settings-prompts"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
@@ -73,6 +74,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="prompt" />
                       {language.t("settings.tab.prompts")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="instructions">
+                      <Icon name="sliders" />
+                      {language.t("settings.tab.instructions")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -103,6 +108,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="prompts" class="no-scrollbar">
           <SettingsPrompts />
+        </Tabs.Content>
+        <Tabs.Content value="instructions" class="no-scrollbar">
+          <SettingsInstructions />
         </Tabs.Content>
       </Tabs>
     </Dialog>

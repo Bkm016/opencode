@@ -31,9 +31,19 @@ function extract(messages: SessionV1.WithParts[]) {
   return paths
 }
 
+export interface Entry {
+  /** 提示词来源标识,本地文件为绝对路径,远程为完整 URL */
+  readonly source: string
+  /** 提示词正文,空串表示文件存在但内容为空或读取失败 */
+  readonly content: string
+}
+
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, FSUtil.Error>
+  /** 返回当前实例解析到的全部系统提示词条目,含本地文件与远程 URL */
+  readonly systemEntries: () => Effect.Effect<Entry[], FSUtil.Error>
+  /** 返回拼装好的系统提示词字符串数组,用于注入模型上下文 */
   readonly system: () => Effect.Effect<string[], FSUtil.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, FSUtil.Error>
   readonly resolve: (
@@ -152,7 +162,7 @@ const layer: Layer.Layer<
       return paths
     })
 
-    const system = Effect.fn("Instruction.system")(function* () {
+    const systemEntries = Effect.fn("Instruction.systemEntries")(function* () {
       const config = yield* cfg.get()
       const paths = yield* systemPaths()
       const urls = (config.instructions ?? []).filter(
@@ -162,10 +172,21 @@ const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
-      return [
-        ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
-        ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
-      ]
+      const entries: Entry[] = []
+      Array.from(paths).forEach((item, i) => {
+        const content = files[i] ?? ""
+        if (content) entries.push({ source: item, content })
+      })
+      urls.forEach((item, i) => {
+        const content = remote[i] ?? ""
+        if (content) entries.push({ source: item, content })
+      })
+      return entries
+    })
+
+    const system = Effect.fn("Instruction.system")(function* () {
+      const entries = yield* systemEntries()
+      return entries.map((entry) => `Instructions from: ${entry.source}\n${entry.content}`)
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {
@@ -220,7 +241,7 @@ const layer: Layer.Layer<
       return results
     })
 
-    return Service.of({ clear, systemPaths, system, find, resolve })
+    return Service.of({ clear, systemPaths, systemEntries, system, find, resolve })
   }),
 )
 

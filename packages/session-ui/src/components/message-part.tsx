@@ -58,6 +58,7 @@ import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
+import { parseTaskNotification, TaskNotificationCard } from "./task-notification"
 import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
@@ -1263,6 +1264,15 @@ export function UserMessageDisplay(props: {
     () => props.parts?.find((p) => p.type === "text" && !(p as TextPart).synthetic) as TextPart | undefined,
   )
 
+  // 后台子代理任务结束时注入的 <task> 通知是 synthetic 用户消息，需要解析出来可见渲染
+  const taskNotifications = createMemo(() =>
+    (props.parts ?? []).flatMap((p) => {
+      if (p.type !== "text" || !(p as TextPart).synthetic) return []
+      const notification = parseTaskNotification((p as TextPart).text)
+      return notification ? [notification] : []
+    }),
+  )
+
   const text = createMemo(() => textPart()?.text || "")
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
@@ -1365,6 +1375,7 @@ export function UserMessageDisplay(props: {
   return (
     <div data-component="user-message" data-timeline-part-id={textPart()?.id}>
       {renderAttachments()}
+      <For each={taskNotifications()}>{(notification) => <TaskNotificationCard notification={notification} />}</For>
       <Show when={text()}>
         <div data-slot="user-message-body">
           <div data-slot="user-message-text">

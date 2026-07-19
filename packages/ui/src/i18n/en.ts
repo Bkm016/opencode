@@ -154,6 +154,7 @@ export const dict: Record<string, string> = {
   "ui.basicTool.called": "Called `{{tool}}`",
   "ui.toolErrorCard.failed": "Failed",
   "ui.toolErrorCard.copyError": "Copy error",
+  "ui.taskNotification.title": "Background task",
 
   "ui.common.file.one": "file",
   "ui.common.file.other": "files",

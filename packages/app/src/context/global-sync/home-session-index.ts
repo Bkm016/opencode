@@ -1,7 +1,5 @@
 import type { Event, Session, SessionV2Info, V2SessionListResponse } from "@opencode-ai/sdk/v2/client"
 import type { QueryClient } from "@tanstack/solid-query"
-import { trimSessions } from "./session-trim"
-import { pathKey } from "@/utils/path-key"
 
 export const HOME_V2_SESSION_PAGE_LIMIT = 5_000
 
@@ -135,11 +133,6 @@ export function parseHomeSessionIndex(sessions: SessionV2Info[]): Session[] {
     if (item.parentID || typeof item.time.archived === "number") return []
     return [toLegacySummary(item)]
   })
-}
-
-export function retainHomeSessions(sessions: Session[], limit: number, now: number) {
-  const grouped = Map.groupBy(sessions, (session) => pathKey(session.directory))
-  return [...grouped.values()].flatMap((items) => trimSessions(items, { limit, permission: {}, now }))
 }
 
 export function applyHomeSessionEvent(sessions: Session[], event: HomeSessionEvent) {

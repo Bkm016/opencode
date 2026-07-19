@@ -8,7 +8,6 @@ import {
   homeSessionIndexSessions,
   homeSessionIndexRefresh,
   parseHomeSessionIndex,
-  retainHomeSessions,
 } from "./home-session-index"
 
 const session = (input: {
@@ -99,18 +98,6 @@ describe("Home V2 session index", () => {
         time: { created: 1, updated: 20, archived: null },
       }),
     ])
-  })
-
-  test("preserves the per-directory Home retention limit", () => {
-    const now = 10 * 60 * 60 * 1000
-    const sessions = Array.from({ length: 80 }, (_, index) => ({
-      ...parseHomeSessionIndex([session({ id: `session-${index}`, updated: index + 1 })])[0],
-      directory: index % 2 === 0 ? "/one" : "/two",
-    }))
-
-    const retained = retainHomeSessions(sessions, 10, now)
-    expect(retained.filter((item) => item.directory === "/one")).toHaveLength(10)
-    expect(retained.filter((item) => item.directory === "/two")).toHaveLength(10)
   })
 
   test("replays session events over the loaded index", () => {

@@ -721,7 +721,6 @@ export const dict = {
   "common.delete": "ลบ",
   "common.close": "ปิด",
   "common.edit": "แก้ไข",
-  "common.loadMore": "โหลดเพิ่มเติม",
   "common.key.esc": "ESC",
 
   "sidebar.menu.toggle": "สลับเมนู",

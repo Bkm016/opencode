@@ -776,7 +776,6 @@ export const dict = {
   "common.delete": "Видалити",
   "common.close": "Закрити",
   "common.edit": "Редагувати",
-  "common.loadMore": "Завантажити більше",
   "common.key.esc": "ESC",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",

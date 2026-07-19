@@ -6,7 +6,6 @@ import type { createServerSdkContext } from "./server-sdk"
 import type { createServerSyncContextInner } from "./server-sync"
 import type { State } from "./global-sync/types"
 
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const sessionFields = new Set([
   "session_status",
   "session_working",
@@ -24,7 +23,6 @@ export const createDirSyncContext = (
   serverSync: ReturnType<typeof createServerSyncContextInner>,
   serverSDK: ReturnType<typeof createServerSdkContext>,
 ) => {
-  const client = serverSDK.createClient({ directory, throwOnError: true })
   const current = createMemo(() => serverSync.child(directory, { mcp: true }))
   const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
   const data = new Proxy({} as State, {
@@ -120,18 +118,6 @@ export const createDirSyncContext = (
       evict(sessionID: string) {
         serverSync.session.evict(sessionID)
       },
-      fetch: async (count = 10) => {
-        const [store, setStore] = current()
-        setStore("limit", (value) => value + count)
-        const response = await client.session.list()
-        const sessions = (response.data ?? [])
-          .filter((session) => !!session?.id)
-          .sort((a, b) => cmp(a.id, b.id))
-          .slice(0, store.limit)
-        sessions.forEach(serverSync.session.remember)
-        setStore("session", reconcile(sessions, { key: "id" }))
-      },
-      more: createMemo(() => current()[0].session.length >= current()[0].limit),
       archive: async (sessionID: string) => {
         await serverSDK.client.session.update({ sessionID, time: { archived: Date.now() } })
         current()[1](

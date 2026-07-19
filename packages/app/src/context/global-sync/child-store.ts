@@ -237,7 +237,6 @@ export function createChildStoreManager(input: {
               return referenceQuery.isLoading ? [] : (referenceQuery.data ?? [])
             },
             session: [],
-            sessionTotal: 0,
             session_status: {},
             session_working(id: string) {
               const type = this.session_status[id]?.type
@@ -263,7 +262,6 @@ export function createChildStoreManager(input: {
               return lspQuery.isLoading ? [] : (lspQuery.data ?? [])
             },
             vcs: vcsStore.value,
-            limit: 5,
             message: {},
             part: {},
             part_text_accum_delta: {},

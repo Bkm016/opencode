@@ -728,7 +728,6 @@ export const dict = {
   "common.delete": "Izbriši",
   "common.close": "Zatvori",
   "common.edit": "Uredi",
-  "common.loadMore": "Učitaj još",
   "common.key.esc": "ESC",
 
   "sidebar.menu.toggle": "Prikaži/sakrij meni",

@@ -733,7 +733,6 @@ export const dict = {
   "common.delete": "Sil",
   "common.close": "Kapat",
   "common.edit": "Düzenle",
-  "common.loadMore": "Daha fazla yükle",
   "common.key.esc": "ESC",
 
   "sidebar.menu.toggle": "Menüyü aç/kapat",

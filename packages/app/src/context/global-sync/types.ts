@@ -45,7 +45,6 @@ export type State = {
   config: Config
   path: Path
   session: Session[]
-  sessionTotal: number
   session_status: {
     [sessionID: string]: SessionStatus
   }
@@ -72,7 +71,6 @@ export type State = {
   lsp_ready: boolean
   lsp: LspStatus[]
   vcs: VcsInfo | undefined
-  limit: number
   message: {
     [sessionID: string]: Message[]
   }
@@ -136,11 +134,8 @@ export type RootLoadArgs = {
 
 export type RootLoadResult = {
   data?: Session[]
-  limit: number
-  limited: boolean
 }
 
 export const MAX_DIR_STORES = 30
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
-export const SESSION_RECENT_WINDOW = 4 * 60 * 60 * 1000
-export const SESSION_RECENT_LIMIT = 50
+export const SESSION_LIST_LIMIT = 10_000

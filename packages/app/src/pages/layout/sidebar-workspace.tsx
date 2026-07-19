@@ -5,7 +5,6 @@ import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { Button } from "@opencode-ai/ui/button"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -241,9 +240,6 @@ const WorkspaceSessionList = (props: {
   showNew: Accessor<boolean>
   loading: Accessor<boolean>
   sessions: Accessor<Session[]>
-  hasMore: Accessor<boolean>
-  loadMore: () => Promise<void>
-  language: ReturnType<typeof useLanguage>
 }): JSX.Element => (
   <nav class="flex flex-col gap-1">
     <Show when={props.showNew()}>
@@ -271,21 +267,6 @@ const WorkspaceSessionList = (props: {
         />
       )}
     </For>
-    <Show when={props.hasMore()}>
-      <div class="relative w-full py-1">
-        <Button
-          variant="ghost"
-          class="flex w-full text-left justify-start text-14-regular text-text-weak pl-2 pr-10"
-          size="large"
-          onClick={(e: MouseEvent) => {
-            void props.loadMore()
-            ;(e.currentTarget as HTMLButtonElement).blur()
-          }}
-        >
-          {props.language.t("common.loadMore")}
-        </Button>
-      </div>
-    </Show>
   </nav>
 )
 
@@ -302,7 +283,7 @@ export const SortableWorkspace = (props: {
   const queryOptions = useQueryOptions()
   const language = useLanguage()
   const sortable = createSortable(props.directory)
-  const [workspaceStore, setWorkspaceStore] = serverSync().child(props.directory, { bootstrap: false })
+  const [workspaceStore] = serverSync().child(props.directory, { bootstrap: false })
   const [menu, setMenu] = createStore({
     open: false,
     pendingRename: false,
@@ -321,16 +302,11 @@ export const SortableWorkspace = (props: {
   const open = createMemo(() => props.ctx.workspaceExpanded(props.directory, local()))
   const boot = createMemo(() => open() || active())
   const count = createMemo(() => sessions()?.length ?? 0)
-  const hasMore = createMemo(() => workspaceStore.sessionTotal > count())
   const fetching = useIsFetching(() => queryOptions().sessions(pathKey(props.directory)))
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
   const loading = () => fetching() > 0 && count() === 0
   const touch = createMediaQuery("(hover: none)")
   const showNew = createMemo(() => !loading() && (touch() || count() === 0 || (active() && !params.id)))
-  const loadMore = async () => {
-    setWorkspaceStore("limit", (limit) => (limit ?? 0) + 5)
-    await serverSync().project.loadSessions(props.directory)
-  }
 
   const workspaceEditActive = createMemo(() => props.ctx.editorOpen(`workspace:${props.directory}`))
   const header = () => (
@@ -430,9 +406,6 @@ export const SortableWorkspace = (props: {
             showNew={showNew}
             loading={loading}
             sessions={sessions}
-            hasMore={hasMore}
-            loadMore={loadMore}
-            language={language}
           />
         </Collapsible.Content>
       </Collapsible>
@@ -448,10 +421,9 @@ export const LocalWorkspace = (props: {
 }): JSX.Element => {
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
-  const language = useLanguage()
   const workspace = createMemo(() => {
-    const [store, setStore] = serverSync().child(props.project.worktree)
-    return { store, setStore }
+    const [store] = serverSync().child(props.project.worktree)
+    return { store }
   })
   const slug = createMemo(() => base64Encode(props.project.worktree))
   const sessions = createMemo(() =>
@@ -459,12 +431,7 @@ export const LocalWorkspace = (props: {
   )
   const count = createMemo(() => sessions()?.length ?? 0)
   const fetching = useIsFetching(() => queryOptions().sessions(pathKey(props.project.worktree)))
-  const hasMore = createMemo(() => workspace().store.sessionTotal > count())
   const loading = () => fetching() > 0 && count() === 0
-  const loadMore = async () => {
-    workspace().setStore("limit", (limit) => (limit ?? 0) + 5)
-    await serverSync().project.loadSessions(props.project.worktree)
-  }
 
   return (
     <div
@@ -478,9 +445,6 @@ export const LocalWorkspace = (props: {
         showNew={() => false}
         loading={loading}
         sessions={sessions}
-        hasMore={hasMore}
-        loadMore={loadMore}
-        language={language}
       />
     </div>
   )

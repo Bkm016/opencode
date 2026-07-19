@@ -26,10 +26,9 @@ import {
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
-import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
-import { trimSessions } from "./global-sync/session-trim"
+import { loadRootSessionsWithFallback } from "./global-sync/session-load"
 import type { ProjectMeta } from "./global-sync/types"
-import { SESSION_RECENT_LIMIT } from "./global-sync/types"
+import { SESSION_LIST_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createRefreshQueue } from "./global-sync/queue"
@@ -108,7 +107,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const sdkCache = new Map<string, OpencodeClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
-  const sessionMeta = new Map<string, { limit: number }>()
+  const sessionsLoaded = new Set<string>()
 
   const sdkFor = (directory: string) => {
     const key = directoryKey(directory)
@@ -249,7 +248,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     onDispose: (directory) => {
       const key = directoryKey(directory)
       queue.clear(key)
-      sessionMeta.delete(key)
+      sessionsLoaded.delete(key)
       sdkCache.delete(key)
       clearProviderRev(serverSDK.scope, key)
     },
@@ -260,38 +259,28 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     },
   })
 
-  async function loadSessions(directory: string, options?: { limit?: number }) {
+  async function loadSessions(directory: string) {
     const key = directoryKey(directory)
     const pending = sessionLoads.get(key)
     if (pending) {
       await pending
-      return loadSessions(directory, options)
+      return loadSessions(directory)
     }
 
     children.pin(key)
     const [store, setStore] = children.child(directory, { bootstrap: false })
-    const meta = sessionMeta.get(key)
-    const retainedLimit = Math.max(store.limit, options?.limit ?? 0, meta?.limit ?? 0)
-    if (meta && meta.limit >= retainedLimit) {
-      const next = trimSessions(store.session, {
-        limit: retainedLimit,
-        permission: session.data.permission,
-      })
-      if (next.length !== store.session.length) {
-        setStore("session", reconcile(next, { key: "id" }))
-      }
+    if (sessionsLoaded.has(key)) {
       children.unpin(key)
       return
     }
 
-    const limit = Math.max(retainedLimit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
     const promise = queryClient
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
         queryFn: () =>
           loadRootSessionsWithFallback({
             directory,
-            limit,
+            limit: SESSION_LIST_LIMIT,
             list: (query) => serverSDK.client.session.list(query),
           })
             .then((x) => {
@@ -299,25 +288,15 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
                 .filter((s) => !!s?.id)
                 .filter((s) => !s.time?.archived)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              const limit = Math.max(store.limit, options?.limit ?? 0, sessionMeta.get(key)?.limit ?? 0)
               const childSessions = store.session.filter((s) => !!s.parentID)
-              const next = trimSessions([...nonArchived, ...childSessions], {
-                limit,
-                permission: session.data.permission,
-              })
+              const next = [...nonArchived, ...childSessions].sort((a, b) =>
+                a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+              )
               batch(() => {
                 next.forEach(session.remember)
-                setStore(
-                  "sessionTotal",
-                  estimateRootSessionTotal({
-                    count: nonArchived.length,
-                    limit: x.limit,
-                    limited: x.limited,
-                  }),
-                )
                 setStore("session", reconcile(next, { key: "id" }))
               })
-              sessionMeta.set(key, { limit })
+              sessionsLoaded.add(key)
             })
             .catch((err) => {
               console.error("Failed to load sessions", err)
@@ -425,9 +404,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       push: (directory) => {
         if (children.active(directory)) queue.push(directory)
       },
-      retainedLimit: sessionMeta.get(key)?.limit,
       sessionContent: false,
-      permission: session.data.permission,
       vcsCache: children.vcsCache.get(key),
       loadLsp: () => {
         if (!children.active(key)) return

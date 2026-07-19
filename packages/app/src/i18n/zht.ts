@@ -755,7 +755,6 @@ export const dict = {
   "common.delete": "刪除",
   "common.close": "關閉",
   "common.edit": "編輯",
-  "common.loadMore": "載入更多",
 
   "common.key.esc": "ESC",
   "sidebar.menu.toggle": "切換選單",

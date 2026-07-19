@@ -34,7 +34,6 @@ function directoryState() {
       database: { path: "", data: "", tables: [] },
     },
     session: [],
-    sessionTotal: 0,
     session_status: {},
     session_working(id: string) {
       return this.session_status[id]?.type !== "idle"
@@ -49,7 +48,6 @@ function directoryState() {
     lsp_ready: true,
     lsp: [],
     vcs: undefined,
-    limit: 5,
     message: {},
     part: {},
     part_text_accum_delta: {},

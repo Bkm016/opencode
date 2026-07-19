@@ -673,7 +673,6 @@ export const dict = {
   "common.delete": "Supprimer",
   "common.close": "Fermer",
   "common.edit": "Modifier",
-  "common.loadMore": "Charger plus",
   "common.key.esc": "ESC",
   "sidebar.menu.toggle": "Basculer le menu",
   "sidebar.nav.projectsAndSessions": "Projets et sessions",

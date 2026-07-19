@@ -54,9 +54,9 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
-import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 import { patchFiles } from "./apply-patch-file"
 import { parseTaskNotification, TaskNotificationCard } from "./task-notification"
 import { useLocation } from "@solidjs/router"
@@ -1300,7 +1300,7 @@ export function UserMessageDisplay(props: {
 
   const metaHead = createMemo(() => {
     const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
+    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model(), props.message.model?.variant ?? ""]
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
   })
 
@@ -1780,10 +1780,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   const meta = createMemo(() => {
     if (props.message.role !== "assistant") return ""
-    const agent = (props.message as AssistantMessage).agent
+    const message = props.message as AssistantMessage
+    const agent = message.agent
     const items = [
       agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
       model(),
+      message.variant ?? "",
       duration(),
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
@@ -2267,7 +2269,7 @@ function TaskCard(props: {
               }
             >
               <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
-                <SessionProgressIndicatorV2 />
+                <Spinner class="size-[15px]" />
               </span>
             </Show>
             <span data-component="task-tool-copy">

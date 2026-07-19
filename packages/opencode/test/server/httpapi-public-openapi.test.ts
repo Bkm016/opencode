@@ -125,12 +125,9 @@ describe("PublicApi OpenAPI v2 errors", () => {
     }
   })
 
-  test("documents references separately from filesystem routes", () => {
+  test("documents the reference route", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
-    for (const path of ["/api/fs/read/*", "/api/fs/list"]) {
-      expect(spec.paths[path]?.get?.parameters, path).not.toContainEqual(expect.objectContaining({ name: "reference" }))
-    }
     expect(spec.paths["/api/reference"]?.get).toBeDefined()
   })
 

@@ -77,10 +77,6 @@ import type {
   PermissionsGetOutput,
   PermissionsReplyInput,
   PermissionsReplyOutput,
-  FilesListInput,
-  FilesListOutput,
-  FilesFindInput,
-  FilesFindOutput,
   CommandsListInput,
   CommandsListOutput,
   SkillsListInput,
@@ -750,32 +746,6 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [404, 400, 401],
             empty: true,
-          },
-          requestOptions,
-        ),
-    },
-    files: {
-      list: (input?: FilesListInput, requestOptions?: RequestOptions) =>
-        request<FilesListOutput>(
-          {
-            method: "GET",
-            path: `/api/fs/list`,
-            query: { location: input?.["location"], path: input?.["path"] },
-            successStatus: 200,
-            declaredStatuses: [401, 400],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      find: (input: FilesFindInput, requestOptions?: RequestOptions) =>
-        request<FilesFindOutput>(
-          {
-            method: "GET",
-            path: `/api/fs/find`,
-            query: { location: input["location"], query: input["query"], type: input["type"], limit: input["limit"] },
-            successStatus: 200,
-            declaredStatuses: [401, 400],
-            empty: false,
           },
           requestOptions,
         ),

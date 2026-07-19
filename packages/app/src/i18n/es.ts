@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "Siguiente sesión no leída",
   "command.session.archive": "Archivar sesión",
 
-  "command.palette": "Paleta de comandos",
-
   "command.theme.cycle": "Alternar tema",
   "command.theme.set": "Usar tema: {{theme}}",
   "command.theme.scheme.cycle": "Alternar esquema de color",
@@ -46,14 +44,12 @@ export const dict = {
   "command.language.set": "Usar idioma: {{language}}",
 
   "command.session.new": "Nueva sesión",
-  "command.file.open": "Abrir archivo",
   "command.tab.close": "Cerrar pestaña",
   "command.tab.reopenClosed": "Reabrir pestaña cerrada",
   "command.context.addSelection": "Añadir selección al contexto",
   "command.context.addSelection.description": "Añadir las líneas seleccionadas del archivo actual",
   "command.input.focus": "Enfocar entrada",
   "command.terminal.toggle": "Alternar terminal",
-  "command.fileTree.toggle": "Alternar árbol de archivos",
   "command.review.toggle": "Alternar revisión",
   "command.terminal.new": "Nueva terminal",
   "command.terminal.new.description": "Crear una nueva pestaña de terminal",
@@ -91,12 +87,6 @@ export const dict = {
   "command.session.share.description": "Compartir esta sesión y copiar la URL al portapapeles",
   "command.session.unshare": "Dejar de compartir sesión",
   "command.session.unshare.description": "Dejar de compartir esta sesión",
-
-  "palette.search.placeholder": "Buscar archivos, comandos y sesiones",
-  "palette.search.placeholder.home": "Buscar comandos y sesiones",
-  "palette.empty": "No se encontraron resultados",
-  "palette.group.commands": "Comandos",
-  "palette.group.files": "Archivos",
 
   "dialog.provider.search.placeholder": "Buscar proveedores",
   "dialog.provider.empty": "No se encontraron proveedores",
@@ -515,9 +505,6 @@ export const dict = {
   "toast.model.none.title": "Ningún modelo seleccionado",
   "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
 
-  "toast.file.loadFailed.title": "Fallo al cargar archivo",
-  "toast.file.listFailed.title": "Fallo al listar archivos",
-
   "toast.context.noLineSelection.title": "Sin selección de líneas",
   "toast.context.noLineSelection.description": "Primero selecciona un rango de líneas en una pestaña de archivo.",
 
@@ -617,7 +604,6 @@ export const dict = {
   "session.tab.review": "Revisión",
   "session.tab.context": "Contexto",
   "session.tab.unknown": "Sesión desconocida",
-  "session.panel.reviewAndFiles": "Revisión y archivos",
   "session.error.notFound": "No se encuentra esta sesión",
   "session.error.notFound.description": "Esta pestaña apunta a una sesión que ya no existe en este servidor.",
   "session.error.notFound.closeTab": "Cerrar pestaña",
@@ -633,11 +619,6 @@ export const dict = {
   "session.review.noChanges": "Sin cambios",
   "session.review.noUncommittedChanges": "Aún no hay cambios sin confirmar",
   "session.review.noBranchChanges": "Aún no hay cambios en la rama",
-
-  "session.files.selectToOpen": "Selecciona un archivo para abrir",
-  "session.files.all": "Todos los archivos",
-  "session.files.empty": "Sin archivos",
-  "session.files.binaryContent": "Archivo binario (el contenido no puede ser mostrado)",
 
   "session.messages.renderEarlier": "Renderizar mensajes anteriores",
   "session.messages.loadingEarlier": "Cargando mensajes anteriores...",
@@ -678,8 +659,6 @@ export const dict = {
   "session.new.workspace.existing": "Espacio de trabajo…",
   "session.new.lastModified": "Última modificación",
 
-  "session.header.search.placeholder": "Buscar {{project}}",
-  "session.header.searchFiles": "Buscar archivos",
   "session.header.openIn": "Abrir en",
   "session.header.open.action": "Abrir {{app}}",
   "session.header.open.ariaLabel": "Abrir en {{app}}",
@@ -787,14 +766,9 @@ export const dict = {
     "Elige si los prompts de seguimiento se dirigen inmediatamente o esperan en una cola",
   "settings.general.row.followup.option.queue": "Cola",
   "settings.general.row.followup.option.steer": "Dirigir",
-  "settings.general.row.showFileTree.title": "Árbol de archivos",
-  "settings.general.row.showFileTree.description": "Mostrar el panel del árbol de archivos en las sesiones",
   "settings.general.row.showNavigation.title": "Controles de navegación",
   "settings.general.row.showNavigation.description":
     "Mostrar los botones para retroceder y avanzar en la barra de título de la aplicación de escritorio",
-  "settings.general.row.showSearch.title": "Paleta de comandos",
-  "settings.general.row.showSearch.description":
-    "Mostrar el botón de búsqueda y paleta de comandos en la barra de título",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Mostrar el botón del terminal en la barra de título",
   "settings.general.row.showStatus.title": "Estado del servidor",

@@ -1,7 +1,6 @@
 import { getFilename } from "@opencode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
-import { encodeFilePath } from "@/context/file/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
@@ -34,6 +33,25 @@ const absolute = (directory: string, path: string) => {
   if (/^[A-Za-z]:[\\/]/.test(path) || /^[A-Za-z]:$/.test(path)) return path
   if (path.startsWith("\\\\") || path.startsWith("//")) return path
   return `${directory.replace(/[\\/]+$/, "")}/${path}`
+}
+
+const encodeFilePath = (filepath: string) => {
+  // Normalize Windows paths: convert backslashes to forward slashes
+  let normalized = filepath.replace(/\\/g, "/")
+
+  // Handle Windows absolute paths (D:/path -> /D:/path for proper file:// URLs)
+  if (/^[A-Za-z]:/.test(normalized)) normalized = "/" + normalized
+
+  // Encode each path segment (preserving forward slashes as path separators)
+  // Keep the colon in Windows drive letters (`/C:/...`) so downstream file URL parsers
+  // can reliably detect drives.
+  return normalized
+    .split("/")
+    .map((segment, index) => {
+      if (index === 1 && /^[A-Za-z]:$/.test(segment)) return segment
+      return encodeURIComponent(segment)
+    })
+    .join("/")
 }
 
 const fileQuery = (selection: FileSelection | undefined) =>

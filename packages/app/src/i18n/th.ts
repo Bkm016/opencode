@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "เซสชันที่ยังไม่ได้อ่านถัดไป",
   "command.session.archive": "จัดเก็บเซสชัน",
 
-  "command.palette": "ชุดคำสั่ง",
-
   "command.theme.cycle": "เปลี่ยนธีม",
   "command.theme.set": "ใช้ธีม: {{theme}}",
   "command.theme.scheme.cycle": "เปลี่ยนโทนสี",
@@ -46,14 +44,12 @@ export const dict = {
   "command.language.set": "ใช้ภาษา: {{language}}",
 
   "command.session.new": "เซสชันใหม่",
-  "command.file.open": "เปิดไฟล์",
   "command.tab.close": "ปิดแท็บ",
   "command.tab.reopenClosed": "เปิดแท็บที่ปิดไปอีกครั้ง",
   "command.context.addSelection": "เพิ่มส่วนที่เลือกไปยังบริบท",
   "command.context.addSelection.description": "เพิ่มบรรทัดที่เลือกจากไฟล์ปัจจุบัน",
   "command.input.focus": "โฟกัสช่องป้อนข้อมูล",
   "command.terminal.toggle": "สลับเทอร์มินัล",
-  "command.fileTree.toggle": "สลับต้นไม้ไฟล์",
   "command.review.toggle": "สลับการตรวจสอบ",
   "command.terminal.new": "เทอร์มินัลใหม่",
   "command.terminal.new.description": "สร้างแท็บเทอร์มินัลใหม่",
@@ -91,12 +87,6 @@ export const dict = {
   "command.session.share.description": "แชร์เซสชันนี้และคัดลอก URL ไปยังคลิปบอร์ด",
   "command.session.unshare": "ยกเลิกการแชร์เซสชัน",
   "command.session.unshare.description": "หยุดการแชร์เซสชันนี้",
-
-  "palette.search.placeholder": "ค้นหาไฟล์ คำสั่ง และเซสชัน",
-  "palette.search.placeholder.home": "ค้นหาคำสั่งและเซสชัน",
-  "palette.empty": "ไม่พบผลลัพธ์",
-  "palette.group.commands": "คำสั่ง",
-  "palette.group.files": "ไฟล์",
 
   "dialog.provider.search.placeholder": "ค้นหาผู้ให้บริการ",
   "dialog.provider.empty": "ไม่พบผู้ให้บริการ",
@@ -513,9 +503,6 @@ export const dict = {
   "toast.model.none.title": "ไม่ได้เลือกโมเดล",
   "toast.model.none.description": "เชื่อมต่อผู้ให้บริการเพื่อสรุปเซสชันนี้",
 
-  "toast.file.loadFailed.title": "ไม่สามารถโหลดไฟล์",
-  "toast.file.listFailed.title": "ไม่สามารถแสดงรายการไฟล์",
-
   "toast.context.noLineSelection.title": "ไม่มีการเลือกบรรทัด",
   "toast.context.noLineSelection.description": "เลือกช่วงบรรทัดในแท็บไฟล์ก่อน",
 
@@ -611,7 +598,6 @@ export const dict = {
   "session.tab.review": "ตรวจสอบ",
   "session.tab.context": "บริบท",
   "session.tab.unknown": "เซสชันที่ไม่รู้จัก",
-  "session.panel.reviewAndFiles": "ตรวจสอบและไฟล์",
   "session.error.notFound": "ไม่พบเซสชันนี้",
   "session.error.notFound.description": "แท็บนี้อ้างถึงเซสชันที่ไม่มีอยู่บนเซิร์ฟเวอร์นี้แล้ว.",
   "session.error.notFound.closeTab": "ปิดแท็บ",
@@ -626,11 +612,6 @@ export const dict = {
   "session.review.noChanges": "ไม่มีการเปลี่ยนแปลง",
   "session.review.noUncommittedChanges": "ยังไม่มีการเปลี่ยนแปลงที่รอคอมมิต",
   "session.review.noBranchChanges": "ยังไม่มีการเปลี่ยนแปลงในสาขา",
-
-  "session.files.selectToOpen": "เลือกไฟล์เพื่อเปิด",
-  "session.files.empty": "ไม่มีไฟล์",
-  "session.files.all": "ไฟล์ทั้งหมด",
-  "session.files.binaryContent": "ไฟล์ไบนารี (ไม่สามารถแสดงเนื้อหาได้)",
 
   "session.messages.renderEarlier": "แสดงข้อความก่อนหน้า",
   "session.messages.loadingEarlier": "กำลังโหลดข้อความก่อนหน้า...",
@@ -671,8 +652,6 @@ export const dict = {
   "session.new.workspace.existing": "พื้นที่ทำงาน…",
   "session.new.lastModified": "แก้ไขล่าสุด",
 
-  "session.header.search.placeholder": "ค้นหา {{project}}",
-  "session.header.searchFiles": "ค้นหาไฟล์",
   "session.header.openIn": "เปิดใน",
   "session.header.open.action": "เปิด {{app}}",
   "session.header.open.ariaLabel": "เปิดใน {{app}}",
@@ -776,12 +755,8 @@ export const dict = {
   "settings.general.row.followup.description": "เลือกว่าจะให้พร้อมท์ติดตามผลทำงานทันทีหรือรอในคิว",
   "settings.general.row.followup.option.queue": "คิว",
   "settings.general.row.followup.option.steer": "นำทาง",
-  "settings.general.row.showFileTree.title": "ต้นไม้ไฟล์",
-  "settings.general.row.showFileTree.description": "แสดงแผงต้นไม้ไฟล์ในเซสชัน",
   "settings.general.row.showNavigation.title": "ตัวควบคุมการนำทาง",
   "settings.general.row.showNavigation.description": "แสดงปุ่มย้อนกลับและไปข้างหน้าในแถบชื่อเรื่องเดสก์ท็อป",
-  "settings.general.row.showSearch.title": "ชุดคำสั่ง",
-  "settings.general.row.showSearch.description": "แสดงปุ่มค้นหาและชุดคำสั่งในแถบชื่อเรื่อง",
   "settings.general.row.showTerminal.title": "เทอร์มินัล",
   "settings.general.row.showTerminal.description": "แสดงปุ่มเทอร์มินัลในแถบชื่อเรื่องเดสก์ท็อป",
   "settings.general.row.showStatus.title": "สถานะเซิร์ฟเวอร์",

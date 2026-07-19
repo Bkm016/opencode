@@ -44,8 +44,7 @@ describe("pruneSessionKeys", () => {
         ["k3", 3],
         ["k4", 4],
       ]),
-      view: ["k1", "k2", "k4"],
-      tabs: ["k1", "k3", "k4"],
+      view: ["k1", "k2", "k3", "k4"],
     })
 
     expect(drop).toEqual(["k1"])
@@ -60,8 +59,7 @@ describe("pruneSessionKeys", () => {
         ["k1", 1],
         ["k2", 2],
       ]),
-      view: ["k1"],
-      tabs: ["k2"],
+      view: ["k1", "k2"],
     })
 
     expect(drop).toEqual([])

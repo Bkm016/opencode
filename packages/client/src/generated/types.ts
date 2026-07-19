@@ -2439,62 +2439,6 @@ export type PermissionsReplyInput = {
 
 export type PermissionsReplyOutput = void
 
-export type FilesListInput = {
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path?: string | undefined
-  }["location"]
-  readonly path?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly path?: string | undefined
-  }["path"]
-}
-
-export type FilesListOutput = {
-  readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
-  }
-  readonly data: ReadonlyArray<{ readonly path: string; readonly type: "file" | "directory" }>
-}
-
-export type FilesFindInput = {
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly query: string
-    readonly type?: "file" | "directory" | undefined
-    readonly limit?: number | undefined
-  }["location"]
-  readonly query: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly query: string
-    readonly type?: "file" | "directory" | undefined
-    readonly limit?: number | undefined
-  }["query"]
-  readonly type?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly query: string
-    readonly type?: "file" | "directory" | undefined
-    readonly limit?: number | undefined
-  }["type"]
-  readonly limit?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-    readonly query: string
-    readonly type?: "file" | "directory" | undefined
-    readonly limit?: number | undefined
-  }["limit"]
-}
-
-export type FilesFindOutput = {
-  readonly location: {
-    readonly directory: string
-    readonly workspaceID?: string
-    readonly project: { readonly id: string; readonly directory: string }
-  }
-  readonly data: ReadonlyArray<{ readonly path: string; readonly type: "file" | "directory" }>
-}
-
 export type CommandsListInput = {
   readonly location?: {
     readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined

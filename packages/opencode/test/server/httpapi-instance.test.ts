@@ -2,7 +2,7 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { describe, expect } from "bun:test"
-import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"
+import { Config, Context, Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
@@ -230,22 +230,14 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("serves path and VCS read endpoints", () =>
+  it.live("serves path and VCS info endpoints", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      yield* fs.writeFileString(path.join(dir, "changed.txt"), "hello")
 
-      const [paths, vcs, diff] = yield* Effect.all(
+      const [paths, vcs] = yield* Effect.all(
         [
           HttpClientRequest.get(InstancePaths.path).pipe(directoryHeader(dir), HttpClient.execute),
           HttpClientRequest.get(InstancePaths.vcs).pipe(directoryHeader(dir), HttpClient.execute),
-          HttpClientRequest.get(InstancePaths.vcsDiff).pipe(
-            HttpClientRequest.setUrlParam("mode", "git"),
-            directoryHeader(dir),
-            HttpClient.execute,
-          ),
         ],
         { concurrency: "unbounded" },
       )
@@ -255,11 +247,6 @@ describe("instance HttpApi", () => {
 
       expect(vcs.status).toBe(200)
       expect(yield* vcs.json).toMatchObject({ branch: expect.any(String) })
-
-      expect(diff.status).toBe(200)
-      expect(yield* diff.json).toContainEqual(
-        expect.objectContaining({ file: "changed.txt", additions: 1, status: "added" }),
-      )
     }),
   )
 })

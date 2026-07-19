@@ -37,47 +37,6 @@ benchmark.describe("performance: home and tab navigation", () => {
     )
   })
 
-  benchmark("stages the review body after cold session content", async ({ page, report }) => {
-    await setup(page, [])
-    await page.goto("/")
-    const row = page.locator(homeRow).filter({ hasText: fixture.expected.targetTitle }).first()
-    await expect(row).toBeVisible()
-    const result = await page.evaluate(
-      ({ rowSelector, title, contentSelector }) =>
-        new Promise<{ contentBeforeReview: boolean; samples: number }>((resolve) => {
-          let samples = 0
-          const sample = () => {
-            samples++
-            const content = !!document.querySelector(contentSelector)
-            const review = !!document.querySelector('[data-component="session-review"]')
-            if (content && !review) {
-              resolve({ contentBeforeReview: true, samples })
-              return
-            }
-            if (content && review) {
-              resolve({ contentBeforeReview: false, samples })
-              return
-            }
-            requestAnimationFrame(sample)
-          }
-          const target = [...document.querySelectorAll<HTMLElement>(rowSelector)].find((item) =>
-            item.textContent?.includes(title),
-          )
-          if (!target) throw new Error(`Home session row not found: ${title}`)
-          target.click()
-          requestAnimationFrame(sample)
-        }),
-      {
-        rowSelector: homeRow,
-        title: fixture.expected.targetTitle,
-        contentSelector: messageSelector(fixture.expected.targetMessageIDs.at(-1)!),
-      },
-    )
-    report(result)
-    expect(result.contentBeforeReview).toBe(true)
-    await expect(page.locator('[data-component="session-review"]')).toBeVisible()
-  })
-
   benchmark("closes the only session tab and paints home", async ({ page, report }) => {
     await setup(page, [fixture.sourceID])
     const href = stressSessionHref(fixture.sourceID)

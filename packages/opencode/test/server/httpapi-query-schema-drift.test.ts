@@ -6,17 +6,11 @@ import { Server } from "../../src/server/server"
 import { SessionID } from "../../src/session/schema"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 import {
-  FilePaths,
-  FileQuery,
-  FindFileQuery,
-  FindTextQuery,
-} from "../../src/server/routes/instance/httpapi/groups/file"
-import {
   ExperimentalPaths,
   SessionListQuery as ExperimentalSessionListQuery,
   ToolListQuery,
 } from "../../src/server/routes/instance/httpapi/groups/experimental"
-import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/httpapi/groups/instance"
+import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   ListQuery as SessionListQuery,
@@ -48,12 +42,8 @@ type OpenApiOperation = { readonly parameters?: readonly OpenApiParameter[] }
 const openApiDriftRoutes = [
   { method: "get", path: SessionPaths.list, query: SessionListQuery },
   { method: "get", path: SessionPaths.messages, query: MessagesQuery },
-  { method: "get", path: FilePaths.findFile, query: FindFileQuery },
-  { method: "get", path: FilePaths.findText, query: FindTextQuery },
-  { method: "get", path: FilePaths.list, query: FileQuery },
   { method: "get", path: ExperimentalPaths.session, query: ExperimentalSessionListQuery },
   { method: "get", path: ExperimentalPaths.tool, query: ToolListQuery },
-  { method: "get", path: InstancePaths.vcsDiff, query: VcsDiffQuery },
   { method: "get", path: "/api/session/:sessionID/message", query: SessionMessagesQuery },
 ] satisfies Array<{ method: Method; path: string; query: QuerySchema }>
 
@@ -61,7 +51,6 @@ const numericSdkQueryParams = [
   { method: "get", path: ExperimentalPaths.session, name: "start", schema: { type: "number" } },
   { method: "get", path: ExperimentalPaths.session, name: "cursor", schema: { type: "number" } },
   { method: "get", path: ExperimentalPaths.session, name: "limit", schema: { type: "number" } },
-  { method: "get", path: FilePaths.findFile, name: "limit", schema: { type: "integer", minimum: 1, maximum: 200 } },
   { method: "get", path: SessionPaths.list, name: "start", schema: { type: "number" } },
   { method: "get", path: SessionPaths.list, name: "limit", schema: { type: "number" } },
   {
@@ -263,39 +252,6 @@ describe("httpapi query schema drift", () => {
   )
 
   it.live(
-    "file find/file accepts directory and workspace",
-    withTmp({ config: { formatter: false, lsp: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/find/file?query=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "file find/text accepts directory and workspace",
-    withTmp({ config: { formatter: false, lsp: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/find?pattern=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "file read accepts directory and workspace",
-    withTmp({ config: { formatter: false, lsp: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/file?path=foo&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
     "experimental session list accepts directory and workspace",
     withTmp({ config: { formatter: false, lsp: false } }, (tmp) =>
       Effect.gen(function* () {
@@ -317,14 +273,4 @@ describe("httpapi query schema drift", () => {
     ),
   )
 
-  it.live(
-    "vcs diff accepts directory and workspace",
-    withTmp({ config: { formatter: false, lsp: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/vcs/diff?mode=working&${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
 })

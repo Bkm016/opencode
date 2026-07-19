@@ -9,8 +9,6 @@ type PromptContextItem = ContextItem & { key: string }
 
 type ContextItemsProps = {
   items: PromptContextItem[]
-  active: (item: PromptContextItem) => boolean
-  openComment: (item: PromptContextItem) => void
   remove: (item: PromptContextItem) => void
   t: (key: string) => string
 }
@@ -24,8 +22,6 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
             const directory = getDirectory(item.path)
             const filename = getFilename(item.path)
             const label = getFilenameTruncated(item.path, 14)
-            const selected = props.active(item)
-
             return (
               <Tooltip
                 value={
@@ -40,11 +36,8 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 <div
                   classList={{
                     "group shrink-0 flex flex-col rounded-[6px] pl-2 pr-1 py-1 max-w-[200px] h-12 cursor-default transition-all transition-transform shadow-xs-border hover:shadow-xs-border-hover": true,
-                    "hover:bg-surface-interactive-weak": !!item.commentID && !selected,
-                    "bg-surface-interactive-hover hover:bg-surface-interactive-hover shadow-xs-border-hover": selected,
-                    "bg-background-stronger": !selected,
+                    "bg-background-stronger": true,
                   }}
-                  onClick={() => props.openComment(item)}
                 >
                   <div class="flex items-center gap-1.5">
                     <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-3.5" />

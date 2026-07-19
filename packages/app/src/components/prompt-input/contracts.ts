@@ -26,12 +26,6 @@ export type PromptInputControls = {
   }
   session: {
     id?: string
-    tabs: {
-      active: () => string | undefined
-      all: () => string[]
-      open: (tab: string) => void | Promise<void>
-      setActive: (tab: string) => void
-    }
     reviewPanel: {
       opened: () => boolean
       open: () => void

@@ -7,7 +7,6 @@ import { batch, startTransition, type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
 import { useLocal, type ModelSelection } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
@@ -202,7 +201,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const local = useLocal()
   const permission = usePermission()
   const prompt = input.prompt
-  const layout = useLayout()
   const language = useLanguage()
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
@@ -385,7 +383,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             model: { providerID: currentModel.provider.id, modelID: currentModel.id },
             variant: variant ?? null,
           })
-          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
           const draftID = search.draftId
           if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
           else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)

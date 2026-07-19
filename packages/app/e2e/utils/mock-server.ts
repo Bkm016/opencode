@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff"])
+const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status"])
 const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/experimental/resource"])
 
 export interface MockServerConfig {
@@ -9,7 +9,6 @@ export interface MockServerConfig {
   project: unknown
   sessions: ({ id: string } & Record<string, unknown>)[]
   pageMessages: (sessionId: string, limit: number, before?: string) => { items: unknown[]; cursor?: string }
-  vcsDiff?: unknown[]
   messageDelay?: number
   beforeMessagesResponse?: (input: { sessionID: string; before?: string }) => Promise<void>
   onMessages?: (input: { sessionID: string; before?: string; phase: "start" | "end" }) => void
@@ -67,7 +66,6 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (path === "/question")
       return json(route, typeof config.questions === "function" ? config.questions() : (config.questions ?? []))
     if (path === "/session/status") return json(route, config.sessionStatus ?? {})
-    if (path === "/vcs/diff" && config.vcsDiff) return json(route, config.vcsDiff)
     if (path === "/file" && config.fileList)
       return json(route, await config.fileList(url.searchParams.get("path") ?? ""))
     if (path === "/file/content" && config.fileContent)

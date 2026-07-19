@@ -2133,6 +2133,10 @@ export type InstructionEntry = {
   content: string
 }
 
+export type EffectHttpApiErrorInternalServerError = {
+  _tag: "InternalServerError"
+}
+
 export type ExperimentalCapabilities = {
   backgroundSubagents: boolean
 }
@@ -2141,10 +2145,6 @@ export type ConsoleState = {
   consoleManagedProviders: Array<string>
   activeOrgName?: string
   switchableOrgCount: number
-}
-
-export type EffectHttpApiErrorInternalServerError = {
-  _tag: "InternalServerError"
 }
 
 export type ToolListItem = {
@@ -2323,52 +2323,6 @@ export type StorageCompactResult = {
   durationMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
-export type Symbol = {
-  name: string
-  kind: number
-  location: {
-    uri: string
-    range: Range
-  }
-}
-
-export type FileNode = {
-  name: string
-  path: string
-  absolute: string
-  type: "file" | "directory"
-  ignored: boolean
-}
-
-export type FileContent = {
-  type: "text" | "binary"
-  content: string
-  diff?: string
-  patch?: {
-    oldFileName: string
-    newFileName: string
-    oldHeader?: string
-    newHeader?: string
-    hunks: Array<{
-      oldStart: number
-      oldLines: number
-      newStart: number
-      newLines: number
-      lines: Array<string>
-    }>
-    index?: string
-  }
-  encoding?: "base64"
-  mimeType?: string
-}
-
-export type File = {
-  path: string
-  added: number
-  removed: number
-  status: "added" | "deleted" | "modified"
-}
-
 export type DatabaseTable = {
   name: string
   rows?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -2409,14 +2363,6 @@ export type VcsFileStatus = {
   additions: number
   deletions: number
   status: "added" | "deleted" | "modified"
-}
-
-export type VcsFileDiff = {
-  file: string
-  patch?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
 }
 
 export type VcsApplyError = {
@@ -5090,11 +5036,6 @@ export type PermissionSavedInfo = {
   resource: string
 }
 
-export type FileSystemEntry = {
-  path: string
-  type: "file" | "directory"
-}
-
 export type CommandV2Info = {
   name: string
   template: string
@@ -7636,6 +7577,10 @@ export type ConfigInstructionsErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * InternalServerError
+   */
+  500: EffectHttpApiErrorInternalServerError
 }
 
 export type ConfigInstructionsError = ConfigInstructionsErrors[keyof ConfigInstructionsErrors]
@@ -8101,198 +8046,6 @@ export type ExperimentalStorageCompactResponses = {
 export type ExperimentalStorageCompactResponse =
   ExperimentalStorageCompactResponses[keyof ExperimentalStorageCompactResponses]
 
-export type FindTextData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    pattern: string
-  }
-  url: "/find"
-}
-
-export type FindTextErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FindTextError = FindTextErrors[keyof FindTextErrors]
-
-export type FindTextResponses = {
-  /**
-   * Matches
-   */
-  200: Array<{
-    path: {
-      text: string
-    }
-    lines: {
-      text: string
-    }
-    line_number: number
-    absolute_offset: number
-    submatches: Array<{
-      match: {
-        text: string
-      }
-      start: number
-      end: number
-    }>
-  }>
-}
-
-export type FindTextResponse = FindTextResponses[keyof FindTextResponses]
-
-export type FindFilesData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    query: string
-    dirs?: "true" | "false"
-    type?: "file" | "directory"
-    limit?: number
-  }
-  url: "/find/file"
-}
-
-export type FindFilesErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FindFilesError = FindFilesErrors[keyof FindFilesErrors]
-
-export type FindFilesResponses = {
-  /**
-   * File paths
-   */
-  200: Array<string>
-}
-
-export type FindFilesResponse = FindFilesResponses[keyof FindFilesResponses]
-
-export type FindSymbolsData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    query: string
-  }
-  url: "/find/symbol"
-}
-
-export type FindSymbolsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FindSymbolsError = FindSymbolsErrors[keyof FindSymbolsErrors]
-
-export type FindSymbolsResponses = {
-  /**
-   * Symbols
-   */
-  200: Array<Symbol>
-}
-
-export type FindSymbolsResponse = FindSymbolsResponses[keyof FindSymbolsResponses]
-
-export type FileListData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    path: string
-  }
-  url: "/file"
-}
-
-export type FileListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FileListError = FileListErrors[keyof FileListErrors]
-
-export type FileListResponses = {
-  /**
-   * Files and directories
-   */
-  200: Array<FileNode>
-}
-
-export type FileListResponse = FileListResponses[keyof FileListResponses]
-
-export type FileReadData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    path: string
-  }
-  url: "/file/content"
-}
-
-export type FileReadErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FileReadError = FileReadErrors[keyof FileReadErrors]
-
-export type FileReadResponses = {
-  /**
-   * File content
-   */
-  200: FileContent
-}
-
-export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
-
-export type FileStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/file/status"
-}
-
-export type FileStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type FileStatusError = FileStatusErrors[keyof FileStatusErrors]
-
-export type FileStatusResponses = {
-  /**
-   * File status
-   */
-  200: Array<File>
-}
-
-export type FileStatusResponse = FileStatusResponses[keyof FileStatusResponses]
-
 export type InstanceDisposeData = {
   body?: never
   path?: never
@@ -8432,36 +8185,6 @@ export type VcsStatusResponses = {
 }
 
 export type VcsStatusResponse = VcsStatusResponses[keyof VcsStatusResponses]
-
-export type VcsDiffData = {
-  body?: never
-  path?: never
-  query: {
-    directory?: string
-    workspace?: string
-    mode: "git" | "branch"
-    context?: number
-  }
-  url: "/vcs/diff"
-}
-
-export type VcsDiffErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsDiffError = VcsDiffErrors[keyof VcsDiffErrors]
-
-export type VcsDiffResponses = {
-  /**
-   * VCS diff
-   */
-  200: Array<VcsFileDiff>
-}
-
-export type VcsDiffResponse = VcsDiffResponses[keyof VcsDiffResponses]
 
 export type VcsDiffRawData = {
   body?: never
@@ -13018,118 +12741,6 @@ export type V2SessionPermissionReplyResponses = {
 
 export type V2SessionPermissionReplyResponse =
   V2SessionPermissionReplyResponses[keyof V2SessionPermissionReplyResponses]
-
-export type V2FsReadData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/fs/read/*"
-}
-
-export type V2FsReadErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2FsReadError = V2FsReadErrors[keyof V2FsReadErrors]
-
-export type V2FsReadResponses = {
-  /**
-   * Success
-   */
-  200: Blob | File
-}
-
-export type V2FsReadResponse = V2FsReadResponses[keyof V2FsReadResponses]
-
-export type V2FsListData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-    path?: string
-  }
-  url: "/api/fs/list"
-}
-
-export type V2FsListErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2FsListError = V2FsListErrors[keyof V2FsListErrors]
-
-export type V2FsListResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: Array<FileSystemEntry>
-  }
-}
-
-export type V2FsListResponse = V2FsListResponses[keyof V2FsListResponses]
-
-export type V2FsFindData = {
-  body?: never
-  path?: never
-  query: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-    query: string
-    type?: "file" | "directory"
-    limit?: string
-  }
-  url: "/api/fs/find"
-}
-
-export type V2FsFindErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2FsFindError = V2FsFindErrors[keyof V2FsFindErrors]
-
-export type V2FsFindResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: Array<FileSystemEntry>
-  }
-}
-
-export type V2FsFindResponse = V2FsFindResponses[keyof V2FsFindResponses]
 
 export type V2CommandListData = {
   body?: never

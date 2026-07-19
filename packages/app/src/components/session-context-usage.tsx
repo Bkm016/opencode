@@ -5,15 +5,12 @@ import { Button } from "@opencode-ai/ui/button"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 
-import { useFile } from "@/context/file"
-import { useLayout } from "@/context/layout"
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { getSessionContext } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -30,34 +27,15 @@ function ContextTooltipRow(props: { name: JSX.Element; value: JSX.Element }) {
   )
 }
 
-function openSessionContext(args: {
-  view: ReturnType<ReturnType<typeof useLayout>["view"]>
-  layout: ReturnType<typeof useLayout>
-  tabs: ReturnType<ReturnType<typeof useLayout>["tabs"]>
-}) {
-  args.view.reviewPanel.open(args.view.reviewPanel.opened() ? "other" : "context-button")
-  if (args.layout.fileTree.opened() && args.layout.fileTree.tab() !== "all") args.layout.fileTree.setTab("all")
-  void args.tabs.open("context")
-  args.tabs.setActive("context")
-}
-
 export function SessionContextUsage(props: SessionContextUsageProps) {
   const sync = useSync()
-  const file = useFile()
-  const layout = useLayout()
   const language = useLanguage()
   const sdk = useSDK()
   const providers = useProviders(() => sdk().directory)
-  const { params, tabs, view } = useSessionLayout()
+  const { params, view } = useSessionLayout()
 
   const variant = createMemo(() => props.variant ?? "button")
   const buttonAppearance = createMemo(() => props.buttonAppearance ?? "default")
-  const tabState = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
-    fileBrowser: () => false,
-  })
   const messages = createMemo(() => (params.id ? (sync().data.message[params.id] ?? []) : []))
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
@@ -73,28 +51,18 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
   })
-  const contextVisible = createMemo(() => view().reviewPanel.opened() && tabState.activeTab() === "context")
-  const hasOtherTabs = createMemo(() =>
-    tabs()
-      .all()
-      .some((tab) => tab !== "context" && tab !== "review"),
-  )
+  const contextVisible = createMemo(() => view().reviewPanel.opened())
 
   const openContext = () => {
     if (!params.id) return
 
     const sessionView = view()
     if (contextVisible()) {
-      tabs().close("context")
-      if (sessionView.reviewPanel.source() === "context-button" && !hasOtherTabs()) sessionView.reviewPanel.close()
+      if (sessionView.reviewPanel.source() === "context-button") sessionView.reviewPanel.close()
       return
     }
 
-    openSessionContext({
-      view: sessionView,
-      layout,
-      tabs: tabs(),
-    })
+    sessionView.reviewPanel.open("context-button")
   }
 
   const circle = () => (

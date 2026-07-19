@@ -11,7 +11,6 @@ import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
   WorkspaceRoutingMiddleware,
   WorkspaceRoutingQuery,
-  WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
@@ -45,12 +44,6 @@ const PathInfo = Schema.Struct({
   database: DatabaseInfo,
 }).annotate({ identifier: "Path" })
 
-export const VcsDiffQuery = Schema.Struct({
-  ...WorkspaceRoutingQueryFields,
-  mode: Vcs.Mode,
-  context: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
-})
-
 export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsApplyError")(
   {
     name: Schema.Literal("VcsApplyError"),
@@ -68,7 +61,6 @@ export const InstancePaths = {
   path: "/path",
   vcs: "/vcs",
   vcsStatus: "/vcs/status",
-  vcsDiff: "/vcs/diff",
   vcsDiffRaw: "/vcs/diff/raw",
   vcsApply: "/vcs/apply",
   command: "/command",
@@ -133,16 +125,6 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "vcs.status",
             summary: "Get VCS status",
             description: "Retrieve changed files in the current working tree without patches.",
-          }),
-        ),
-        HttpApiEndpoint.get("vcsDiff", InstancePaths.vcsDiff, {
-          query: VcsDiffQuery,
-          success: described(Schema.Array(Vcs.FileDiff), "VCS diff"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "vcs.diff",
-            summary: "Get VCS diff",
-            description: "Retrieve the current git diff for the working tree or against the default branch.",
           }),
         ),
         HttpApiEndpoint.get("vcsDiffRaw", InstancePaths.vcsDiffRaw, {

@@ -128,12 +128,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* vcs.status()
     })
 
-    const getVcsDiff = Effect.fn("InstanceHttpApi.vcsDiff")(function* (ctx: {
-      query: { mode: Vcs.Mode; context?: number }
-    }) {
-      return yield* vcs.diff(ctx.query.mode, { context: ctx.query.context })
-    })
-
     const getVcsDiffRaw = Effect.fn("InstanceHttpApi.vcsDiffRaw")(function* () {
       return yield* vcs.diffRaw()
     })
@@ -179,7 +173,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("path", getPath)
       .handle("vcs", getVcs)
       .handle("vcsStatus", getVcsStatus)
-      .handle("vcsDiff", getVcsDiff)
       .handle("vcsDiffRaw", getVcsDiffRaw)
       .handle("vcsApply", applyVcs)
       .handle("command", getCommand)

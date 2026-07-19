@@ -38,8 +38,6 @@ export const dict = {
   "command.session.archive": "Archive session",
   "command.session.archived": "Archived sessions",
 
-  "command.palette": "Command palette",
-
   "command.theme.cycle": "Cycle theme",
   "command.theme.set": "Use theme: {{theme}}",
   "command.theme.scheme.cycle": "Cycle color scheme",
@@ -49,14 +47,12 @@ export const dict = {
   "command.language.set": "Use language: {{language}}",
 
   "command.session.new": "New session",
-  "command.file.open": "Open file",
   "command.tab.close": "Close tab",
   "command.tab.reopenClosed": "Reopen closed tab",
   "command.context.addSelection": "Add selection to context",
   "command.context.addSelection.description": "Add selected lines from the current file",
   "command.input.focus": "Focus input",
   "command.terminal.toggle": "Toggle terminal",
-  "command.fileTree.toggle": "Toggle file tree",
   "command.review.toggle": "Toggle review",
   "command.terminal.new": "New terminal",
   "command.terminal.new.description": "Create a new terminal tab",
@@ -103,12 +99,6 @@ export const dict = {
   "command.session.share.description": "Share this session and copy the URL to clipboard",
   "command.session.unshare": "Unshare session",
   "command.session.unshare.description": "Stop sharing this session",
-
-  "palette.search.placeholder": "Search files, commands, and sessions",
-  "palette.search.placeholder.home": "Search commands and sessions",
-  "palette.empty": "No results found",
-  "palette.group.commands": "Commands",
-  "palette.group.files": "Files",
 
   "dialog.provider.search.placeholder": "Search providers",
   "dialog.provider.empty": "No providers found",
@@ -590,9 +580,6 @@ export const dict = {
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",
 
-  "toast.file.loadFailed.title": "Failed to load file",
-  "toast.file.listFailed.title": "Failed to list files",
-
   "toast.context.noLineSelection.title": "No line selection",
   "toast.context.noLineSelection.description": "Select a line range in a file tab first.",
 
@@ -702,7 +689,6 @@ export const dict = {
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.tab.unknown": "Unknown Session",
-  "session.panel.reviewAndFiles": "Review and files",
   "session.error.notFound": "This session cannot be found",
   "session.error.notFound.description": "This tab points to a session that no longer exists on this server.",
   "session.error.notFound.closeTab": "Close Tab",
@@ -721,11 +707,6 @@ export const dict = {
   "session.review.noChanges": "No changes",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
-
-  "session.files.selectToOpen": "Select a file to open",
-  "session.files.all": "All files",
-  "session.files.empty": "No files",
-  "session.files.binaryContent": "Binary file (content cannot be displayed)",
 
   "session.messages.renderEarlier": "Render earlier messages",
   "session.messages.loadingEarlier": "Loading earlier messages...",
@@ -768,8 +749,6 @@ export const dict = {
   "session.new.workspace.existing": "Workspace…",
   "session.new.lastModified": "Last modified",
 
-  "session.header.search.placeholder": "Search {{project}}",
-  "session.header.searchFiles": "Search files",
   "session.header.openIn": "Open in",
   "session.header.open.action": "Open {{app}}",
   "session.header.open.ariaLabel": "Open in {{app}}",
@@ -1051,12 +1030,8 @@ export const dict = {
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",
   "settings.general.row.followup.option.steer": "Steer",
-  "settings.general.row.showFileTree.title": "File tree",
-  "settings.general.row.showFileTree.description": "Show the file tree panel in sessions",
   "settings.general.row.showNavigation.title": "Navigation controls",
   "settings.general.row.showNavigation.description": "Show the back and forward buttons in the desktop title bar",
-  "settings.general.row.showSearch.title": "Command palette",
-  "settings.general.row.showSearch.description": "Show the search and command palette button in the title bar",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Show the terminal button in the desktop title bar",
   "settings.general.row.showStatus.title": "Server status",

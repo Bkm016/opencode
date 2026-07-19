@@ -177,18 +177,13 @@ describe("OpenAPI.fromSpec", () => {
     const spec = await opencodeSpec()
     const result = OpenAPI.fromSpec({ spec, baseUrl })
 
-    expect(result.skipped).toHaveLength(5)
+    expect(result.skipped).toHaveLength(4)
     expect(result.skipped).toContainEqual({
       method: "GET",
       path: "/api/pty/{ptyID}/connect",
       reason: "WebSocket operations are not supported",
     })
     expect(result.skipped.filter((item) => item.reason === "SSE operations are not supported")).toHaveLength(3)
-    expect(result.skipped).toContainEqual({
-      method: "GET",
-      path: "/api/fs/read/*",
-      reason: "binary responses are not supported",
-    })
     expect(toolAt(result.tools, "v2.health.get")).not.toBeUndefined()
     expect(toolAt(result.tools, "v2.session.get")).not.toBeUndefined()
     expect(toolAt(result.tools, "v2.session.create")).not.toBeUndefined()

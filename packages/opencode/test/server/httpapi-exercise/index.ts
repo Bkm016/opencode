@@ -156,10 +156,6 @@ const scenarios: Scenario[] = [
     }),
   http.protected.get("/vcs", "vcs.get").json(),
   http.protected.get("/vcs/status", "vcs.status").json(200, array),
-  http.protected
-    .get("/vcs/diff", "vcs.diff")
-    .at((ctx) => ({ path: "/vcs/diff?mode=git", headers: ctx.headers() }))
-    .json(200, array),
   http.protected.get("/vcs/diff/raw", "vcs.diff.raw").status(
     200,
     (_ctx, result) =>
@@ -354,45 +350,6 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(404, object, "status"),
-  http.protected
-    .get("/file", "file.list")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({ path: `/file?${new URLSearchParams({ path: "." })}`, headers: ctx.headers() }))
-    .json(200, array),
-  http.protected
-    .get("/file/content", "file.read")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({ path: `/file/content?${new URLSearchParams({ path: "hello.txt" })}`, headers: ctx.headers() }))
-    .json(200, (body) => {
-      object(body)
-      check(body.content === "hello", `content should match seeded file: ${JSON.stringify(body)}`)
-    }),
-  http.protected
-    .get("/file/content", "file.read.missing")
-    .at((ctx) => ({ path: `/file/content?${new URLSearchParams({ path: "missing.txt" })}`, headers: ctx.headers() }))
-    .json(200, (body) => {
-      object(body)
-      check(body.type === "text" && body.content === "", "missing file content should return an empty text result")
-    }),
-  http.protected.get("/file/status", "file.status").json(200, array),
-  http.protected
-    .get("/find", "find.text")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({ path: `/find?${new URLSearchParams({ pattern: "hello" })}`, headers: ctx.headers() }))
-    .json(200, array),
-  http.protected
-    .get("/find/file", "find.files")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({
-      path: `/find/file?${new URLSearchParams({ query: "hello", dirs: "false" })}`,
-      headers: ctx.headers(),
-    }))
-    .json(200, array),
-  http.protected
-    .get("/find/symbol", "find.symbols")
-    .seeded((ctx) => ctx.file("hello.ts", "export const hello = 1\n"))
-    .at((ctx) => ({ path: `/find/symbol?${new URLSearchParams({ query: "hello" })}`, headers: ctx.headers() }))
-    .json(200, array),
   http.protected
     .get("/event", "event.stream")
     .stream()
@@ -782,25 +739,6 @@ const scenarios: Scenario[] = [
         }),
       "status",
     ),
-  http.protected
-    .get("/api/fs/read/*", "v2.fs.read")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({ path: "/api/fs/read/hello.txt", headers: ctx.headers() }))
-    .status(
-      200,
-      (_ctx, result) =>
-        Effect.sync(() => {
-          check(result.text === "hello\n", "v2 fs read should return the file body")
-          check(result.contentType.includes("text/plain"), "v2 fs read should return the file content type")
-        }),
-      "status",
-    ),
-  http.protected.get("/api/fs/list", "v2.fs.list").json(200, locationData(array)),
-  http.protected
-    .get("/api/fs/find", "v2.fs.find")
-    .seeded((ctx) => ctx.file("hello.txt", "hello\n"))
-    .at((ctx) => ({ path: "/api/fs/find?query=hello&type=file", headers: ctx.headers() }))
-    .json(200, locationData(array)),
   http.protected.get("/api/pty", "v2.pty.list").json(200, locationData(array)),
   http.protected
     .post("/api/pty", "v2.pty.create")

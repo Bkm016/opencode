@@ -49,7 +49,6 @@ export function createPromptInputController(input: {
     },
     session: {
       id: input.sessionID(),
-      tabs: layout.tabs(input.sessionKey),
       reviewPanel: view.reviewPanel,
     },
   }))

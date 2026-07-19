@@ -1,7 +1,6 @@
 import { Component, For, Match, Show, Switch } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 
 export type AtOption =
   | { type: "agent"; name: string; display: string }
@@ -15,7 +14,6 @@ export type AtOption =
       mime?: string
     }
   | { type: "reference"; name: string; path: string; display: string; description: string }
-  | { type: "file"; path: string; display: string; recent?: boolean }
 
 export interface SlashCommand {
   id: string
@@ -127,28 +125,6 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                     )
                   }
 
-                  const isDirectory = item.path.endsWith("/")
-                  const directory = isDirectory ? item.path : getDirectory(item.path)
-                  const filename = isDirectory ? "" : getFilename(item.path)
-
-                  return (
-                    <button
-                      class="w-full flex items-center gap-x-2 px-2 py-0.5 rounded-md"
-                      classList={{
-                        "bg-surface-raised-base-hover": props.atActive === key,
-                      }}
-                      onClick={() => props.onAtSelect(item)}
-                      onPointerMove={() => props.setAtActive(key)}
-                    >
-                      <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-4" />
-                      <div class="flex items-center min-w-0 text-14-regular">
-                        <span class="whitespace-nowrap truncate min-w-0 text-text-weak">{directory}</span>
-                        <Show when={!isDirectory}>
-                          <span class="whitespace-nowrap text-text-strong">{filename}</span>
-                        </Show>
-                      </div>
-                    </button>
-                  )
                 }}
               </For>
             </Show>

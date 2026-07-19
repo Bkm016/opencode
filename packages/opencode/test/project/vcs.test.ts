@@ -2,9 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { parsePatch } from "diff"
 import { Deferred, Effect, Layer } from "effect"
-import fs from "fs/promises"
 import path from "path"
 import {
   disposeAllInstances,
@@ -23,8 +21,6 @@ import { testEffect } from "../lib/effect"
 // Helpers
 // ---------------------------------------------------------------------------
 
-const weird = process.platform === "win32" ? "space file.txt" : "tab\tfile.txt"
-
 const layer = LayerNode.compile(
   LayerNode.group([Vcs.node, Git.node, EventV2Bridge.node, FSUtil.node, CrossSpawnSpawner.node]),
 )
@@ -39,12 +35,6 @@ const git = Effect.fn("VcsTest.git")(function* (cwd: string, args: string[]) {
 const write = Effect.fn("VcsTest.write")(function* (file: string, content: string) {
   yield* FSUtil.Service.use((fs) => fs.writeWithDirs(file, content))
 })
-
-const remove = Effect.fn("VcsTest.remove")(function* (file: string) {
-  yield* FSUtil.Service.use((fs) => fs.remove(file))
-})
-
-const symlink = (target: string, file: string) => Effect.promise(() => fs.symlink(target, file))
 
 const init = Effect.fn("VcsTest.init")(function* () {
   const vcs = yield* Vcs.Service
@@ -210,126 +200,4 @@ describe("Vcs diff", () => {
     }),
   )
 
-  it.instance(
-    "diff('git') returns uncommitted changes",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        yield* write(path.join(test.directory, "file.txt"), "original\n")
-        yield* git(test.directory, ["add", "."])
-        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "add file"])
-        yield* write(path.join(test.directory, "file.txt"), "changed\n")
-
-        const vcs = yield* init()
-        const diff = yield* vcs.diff("git")
-
-        expect(diff).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              file: "file.txt",
-              status: "modified",
-            }),
-          ]),
-        )
-        expect(diff.find((item) => item.file === "file.txt")?.patch).toContain("diff --git")
-      }),
-    { git: true },
-  )
-
-  it.instance(
-    "diff('git') handles special filenames",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        yield* write(path.join(test.directory, weird), "hello\n")
-
-        const vcs = yield* init()
-        const diff = yield* vcs.diff("git")
-
-        expect(diff).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              file: weird,
-              status: "added",
-            }),
-          ]),
-        )
-      }),
-    { git: true },
-  )
-
-  it.instance(
-    "diff('git') keeps batched patches aligned for type changes",
-    () =>
-      Effect.gen(function* () {
-        if (process.platform === "win32") return
-
-        const test = yield* TestInstance
-        yield* write(path.join(test.directory, "a.txt"), "old\n")
-        yield* write(path.join(test.directory, "b.txt"), "old\n")
-        yield* git(test.directory, ["add", "."])
-        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "add files"])
-        yield* remove(path.join(test.directory, "a.txt"))
-        yield* symlink("target", path.join(test.directory, "a.txt"))
-        yield* write(path.join(test.directory, "b.txt"), "new\n")
-
-        const vcs = yield* init()
-        const diff = yield* vcs.diff("git")
-        const a = diff.find((item) => item.file === "a.txt")
-        const b = diff.find((item) => item.file === "b.txt")
-
-        expect(a?.patch).toContain("deleted file mode")
-        expect(a?.patch).toContain("new file mode")
-        expect(b?.patch).toContain("+new")
-      }),
-    { git: true },
-  )
-
-  it.instance(
-    "diff('git') keeps carriage returns inside patch hunks",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        yield* write(path.join(test.directory, "file.txt"), "keep\nsame\rdiff --git inside\ndelete\n")
-        yield* git(test.directory, ["add", "."])
-        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "add file"])
-        yield* write(path.join(test.directory, "file.txt"), "keep\nadd\nsame\rdiff --git inside\n")
-
-        const vcs = yield* init()
-        const diff = yield* vcs.diff("git")
-        const file = diff.find((item) => item.file === "file.txt")
-
-        expect(file?.patch).toContain(" same\rdiff --git inside")
-        expect(file?.patch).toContain("-delete")
-        expect(() => parsePatch(file?.patch ?? "")).not.toThrow()
-      }),
-    { git: true },
-    20_000,
-  )
-
-  it.instance(
-    "diff('branch') returns changes against default branch",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        yield* git(test.directory, ["branch", "-M", "main"])
-        yield* git(test.directory, ["checkout", "-b", "feature/test"])
-        yield* write(path.join(test.directory, "branch.txt"), "hello\n")
-        yield* git(test.directory, ["add", "."])
-        yield* git(test.directory, ["commit", "--no-gpg-sign", "-m", "branch file"])
-
-        const vcs = yield* init()
-        const diff = yield* vcs.diff("branch")
-
-        expect(diff).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              file: "branch.txt",
-              status: "added",
-            }),
-          ]),
-        )
-      }),
-    { git: true },
-  )
 })

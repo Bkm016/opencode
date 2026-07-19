@@ -10,7 +10,7 @@ import {
   createSignal,
   type JSX,
 } from "solid-js"
-import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
+import { selectionFromLines, type SelectedLineRange } from "@/context/file"
 import {
   ContentPart,
   DEFAULT_PROMPT,
@@ -22,7 +22,6 @@ import {
   AgentPart,
   FileAttachmentPart,
 } from "@/context/prompt"
-import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useComments } from "@/context/comments"
@@ -40,7 +39,6 @@ import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
@@ -108,16 +106,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
 
   const sync = useSync()
-  const files = useFile()
   const prompt = props.state ?? usePrompt()
-  const layout = useLayout()
   const comments = useComments()
   const dialog = useDialog()
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
   const platform = usePlatform()
-  const tabs = () => props.controls.session.tabs
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
@@ -169,78 +164,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
 
-  const activeFileTab = createSessionTabs({
-    tabs,
-    pathFromTab: files.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? files.tab(tab) : tab),
-  }).activeFileTab
-
-  const commentInReview = (path: string) => {
-    const sessionID = props.controls.session.id
-    if (!sessionID) return false
-
-    const diffs = sync().data.session_diff[sessionID]
-    if (!diffs) return false
-    return diffs.some((diff) => diff.file === path)
-  }
-
-  const openComment = (item: { path: string; commentID?: string; commentOrigin?: "review" | "file" }) => {
-    if (!item.commentID) return
-
-    const focus = { file: item.path, id: item.commentID }
-    comments.setActive(focus)
-
-    const queueCommentFocus = (attempts = 6) => {
-      const schedule = (left: number) => {
-        requestAnimationFrame(() => {
-          comments.setFocus({ ...focus })
-          if (left <= 0) return
-          requestAnimationFrame(() => {
-            const current = comments.focus()
-            if (!current) return
-            if (current.file !== focus.file || current.id !== focus.id) return
-            schedule(left - 1)
-          })
-        })
-      }
-
-      schedule(attempts)
-    }
-
-    const wantsReview = item.commentOrigin === "review" || (item.commentOrigin !== "file" && commentInReview(item.path))
-    if (wantsReview) {
-      if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-      layout.fileTree.setTab("changes")
-      tabs().setActive("review")
-      queueCommentFocus()
-      return
-    }
-
-    if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-    layout.fileTree.setTab("all")
-    const tab = files.tab(item.path)
-    void tabs().open(tab)
-    tabs().setActive(tab)
-    void Promise.resolve(files.load(item.path)).finally(() => queueCommentFocus())
-  }
-
-  const recent = createMemo(() => {
-    const all = tabs().all()
-    const active = activeFileTab()
-    const order = active ? [active, ...all.filter((x) => x !== active)] : all
-    const seen = new Set<string>()
-    const paths: string[] = []
-
-    for (const tab of order) {
-      const path = files.pathFromTab(tab)
-      if (!path) continue
-      if (seen.has(path)) continue
-      seen.add(path)
-      paths.push(path)
-    }
-
-    return paths
-  })
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
   const imageAttachments = createMemo(() =>
@@ -626,15 +549,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       })
       return
     }
-    addPart({ type: "file", path: option.path, content: "@" + option.path, start: 0, end: 0 })
   }
 
   const atKey = (x: AtOption | undefined) => {
     if (!x) return ""
     if (x.type === "agent") return `agent:${x.name}`
     if (x.type === "reference") return `reference:${x.name}`
-    if (x.type === "resource") return `resource:${x.client}:${x.uri}`
-    return `file:${x.path}`
+    return `resource:${x.client}:${x.uri}`
   }
 
   const {
@@ -644,37 +565,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onInput: atOnInput,
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
-    items: async (query) => {
+    items: () => {
       const references = referenceList()
       const agents = agentList()
       const mcpResources = mcpResourceList()
-      const open = recent()
-      const seen = new Set(open)
-      const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
-      if (!query.trim()) return [...references, ...agents, ...mcpResources, ...pinned]
-      const paths = await files.searchFilesAndDirectories(query)
-      const fileOptions: AtOption[] = paths
-        .filter((path) => !seen.has(path))
-        .map((path) => ({ type: "file", path, display: path }))
-      return [...references, ...agents, ...mcpResources, ...pinned, ...fileOptions]
+      return [...references, ...agents, ...mcpResources]
     },
     key: atKey,
     filterKeys: ["display"],
-    skipFilter: (item) => item.type === "file" && !item.recent,
     groupBy: (item) => {
       if (item.type === "reference") return "reference"
       if (item.type === "agent") return "agent"
-      if (item.type === "resource") return "resource"
-      if (item.recent) return "recent"
-      return "file"
+      return "resource"
     },
     sortGroupsBy: (a, b) => {
       const rank = (category: string) => {
         if (category === "reference") return 0
         if (category === "agent") return 1
         if (category === "resource") return 2
-        if (category === "recent") return 3
-        return 4
+        return 3
       }
       return rank(a.category) - rank(b.category)
     },
@@ -1466,11 +1375,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         />
         <PromptContextItems
           items={contextItems()}
-          active={(item) => {
-            const active = comments.active()
-            return !!item.commentID && item.commentID === active?.id && item.path === active?.file
-          }}
-          openComment={openComment}
           remove={(item) => {
             if (item.commentID) comments.remove(item.path, item.commentID)
             prompt.context.remove(item.key)

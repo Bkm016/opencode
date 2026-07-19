@@ -1,6 +1,6 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
 import { parsePatch } from "diff"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 
 type LegacyDiff = {
   file: string
@@ -13,7 +13,7 @@ type LegacyDiff = {
 }
 
 type SnapshotDiff = SnapshotFileDiff & { file: string }
-type ReviewDiff = SnapshotDiff | VcsFileDiff | LegacyDiff
+type ReviewDiff = SnapshotDiff | LegacyDiff
 export type DiffSource = Pick<LegacyDiff, "file" | "patch" | "before" | "after">
 
 export type ViewDiff = {
@@ -74,7 +74,7 @@ function completePatchContents(patch: string) {
   try {
     const parsed = parsePatch(patch)[0]
     if (!parsed || (!parsed.index && !parsed.oldFileName && !parsed.newFileName)) return
-    // Snapshot and VCS producers request full context. Tool patches use jsdiff's shorter default context.
+    // Snapshot producers request full context. Tool patches use jsdiff's shorter default context.
     if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) return
     // Full patches collapse into one leading hunk. Separated hunks omit ranges and must stay partial.
     if (parsed.hunks.length !== 1) return

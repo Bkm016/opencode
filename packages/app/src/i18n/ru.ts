@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "Следующая непрочитанная сессия",
   "command.session.archive": "Архивировать сессию",
 
-  "command.palette": "Палитра команд",
-
   "command.theme.cycle": "Цикл тем",
   "command.theme.set": "Использовать тему: {{theme}}",
   "command.theme.scheme.cycle": "Цикл цветовой схемы",
@@ -46,14 +44,12 @@ export const dict = {
   "command.language.set": "Использовать язык: {{language}}",
 
   "command.session.new": "Новая сессия",
-  "command.file.open": "Открыть файл",
   "command.tab.close": "Закрыть вкладку",
   "command.tab.reopenClosed": "Повторно открыть закрытую вкладку",
   "command.context.addSelection": "Добавить выделение в контекст",
   "command.context.addSelection.description": "Добавить выбранные строки из текущего файла",
   "command.input.focus": "Фокус на поле ввода",
   "command.terminal.toggle": "Переключить терминал",
-  "command.fileTree.toggle": "Переключить дерево файлов",
   "command.review.toggle": "Переключить обзор",
   "command.terminal.new": "Новый терминал",
   "command.terminal.new.description": "Создать новую вкладку терминала",
@@ -91,12 +87,6 @@ export const dict = {
   "command.session.share.description": "Поделиться сессией и скопировать URL в буфер обмена",
   "command.session.unshare": "Отменить публикацию",
   "command.session.unshare.description": "Прекратить публикацию сессии",
-
-  "palette.search.placeholder": "Поиск файлов, команд и сессий",
-  "palette.search.placeholder.home": "Поиск команд и сессий",
-  "palette.empty": "Ничего не найдено",
-  "palette.group.commands": "Команды",
-  "palette.group.files": "Файлы",
 
   "dialog.provider.search.placeholder": "Поиск провайдеров",
   "dialog.provider.empty": "Провайдеры не найдены",
@@ -515,9 +505,6 @@ export const dict = {
   "toast.model.none.title": "Модель не выбрана",
   "toast.model.none.description": "Подключите провайдера для суммаризации сессии",
 
-  "toast.file.loadFailed.title": "Не удалось загрузить файл",
-
-  "toast.file.listFailed.title": "Не удалось получить список файлов",
   "toast.context.noLineSelection.title": "Нет выделения строк",
   "toast.context.noLineSelection.description": "Сначала выберите диапазон строк во вкладке файла.",
   "toast.session.share.copyFailed.title": "Не удалось скопировать URL в буфер обмена",
@@ -617,7 +604,6 @@ export const dict = {
   "session.tab.review": "Обзор",
   "session.tab.context": "Контекст",
   "session.tab.unknown": "Неизвестная сессия",
-  "session.panel.reviewAndFiles": "Обзор и файлы",
   "session.error.notFound": "Эта сессия не найдена",
   "session.error.notFound.description": "Эта вкладка указывает на сессию, которой больше нет на этом сервере.",
   "session.error.notFound.closeTab": "Закрыть вкладку",
@@ -632,10 +618,6 @@ export const dict = {
   "session.review.noChanges": "Нет изменений",
   "session.review.noUncommittedChanges": "Пока нет незафиксированных изменений",
   "session.review.noBranchChanges": "Пока нет изменений в ветке",
-  "session.files.selectToOpen": "Выберите файл, чтобы открыть",
-  "session.files.all": "Все файлы",
-  "session.files.empty": "Нет файлов",
-  "session.files.binaryContent": "Двоичный файл (содержимое не может быть отображено)",
   "session.messages.renderEarlier": "Показать предыдущие сообщения",
   "session.messages.loadingEarlier": "Загрузка предыдущих сообщений...",
   "session.messages.loadEarlier": "Загрузить предыдущие сообщения",
@@ -675,8 +657,6 @@ export const dict = {
   "session.new.workspace.existing": "Рабочее пространство…",
   "session.new.lastModified": "Последнее изменение",
 
-  "session.header.search.placeholder": "Поиск {{project}}",
-  "session.header.searchFiles": "Поиск файлов",
   "session.header.openIn": "Открыть в",
   "session.header.open.action": "Открыть {{app}}",
   "session.header.open.ariaLabel": "Открыть в {{app}}",
@@ -784,13 +764,9 @@ export const dict = {
     "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
   "settings.general.row.followup.option.queue": "Очередь",
   "settings.general.row.followup.option.steer": "Направлять",
-  "settings.general.row.showFileTree.title": "Дерево файлов",
-  "settings.general.row.showFileTree.description": "Показывать панель дерева файлов в сессиях",
   "settings.general.row.showNavigation.title": "Элементы навигации",
   "settings.general.row.showNavigation.description":
     "Показывать кнопки «Назад» и «Вперёд» в строке заголовка приложения",
-  "settings.general.row.showSearch.title": "Палитра команд",
-  "settings.general.row.showSearch.description": "Показывать кнопку поиска и палитры команд в строке заголовка",
   "settings.general.row.showTerminal.title": "Терминал",
   "settings.general.row.showTerminal.description": "Показывать кнопку терминала в строке заголовка приложения",
   "settings.general.row.showStatus.title": "Состояние сервера",

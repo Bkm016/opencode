@@ -68,20 +68,8 @@ import type {
   ExperimentalWorkspaceSyncListResponses,
   ExperimentalWorkspaceWarpErrors,
   ExperimentalWorkspaceWarpResponses,
-  FileListErrors,
-  FileListResponses,
   FilePartInput,
   FilePartSource,
-  FileReadErrors,
-  FileReadResponses,
-  FileStatusErrors,
-  FileStatusResponses,
-  FindFilesErrors,
-  FindFilesResponses,
-  FindSymbolsErrors,
-  FindSymbolsResponses,
-  FindTextErrors,
-  FindTextResponses,
   FormatterStatusErrors,
   FormatterStatusResponses,
   GlobalConfigGetErrors,
@@ -284,12 +272,6 @@ import type {
   V2CredentialUpdateResponses,
   V2EventSubscribeErrors,
   V2EventSubscribeResponses,
-  V2FsFindErrors,
-  V2FsFindResponses,
-  V2FsListErrors,
-  V2FsListResponses,
-  V2FsReadErrors,
-  V2FsReadResponses,
   V2HealthGetErrors,
   V2HealthGetResponses,
   V2IntegrationAttemptCancelErrors,
@@ -398,10 +380,8 @@ import type {
   V2SkillListResponses,
   VcsApplyErrors,
   VcsApplyResponses,
-  VcsDiffErrors,
   VcsDiffRawErrors,
   VcsDiffRawResponses,
-  VcsDiffResponses,
   VcsGetErrors,
   VcsGetResponses,
   VcsStatusErrors,
@@ -1875,206 +1855,6 @@ export class Worktree extends HeyApiClient {
   }
 }
 
-export class Find extends HeyApiClient {
-  /**
-   * Find text
-   *
-   * Search for text patterns across files in the project using ripgrep.
-   */
-  public text<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      pattern: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "pattern" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FindTextResponses, FindTextErrors, ThrowOnError>({
-      url: "/find",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Find files
-   *
-   * Search for files or directories by name or pattern in the project directory.
-   */
-  public files<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      query: string
-      dirs?: "true" | "false"
-      type?: "file" | "directory"
-      limit?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "query" },
-            { in: "query", key: "dirs" },
-            { in: "query", key: "type" },
-            { in: "query", key: "limit" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FindFilesResponses, FindFilesErrors, ThrowOnError>({
-      url: "/find/file",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Find symbols
-   *
-   * Search for workspace symbols like functions, classes, and variables using LSP.
-   */
-  public symbols<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      query: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "query" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FindSymbolsResponses, FindSymbolsErrors, ThrowOnError>({
-      url: "/find/symbol",
-      ...options,
-      ...params,
-    })
-  }
-}
-
-export class File extends HeyApiClient {
-  /**
-   * List files
-   *
-   * List files and directories in a specified path.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      path: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "path" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FileListResponses, FileListErrors, ThrowOnError>({
-      url: "/file",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Read file
-   *
-   * Read the content of a specified file.
-   */
-  public read<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      path: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "path" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FileReadResponses, FileReadErrors, ThrowOnError>({
-      url: "/file/content",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get file status
-   *
-   * Get the git status of all files in the project.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FileStatusResponses, FileStatusErrors, ThrowOnError>({
-      url: "/file/status",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Instance extends HeyApiClient {
   /**
    * Dispose instance
@@ -2263,40 +2043,6 @@ export class Vcs extends HeyApiClient {
   }
 
   /**
-   * Get VCS diff
-   *
-   * Retrieve the current git diff for the working tree or against the default branch.
-   */
-  public diff<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      mode: "git" | "branch"
-      context?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "mode" },
-            { in: "query", key: "context" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<VcsDiffResponses, VcsDiffErrors, ThrowOnError>({
-      url: "/vcs/diff",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
    * Apply VCS patch
    *
    * Apply a raw patch to the current working tree.
@@ -2334,7 +2080,7 @@ export class Vcs extends HeyApiClient {
   }
 
   private _diff?: Diff
-  get diff2(): Diff {
+  get diff(): Diff {
     return (this._diff ??= new Diff({ client: this.client }))
   }
 }
@@ -6587,100 +6333,6 @@ export class Permission3 extends HeyApiClient {
   }
 }
 
-export class Fs extends HeyApiClient {
-  /**
-   * Read file
-   *
-   * Serve one file relative to the requested location.
-   */
-  public read<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
-    return (options?.client ?? this.client).get<V2FsReadResponses, V2FsReadErrors, ThrowOnError>({
-      url: "/api/fs/read/*",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * List directory
-   *
-   * List direct children of one directory relative to the requested location.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      path?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "location" },
-            { in: "query", key: "path" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<V2FsListResponses, V2FsListErrors, ThrowOnError>({
-      url: "/api/fs/list",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Find files
-   *
-   * Find recursively ranked filesystem entries relative to the requested location.
-   */
-  public find<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      query: string
-      type?: "file" | "directory"
-      limit?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "location" },
-            { in: "query", key: "query" },
-            { in: "query", key: "type" },
-            { in: "query", key: "limit" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<V2FsFindResponses, V2FsFindErrors, ThrowOnError>({
-      url: "/api/fs/find",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Command2 extends HeyApiClient {
   /**
    * List commands
@@ -7216,11 +6868,6 @@ export class V2 extends HeyApiClient {
     return (this._permission ??= new Permission3({ client: this.client }))
   }
 
-  private _fs?: Fs
-  get fs(): Fs {
-    return (this._fs ??= new Fs({ client: this.client }))
-  }
-
   private _command?: Command2
   get command(): Command2 {
     return (this._command ??= new Command2({ client: this.client }))
@@ -7303,16 +6950,6 @@ export class OpencodeClient extends HeyApiClient {
   private _worktree?: Worktree
   get worktree(): Worktree {
     return (this._worktree ??= new Worktree({ client: this.client }))
-  }
-
-  private _find?: Find
-  get find(): Find {
-    return (this._find ??= new Find({ client: this.client }))
-  }
-
-  private _file?: File
-  get file(): File {
-    return (this._file ??= new File({ client: this.client }))
   }
 
   private _instance?: Instance

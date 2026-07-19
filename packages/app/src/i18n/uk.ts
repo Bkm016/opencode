@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "Наступна непрочитана сесія",
   "command.session.archive": "Архівувати сесію",
 
-  "command.palette": "Палітра команд",
-
   "command.theme.cycle": "Перемкнути тему",
   "command.theme.set": "Використати тему: {{theme}}",
   "command.theme.scheme.cycle": "Перемкнути кольорову схему",
@@ -46,14 +44,12 @@ export const dict = {
   "command.language.set": "Використати мову: {{language}}",
 
   "command.session.new": "Нова сесія",
-  "command.file.open": "Відкрити файл",
   "command.tab.close": "Закрити вкладку",
   "command.tab.reopenClosed": "Повторно відкрити закриту вкладку",
   "command.context.addSelection": "Додати виділення до контексту",
   "command.context.addSelection.description": "Додати вибрані рядки з поточного файлу",
   "command.input.focus": "Фокус на полі введення",
   "command.terminal.toggle": "Перемкнути термінал",
-  "command.fileTree.toggle": "Перемкнути дерево файлів",
   "command.review.toggle": "Перемкнути огляд",
   "command.terminal.new": "Новий термінал",
   "command.terminal.new.description": "Створити нову вкладку термінала",
@@ -91,12 +87,6 @@ export const dict = {
   "command.session.share.description": "Поділитися цією сесією та скопіювати URL у буфер обміну",
   "command.session.unshare": "Припинити поширення сесії",
   "command.session.unshare.description": "Припинити поширення цієї сесії",
-
-  "palette.search.placeholder": "Пошук файлів, команд і сесій",
-  "palette.search.placeholder.home": "Пошук команд і сесій",
-  "palette.empty": "Результатів не знайдено",
-  "palette.group.commands": "Команди",
-  "palette.group.files": "Файли",
 
   "dialog.provider.search.placeholder": "Пошук провайдерів",
   "dialog.provider.empty": "Провайдерів не знайдено",
@@ -528,9 +518,6 @@ export const dict = {
   "toast.model.none.title": "Модель не вибрано",
   "toast.model.none.description": "Підключіть провайдера, щоб підсумувати цю сесію",
 
-  "toast.file.loadFailed.title": "Не вдалося завантажити файл",
-  "toast.file.listFailed.title": "Не вдалося отримати список файлів",
-
   "toast.context.noLineSelection.title": "Не вибрано рядків",
   "toast.context.noLineSelection.description": "Спочатку виберіть діапазон рядків у вкладці файлу.",
 
@@ -639,7 +626,6 @@ export const dict = {
   "session.tab.review": "Огляд",
   "session.tab.context": "Контекст",
   "session.tab.unknown": "Невідома сесія",
-  "session.panel.reviewAndFiles": "Огляд і файли",
   "session.error.notFound": "Цю сесію не знайдено",
   "session.error.notFound.description": "Ця вкладка посилається на сесію, якої більше немає на цьому сервері.",
   "session.error.notFound.closeTab": "Закрити вкладку",
@@ -658,11 +644,6 @@ export const dict = {
   "session.review.noChanges": "Немає змін",
   "session.review.noUncommittedChanges": "Ще немає незафіксованих змін",
   "session.review.noBranchChanges": "Ще немає змін у гілці",
-
-  "session.files.selectToOpen": "Виберіть файл для відкриття",
-  "session.files.all": "Усі файли",
-  "session.files.empty": "Немає файлів",
-  "session.files.binaryContent": "Бінарний файл (вміст не може бути відображено)",
 
   "session.messages.renderEarlier": "Відобразити раніші повідомлення",
   "session.messages.loadingEarlier": "Завантаження раніших повідомлень...",
@@ -705,8 +686,6 @@ export const dict = {
   "session.new.workspace.existing": "Робоча область…",
   "session.new.lastModified": "Востаннє змінено",
 
-  "session.header.search.placeholder": "Пошук {{project}}",
-  "session.header.searchFiles": "Пошук файлів",
   "session.header.openIn": "Відкрити в",
   "session.header.open.action": "Відкрити {{app}}",
   "session.header.open.ariaLabel": "Відкрити в {{app}}",
@@ -876,12 +855,8 @@ export const dict = {
   "settings.general.row.followup.description": "Виберіть, чи продовження виконується негайно, чи чекає в черзі",
   "settings.general.row.followup.option.queue": "Черга",
   "settings.general.row.followup.option.steer": "Керування",
-  "settings.general.row.showFileTree.title": "Дерево файлів",
-  "settings.general.row.showFileTree.description": "Показувати панель дерева файлів у сесіях",
   "settings.general.row.showNavigation.title": "Елементи навігації",
   "settings.general.row.showNavigation.description": "Показувати кнопки назад і вперед у заголовку робочого столу",
-  "settings.general.row.showSearch.title": "Палітра команд",
-  "settings.general.row.showSearch.description": "Показувати кнопку пошуку та палітри команд у заголовку",
   "settings.general.row.showTerminal.title": "Термінал",
   "settings.general.row.showTerminal.description": "Показувати кнопку термінала в заголовку робочого столу",
   "settings.general.row.showStatus.title": "Статус сервера",

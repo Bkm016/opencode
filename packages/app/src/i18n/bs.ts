@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "Sljedeća nepročitana sesija",
   "command.session.archive": "Arhiviraj sesiju",
 
-  "command.palette": "Paleta komandi",
-
   "command.theme.cycle": "Promijeni temu",
   "command.theme.set": "Koristi temu: {{theme}}",
   "command.theme.scheme.cycle": "Promijeni šemu boja",
@@ -46,14 +44,12 @@ export const dict = {
   "command.language.set": "Koristi jezik: {{language}}",
 
   "command.session.new": "Nova sesija",
-  "command.file.open": "Otvori datoteku",
   "command.tab.close": "Zatvori karticu",
   "command.tab.reopenClosed": "Ponovo otvori zatvorenu karticu",
   "command.context.addSelection": "Dodaj odabir u kontekst",
   "command.context.addSelection.description": "Dodaj odabrane linije iz trenutne datoteke",
   "command.input.focus": "Fokusiraj polje za unos",
   "command.terminal.toggle": "Prikaži/sakrij terminal",
-  "command.fileTree.toggle": "Prikaži/sakrij stablo datoteka",
   "command.review.toggle": "Prikaži/sakrij pregled",
   "command.terminal.new": "Novi terminal",
   "command.terminal.new.description": "Kreiraj novu karticu terminala",
@@ -91,12 +87,6 @@ export const dict = {
   "command.session.share.description": "Podijeli ovu sesiju i kopiraj URL u međuspremnik",
   "command.session.unshare": "Ukini dijeljenje sesije",
   "command.session.unshare.description": "Zaustavi dijeljenje ove sesije",
-
-  "palette.search.placeholder": "Pretraži datoteke, komande i sesije",
-  "palette.search.placeholder.home": "Pretraži komande i sesije",
-  "palette.empty": "Nema rezultata",
-  "palette.group.commands": "Komande",
-  "palette.group.files": "Datoteke",
 
   "dialog.provider.search.placeholder": "Pretraži provajdere",
   "dialog.provider.empty": "Nema pronađenih provajdera",
@@ -515,9 +505,6 @@ export const dict = {
   "toast.model.none.title": "Nije odabran model",
   "toast.model.none.description": "Poveži provajdera da sažmeš ovu sesiju",
 
-  "toast.file.loadFailed.title": "Neuspjelo učitavanje datoteke",
-  "toast.file.listFailed.title": "Neuspješno listanje datoteka",
-
   "toast.context.noLineSelection.title": "Nema odabranih linija",
   "toast.context.noLineSelection.description": "Prvo odaberi raspon linija u kartici datoteke.",
 
@@ -616,7 +603,6 @@ export const dict = {
   "session.tab.review": "Pregled",
   "session.tab.context": "Kontekst",
   "session.tab.unknown": "Nepoznata sesija",
-  "session.panel.reviewAndFiles": "Pregled i datoteke",
   "session.error.notFound": "Ova sesija nije pronađena",
   "session.error.notFound.description": "Ova kartica upućuje na sesiju koja više ne postoji na ovom serveru.",
   "session.error.notFound.closeTab": "Zatvori karticu",
@@ -632,11 +618,6 @@ export const dict = {
   "session.review.noChanges": "Nema izmjena",
   "session.review.noUncommittedChanges": "Još nema nepotvrđenih promjena",
   "session.review.noBranchChanges": "Još nema promjena na grani",
-
-  "session.files.selectToOpen": "Odaberi datoteku za otvaranje",
-  "session.files.all": "Sve datoteke",
-  "session.files.empty": "Nema datoteka",
-  "session.files.binaryContent": "Binarna datoteka (sadržaj se ne može prikazati)",
 
   "session.messages.renderEarlier": "Prikaži ranije poruke",
   "session.messages.loadingEarlier": "Učitavanje ranijih poruka...",
@@ -677,8 +658,6 @@ export const dict = {
   "session.new.workspace.existing": "Radni prostor…",
   "session.new.lastModified": "Posljednja izmjena",
 
-  "session.header.search.placeholder": "Pretraži {{project}}",
-  "session.header.searchFiles": "Pretraži datoteke",
   "session.header.openIn": "Otvori u",
   "session.header.open.action": "Otvori {{app}}",
   "session.header.open.ariaLabel": "Otvori u {{app}}",
@@ -783,13 +762,9 @@ export const dict = {
   "settings.general.row.followup.description": "Odaberi da li upiti nadovezivanja usmjeravaju odmah ili čekaju u redu",
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
-  "settings.general.row.showFileTree.title": "Stablo datoteka",
-  "settings.general.row.showFileTree.description": "Prikaži stablo datoteka u sesijama",
   "settings.general.row.showNavigation.title": "Kontrole navigacije",
   "settings.general.row.showNavigation.description":
     "Prikaži dugmad za nazad i naprijed u naslovnoj traci desktop aplikacije",
-  "settings.general.row.showSearch.title": "Paleta komandi",
-  "settings.general.row.showSearch.description": "Prikaži dugme za pretragu i paletu komandi u naslovnoj traci",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Prikaži dugme terminala u naslovnoj traci desktop aplikacije",
   "settings.general.row.showStatus.title": "Status servera",

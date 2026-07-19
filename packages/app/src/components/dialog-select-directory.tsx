@@ -2,13 +2,12 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { List } from "@opencode-ai/ui/list"
-import type { ListRef } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { createMemo, createResource, createSignal } from "solid-js"
+import { createMemo, createResource } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { useGlobal } from "@/context/global"
-import { cleanPickerInput, createDirectorySearch, displayPickerPath } from "./directory-picker-domain"
+import { displayPickerPath } from "./directory-picker-domain"
 
 interface DialogSelectDirectoryProps {
   title?: string
@@ -20,10 +19,9 @@ interface DialogSelectDirectoryProps {
 type Row = {
   absolute: string
   search: string
-  group: "recent" | "folders"
 }
 
-function toRow(absolute: string, home: string, group: Row["group"]): Row {
+function toRow(absolute: string, home: string): Row {
   const full = displayPickerPath(absolute, "", "")
   const tilde = displayPickerPath(full, "~", home)
   const withSlash = (value: string) => {
@@ -35,7 +33,7 @@ function toRow(absolute: string, home: string, group: Row["group"]): Row {
   const search = Array.from(
     new Set([full, withSlash(full), tilde, withSlash(tilde), getFilename(full)].filter(Boolean)),
   ).join("\n")
-  return { absolute: full, search, group }
+  return { absolute: full, search }
 }
 
 function uniqueRows(rows: Row[]) {
@@ -53,9 +51,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const dialog = useDialog()
   const language = useLanguage()
 
-  const [filter, setFilter] = createSignal("")
-  let list: ListRef | undefined
-
   const missingBase = createMemo(() => !(sync.data.path.home || sync.data.path.directory))
   const [fallbackPath] = createResource(
     () => (missingBase() ? true : undefined),
@@ -69,15 +64,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   )
 
   const home = createMemo(() => sync.data.path.home || fallbackPath()?.home || "")
-  const start = createMemo(
-    () => sync.data.path.home || sync.data.path.directory || fallbackPath()?.home || fallbackPath()?.directory,
-  )
-
-  const directories = createDirectorySearch({
-    sdk,
-    home,
-    base: start,
-  })
 
   const recentProjects = createMemo(() => {
     const projects = serverCtx.projects.list()
@@ -102,7 +88,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       .sort((a, b) => b.at - a.at || a.index - b.index)
       .slice(0, 5)
       .map(({ project }) => {
-        const row = toRow(project.worktree, home(), "recent")
+        const row = toRow(project.worktree, home())
         const name = project.name || getFilename(project.worktree)
         return {
           ...row,
@@ -111,11 +97,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       })
   })
 
-  const items = async (value: string) => {
-    const results = await directories(value)
-    const directoryRows = results.map((absolute) => toRow(absolute, home(), "folders"))
-    return uniqueRows([...recentProjects(), ...directoryRows])
-  }
+  const items = createMemo(() => uniqueRows(recentProjects()))
 
   function resolve(absolute: string) {
     props.onSelect(props.multiple ? [absolute] : absolute)
@@ -132,34 +114,13 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
         items={items}
         key={(x) => x.absolute}
         filterKeys={["search"]}
-        groupBy={(item) => item.group}
-        sortGroupsBy={(a, b) => {
-          if (a.category === b.category) return 0
-          return a.category === "recent" ? -1 : 1
-        }}
-        groupHeader={(group) =>
-          group.category === "recent" ? language.t("home.recentProjects") : language.t("command.project.open")
-        }
-        ref={(r) => (list = r)}
-        onFilter={(value) => setFilter(cleanPickerInput(value))}
-        onKeyEvent={(e, item) => {
-          if (e.key !== "Tab") return
-          if (e.shiftKey) return
-          if (!item) return
-
-          e.preventDefault()
-          e.stopPropagation()
-
-          const value = displayPickerPath(item.absolute, filter(), home())
-          list?.setFilter(value.endsWith("/") ? value : value + "/")
-        }}
         onSelect={(path) => {
           if (!path) return
           resolve(path.absolute)
         }}
       >
         {(item) => {
-          const path = displayPickerPath(item.absolute, filter(), home())
+          const path = displayPickerPath(item.absolute, "", home())
           if (path === "~") {
             return (
               <div class="w-full flex items-center justify-between rounded-md">

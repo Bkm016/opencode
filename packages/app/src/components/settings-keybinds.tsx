@@ -7,13 +7,12 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
-import { DEFAULT_PALETTE_KEYBIND, formatKeybind, parseKeybind, useCommand } from "@/context/command"
+import { formatKeybind, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./settings-list"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
-const PALETTE_ID = "command.palette"
 
 type KeybindGroup = "General" | "Session" | "Navigation" | "Model and agent" | "Terminal" | "Prompt"
 
@@ -45,10 +44,8 @@ const groupKey: Record<KeybindGroup, GroupKey> = {
 }
 
 function groupFor(id: string): KeybindGroup {
-  if (id === PALETTE_ID) return "General"
   if (id.startsWith("terminal.")) return "Terminal"
   if (id.startsWith("model.") || id.startsWith("agent.") || id.startsWith("mcp.")) return "Model and agent"
-  if (id.startsWith("file.") || id.startsWith("fileTree.")) return "Navigation"
   if (id.startsWith("prompt.")) return "Prompt"
   if (
     id.startsWith("session.") ||
@@ -116,9 +113,8 @@ function keybinds(value: unknown): KeybindMap {
   return value as KeybindMap
 }
 
-function listFor(command: CommandContext, map: KeybindMap, palette: string) {
+function listFor(command: CommandContext, map: KeybindMap) {
   const out = new Map<string, KeybindMeta>()
-  out.set(PALETTE_ID, { title: palette, group: "General" })
 
   for (const opt of command.catalog) {
     if (opt.id.startsWith("suggested.")) continue
@@ -299,7 +295,7 @@ export const SettingsKeybinds: Component = () => {
 
   const list = createMemo(() => {
     language.locale()
-    return listFor(command, map(), language.t("command.palette"))
+    return listFor(command, map())
   })
 
   const title = (id: string) => list().get(id)?.title ?? ""
@@ -330,11 +326,6 @@ export const SettingsKeybinds: Component = () => {
       list.push(value)
     }
 
-    const palette = settings.keybinds.get(PALETTE_ID) ?? DEFAULT_PALETTE_KEYBIND
-    for (const sig of signatures(palette)) {
-      add(sig, { id: PALETTE_ID, title: title(PALETTE_ID) })
-    }
-
     const valueFor = (id: string) => {
       const custom = settings.keybinds.get(id)
       if (typeof custom === "string") return custom
@@ -347,7 +338,6 @@ export const SettingsKeybinds: Component = () => {
     }
 
     for (const id of list().keys()) {
-      if (id === PALETTE_ID) continue
       for (const sig of signatures(valueFor(id))) {
         add(sig, { id, title: title(id) })
       }

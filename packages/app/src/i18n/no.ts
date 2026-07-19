@@ -35,8 +35,6 @@ export const dict = {
   "command.session.next.unseen": "Neste uleste økt",
   "command.session.archive": "Arkiver sesjon",
 
-  "command.palette": "Kommandopalett",
-
   "command.theme.cycle": "Bytt tema",
   "command.theme.set": "Bruk tema: {{theme}}",
   "command.theme.scheme.cycle": "Bytt fargevalg",
@@ -46,13 +44,11 @@ export const dict = {
   "command.language.set": "Bruk språk: {{language}}",
 
   "command.session.new": "Ny sesjon",
-  "command.file.open": "Åpne fil",
   "command.tab.close": "Lukk fane",
   "command.context.addSelection": "Legg til markering i kontekst",
   "command.context.addSelection.description": "Legg til valgte linjer fra gjeldende fil",
   "command.input.focus": "Fokuser inndata",
   "command.terminal.toggle": "Veksle terminal",
-  "command.fileTree.toggle": "Veksle filtre",
   "command.review.toggle": "Veksle gjennomgang",
   "command.terminal.new": "Ny terminal",
   "command.terminal.new.description": "Opprett en ny terminalfane",
@@ -90,12 +86,6 @@ export const dict = {
   "command.session.share.description": "Del denne sesjonen og kopier URL-en til utklippstavlen",
   "command.session.unshare": "Slutt å dele sesjon",
   "command.session.unshare.description": "Slutt å dele denne sesjonen",
-
-  "palette.search.placeholder": "Søk i filer, kommandoer og sesjoner",
-  "palette.search.placeholder.home": "Søk i kommandoer og sesjoner",
-  "palette.empty": "Ingen resultater funnet",
-  "palette.group.commands": "Kommandoer",
-  "palette.group.files": "Filer",
 
   "dialog.provider.search.placeholder": "Søk etter leverandører",
   "dialog.provider.empty": "Ingen leverandører funnet",
@@ -434,9 +424,6 @@ export const dict = {
   "toast.model.none.title": "Ingen modell valgt",
   "toast.model.none.description": "Koble til en leverandør for å oppsummere denne sesjonen",
 
-  "toast.file.loadFailed.title": "Kunne ikke laste fil",
-  "toast.file.listFailed.title": "Kunne ikke liste filer",
-
   "toast.context.noLineSelection.title": "Ingen linjevalg",
   "toast.context.noLineSelection.description": "Velg først et linjeområde i en filfane.",
 
@@ -515,7 +502,6 @@ export const dict = {
   "session.tab.session": "Sesjon",
   "session.tab.review": "Gjennomgang",
   "session.tab.context": "Kontekst",
-  "session.panel.reviewAndFiles": "Gjennomgang og filer",
   "session.review.filesChanged": "{{count}} filer endret",
   "session.review.change.one": "Endring",
   "session.review.change.other": "Endringer",
@@ -525,11 +511,6 @@ export const dict = {
   "session.review.noSnapshot":
     "Snapshot-sporing er deaktivert i konfigurasjonen, så sesjonsendringer er ikke tilgjengelige",
   "session.review.noChanges": "Ingen endringer",
-
-  "session.files.selectToOpen": "Velg en fil å åpne",
-  "session.files.all": "Alle filer",
-  "session.files.empty": "Ingen filer",
-  "session.files.binaryContent": "Binær fil (innhold kan ikke vises)",
 
   "session.messages.renderEarlier": "Vis tidligere meldinger",
   "session.messages.loadingEarlier": "Laster inn tidligere meldinger...",
@@ -559,8 +540,6 @@ export const dict = {
   "session.new.worktree.create": "Opprett nytt worktree",
   "session.new.lastModified": "Sist endret",
 
-  "session.header.search.placeholder": "Søk i {{project}}",
-  "session.header.searchFiles": "Søk etter filer",
   "session.header.openIn": "Åpne i",
   "session.header.open.action": "Åpne {{app}}",
   "session.header.open.ariaLabel": "Åpne i {{app}}",
@@ -1076,13 +1055,9 @@ export const dict = {
     "Velg skallet som skal brukes i terminalen. Kompatible skall brukes også til agentens verktøykall.",
   "settings.general.row.shell.autoDefault": "Automatisk (standard)",
   "settings.general.row.shell.terminalOnly": "kun terminal",
-  "settings.general.row.showFileTree.title": "Filtre",
-  "settings.general.row.showFileTree.description": "Vis filtrepanelet i sesjoner",
   "settings.general.row.showNavigation.title": "Navigasjonskontroller",
   "settings.general.row.showNavigation.description":
     "Vis tilbake- og fremoverknappene på tittellinjen i skrivebordsappen",
-  "settings.general.row.showSearch.title": "Kommandopalett",
-  "settings.general.row.showSearch.description": "Vis knappen for søk og kommandopalett på tittellinjen",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Vis terminalknappen på tittellinjen i skrivebordsappen",
   "settings.general.row.showStatus.title": "Serverstatus",

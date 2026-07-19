@@ -24,9 +24,7 @@ export interface Settings {
     autoSave: boolean
     releaseNotes: boolean
     followup: "queue" | "steer"
-    showFileTree: boolean
     showNavigation: boolean
-    showSearch: boolean
     showStatus: boolean
     showTerminal: boolean
     showReasoningSummaries: boolean
@@ -137,9 +135,7 @@ const defaultSettings: Settings = {
     autoSave: true,
     releaseNotes: true,
     followup: "steer",
-    showFileTree: false,
     showNavigation: false,
-    showSearch: false,
     showStatus: false,
     showTerminal: false,
     showReasoningSummaries: false,
@@ -191,8 +187,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       classified: false,
       previous: undefined as string | undefined,
     })
-    const showFileTree = withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree)
-    const showSearch = withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch)
     const showStatus = withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus)
     const showCustomAgents = withFallback(
       () => store.general?.showCustomAgents,
@@ -258,17 +252,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setFollowup(value: "queue" | "steer") {
           setStore("general", "followup", value === "queue" ? "steer" : value)
         },
-        showFileTree,
-        setShowFileTree(value: boolean) {
-          setStore("general", "showFileTree", value)
-        },
         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
         setShowNavigation(value: boolean) {
           setStore("general", "showNavigation", value)
-        },
-        showSearch,
-        setShowSearch(value: boolean) {
-          setStore("general", "showSearch", value)
         },
         showStatus,
         setShowStatus(value: boolean) {
@@ -320,8 +306,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       visibility: {
-        fileTree: showFileTree,
-        search: showSearch,
         status: showStatus,
         customAgents: showCustomAgents,
       },

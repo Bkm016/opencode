@@ -24,7 +24,7 @@ import { TestLLMServer } from "../lib/llm-server"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
-import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, testEffect } from "../lib/effect"
 import { testProviderConfig } from "../lib/test-provider"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -358,12 +358,9 @@ describe("HttpApi SDK", () => {
     { serverPath: "raw", git: false, setup: writeStandardFiles },
     ({ sdk }) =>
       Effect.gen(function* () {
-        const file = yield* call(() => sdk.file.read({ path: "hello.txt" }))
         const session = yield* call(() => sdk.session.create({ title: "sdk" }))
         const listed = yield* call(() => sdk.session.list({ roots: true, limit: 10 }))
 
-        expect(file.response.status).toBe(200)
-        expect(file.data).toMatchObject({ content: "hello" })
         expect(session.response.status).toBe(200)
         expect(session.data).toMatchObject({ title: "sdk" })
         expect(listed.response.status).toBe(200)
@@ -373,7 +370,6 @@ describe("HttpApi SDK", () => {
           expectStatus(() => sdk.project.current(), 200),
           expectStatus(() => sdk.config.get(), 200),
           expectStatus(() => sdk.config.providers(), 200),
-          expectStatus(() => sdk.find.files({ query: "hello", limit: 10 }), 200),
         ])
       }),
   )
@@ -388,16 +384,11 @@ describe("HttpApi SDK", () => {
           workspaceID,
           onRequest: (value) => (request = value),
         })
-        const found = yield* pollWithTimeout(
-          call(() => sdk.v2.fs.find({ query: "hello", type: "file" })).pipe(
-            Effect.map((result) => (result.data?.data.length ? result : undefined)),
-          ),
-          "SDK file search index was not ready",
-        )
+        const result = yield* call(() => sdk.v2.command.list())
         const url = new URL(request!.url)
 
-        expect(found.response.status).toBe(200)
-        expect(found.data).toMatchObject({ data: [{ path: "hello.txt", type: "file" }] })
+        expect(result.response.status).toBe(200)
+        expect(result.data).toMatchObject({ location: expect.any(Object), data: expect.any(Array) })
         expect(url.searchParams.get("directory")).toBe(directory)
         expect(url.searchParams.get("workspace")).toBe(workspaceID)
         expect(url.searchParams.get("location[directory]")).toBe(directory)
@@ -494,21 +485,21 @@ describe("HttpApi SDK", () => {
     ({ directory }) =>
       Effect.gen(function* () {
         const missingSdk = yield* client("raw", directory, { password: "secret" })
-        const missing = yield* capture(() => missingSdk.file.read({ path: "hello.txt" }))
+        const missing = yield* capture(() => missingSdk.path.get())
         const badSdk = yield* client("raw", directory, {
           password: "secret",
           headers: { authorization: authorization("opencode", "wrong") },
         })
-        const bad = yield* capture(() => badSdk.file.read({ path: "hello.txt" }))
+        const bad = yield* capture(() => badSdk.path.get())
         const goodSdk = yield* client("raw", directory, {
           password: "secret",
           headers: { authorization: authorization("opencode", "secret") },
         })
-        const good = yield* capture(() => goodSdk.file.read({ path: "hello.txt" }))
+        const good = yield* capture(() => goodSdk.path.get())
 
         return {
           statuses: statuses({ missing, bad, good }),
-          content: record(good.data).content,
+          content: record(good.data).directory,
         }
       }),
   )
@@ -521,11 +512,6 @@ describe("HttpApi SDK", () => {
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
         const providers = yield* capture(() => sdk.config.providers())
-        const file = yield* capture(() => sdk.file.read({ path: "hello.txt" }))
-        const files = yield* capture(() => sdk.file.list({ path: "." }))
-        const fileStatus = yield* capture(() => sdk.file.status())
-        const findFiles = yield* capture(() => sdk.find.files({ query: "hello", limit: 10 }))
-        const findText = yield* capture(() => sdk.find.text({ pattern: "sdk-parity" }))
         const agents = yield* capture(() => sdk.app.agents())
         const skills = yield* capture(() => sdk.app.skills())
         const tools = yield* capture(() => sdk.tool.ids())
@@ -540,11 +526,6 @@ describe("HttpApi SDK", () => {
             paths,
             config,
             providers,
-            file,
-            files,
-            fileStatus,
-            findFiles,
-            findText,
             agents,
             skills,
             tools,
@@ -554,11 +535,7 @@ describe("HttpApi SDK", () => {
           }),
           project: { worktreeSelected: record(project.data).worktree === directory },
           paths: { directorySelected: record(paths.data).directory === directory },
-          file: record(file.data).content,
           hasProject: array(projects.data).length > 0,
-          foundFile: JSON.stringify(findFiles.data).includes("hello.txt"),
-          foundText: JSON.stringify(findText.data ?? null).includes("sdk-parity"),
-          listedFile: JSON.stringify(files.data).includes("hello.txt"),
           vcs: { hasBranch: typeof record(vcs.data).branch === "string" },
         }
       }),

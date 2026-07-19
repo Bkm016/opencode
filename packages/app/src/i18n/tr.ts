@@ -39,8 +39,6 @@ export const dict = {
   "command.session.next.unseen": "Sonraki okunmamış oturum",
   "command.session.archive": "Oturumu arşivle",
 
-  "command.palette": "Komut paleti",
-
   "command.theme.cycle": "Tema değiştir",
   "command.theme.set": "Tema kullan: {{theme}}",
   "command.theme.scheme.cycle": "Renk şemasını değiştir",
@@ -50,14 +48,12 @@ export const dict = {
   "command.language.set": "Dil kullan: {{language}}",
 
   "command.session.new": "Yeni oturum",
-  "command.file.open": "Dosya aç",
   "command.tab.close": "Sekmeyi kapat",
   "command.tab.reopenClosed": "Kapatılan sekmeyi yeniden aç",
   "command.context.addSelection": "Seçimi bağlama ekle",
   "command.context.addSelection.description": "Mevcut dosyadan seçili satırları ekle",
   "command.input.focus": "Girişi odakla",
   "command.terminal.toggle": "Terminali aç/kapat",
-  "command.fileTree.toggle": "Dosya ağacını aç/kapat",
   "command.review.toggle": "İncelemeyi aç/kapat",
   "command.terminal.new": "Yeni terminal",
   "command.terminal.new.description": "Yeni bir terminal sekmesi oluştur",
@@ -95,12 +91,6 @@ export const dict = {
   "command.session.share.description": "Bu oturumu paylaş ve URL'yi panoya kopyala",
   "command.session.unshare": "Paylaşımı kaldır",
   "command.session.unshare.description": "Bu oturumun paylaşımını durdur",
-
-  "palette.search.placeholder": "Dosya, komut ve oturum ara",
-  "palette.search.placeholder.home": "Komut ve oturum ara",
-  "palette.empty": "Sonuç bulunamadı",
-  "palette.group.commands": "Komutlar",
-  "palette.group.files": "Dosyalar",
 
   "dialog.provider.search.placeholder": "Sağlayıcı ara",
   "dialog.provider.empty": "Sağlayıcı bulunamadı",
@@ -518,9 +508,6 @@ export const dict = {
   "toast.model.none.title": "Model seçilmedi",
   "toast.model.none.description": "Bu oturumu özetlemek için bir sağlayıcı bağlayın",
 
-  "toast.file.loadFailed.title": "Dosya yüklenemedi",
-  "toast.file.listFailed.title": "Dosyalar listelenemedi",
-
   "toast.context.noLineSelection.title": "Satır seçimi yok",
   "toast.context.noLineSelection.description": "Önce bir dosya sekmesinde satır aralığı seçin.",
 
@@ -620,7 +607,6 @@ export const dict = {
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
   "session.tab.unknown": "Bilinmeyen Oturum",
-  "session.panel.reviewAndFiles": "İnceleme ve dosyalar",
   "session.error.notFound": "Bu oturum bulunamıyor",
   "session.error.notFound.description": "Bu sekme, artık bu sunucuda bulunmayan bir oturuma yönlendiriyor.",
   "session.error.notFound.closeTab": "Sekmeyi Kapat",
@@ -636,11 +622,6 @@ export const dict = {
   "session.review.noChanges": "Değişiklik yok",
   "session.review.noUncommittedChanges": "Henüz commit edilmemiş değişiklik yok",
   "session.review.noBranchChanges": "Henüz dal değişikliği yok",
-
-  "session.files.selectToOpen": "Açmak için bir dosya seçin",
-  "session.files.all": "Tüm dosyalar",
-  "session.files.empty": "Dosya yok",
-  "session.files.binaryContent": "İkili dosya (içerik görüntülenemiyor)",
 
   "session.messages.renderEarlier": "Önceki mesajları göster",
   "session.messages.loadingEarlier": "Önceki mesajlar yükleniyor...",
@@ -681,8 +662,6 @@ export const dict = {
   "session.new.workspace.existing": "Çalışma alanı…",
   "session.new.lastModified": "Son değişiklik",
 
-  "session.header.search.placeholder": "{{project}} ara",
-  "session.header.searchFiles": "Dosya ara",
   "session.header.openIn": "Aç",
   "session.header.open.action": "{{app}} ile aç",
   "session.header.open.ariaLabel": "{{app}} ile aç",
@@ -790,12 +769,8 @@ export const dict = {
     "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
-  "settings.general.row.showFileTree.title": "Dosya ağacı",
-  "settings.general.row.showFileTree.description": "Oturumlarda dosya ağacı panelini göster",
   "settings.general.row.showNavigation.title": "Gezinme denetimleri",
   "settings.general.row.showNavigation.description": "Masaüstü başlık çubuğunda geri ve ileri düğmelerini göster",
-  "settings.general.row.showSearch.title": "Komut paleti",
-  "settings.general.row.showSearch.description": "Başlık çubuğunda arama ve komut paleti düğmesini göster",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Masaüstü başlık çubuğunda terminal düğmesini göster",
   "settings.general.row.showStatus.title": "Sunucu durumu",

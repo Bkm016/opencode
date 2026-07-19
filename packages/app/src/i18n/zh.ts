@@ -46,8 +46,6 @@ export const dict = {
   "command.session.next.unseen": "下一个未读会话",
   "command.session.archive": "归档会话",
 
-  "command.palette": "命令面板",
-
   "command.theme.cycle": "切换主题",
   "command.theme.set": "使用主题：{{theme}}",
   "command.theme.scheme.cycle": "切换配色方案",
@@ -58,8 +56,6 @@ export const dict = {
 
   "command.session.new": "新建会话",
 
-  "command.file.open": "打开文件",
-
   "command.tab.close": "关闭标签页",
   "command.tab.reopenClosed": "重新打开已关闭的标签页",
 
@@ -69,8 +65,6 @@ export const dict = {
   "command.input.focus": "聚焦输入框",
 
   "command.terminal.toggle": "切换终端",
-
-  "command.fileTree.toggle": "切换文件树",
 
   "command.review.toggle": "切换审查",
 
@@ -129,12 +123,6 @@ export const dict = {
   "command.session.share.description": "分享此会话并将链接复制到剪贴板",
   "command.session.unshare": "取消分享会话",
   "command.session.unshare.description": "停止分享此会话",
-
-  "palette.search.placeholder": "搜索文件、命令和会话",
-  "palette.search.placeholder.home": "搜索命令和会话",
-  "palette.empty": "未找到结果",
-  "palette.group.commands": "命令",
-  "palette.group.files": "文件",
 
   "dialog.provider.search.placeholder": "搜索提供商",
   "dialog.provider.empty": "未找到提供商",
@@ -583,8 +571,6 @@ export const dict = {
   "toast.permissions.autoaccept.off.description": "权限请求将需要批准",
   "toast.model.none.title": "未选择模型",
   "toast.model.none.description": "请先连接提供商以总结此会话",
-  "toast.file.loadFailed.title": "加载文件失败",
-  "toast.file.listFailed.title": "列出文件失败",
   "toast.context.noLineSelection.title": "未选择行",
   "toast.context.noLineSelection.description": "请先在文件标签中选择行范围。",
   "toast.session.share.copyFailed.title": "无法复制链接到剪贴板",
@@ -675,7 +661,6 @@ export const dict = {
   "session.tab.review": "审查",
   "session.tab.context": "上下文",
   "session.tab.unknown": "未知会话",
-  "session.panel.reviewAndFiles": "审查和文件",
   "session.error.notFound": "找不到此会话",
   "session.error.notFound.description": "此标签页指向的会话已不存在于此服务器上。",
   "session.error.notFound.closeTab": "关闭标签页",
@@ -690,10 +675,6 @@ export const dict = {
   "session.review.noChanges": "无更改",
   "session.review.noUncommittedChanges": "尚无未提交的更改",
   "session.review.noBranchChanges": "尚无分支更改",
-  "session.files.selectToOpen": "选择要打开的文件",
-  "session.files.all": "所有文件",
-  "session.files.empty": "无文件",
-  "session.files.binaryContent": "二进制文件（无法显示内容）",
   "session.messages.renderEarlier": "显示更早的消息",
   "session.messages.loadingEarlier": "正在加载更早的消息...",
   "session.messages.loadEarlier": "加载更早的消息",
@@ -730,8 +711,6 @@ export const dict = {
   "session.new.workspace.local": "本地仓库",
   "session.new.workspace.existing": "工作区…",
   "session.new.lastModified": "最后修改",
-  "session.header.search.placeholder": "搜索 {{project}}",
-  "session.header.searchFiles": "搜索文件",
   "session.header.openIn": "打开方式",
   "session.header.open.action": "打开 {{app}}",
   "session.header.open.ariaLabel": "在 {{app}} 中打开",
@@ -945,12 +924,8 @@ export const dict = {
   "settings.general.row.followup.description": "选择跟进提示是立即引导还是在队列中等待",
   "settings.general.row.followup.option.queue": "排队",
   "settings.general.row.followup.option.steer": "引导",
-  "settings.general.row.showFileTree.title": "文件树",
-  "settings.general.row.showFileTree.description": "在会话中显示文件树面板",
   "settings.general.row.showNavigation.title": "导航控件",
   "settings.general.row.showNavigation.description": "在桌面版标题栏中显示前进和后退按钮",
-  "settings.general.row.showSearch.title": "命令面板",
-  "settings.general.row.showSearch.description": "在标题栏中显示搜索和命令面板按钮",
   "settings.general.row.showTerminal.title": "终端",
   "settings.general.row.showTerminal.description": "在桌面版标题栏中显示终端按钮",
   "settings.general.row.showStatus.title": "服务器状态",

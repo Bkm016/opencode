@@ -810,6 +810,157 @@
         ]
       }
     },
+    "/config/prompts": {
+      "get": {
+        "tags": ["config"],
+        "operationId": "config.prompts",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompt catalog entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "group": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "default": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "overridden": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["id", "group", "title", "description", "default", "value", "overridden"],
+                    "additionalProperties": false
+                  },
+                  "description": "Prompt catalog entries"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List built-in prompts with effective values after config.prompts overrides.",
+        "summary": "List prompt catalog",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.config.prompts({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/config/instructions": {
+      "get": {
+        "tags": ["config"],
+        "operationId": "config.instructions",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved instruction entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InstructionEntry"
+                  },
+                  "description": "Resolved instruction entries"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "InternalServerError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/effect_HttpApiError_InternalServerError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the resolved system instruction files and remote URLs for the current instance, with their content.",
+        "summary": "List resolved instructions",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.config.instructions({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/experimental/capabilities": {
       "get": {
         "tags": ["experimental"],
@@ -1751,10 +1902,10 @@
         ]
       }
     },
-    "/find": {
+    "/experimental/storage": {
       "get": {
-        "tags": ["file"],
-        "operationId": "find.text",
+        "tags": ["experimental"],
+        "operationId": "experimental.storage.get",
         "parameters": [
           {
             "name": "directory",
@@ -1771,454 +1922,106 @@
               "type": "string"
             },
             "required": false
-          },
-          {
-            "name": "pattern",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
           }
         ],
         "responses": {
           "200": {
-            "description": "Matches",
+            "description": "Local storage budget",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "path": {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string"
-                          }
-                        },
-                        "required": ["text"],
-                        "additionalProperties": false
-                      },
-                      "lines": {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string"
-                          }
-                        },
-                        "required": ["text"],
-                        "additionalProperties": false
-                      },
-                      "line_number": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "absolute_offset": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "submatches": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "match": {
-                              "type": "object",
-                              "properties": {
-                                "text": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": ["text"],
-                              "additionalProperties": false
-                            },
-                            "start": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "end": {
-                              "type": "integer",
-                              "minimum": 0
-                            }
-                          },
-                          "required": ["match", "start", "end"],
-                          "additionalProperties": false
-                        }
-                      }
+                  "$ref": "#/components/schemas/StorageBudget"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Report SQLite size, reclaimable freelist space, and expired tool-output / log files. Safe read-only diagnostics for storage maintenance.",
+        "summary": "Get local storage budget",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.experimental.storage.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/experimental/storage/compact": {
+      "post": {
+        "tags": ["experimental"],
+        "operationId": "experimental.storage.compact",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Storage compact result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageCompactResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
                     },
-                    "required": ["path", "lines", "line_number", "absolute_offset", "submatches"],
-                    "additionalProperties": false
-                  },
-                  "description": "Matches"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
           }
         },
-        "description": "Search for text patterns across files in the project using ripgrep.",
-        "summary": "Find text",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.find.text({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/find/file": {
-      "get": {
-        "tags": ["file"],
-        "operationId": "find.files",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "name": "dirs",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": ["true", "false"]
-            },
-            "required": false
-          },
-          {
-            "name": "type",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": ["file", "directory"]
-            },
-            "required": false
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File paths",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "File paths"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
+        "description": "Safely reclaim disk space: WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Does not delete sessions or credentials.",
+        "summary": "Compact local storage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCompactPayload"
               }
             }
           }
         },
-        "description": "Search for files or directories by name or pattern in the project directory.",
-        "summary": "Find files",
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.find.files({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/find/symbol": {
-      "get": {
-        "tags": ["file"],
-        "operationId": "find.symbols",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Symbols",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Symbol"
-                  },
-                  "description": "Symbols"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Search for workspace symbols like functions, classes, and variables using LSP.",
-        "summary": "Find symbols",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.find.symbols({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/file": {
-      "get": {
-        "tags": ["file"],
-        "operationId": "file.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Files and directories",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FileNode"
-                  },
-                  "description": "Files and directories"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "List files and directories in a specified path.",
-        "summary": "List files",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.file.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/file/content": {
-      "get": {
-        "tags": ["file"],
-        "operationId": "file.read",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File content",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FileContent"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Read the content of a specified file.",
-        "summary": "Read file",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.file.read({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/file/status": {
-      "get": {
-        "tags": ["file"],
-        "operationId": "file.status",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/File"
-                  },
-                  "description": "File status"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get the git status of all files in the project.",
-        "summary": "Get file status",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.file.status({\n  ...\n})"
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.experimental.storage.compact({\n  ...\n})"
           }
         ]
       }
@@ -2274,6 +2077,61 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.instance.dispose({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/instance/reload": {
+      "post": {
+        "tags": ["instance"],
+        "operationId": "instance.reload",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Instance reloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Instance reloaded"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Reload the current OpenCode instance so config, skills, plugins, agents, and commands are re-read from disk.",
+        "summary": "Reload instance",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.instance.reload({\n  ...\n})"
           }
         ]
       }
@@ -2440,82 +2298,6 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.vcs.status({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/vcs/diff": {
-      "get": {
-        "tags": ["instance"],
-        "operationId": "vcs.diff",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "mode",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": ["git", "branch"]
-            },
-            "required": true
-          },
-          {
-            "name": "context",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "VCS diff",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/VcsFileDiff"
-                  },
-                  "description": "VCS diff"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Retrieve the current git diff for the working tree or against the default branch.",
-        "summary": "Get VCS diff",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.vcs.diff({\n  ...\n})"
           }
         ]
       }
@@ -13336,270 +13118,6 @@
         ]
       }
     },
-    "/api/fs/read/*": {
-      "get": {
-        "tags": ["filesystem"],
-        "operationId": "v2.fs.read",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Serve one file relative to the requested location.",
-        "summary": "Read file",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.v2.fs.read({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/fs/list": {
-      "get": {
-        "tags": ["filesystem"],
-        "operationId": "v2.fs.list",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "location": {
-                      "$ref": "#/components/schemas/LocationInfo"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/FileSystemEntry"
-                      }
-                    }
-                  },
-                  "required": ["location", "data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "List direct children of one directory relative to the requested location.",
-        "summary": "List directory",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.v2.fs.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/fs/find": {
-      "get": {
-        "tags": ["filesystem"],
-        "operationId": "v2.fs.find",
-        "parameters": [
-          {
-            "name": "location",
-            "in": "query",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "directory": {
-                  "type": "string"
-                },
-                "workspace": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "required": false,
-            "style": "deepObject",
-            "explode": true
-          },
-          {
-            "name": "query",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          },
-          {
-            "name": "type",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": ["file", "directory"]
-            },
-            "required": false
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "location": {
-                      "$ref": "#/components/schemas/LocationInfo"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/FileSystemEntry"
-                      }
-                    }
-                  },
-                  "required": ["location", "data"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Find recursively ranked filesystem entries relative to the requested location.",
-        "summary": "Find files",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.v2.fs.find({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/command": {
       "get": {
         "tags": ["commands"],
@@ -21443,6 +20961,13 @@
               "type": "string"
             }
           },
+          "prompts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Override built-in prompts by id (system.*, agent.*, session.*, tool.*, command.*, compaction.*, runtime.*). Empty string restores the default."
+          },
           "layout": {
             "$ref": "#/components/schemas/LayoutConfig"
           },
@@ -21838,6 +21363,30 @@
         "required": ["id", "name", "source", "env", "options", "models"],
         "additionalProperties": false
       },
+      "InstructionEntry": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "content"],
+        "additionalProperties": false
+      },
+      "effect_HttpApiError_InternalServerError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["InternalServerError"]
+          }
+        },
+        "required": ["_tag"],
+        "additionalProperties": false
+      },
       "ExperimentalCapabilities": {
         "type": "object",
         "properties": {
@@ -21866,17 +21415,6 @@
           }
         },
         "required": ["consoleManagedProviders", "switchableOrgCount"],
-        "additionalProperties": false
-      },
-      "effect_HttpApiError_InternalServerError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["InternalServerError"]
-          }
-        },
-        "required": ["_tag"],
         "additionalProperties": false
       },
       "ToolListItem": {
@@ -22200,154 +21738,795 @@
         "required": ["name", "uri", "client"],
         "additionalProperties": false
       },
-      "Symbol": {
+      "StorageDatabaseStats": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "walSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "shmSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "pageCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "pageSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "freelistCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "reclaimableBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "StorageFileStats": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "files": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "expiredBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "expiredFiles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["path", "bytes", "files", "expiredBytes", "expiredFiles"],
+        "additionalProperties": false
+      },
+      "StorageEntry": {
         "type": "object",
         "properties": {
           "name": {
+            "type": "string"
+          },
+          "path": {
             "type": "string"
           },
           "kind": {
-            "type": "integer",
-            "minimum": 0
+            "type": "string",
+            "enum": ["file", "directory"]
           },
-          "location": {
-            "type": "object",
-            "properties": {
-              "uri": {
-                "type": "string"
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "number"
               },
-              "range": {
-                "$ref": "#/components/schemas/Range"
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
               }
-            },
-            "required": ["uri", "range"],
-            "additionalProperties": false
+            ]
           }
         },
-        "required": ["name", "kind", "location"],
+        "required": ["name", "path", "kind", "bytes"],
         "additionalProperties": false
       },
-      "FileNode": {
+      "StorageTableStats": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string"
           },
-          "path": {
-            "type": "string"
-          },
-          "absolute": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["file", "directory"]
-          },
-          "ignored": {
-            "type": "boolean"
-          }
-        },
-        "required": ["name", "path", "absolute", "type", "ignored"],
-        "additionalProperties": false
-      },
-      "FileContent": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["text", "binary"]
-          },
-          "content": {
-            "type": "string"
-          },
-          "diff": {
-            "type": "string"
-          },
-          "patch": {
-            "type": "object",
-            "properties": {
-              "oldFileName": {
-                "type": "string"
+          "rows": {
+            "anyOf": [
+              {
+                "type": "number"
               },
-              "newFileName": {
-                "type": "string"
+              {
+                "type": "string",
+                "enum": ["NaN"]
               },
-              "oldHeader": {
-                "type": "string"
+              {
+                "type": "string",
+                "enum": ["Infinity"]
               },
-              "newHeader": {
-                "type": "string"
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
               },
-              "hunks": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "oldStart": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "oldLines": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "newStart": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "newLines": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "lines": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "required": ["oldStart", "oldLines", "newStart", "newLines", "lines"],
-                  "additionalProperties": false
-                }
-              },
-              "index": {
-                "type": "string"
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
               }
-            },
-            "required": ["oldFileName", "newFileName", "hunks"],
-            "additionalProperties": false
-          },
-          "encoding": {
-            "type": "string",
-            "enum": ["base64"]
-          },
-          "mimeType": {
-            "type": "string"
+            ]
           }
         },
-        "required": ["type", "content"],
+        "required": ["name"],
         "additionalProperties": false
       },
-      "File": {
+      "StorageBudget": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "$ref": "#/components/schemas/StorageDatabaseStats"
+          },
+          "toolOutput": {
+            "$ref": "#/components/schemas/StorageFileStats"
+          },
+          "logs": {
+            "$ref": "#/components/schemas/StorageFileStats"
+          },
+          "retentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "dataRoot": {
+            "type": "string"
+          },
+          "dataBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorageEntry"
+            }
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorageTableStats"
+            }
+          }
+        },
+        "required": ["database", "toolOutput", "logs", "retentionDays", "dataRoot", "dataBytes", "entries", "tables"],
+        "additionalProperties": false
+      },
+      "StorageCompactPayload": {
+        "type": "object",
+        "properties": {
+          "checkpoint": {
+            "type": "boolean"
+          },
+          "vacuum": {
+            "type": "boolean"
+          },
+          "toolOutput": {
+            "type": "boolean"
+          },
+          "logs": {
+            "type": "boolean"
+          },
+          "retentionDays": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "StorageCompactResult": {
+        "type": "object",
+        "properties": {
+          "checkpoint": {
+            "type": "boolean"
+          },
+          "vacuum": {
+            "type": "boolean"
+          },
+          "toolOutputRemoved": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "toolOutputBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "logsRemoved": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "logsBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "before": {
+            "$ref": "#/components/schemas/StorageBudget"
+          },
+          "after": {
+            "$ref": "#/components/schemas/StorageBudget"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["before", "after", "durationMs"],
+        "additionalProperties": false
+      },
+      "DatabaseTable": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      },
+      "DatabaseInfo": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string"
           },
-          "added": {
-            "type": "integer",
-            "minimum": 0
+          "data": {
+            "type": "string"
           },
-          "removed": {
-            "type": "integer",
-            "minimum": 0
+          "size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
           },
-          "status": {
-            "type": "string",
-            "enum": ["added", "deleted", "modified"]
+          "walSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "shmSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "journalMode": {
+            "type": "string"
+          },
+          "pageCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "pageSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "freelistCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseTable"
+            }
           }
         },
-        "required": ["path", "added", "removed", "status"],
+        "required": ["path", "data", "tables"],
         "additionalProperties": false
       },
       "Path": {
@@ -22367,9 +22546,21 @@
           },
           "directory": {
             "type": "string"
+          },
+          "data": {
+            "type": "string"
+          },
+          "cache": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseInfo"
           }
         },
-        "required": ["home", "state", "config", "worktree", "directory"],
+        "required": ["home", "state", "config", "worktree", "directory", "data", "cache", "log", "database"],
         "additionalProperties": false
       },
       "VcsInfo": {
@@ -22402,29 +22593,6 @@
           }
         },
         "required": ["file", "additions", "deletions", "status"],
-        "additionalProperties": false
-      },
-      "VcsFileDiff": {
-        "type": "object",
-        "properties": {
-          "file": {
-            "type": "string"
-          },
-          "patch": {
-            "type": "string"
-          },
-          "additions": {
-            "type": "number"
-          },
-          "deletions": {
-            "type": "number"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["added", "deleted", "modified"]
-          }
-        },
-        "required": ["file", "additions", "deletions"],
         "additionalProperties": false
       },
       "VcsApplyError": {
@@ -30615,20 +30783,6 @@
         "required": ["id", "projectID", "action", "resource"],
         "additionalProperties": false
       },
-      "FileSystemEntry": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["file", "directory"]
-          }
-        },
-        "required": ["path", "type"],
-        "additionalProperties": false
-      },
       "CommandV2Info": {
         "type": "object",
         "properties": {
@@ -36798,10 +36952,6 @@
       "description": "Experimental HttpApi read-only routes."
     },
     {
-      "name": "file",
-      "description": "Experimental HttpApi file routes."
-    },
-    {
       "name": "instance",
       "description": "Experimental HttpApi instance read routes."
     },
@@ -36888,10 +37038,6 @@
     {
       "name": "permissions",
       "description": "Experimental permission routes."
-    },
-    {
-      "name": "filesystem",
-      "description": "Experimental location-scoped filesystem routes."
     },
     {
       "name": "commands",

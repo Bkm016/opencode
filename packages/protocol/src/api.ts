@@ -6,7 +6,6 @@ import { ModelGroup } from "./groups/model"
 import { ProviderGroup } from "./groups/provider"
 import { makeSessionGroup } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
-import { FileSystemGroup } from "./groups/fs"
 import { CommandGroup } from "./groups/command"
 import { SkillGroup } from "./groups/skill"
 import { EventGroup, makeEventGroup } from "./groups/event"
@@ -45,7 +44,6 @@ const makeApiFromGroup = <
     .add(IntegrationGroup.middleware(locationMiddleware))
     .add(CredentialGroup.middleware(locationMiddleware))
     .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware))
-    .add(FileSystemGroup.middleware(locationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
     .add(eventGroup)

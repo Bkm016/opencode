@@ -1,20 +1,15 @@
 import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
-import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
 import { findLast } from "@opencode-ai/core/util/array"
-import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -25,8 +20,6 @@ export type SessionCommandContext = {
   setActiveMessage: (message: UserMessage | undefined) => void
   focusInput: () => void
   openFind?: () => void
-  review?: () => boolean
-  fileBrowser?: () => boolean
 }
 
 const withCategory = (category: string) => {
@@ -39,18 +32,15 @@ const withCategory = (category: string) => {
 export const useSessionCommands = (actions: SessionCommandContext) => {
   const command = useCommand()
   const dialog = useDialog()
-  const file = useFile()
   const language = useLanguage()
   const local = useLocal()
   const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
-  const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
-  const layout = useLayout()
   const navigate = useNavigate()
-  const { params, sessionKey, tabs, view } = useSessionLayout()
+  const { params, sessionKey, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
@@ -74,22 +64,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!id) return
     return sync().session.get(id)
   }
-  const hasReview = () => !!params.id
-  const normalizeTab = (tab: string) => {
-    if (!tab.startsWith("file://")) return tab
-    return file.tab(tab)
-  }
-  const tabState = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab,
-    review: actions.review,
-    hasReview,
-    fileBrowser: actions.fileBrowser,
-  })
-  const activeFileTab = tabState.activeFileTab
-  const closableTab = tabState.closableTab
-  const shown = settings.visibility.fileTree
 
   const messages = () => {
     const id = params.id
@@ -103,38 +77,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     return userMessages().filter((m) => m.id < revert)
   }
 
-  const showAllFiles = () => {
-    if (layout.fileTree.tab() !== "changes") return
-    layout.fileTree.setTab("all")
-  }
-
-  const selectionPreview = (path: string, selection: FileSelection) => {
-    const content = file.get(path)?.content?.content
-    if (!content) return undefined
-    return previewSelectedLines(content, { start: selection.startLine, end: selection.endLine })
-  }
-
-  const addSelectionToContext = (path: string, selection: FileSelection) => {
-    const preview = selectionPreview(path, selection)
-    prompt.context.add({ type: "file", path, selection, preview })
-  }
-
-  const canAddSelectionContext = () => {
-    const tab = activeFileTab()
-    if (!tab) return false
-    const path = file.pathFromTab(tab)
-    if (!path) return false
-    return file.selectedLines(path) != null
-  }
-
   const navigateMessageByOffset = actions.navigateMessageByOffset
   const setActiveMessage = actions.setActiveMessage
   const focusInput = actions.focusInput
   const openFind = actions.openFind
 
   const sessionCommand = withCategory(language.t("command.category.session"))
-  const fileCommand = withCategory(language.t("command.category.file"))
-  const contextCommand = withCategory(language.t("command.category.context"))
   const viewCommand = withCategory(language.t("command.category.view"))
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const mcpCommand = withCategory(language.t("command.category.mcp"))
@@ -231,38 +179,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           variant: "error",
         }),
       )
-  }
-
-  const openFile = () => {
-    void openDialog(
-      () => import("@/components/dialog-select-file"),
-      (x) => dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />),
-    )
-  }
-
-  const closeTab = () => {
-    const tab = closableTab()
-    if (!tab) return
-    tabs().close(tab)
-  }
-
-  const addSelection = () => {
-    const tab = activeFileTab()
-    if (!tab) return
-
-    const path = file.pathFromTab(tab)
-    if (!path) return
-
-    const range = file.selectedLines(path) as SelectedLineRange | null | undefined
-    if (!range) {
-      showToast({
-        title: language.t("toast.context.noLineSelection.title"),
-        description: language.t("toast.context.noLineSelection.description"),
-      })
-      return
-    }
-
-    addSelectionToContext(path, selectionFromLines(range))
   }
 
   const openTerminal = () => {
@@ -476,38 +392,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
-  const fileCmds = () => {
-    const tab = closableTab()
-    return [
-      fileCommand({
-        id: "file.open",
-        title: language.t("command.file.open"),
-        description: language.t("palette.search.placeholder"),
-        keybind: "mod+p",
-        slash: "open",
-        onSelect: openFile,
-      }),
-      tab &&
-        fileCommand({
-          id: "tab.close",
-          title: language.t("command.tab.close"),
-          keybind: "mod+w",
-          onSelect: closeTab,
-        }),
-    ].filter((v) => !!v)
-  }
-
-  const contextCmds = () => [
-    contextCommand({
-      id: "context.addSelection",
-      title: language.t("command.context.addSelection"),
-      description: language.t("command.context.addSelection.description"),
-      keybind: "mod+shift+l",
-      disabled: !canAddSelectionContext(),
-      onSelect: addSelection,
-    }),
-  ]
-
   const viewCmds = () => [
     viewCommand({
       id: "terminal.toggle",
@@ -524,22 +408,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         view().terminal.open()
       },
     }),
-    viewCommand({
-      id: "review.toggle",
-      title: language.t("command.review.toggle"),
-      keybind: "mod+shift+r",
-      onSelect: () => view().reviewPanel.toggle(),
-    }),
-    ...(shown()
-      ? [
-          viewCommand({
-            id: "fileTree.toggle",
-            title: language.t("command.fileTree.toggle"),
-            keybind: "mod+\\",
-            onSelect: () => layout.fileTree.toggle(),
-          }),
-        ]
-      : []),
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
@@ -619,8 +487,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   command.register("session", () => [
     ...sessionCmds(),
     ...shareCmds(),
-    ...fileCmds(),
-    ...contextCmds(),
     ...viewCmds(),
     ...terminalCmds(),
     ...messageCmds(),

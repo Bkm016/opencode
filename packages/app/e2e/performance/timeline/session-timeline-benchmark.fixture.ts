@@ -98,25 +98,19 @@ export async function setupTimelineBenchmark(
   options: {
     historyTurns: number
     eventBatch: number
-    vcsDiff?: unknown[]
-    turnDiffs?: unknown[]
   },
 ) {
   const events: EventPayload[] = []
   let eventBatch = options.eventBatch
-  const currentUserMessage = options.turnDiffs
-    ? { ...userMessage, info: { ...userMessage.info, summary: { diffs: options.turnDiffs } } }
-    : userMessage
   await mockOpenCodeServer(page, {
     directory,
     project: project(),
     provider: provider(),
     sessions: [session()],
-    vcsDiff: options.vcsDiff,
     pageMessages: () => ({
       items: [
         ...Array.from({ length: options.historyTurns }, (_, index) => performanceTurn(index)).flat(),
-        currentUserMessage,
+        userMessage,
         assistantMessage,
       ],
     }),

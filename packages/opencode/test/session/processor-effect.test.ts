@@ -1113,3 +1113,268 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
     { config: cfg },
   ),
 )
+
+const REPEAT_SENTENCE = "The quick brown fox jumps over the lazy dog near the riverbank now."
+
+function repeatingReply() {
+  return reply().text(REPEAT_SENTENCE).text(REPEAT_SENTENCE).text(REPEAT_SENTENCE).stop()
+}
+
+function toolArgsChunk(text: string) {
+  return {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [
+      {
+        delta: {
+          tool_calls: [{ index: 0, function: { arguments: text } }],
+        },
+      },
+    ],
+  }
+}
+
+function repeatingToolReply() {
+  return raw({
+    head: [
+      { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+      {
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: "call_1", type: "function", function: { name: "edit", arguments: "" } },
+              ],
+            },
+          },
+        ],
+      },
+      toolArgsChunk(REPEAT_SENTENCE),
+      toolArgsChunk(REPEAT_SENTENCE),
+      toolArgsChunk(REPEAT_SENTENCE),
+    ],
+    tail: [],
+  })
+}
+
+it.live("session.processor effect tests retry once when text repetition is detected, keeping the partial", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(repeatingReply())
+        yield* llm.text("recovered answer")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "loop")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "loop" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const texts = parts.filter((part): part is SessionV1.TextPart => part.type === "text")
+        const inputs = yield* llm.inputs
+
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        const textContents = texts.map((part) => part.text)
+        expect(textContents).toEqual([REPEAT_SENTENCE.repeat(2), "recovered answer"])
+        expect(JSON.stringify(inputs[0])).not.toContain("abnormal repetition loop")
+        expect(JSON.stringify(inputs[1])).toContain("abnormal repetition loop")
+        expect(handle.message.error).toBeUndefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests keep retrying repeated output until recovery", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(repeatingReply())
+        yield* llm.push(repeatingReply())
+        yield* llm.text("recovered after two loops")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "loop twice")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "loop twice" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(3)
+        expect(parts.some((part) => part.type === "text" && part.text === "recovered after two loops")).toBe(true)
+        expect(handle.message.error).toBeUndefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests retry when tool-input repetition is detected before execution", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        let toolExecutions = 0
+        yield* llm.push(repeatingToolReply())
+        yield* llm.text("recovered answer")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "tool loop")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "tool loop" }],
+          tools: {
+            edit: tool({
+              description: "Edit a file",
+              inputSchema: z.object({ content: z.string() }),
+              execute: async () => {
+                toolExecutions += 1
+                return { title: "Edit", output: "edited", metadata: {} }
+              },
+            }),
+          },
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const tools = parts.filter((part): part is SessionV1.ToolPart => part.type === "tool")
+        const texts = parts.filter((part): part is SessionV1.TextPart => part.type === "text")
+
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        expect(toolExecutions).toBe(0)
+        expect(tools).toHaveLength(1)
+        expect(tools[0]?.state).toMatchObject({
+          status: "error",
+          error: "Model tool input repetition detected",
+        })
+        expect(texts.some((part) => part.text === "recovered answer")).toBe(true)
+        expect(handle.message.error).toBeUndefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests do not false-fire on a normal varied response", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        const normal = [
+          "Here is a summary of the changes I made to the project today.",
+          "the the the - sorry, a few filler words are fine and should not abort.",
+          "- added a new module for streaming repetition detection",
+          "- wired the guard into the session processor",
+          "- added unit and effect tests covering the behavior",
+          "Let me know if you would like me to adjust anything else before merging.",
+        ].join("\n")
+        yield* llm.text(normal)
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "normal")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "normal" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const text = parts.find((part): part is SessionV1.TextPart => part.type === "text")
+
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(1)
+        expect(text?.text).toBe(normal)
+        expect(handle.message.error).toBeUndefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)

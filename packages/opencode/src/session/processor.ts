@@ -13,6 +13,7 @@ import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
 import { isOverflow } from "./overflow"
+import { detectRepetition, REPETITION_WINDOW } from "./repetition"
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
@@ -27,6 +28,8 @@ import { Database } from "@opencode-ai/core/database/database"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 
 const DOOM_LOOP_THRESHOLD = 3
+const REPETITION_RETRY_PROMPT =
+  "The previous attempt was interrupted because it entered an abnormal repetition loop. Start over, avoid repeating the same text, and continue the task normally."
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -116,6 +119,8 @@ const layer = Layer.effect(
       // True once this attempt produced any assistant text, reasoning, or tool work.
       // Empty drains (mid-stream drop surfaced as a quiet finish) must retry, not idle.
       let hasOutput = false
+      let repetitionRetry = false
+      const repetitionBuffers = new Map<string, string>()
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -256,6 +261,66 @@ const layer = Layer.effect(
       })
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
+
+      const settleRepetitionPart = Effect.fnUntraced(function* (kind: "text" | "reasoning" | "tool", id: string) {
+        if (kind === "text") {
+          if (!ctx.currentText) return
+          const part = ctx.currentText
+          ctx.currentText = undefined
+          const end = Date.now()
+          part.time = { start: part.time?.start ?? end, end }
+          yield* session.updatePart(part)
+          return
+        }
+        if (kind === "reasoning") {
+          const part = ctx.reasoningMap[id]
+          if (!part) return
+          delete ctx.reasoningMap[id]
+          const end = Date.now()
+          part.time = { start: part.time.start ?? end, end }
+          yield* session.updatePart(part)
+          return
+        }
+        const match = yield* readToolCall(id)
+        if (!match) return
+        const state = match.part.state
+        if (state.status === "completed" || state.status === "error") return
+        const end = Date.now()
+        yield* session.updatePart({
+          ...match.part,
+          state: {
+            status: "error",
+            input: state.input,
+            error: "Model tool input repetition detected",
+            metadata: state.status === "running" ? state.metadata : undefined,
+            time: { start: state.status === "running" ? state.time.start : end, end },
+          },
+        })
+        yield* settleToolCall(id)
+      })
+
+      const failRepetition = Effect.fnUntraced(function* () {
+        repetitionRetry = true
+        return yield* Effect.fail(
+          new SessionV1.APIError({
+            message: "Model output entered a repetition loop",
+            isRetryable: true,
+            responseHeaders: { "retry-after-ms": "0" },
+            metadata: { reason: "output_repetition" },
+          }),
+        )
+      })
+
+      const guardEvent = Effect.fnUntraced(function* (value: StreamEvent) {
+        if (value.type !== "text-delta" && value.type !== "reasoning-delta" && value.type !== "tool-input-delta") return
+        const key = `${value.type}:${value.id}`
+        const accumulated = `${repetitionBuffers.get(key) ?? ""}${value.text}`.slice(-REPETITION_WINDOW)
+        repetitionBuffers.set(key, accumulated)
+        if (!detectRepetition(accumulated)) return
+        const kind = value.type === "text-delta" ? "text" : value.type === "reasoning-delta" ? "reasoning" : "tool"
+        yield* settleRepetitionPart(kind, value.id)
+        return yield* failRepetition()
+      })
 
       const toolResultOutput = (
         value: Extract<StreamEvent, { type: "tool-result" }>,
@@ -649,19 +714,28 @@ const layer = Layer.effect(
         ctx.needsCompaction = false
         const cfg = yield* config.get()
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
+        repetitionRetry = false
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
             ctx.currentText = undefined
             ctx.reasoningMap = {}
             hasOutput = false
+            repetitionBuffers.clear()
             // Drop stale finish from a previous incomplete attempt so retries start clean.
             ctx.assistantMessage.finish = undefined
             yield* status.set(ctx.sessionID, { type: "busy" })
-            const stream = llm.stream(streamInput)
+            const stream = llm.stream(
+              repetitionRetry
+                ? { ...streamInput, system: [...streamInput.system, REPETITION_RETRY_PROMPT] }
+                : streamInput,
+            )
 
             yield* stream.pipe(
-              Stream.tap((event) => handleEvent(event)),
+              Stream.tap((event) => Effect.gen(function* () {
+                yield* guardEvent(event)
+                yield* handleEvent(event)
+              })),
               Stream.takeUntil(() => ctx.needsCompaction),
               Stream.runDrain,
             )

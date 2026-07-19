@@ -1,6 +1,6 @@
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { type Accessor, createEffect, createMemo, createResource, onCleanup } from "solid-js"
+import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
@@ -113,11 +113,6 @@ export function createSessionComposerRegionController(input: {
     () => `${input.sessionKey()}\0${store.ready}`,
   )
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
-  const ready = Promise.resolve()
-  const [promptReady] = createResource(
-    () => input.prompt.ready.promise ?? ready,
-    (promise) => promise.then(() => true),
-  )
 
   return {
     state: input.state,
@@ -133,7 +128,7 @@ export function createSessionComposerRegionController(input: {
     child: () => !!parentID(),
     showComposer: () => !input.state.blocked() || !!parentID(),
     handoffPrompt: () => getSessionHandoff(input.sessionKey())?.prompt,
-    promptReady: () => input.prompt.ready() || promptReady(),
+    promptReady: input.prompt.ready,
     dock: () => (store.ready && input.state.dock()) || value() > 0.001,
     dockProgress: value,
     dockHeight: () => Math.max(78, store.height),

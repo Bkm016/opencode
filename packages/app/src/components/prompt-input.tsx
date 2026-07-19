@@ -8,7 +8,6 @@ import {
   onCleanup,
   createMemo,
   createSignal,
-  createResource,
   type JSX,
 } from "solid-js"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -1422,11 +1421,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const providersLoading = () => props.controls.model.loading
   const providersShouldFadeIn = createMemo<boolean>((prev) => prev ?? providersLoading())
 
-  const [promptReady] = createResource(
-    () => prompt.ready.promise,
-    (p) => p,
-  )
-
   const bindEditorRef = (el: HTMLDivElement) => {
     editorRef = el
     restoreEndOnFocus = true
@@ -1434,7 +1428,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   return (
     <div class="relative size-full flex flex-col gap-0">
-      {(promptReady(), null)}
       <PromptPopover
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}

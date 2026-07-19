@@ -1,7 +1,6 @@
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Index,
@@ -416,19 +415,37 @@ export function MessageTimeline(props: {
     if (!id) return []
     return directChildSessions(sync().data.session, id)
   })
-  const [remoteChildren] = createResource(sessionID, async (id) => {
-    if (!id) return [] as Awaited<ReturnType<typeof import("@/components/dialog-child-sessions").loadChildSessions>>
-    const mod = await import("@/components/dialog-child-sessions")
-    return mod
-      .loadChildSessions({
-        parentID: id,
-        client: sdk().client,
-        directory: sdk().directory,
-        remember: (session) => sync().session.remember(session),
+  const [remoteChildCount, setRemoteChildCount] = createSignal(0)
+  createEffect(
+    on(sessionID, (id) => {
+      let stale = false
+      onCleanup(() => {
+        stale = true
       })
-      .catch(() => [])
-  })
-  const childCount = createMemo(() => Math.max(childSessions().length, remoteChildren()?.length ?? 0))
+      setRemoteChildCount(0)
+      if (!id) return
+      const currentSDK = sdk()
+      const currentSync = sync()
+
+      // 子会话预加载不能使用 Resource，否则冷请求会挂起 Router 的 shadow transition。
+      void import("@/components/dialog-child-sessions")
+        .then((mod) =>
+          mod.loadChildSessions({
+            parentID: id,
+            client: currentSDK.client,
+            directory: currentSDK.directory,
+            remember: (session) => {
+              if (!stale) currentSync.session.remember(session)
+            },
+          }),
+        )
+        .then((sessions) => {
+          if (!stale) setRemoteChildCount(sessions.length)
+        })
+        .catch(() => {})
+    }),
+  )
+  const childCount = createMemo(() => Math.max(childSessions().length, remoteChildCount()))
   const hasChildSessions = createMemo(() => childCount() > 0)
   const openChildSessions = () => {
     const id = sessionID()

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createRoot, For, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, For, on, onCleanup, onMount } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
@@ -41,15 +41,33 @@ function SessionTabSlot(props: {
   const sdk = createMemo(() => props.serverCtx()?.sdk ?? null)
   const cachedSession = createMemo(() => props.serverCtx()?.sync.session.peek(props.tab.sessionId))
   const persisted = createMemo(() => tabs.info[props.id])
-  const [loadedSession] = createResource(
-    () => {
-      const ctx = props.serverCtx()
-      return ctx ? { id: props.tab.sessionId, ctx } : null
-    },
-    ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
+  const [loading, setLoading] = createSignal(!!props.serverCtx())
+  createEffect(
+    on(
+      () => {
+        const ctx = props.serverCtx()
+        return ctx ? { id: props.tab.sessionId, ctx } : null
+      },
+      (target) => {
+        let stale = false
+        onCleanup(() => {
+          stale = true
+        })
+        setLoading(!!target)
+        if (!target) return
+
+        // Tab 标题解析只填充同步缓存，不能用 Resource 挂起新增 tab 的 transition。
+        void target.ctx.sync.session
+          .resolve(target.id)
+          .catch(() => undefined)
+          .finally(() => {
+            if (!stale) setLoading(false)
+          })
+      },
+    ),
   )
-  const session = createMemo(() => cachedSession() ?? loadedSession())
-  const missingSession = createMemo(() => !!props.serverCtx() && !loadedSession.loading && !session())
+  const session = cachedSession
+  const missingSession = createMemo(() => !!props.serverCtx() && !loading() && !session())
   let prefetched = false
 
   createEffect(() => {

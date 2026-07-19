@@ -1,4 +1,4 @@
-import { useIsRouting, useLocation } from "@solidjs/router"
+import { useBeforeLeave, useIsRouting, useLocation } from "@solidjs/router"
 import { batch, createEffect, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -52,6 +52,22 @@ const bad = (n: number | undefined, limit: number, low = false) => {
 }
 
 const session = (path: string) => path.includes("/session")
+const navigationDiagnosticKey = "opencode.debug.navigation.pending"
+
+type NavigationDiagnostic = {
+  from: string
+  to: string
+  startedAt: number
+}
+
+function readNavigationDiagnostic() {
+  try {
+    const value = localStorage.getItem(navigationDiagnosticKey)
+    return value ? (JSON.parse(value) as NavigationDiagnostic) : undefined
+  } catch {
+    return undefined
+  }
+}
 
 function Cell(props: {
   bad?: boolean
@@ -149,6 +165,7 @@ export function DebugBar(props: { inline?: boolean } = {}) {
   const platform = usePlatform()
   const location = useLocation()
   const routing = useIsRouting()
+  const recoveredNavigation = readNavigationDiagnostic()
   const [state, setState] = createStore({
     cls: undefined as number | undefined,
     delay: undefined as number | undefined,
@@ -169,6 +186,9 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     nav: {
       dur: undefined as number | undefined,
       pending: false,
+      recovered: !!recoveredNavigation,
+      from: recoveredNavigation?.from,
+      to: recoveredNavigation?.to,
     },
   })
 
@@ -180,7 +200,7 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     return `${Math.round(value * 100)}%`
   }
   const longv = () => (state.long.count === undefined ? na() : `${time(state.long.block) ?? na()}/${state.long.count}`)
-  const navv = () => (state.nav.pending ? "..." : (time(state.nav.dur) ?? na()))
+  const navv = () => (state.nav.recovered ? "STUCK" : state.nav.pending ? "..." : (time(state.nav.dur) ?? na()))
   const toggleFocus = async () => {
     if (!platform.setForceFocus) return
     const enabled = !state.focus
@@ -197,6 +217,11 @@ export function DebugBar(props: { inline?: boolean } = {}) {
   let init = false
   let one = 0
   let two = 0
+  let target = ""
+
+  useBeforeLeave((event) => {
+    target = String(event.to)
+  })
 
   createEffect(() => {
     const busy = routing()
@@ -215,7 +240,14 @@ export function DebugBar(props: { inline?: boolean } = {}) {
       two = 0
       if (start !== 0) return
       start = performance.now()
-      if (session(prev)) setState("nav", { dur: undefined, pending: true })
+      const diagnostic = { from: prev, to: target, startedAt: Date.now() }
+      try {
+        localStorage.setItem(navigationDiagnosticKey, JSON.stringify(diagnostic))
+      } catch {}
+      if (session(prev)) {
+        setState("nav", "dur", undefined)
+        setState("nav", "pending", true)
+      }
       return
     }
 
@@ -228,6 +260,10 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     const from = prev
     start = 0
     prev = next
+    target = ""
+    try {
+      localStorage.removeItem(navigationDiagnosticKey)
+    } catch {}
 
     if (!(session(from) || session(next))) return
 
@@ -237,12 +273,14 @@ export function DebugBar(props: { inline?: boolean } = {}) {
       one = 0
       two = requestAnimationFrame(() => {
         two = 0
-        setState("nav", { dur: performance.now() - at, pending: false })
+        setState("nav", "dur", performance.now() - at)
+        setState("nav", "pending", false)
       })
     })
   })
 
   onMount(() => {
+    if (recoveredNavigation) console.error("[opencode] Previous navigation did not settle", recoveredNavigation)
     const obs: PerformanceObserver[] = []
     const fps: Array<{ at: number; dur: number }> = []
     const long: Array<{ at: number; dur: number }> = []
@@ -463,10 +501,14 @@ export function DebugBar(props: { inline?: boolean } = {}) {
       >
         <Cell
           label={language.t("debugBar.nav.label")}
-          tip={language.t("debugBar.nav.tip")}
+          tip={
+            state.nav.recovered
+              ? `Previous navigation did not settle: ${state.nav.from ?? "?"} -> ${state.nav.to ?? "?"}`
+              : language.t("debugBar.nav.tip")
+          }
           value={navv()}
-          bad={bad(state.nav.dur, 400)}
-          dim={state.nav.dur === undefined && !state.nav.pending}
+          bad={state.nav.recovered || bad(state.nav.dur, 400)}
+          dim={state.nav.dur === undefined && !state.nav.pending && !state.nav.recovered}
           inline={props.inline}
         />
         <Cell

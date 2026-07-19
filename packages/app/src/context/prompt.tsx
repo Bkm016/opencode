@@ -1,7 +1,7 @@
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useParams, useSearchParams } from "@solidjs/router"
-import { createMemo, createResource, createRoot, getOwner, onCleanup } from "solid-js"
+import { createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { ServerConnection } from "./server"
 import { useServerSDK } from "./server-sdk"
 import { useSDK } from "./sdk"
@@ -124,29 +124,19 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     const pick = (scope?: PromptScope) => (scope ? load(scope) : session())
     const ready = createPromptReady(session)
 
-    const withSuspense = <T,>(cb: () => T): (() => T) =>
-      createResource(
-        async () => {
-          const value = cb()
-          await session().ready.promise
-          return value
-        },
-        cb,
-        { initialValue: cb() },
-      )[0]
-
+    // Prompt 状态本身是同步 store；持久化就绪只控制输入框显示，不能挂起 Router transition。
     return {
       ready,
       capture: (scope?: PromptScope) => pick(scope).capture(),
-      current: withSuspense(() => session().current()),
-      cursor: withSuspense(() => session().cursor()),
-      dirty: withSuspense(() => session().dirty()),
+      current: () => session().current(),
+      cursor: () => session().cursor(),
+      dirty: () => session().dirty(),
       model: {
-        current: withSuspense(() => session().model.current()),
+        current: () => session().model.current(),
         set: (model: PromptModel | undefined) => session().model.set(model),
       },
       context: {
-        items: withSuspense(() => session().context.items()),
+        items: () => session().context.items(),
         add: (item: ContextItem) => session().context.add(item),
         remove: (key: string) => session().context.remove(key),
         removeComment: (path: string, commentID: string) => session().context.removeComment(path, commentID),

@@ -915,7 +915,11 @@ export const dict = {
   "settings.instructions.title": "System instructions",
   "settings.instructions.description":
     "Files and remote URLs opencode loads as system instructions for the current project. Read-only — edit the files on disk to change them.",
+  "settings.instructions.projectDescription":
+    "Instruction files loaded from the current project. Read-only — edit the files on disk to change them.",
+  "settings.instructions.searchProject": "Search project instructions",
   "settings.instructions.empty": "No instruction files or URLs resolved for this project.",
+  "settings.instructions.projectEmpty": "No instruction files found in this project.",
   "settings.instructions.loading": "Loading instructions…",
   "settings.instructions.error": "Failed to load instructions.",
   "settings.instructions.badge.url": "URL",

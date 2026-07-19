@@ -810,7 +810,11 @@ export const dict = {
   "settings.instructions.title": "系统指令",
   "settings.instructions.description":
     "opencode 为当前项目加载的系统指令文件与远程 URL。只读——如需修改请直接编辑磁盘上的文件。",
+  "settings.instructions.projectDescription":
+    "当前项目目录中加载的指令文件。只读——如需修改请直接编辑磁盘上的文件。",
+  "settings.instructions.searchProject": "搜索项目指令",
   "settings.instructions.empty": "当前项目未解析到任何指令文件或 URL。",
+  "settings.instructions.projectEmpty": "当前项目中没有指令文件。",
   "settings.instructions.loading": "正在加载指令…",
   "settings.instructions.error": "加载指令失败。",
   "settings.instructions.badge.url": "URL",

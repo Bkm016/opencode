@@ -22,3 +22,12 @@ export const pathKey = (path: string) => {
   if (isDrive(trimmed)) return `${trimmed}/` as PathKey
   return trimmed as PathKey
 }
+
+export const isPathInside = (root: string, target: string) => {
+  const windows = isWindowsPath(root) || isWindowsPath(target)
+  const parent = windows ? pathKey(root).toLowerCase() : pathKey(root)
+  const child = windows ? pathKey(target).toLowerCase() : pathKey(target)
+  if (!parent) return false
+  const prefix = parent.endsWith("/") ? parent : `${parent}/`
+  return child === parent || child.startsWith(prefix)
+}

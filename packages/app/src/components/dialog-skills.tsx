@@ -9,21 +9,11 @@ import { createEffect, createMemo, createResource, Show, type Accessor } from "s
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
-
-function normalizePath(value: string) {
-  const path = value.replaceAll("\\", "/")
-  const normalized = path.length > 1 ? path.replace(/\/+$/, "") : path
-  if (/^(?:[A-Za-z]:\/|\/\/)/.test(normalized)) return normalized.toLowerCase()
-  return normalized
-}
+import { isPathInside } from "@/utils/path-key"
 
 function isProjectSkill(skill: SkillV2Info, directory: string) {
   if (skill.location === "<built-in>") return false
-  const location = normalizePath(skill.location)
-  const root = normalizePath(directory)
-  if (!root) return false
-  // 使用目录边界判断，避免把名称前缀相同的相邻目录误归为当前项目。
-  return location === root || location.startsWith(`${root}/`)
+  return isPathInside(directory, skill.location)
 }
 
 export function DialogSkills(props: { directory: string }) {
@@ -82,7 +72,11 @@ export function DialogSkills(props: { directory: string }) {
   )
 
   return (
-    <Dialog size="large" title={language.t("dialog.skills.title")} description={language.t("dialog.skills.description")}>
+    <Dialog
+      size="x-large"
+      title={language.t("dialog.skills.title")}
+      description={language.t("dialog.skills.description")}
+    >
       <Show
         when={!skills.error}
         fallback={

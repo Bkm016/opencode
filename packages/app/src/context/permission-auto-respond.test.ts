@@ -25,6 +25,16 @@ describe("autoRespondsPermission", () => {
     expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
   })
 
+  test("inherits a parent override when Windows directory separators differ", () => {
+    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+    const autoAccept = {
+      // This reproduces a key persisted before directory normalization was introduced.
+      [`${base64Encode("C:\\repo\\project")}/root`]: true,
+    }
+
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), "C:/repo/project")).toBe(true)
+  })
+
   test("uses a parent session's legacy auto-accept key", () => {
     const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
 
@@ -121,5 +131,12 @@ describe("isDirectoryAutoAccepting", () => {
     const directory = "/tmp/project"
     const autoAccept = { [`${base64Encode(directory)}/*`]: false }
     expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(false)
+  })
+
+  test("normalizes Windows directory separators", () => {
+    // Directory-wide legacy state follows the same compatibility path as session overrides.
+    const autoAccept = { [`${base64Encode("C:\\repo\\project")}/*`]: true }
+
+    expect(isDirectoryAutoAccepting(autoAccept, "C:/repo/project")).toBe(true)
   })
 })

@@ -19,7 +19,7 @@ import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { pinnedSessionIds } from "@/utils/session-pin"
+import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -240,35 +240,79 @@ const WorkspaceSessionList = (props: {
   showNew: Accessor<boolean>
   loading: Accessor<boolean>
   sessions: Accessor<Session[]>
-}): JSX.Element => (
-  <nav class="flex flex-col gap-1">
-    <Show when={props.showNew()}>
-      <NewSessionItem
-        slug={props.slug()}
-        mobile={props.mobile}
-        sidebarExpanded={props.ctx.sidebarExpanded}
-      />
-    </Show>
-    <Show when={props.loading()}>
-      <SessionSkeleton />
-    </Show>
-    <For each={props.sessions()}>
-      {(session) => (
-        <SessionItem
-          session={session}
-          list={props.sessions()}
-          navList={props.ctx.navList}
-          slug={props.slug()}
-          mobile={props.mobile}
-          showChild
-          sidebarExpanded={props.ctx.sidebarExpanded}
-          prefetchSession={props.ctx.prefetchSession}
-          archiveSession={props.ctx.archiveSession}
-        />
-      )}
-    </For>
-  </nav>
-)
+}): JSX.Element => {
+  const language = useLanguage()
+  const dateFormatter = createMemo(
+    () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
+  )
+  const groups = createMemo(() => {
+    const sessions = props.sessions()
+    // 置顶会话保持在日期分组之前，避免日期分组打乱现有置顶顺序。
+    const pinned = sessions.filter((session) => isSessionPinned(session.directory, session.id))
+    const groups: Array<{ key: string; label?: string; sessions: Session[] }> = []
+    if (pinned.length > 0) groups.push({ key: "pinned", sessions: pinned })
+
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
+    sessions
+      .filter((session) => !isSessionPinned(session.directory, session.id))
+      .forEach((session) => {
+        const date = new Date(session.time.updated ?? session.time.created)
+        const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+        const key = String(day)
+        const label =
+          day === today
+            ? language.t("home.sessions.group.today")
+            : day === yesterday
+              ? language.t("home.sessions.group.yesterday")
+              : dateFormatter().format(date)
+        const group = groups.at(-1)
+        if (group?.key === key) {
+          group.sessions.push(session)
+          return
+        }
+        groups.push({ key, label, sessions: [session] })
+      })
+    return groups
+  })
+  const item = (session: Session) => (
+    <SessionItem
+      session={session}
+      list={props.sessions()}
+      navList={props.ctx.navList}
+      slug={props.slug()}
+      mobile={props.mobile}
+      showChild
+      sidebarExpanded={props.ctx.sidebarExpanded}
+      prefetchSession={props.ctx.prefetchSession}
+      archiveSession={props.ctx.archiveSession}
+    />
+  )
+
+  return (
+    <nav class="flex flex-col gap-1">
+      <Show when={props.showNew()}>
+        <NewSessionItem slug={props.slug()} mobile={props.mobile} sidebarExpanded={props.ctx.sidebarExpanded} />
+      </Show>
+      <Show when={props.loading()}>
+        <SessionSkeleton />
+      </Show>
+      <Show when={!props.mobile} fallback={<For each={props.sessions()}>{item}</For>}>
+        <For each={groups()}>
+          {(group) => (
+            <div class="mt-2 flex flex-col gap-1 first:mt-0">
+              <Show when={group.label}>
+                {(label) => <div class="px-2 pt-2 pb-1 text-12-medium text-text-weak">{label()}</div>}
+              </Show>
+              <For each={group.sessions}>{item}</For>
+            </div>
+          )}
+        </For>
+      </Show>
+    </nav>
+  )
+}
 
 export const SortableWorkspace = (props: {
   ctx: WorkspaceSidebarContext

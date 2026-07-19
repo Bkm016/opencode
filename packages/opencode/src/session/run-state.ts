@@ -7,6 +7,7 @@ import { Effect, Latch, Layer, Scope, Context } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import { acquireInstanceActivity, type InstanceActivity } from "@/effect/instance-registry"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
@@ -35,10 +36,17 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
-        const runners = new Map<SessionID, Runner.Runner<SessionV1.WithParts>>()
+        const runners = new Map<
+          SessionID,
+          {
+            runner: Runner.Runner<SessionV1.WithParts>
+            activate(activity: InstanceActivity): void
+            releaseIfIdle(): void
+          }
+        >()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
-            yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
+            yield* Effect.forEach(runners.values(), (entry) => entry.runner.cancel, {
               concurrency: "unbounded",
               discard: true,
             })
@@ -56,22 +64,39 @@ const layer = Layer.effect(
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (existing) return existing
+      let activity: InstanceActivity | undefined
+      const release = () => {
+        activity?.release()
+        activity = undefined
+      }
       const next = Runner.make<SessionV1.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
           yield* status.set(sessionID, { type: "idle" })
-        }),
+        }).pipe(Effect.ensuring(Effect.sync(release))),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
       })
-      data.runners.set(sessionID, next)
-      return next
+      const entry = {
+        runner: next,
+        activate(nextActivity: InstanceActivity) {
+          if (activity) return
+          // Runner 脱离最初的请求 fiber 继续执行，因此必须独立持有租约直到真正 idle。
+          nextActivity.retain()
+          activity = nextActivity
+        },
+        releaseIfIdle() {
+          if (!next.busy) release()
+        },
+      }
+      data.runners.set(sessionID, entry)
+      return entry
     })
 
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
-      if (existing?.busy) yield* busyError(sessionID)
+      if (existing?.runner.busy) yield* busyError(sessionID)
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
@@ -82,7 +107,7 @@ const layer = Layer.effect(
         yield* status.set(sessionID, { type: "idle" })
         return
       }
-      yield* existing.cancel
+      yield* existing.runner.cancel
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (
@@ -90,7 +115,17 @@ const layer = Layer.effect(
       onInterrupt: Effect.Effect<SessionV1.WithParts>,
       work: Effect.Effect<SessionV1.WithParts>,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
+      const directory = yield* InstanceState.directory
+      return yield* Effect.acquireUseRelease(
+        Effect.promise((signal) => acquireInstanceActivity(directory, signal)),
+        (activity) =>
+          Effect.gen(function* () {
+            const entry = yield* runner(sessionID, onInterrupt)
+            entry.activate(activity)
+            return yield* entry.runner.ensureRunning(work).pipe(Effect.ensuring(Effect.sync(entry.releaseIfIdle)))
+          }),
+        (activity) => Effect.sync(activity.release),
+      )
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -99,9 +134,20 @@ const layer = Layer.effect(
       work: Effect.Effect<SessionV1.WithParts>,
       ready?: Latch.Latch,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt))
-        .startShell(work, ready)
-        .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
+      const directory = yield* InstanceState.directory
+      return yield* Effect.acquireUseRelease(
+        Effect.promise((signal) => acquireInstanceActivity(directory, signal)),
+        (activity) =>
+          Effect.gen(function* () {
+            const entry = yield* runner(sessionID, onInterrupt)
+            entry.activate(activity)
+            return yield* entry.runner.startShell(work, ready).pipe(
+              Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))),
+              Effect.ensuring(Effect.sync(entry.releaseIfIdle)),
+            )
+          }),
+        (activity) => Effect.sync(activity.release),
+      )
     })
 
     return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })

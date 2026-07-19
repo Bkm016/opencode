@@ -57,6 +57,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { InstanceStore } from "@/project/instance-store"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -1126,6 +1127,34 @@ it.instance("cancel records MessageAbortedError on interrupted process", () =>
       }
     }
   }),
+)
+
+it.instance(
+  "instance reload waits for a running session",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const store = yield* InstanceStore.Service
+      const instance = yield* TestInstance
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      yield* user(chat.id, "hello")
+
+      const loop = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* waitForBusy(chat.id)
+
+      const reload = yield* store.reload({ directory: instance.directory }).pipe(Effect.forkChild)
+      const blocked = yield* Fiber.join(reload).pipe(Effect.timeoutOption("20 millis"))
+      expect(blocked._tag).toBe("None")
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.join(loop)
+      yield* Fiber.join(reload).pipe(Effect.timeout("5 seconds"))
+    }),
+  20_000,
 )
 
 raceNoLLMServer.instance(

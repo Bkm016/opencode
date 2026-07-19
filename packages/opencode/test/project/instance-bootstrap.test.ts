@@ -4,8 +4,9 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Cause, Effect, Exit, Fiber } from "effect"
+import { Cause, Effect, Exit, Fiber, Option } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
+import { acquireInstanceActivity } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
@@ -112,4 +113,30 @@ it.live("InstanceStore.reload runs InstanceBootstrap", () =>
 
     expect(existsSync(tmp.marker)).toBe(true)
   }),
+)
+
+it.live("InstanceStore.reload waits for active instance work", () =>
+  Effect.gen(function* () {
+    const tmp = yield* bootstrapFixture
+    const store = yield* InstanceStore.Service
+    yield* store.load({ directory: tmp.directory })
+    const activity = yield* Effect.promise((signal) => acquireInstanceActivity(tmp.directory, signal))
+    yield* Effect.addFinalizer(() => Effect.sync(activity.release))
+
+    const reload = yield* store.reload({ directory: tmp.directory }).pipe(Effect.forkScoped({ startImmediately: true }))
+    const blocked = yield* Fiber.join(reload).pipe(Effect.timeoutOption("20 millis"))
+    expect(Option.isNone(blocked)).toBe(true)
+
+    const queued = yield* Effect.promise((signal) => acquireInstanceActivity(tmp.directory, signal)).pipe(
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    const acquiredDuringReload = yield* Fiber.join(queued).pipe(Effect.timeoutOption("20 millis"))
+    expect(Option.isNone(acquiredDuringReload)).toBe(true)
+
+    activity.release()
+    yield* Fiber.join(reload).pipe(Effect.timeout("2 seconds"))
+    const nextActivity = yield* Fiber.join(queued).pipe(Effect.timeout("2 seconds"))
+    nextActivity.release()
+  }),
+  20_000,
 )

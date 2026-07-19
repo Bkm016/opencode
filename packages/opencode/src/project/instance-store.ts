@@ -4,7 +4,7 @@ import { GlobalBus } from "@/bus/global"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
-import { disposeInstance as runDisposers } from "@/effect/instance-registry"
+import { beginInstanceReload, disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -269,25 +269,28 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
     const reload = (input: LoadInput): Effect.Effect<InstanceContext> => {
       const directory = FSUtil.resolve(input.directory)
-      return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function* () {
-          const previous = cache.get(directory)
-          const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
-          cache.set(directory, entry)
-          yield* Effect.gen(function* () {
-            yield* Effect.logInfo("reloading instance", { directory: directory })
-            if (previous) {
-              yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
-              pauseHotReload(directory)
-              stopHotReload(directory)
-              yield* Effect.promise(() => runDisposers(directory))
-              yield* emitDisposed({ directory, project: input.project?.id })
-            }
-            yield* completeLoad(directory, input, entry)
-          }).pipe(Effect.forkIn(scope, { startImmediately: true }))
-          return yield* restore(Deferred.await(entry.deferred))
-        }),
-      ).pipe(Effect.withSpan("InstanceStore.reload"))
+      return Effect.gen(function* () {
+        const release = yield* Effect.promise((signal) => beginInstanceReload(directory, signal))
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const previous = cache.get(directory)
+            const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
+            cache.set(directory, entry)
+            yield* Effect.gen(function* () {
+              yield* Effect.logInfo("reloading instance", { directory: directory })
+              if (previous) {
+                yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
+                pauseHotReload(directory)
+                stopHotReload(directory)
+                yield* Effect.promise(() => runDisposers(directory))
+                yield* emitDisposed({ directory, project: input.project?.id })
+              }
+              yield* completeLoad(directory, input, entry)
+            }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+            return yield* restore(Deferred.await(entry.deferred))
+          }),
+        ).pipe(Effect.ensuring(Effect.sync(release)))
+      }).pipe(Effect.withSpan("InstanceStore.reload"))
     }
     doReload = reload
 

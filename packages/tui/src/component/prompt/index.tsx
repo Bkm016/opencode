@@ -544,10 +544,12 @@ export function Prompt(props: PromptProps) {
       },
       {
         title: "Move session",
-        desc: "Move to another project dir",
+        desc: "Change the working directory for the session",
         name: "session.move",
         category: "Session",
         slashName: "move",
+        // /cd is an alternate vocabulary for the same session-location transition; both must keep one implementation.
+        slashAliases: ["cd"],
         run: () => {
           move.open()
         },

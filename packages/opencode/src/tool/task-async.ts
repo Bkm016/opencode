@@ -6,7 +6,7 @@ import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { Database } from "@opencode-ai/core/database/database"
 import { Effect, Option, Schema, Scope } from "effect"
-import { getBatch, getTaskMeta, registerTask, type TaskMeta } from "./task-registry"
+import { getBatch, getTaskMeta, registerBatch, registerTask, type TaskMeta } from "./task-registry"
 import type { TaskPromptOps } from "./task"
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
 
@@ -111,17 +111,38 @@ function resolveSessionID(taskId: string) {
 function resolveTargets(params: {
   task_id?: string
   task_ids?: readonly string[]
-  batch_id?: string
 }) {
-  if (params.batch_id) {
-    const fromBatch = getBatch(params.batch_id)
-    if (fromBatch && fromBatch.length > 0) return [...fromBatch]
-    return [] as string[]
-  }
   if (params.task_ids && params.task_ids.length > 0) return [...params.task_ids]
   if (params.task_id) return [params.task_id]
   return [] as string[]
 }
+
+const resolveBatchTargets = Effect.fnUntraced(function* (
+  batchId: string,
+  parentSessionId: SessionID,
+  sessions: Session.Interface,
+) {
+  const cached = getBatch(batchId)
+  if (cached && cached.length > 0) return [...cached]
+
+  // 进程重启会清空内存索引，工具结果中的批次元数据是持久化恢复源。
+  const messages = yield* sessions.messages({ sessionID: parentSessionId })
+  const taskIds = [
+    ...new Set(
+      messages.flatMap((message) =>
+        message.parts.flatMap((part) => {
+          if (part.type !== "tool" || (part.tool !== "task" && part.tool !== "task_async")) return []
+          if (!("metadata" in part.state) || part.state.metadata?.batchID !== batchId) return []
+          const ids = part.state.metadata.taskIDs
+          if (!Array.isArray(ids)) return []
+          return ids.filter((id): id is string => typeof id === "string")
+        }),
+      ),
+    ),
+  ]
+  if (taskIds.length > 0) registerBatch(batchId, taskIds)
+  return taskIds
+})
 
 function messageText(msg: SessionV1.WithParts) {
   return msg.parts
@@ -176,26 +197,12 @@ export const TaskAsyncStatusTool = Tool.define(
       execute: (params: Schema.Schema.Type<typeof StatusParameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           if (params.batch_id) {
-            const ids = getBatch(params.batch_id)
-            if (!ids || ids.length === 0) {
-              const children = yield* sessions.children(ctx.sessionID)
-              const jobs = yield* background.list()
-              const jobById = new Map(jobs.map((job) => [job.id, job]))
-              const matched = children.filter((child) => getTaskMeta(child.id)?.batchId === params.batch_id)
-              const lines =
-                matched.length > 0
-                  ? matched.map((child) => {
-                      const job = jobById.get(child.id)
-                      const meta = getTaskMeta(child.id)
-                      return `${child.id} | ${jobStatus(job)} | ${meta?.title ?? child.title}`
-                    })
-                  : jobs
-                      .filter((job) => job.metadata?.parentSessionId === ctx.sessionID)
-                      .map((job) => `${job.id} | ${job.status} | ${job.title ?? "(untitled)"}`)
+            const ids = yield* resolveBatchTargets(params.batch_id, ctx.sessionID, sessions)
+            if (ids.length === 0) {
               return result(
                 `batch ${params.batch_id}`,
-                lines.length > 0 ? lines.join("\n") : `No async tasks found for batch_id: ${params.batch_id}`,
-                { batch_id: params.batch_id, count: lines.length },
+                `No async tasks found for batch_id: ${params.batch_id}`,
+                { batch_id: params.batch_id, count: 0 },
               )
             }
 
@@ -349,11 +356,9 @@ export const TaskAsyncWaitTool = Tool.define(
       parameters: WaitParameters,
       execute: (params: Schema.Schema.Type<typeof WaitParameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
-          let targets = resolveTargets(params)
-          if (params.batch_id && targets.length === 0) {
-            const children = yield* sessions.children(ctx.sessionID)
-            targets = children.filter((child) => getTaskMeta(child.id)?.batchId === params.batch_id).map((c) => c.id)
-          }
+          const targets = params.batch_id
+            ? yield* resolveBatchTargets(params.batch_id, ctx.sessionID, sessions)
+            : resolveTargets(params)
           if (targets.length === 0) {
             return result("wait", "No async tasks found to wait for.", { count: 0 })
           }

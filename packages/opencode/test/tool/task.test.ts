@@ -17,6 +17,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { TaskAsyncStatusTool, TaskAsyncWaitTool } from "../../src/tool/task-async"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -645,6 +646,77 @@ describe("tool.task", () => {
       ])
       expect(result.output).toContain("batch_id:")
       expect(result.output).toContain("status: accepted (async)")
+    }),
+  )
+
+  it.instance("recovers batch tasks from persisted tool metadata", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const first = yield* sessions.create({ parentID: chat.id, title: "scan auth" })
+      const second = yield* sessions.create({ parentID: chat.id, title: "scan payments" })
+      const batchID = `batch-${chat.id}`
+      const waitBatchID = `wait-${chat.id}`
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: assistant.id,
+        sessionID: chat.id,
+        type: "tool",
+        callID: "task-batch-call",
+        tool: "task",
+        state: {
+          status: "completed",
+          input: {},
+          output: "accepted",
+          title: "task: 2 sessions",
+          metadata: {
+            batchID,
+            taskIDs: [first.id, second.id],
+          },
+          time: { start: Date.now(), end: Date.now() },
+        },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: assistant.id,
+        sessionID: chat.id,
+        type: "tool",
+        callID: "task-async-batch-call",
+        tool: "task_async",
+        state: {
+          status: "completed",
+          input: {},
+          output: "accepted",
+          title: "task: 2 sessions",
+          metadata: {
+            batchID: waitBatchID,
+            taskIDs: [first.id, second.id],
+          },
+          time: { start: Date.now(), end: Date.now() },
+        },
+      })
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      const statusTool = yield* TaskAsyncStatusTool
+      const statusDef = yield* statusTool.init()
+      const status = yield* statusDef.execute({ batch_id: batchID }, context)
+      expect(status.metadata.count).toBe(2)
+      expect(status.output).toContain(first.id)
+      expect(status.output).toContain(second.id)
+
+      const waitTool = yield* TaskAsyncWaitTool
+      const waitDef = yield* waitTool.init()
+      const waited = yield* waitDef.execute({ batch_id: waitBatchID }, context)
+      expect(waited.metadata.task_ids).toEqual([first.id, second.id])
+      expect(waited.metadata.completed).toBe(2)
     }),
   )
 

@@ -32,6 +32,8 @@ export interface DialogSelectProps<T> {
   onMove?: (option: DialogSelectOption<T>) => void
   onFilter?: (query: string) => void
   onSelect?: (option: DialogSelectOption<T>) => void
+  /** Handles Enter when filtering leaves no selectable option, allowing callers to accept the typed value. */
+  onSubmitEmpty?: (filter: string) => void
   skipFilter?: boolean
   renderFilter?: boolean
   locked?: boolean
@@ -350,7 +352,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       return
     }
     const option = selected()
-    if (!option) return
+    if (!option) {
+      props.onSubmitEmpty?.(store.filter)
+      return
+    }
     option.onSelect?.(dialog)
     props.onSelect?.(option)
   }

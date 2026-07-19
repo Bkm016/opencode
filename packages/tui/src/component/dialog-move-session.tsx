@@ -7,7 +7,7 @@ import { useDialog } from "../ui/dialog"
 import { useSDK } from "../context/sdk"
 import { useTheme } from "../context/theme"
 import { useSync } from "../context/sync"
-import { abbreviateHome } from "../runtime"
+import { abbreviateHome, resolveUserPath } from "../runtime"
 import { useTuiPaths } from "../context/runtime"
 import { Locale } from "../util/locale"
 import { errorMessage } from "../util/error"
@@ -307,12 +307,25 @@ export function DialogMoveSession(props: DialogMoveSessionProps) {
               </text>
               <text fg={theme.textMuted}>{errorMessage(loadError())}</text>
             </box>
-          ) : undefined
+          ) : (
+            <box paddingLeft={4} paddingRight={4} paddingTop={1}>
+              <text fg={theme.textMuted}>No matching directory. Press enter to switch to this path.</text>
+            </box>
+          )
         }
         locked={showError() || directories.loading || loadedProject.loading || Boolean(removing())}
         current={current()}
         onSelect={(option) => {
           if (option.value) props.onSelect(option.value)
+        }}
+        onSubmitEmpty={(filter) => {
+          // Empty Enter can also occur while data is unavailable; require a deliberate path before changing location.
+          if (!filter.trim()) return
+          props.onSelect({
+            type: "directory",
+            directory: resolveUserPath(filter, paths.home, currentDirectory() ?? paths.cwd),
+            subdirectory: false,
+          })
         }}
         onMove={() => setToDelete(undefined)}
         actions={

@@ -454,7 +454,9 @@ function streamCaretHost(container: HTMLElement) {
   }
 
   // display:contents block wrappers — walk their element children.
-  const kids = [...last.children].filter((node): node is HTMLElement => node instanceof HTMLElement)
+  const kids = [...last.children].filter(
+    (node): node is HTMLElement => node instanceof HTMLElement && !node.matches(skip) && !node.closest(skip),
+  )
   return kids.at(-1) ?? last
 }
 

@@ -46,7 +46,16 @@ export function ResizeHandle(props: ResizeHandleProps) {
     document.body.style.userSelect = "none"
     document.body.style.overflow = "hidden"
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
+    // 合并同一帧内的移动事件，避免拖拽宽大面板时反复触发布局。
+    let pendingMoveEvent: MouseEvent | null = null
+    let frameId: number | null = null
+
+    const flush = () => {
+      frameId = null
+      const moveEvent = pendingMoveEvent
+      pendingMoveEvent = null
+      if (!moveEvent) return
+
       const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
       const delta =
         local.direction === "vertical"
@@ -65,7 +74,20 @@ export function ResizeHandle(props: ResizeHandleProps) {
       onResize(Math.min(max, Math.max(min, current)))
     }
 
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      pendingMoveEvent = moveEvent
+      if (frameId === null) {
+        frameId = requestAnimationFrame(flush)
+      }
+    }
+
     const onMouseUp = () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId)
+        frameId = null
+      }
+      flush()
+
       document.body.style.userSelect = ""
       document.body.style.overflow = ""
       document.removeEventListener("mousemove", onMouseMove)

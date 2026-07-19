@@ -742,7 +742,6 @@ export const dict = {
   "sidebar.gettingStarted.title": "Empezando",
   "sidebar.gettingStarted.line1": "OpenCode incluye modelos gratuitos para que puedas empezar inmediatamente.",
   "sidebar.gettingStarted.line2": "Conecta cualquier proveedor para usar modelos, inc. Claude, GPT, Gemini etc.",
-  "sidebar.project.clearNotifications": "Borrar notificaciones",
   "sidebar.empty.title": "No hay proyectos abiertos",
   "sidebar.empty.description": "Abre un proyecto para empezar",
 

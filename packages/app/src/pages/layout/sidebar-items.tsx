@@ -12,7 +12,6 @@ import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "s
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
-import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { isSessionPinned, toggleSessionPin } from "@/utils/session-pin"
@@ -27,13 +26,8 @@ export const ProjectIcon = (props: {
   working?: boolean
 }): JSX.Element => {
   const serverSync = useServerSync()
-  const notification = useNotification()
   const permission = usePermission()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
-  const unseenCount = createMemo(() =>
-    dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
-  )
-  const hasError = createMemo(() => dirs().some((directory) => notification.project.unseenHasError(directory)))
   const hasPermissions = createMemo(() =>
     dirs().some((directory) => {
       return hasProjectPermissions(serverSync().session.data.permission, (item) => {
@@ -42,7 +36,7 @@ export const ProjectIcon = (props: {
       })
     }),
   )
-  const notify = createMemo(() => props.notify && (hasPermissions() || unseenCount() > 0))
+  const notify = createMemo(() => props.notify && hasPermissions())
   const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
 
   return (
@@ -57,14 +51,7 @@ export const ProjectIcon = (props: {
         />
       </div>
       <Show when={notify()}>
-        <div
-          classList={{
-            "absolute top-px right-px size-1.5 rounded-full z-10": true,
-            "bg-surface-warning-strong": hasPermissions(),
-            "bg-icon-critical-base": !hasPermissions() && hasError(),
-            "bg-text-interactive-base": !hasPermissions() && !hasError(),
-          }}
-        />
+        <div class="absolute top-px right-px size-1.5 rounded-full bg-surface-warning-strong z-10" />
       </Show>
       <Show when={props.working}>
         <div class="absolute bottom-px right-px size-3 rounded-full bg-background-base z-10 flex items-center justify-center">
@@ -99,15 +86,12 @@ const SessionRow = (props: {
   tint: Accessor<string | undefined>
   isWorking: Accessor<boolean>
   hasPermissions: Accessor<boolean>
-  hasError: Accessor<boolean>
-  unseenCount: Accessor<number>
   warmPress: () => void
   warmFocus: () => void
 }): JSX.Element => {
   const navigate = useNavigate()
   const title = () => sessionTitle(props.session.title)
-  const showLeading = () =>
-    props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0
+  const showLeading = () => props.isWorking() || props.hasPermissions()
 
   return (
     <A
@@ -143,12 +127,6 @@ const SessionRow = (props: {
             <Match when={props.hasPermissions()}>
               <div class="size-1.5 rounded-full bg-surface-warning-strong" />
             </Match>
-            <Match when={props.hasError()}>
-              <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
-            </Match>
-            <Match when={props.unseenCount() > 0}>
-              <div class="size-1.5 rounded-full bg-text-interactive-base" />
-            </Match>
           </Switch>
         </div>
       </Show>
@@ -169,11 +147,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
   const layout = useLayout()
   const language = useLanguage()
-  const notification = useNotification()
   const permission = usePermission()
   const serverSync = useServerSync()
-  const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
-  const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = serverSync().child(props.session.directory)
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(
@@ -232,8 +207,6 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       tint={tint}
       isWorking={isWorking}
       hasPermissions={hasPermissions}
-      hasError={hasError}
-      unseenCount={unseenCount}
       warmPress={() => warm(2, "high")}
       warmFocus={() => warm(2, "high")}
     />

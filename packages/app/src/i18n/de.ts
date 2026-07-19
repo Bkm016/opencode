@@ -688,7 +688,6 @@ export const dict = {
   "sidebar.gettingStarted.line1": "OpenCode enthält kostenlose Modelle, damit Sie sofort loslegen können.",
   "sidebar.gettingStarted.line2":
     "Verbinden Sie einen beliebigen Anbieter, um Modelle wie Claude, GPT, Gemini usw. zu nutzen.",
-  "sidebar.project.clearNotifications": "Benachrichtigungen löschen",
   "sidebar.empty.title": "Keine Projekte geöffnet",
   "sidebar.empty.description": "Öffnen Sie ein Projekt, um loszulegen",
   "app.name.desktop": "OpenCode Desktop",

@@ -6,7 +6,6 @@ import { createSortable } from "@thisbeyond/solid-dnd"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { useNotification } from "@/context/notification"
 import { ProjectIcon } from "./sidebar-items"
 import { displayName } from "./helpers"
 
@@ -50,17 +49,7 @@ const ProjectTile = (props: {
   setMenu: (value: boolean) => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
-  const notification = useNotification()
   const layout = useLayout()
-  const unseenCount = createMemo(() =>
-    props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
-  )
-
-  const clear = () =>
-    props
-      .dirs()
-      .filter((directory) => notification.project.unseenCount(directory) > 0)
-      .forEach((directory) => notification.project.markViewed(directory))
 
   return (
     <ContextMenu
@@ -108,14 +97,6 @@ const ProjectTile = (props: {
                 ? props.language.t("sidebar.workspaces.disable")
                 : props.language.t("sidebar.workspaces.enable")}
             </ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-clear-notifications"
-            data-project={base64Encode(props.project.worktree)}
-            disabled={unseenCount() === 0}
-            onSelect={clear}
-          >
-            <ContextMenu.ItemLabel>{props.language.t("sidebar.project.clearNotifications")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item

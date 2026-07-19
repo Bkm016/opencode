@@ -794,7 +794,6 @@ export const dict = {
   "sidebar.gettingStarted.title": "入门",
   "sidebar.gettingStarted.line1": "OpenCode 提供免费模型，你可以立即开始使用。",
   "sidebar.gettingStarted.line2": "连接任意提供商即可使用更多模型，如 Claude、GPT、Gemini 等。",
-  "sidebar.project.clearNotifications": "清除通知",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 

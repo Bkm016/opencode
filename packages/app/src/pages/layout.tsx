@@ -1848,13 +1848,6 @@ export default function LegacyLayout(props: ParentProps) {
       if (!item) return [] as string[]
       return workspaceIds(item)
     })
-    const unseenCount = createMemo(() =>
-      workspaces().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
-    )
-    const clearNotifications = () =>
-      workspaces()
-        .filter((directory) => notification.project.unseenCount(directory) > 0)
-        .forEach((directory) => notification.project.markViewed(directory))
     const workspacesEnabled = createMemo(() => {
       const item = project()
       if (!item) return false
@@ -1967,16 +1960,6 @@ export default function LegacyLayout(props: ParentProps) {
                             {workspacesEnabled()
                               ? language.t("sidebar.workspaces.disable")
                               : language.t("sidebar.workspaces.enable")}
-                          </DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          data-action="project-clear-notifications"
-                          data-project={slug()}
-                          disabled={unseenCount() === 0}
-                          onSelect={clearNotifications}
-                        >
-                          <DropdownMenu.ItemLabel>
-                            {language.t("sidebar.project.clearNotifications")}
                           </DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
                         <DropdownMenu.Item

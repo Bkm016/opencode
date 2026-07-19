@@ -674,7 +674,6 @@ export const dict = {
   "sidebar.gettingStarted.title": "はじめに",
   "sidebar.gettingStarted.line1": "OpenCodeには無料モデルが含まれているため、すぐに開始できます。",
   "sidebar.gettingStarted.line2": "プロバイダーを接続して、Claude、GPT、Geminiなどのモデルを使用できます。",
-  "sidebar.project.clearNotifications": "通知をクリア",
   "sidebar.empty.title": "開いているプロジェクトはありません",
   "sidebar.empty.description": "プロジェクトを開いて始めましょう",
   "app.name.desktop": "OpenCode Desktop",

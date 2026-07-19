@@ -553,7 +553,6 @@ export const dict = {
   "sidebar.gettingStarted.title": "시작하기",
   "sidebar.gettingStarted.line1": "OpenCode에는 무료 모델이 포함되어 있어 즉시 시작할 수 있습니다.",
   "sidebar.gettingStarted.line2": "Claude, GPT, Gemini 등을 포함한 모델을 사용하려면 공급자를 연결하세요.",
-  "sidebar.project.clearNotifications": "알림 지우기",
   "app.name.desktop": "OpenCode Desktop",
   "settings.section.desktop": "데스크톱",
   "settings.section.server": "서버",

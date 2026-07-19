@@ -1,5 +1,5 @@
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2"
-import { createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { same } from "@/utils/same"
@@ -15,11 +15,13 @@ export function createTimelineModel(input: {
   const sync = useSync()
   let refreshFrame: number | undefined
   let refreshTimer: number | undefined
+  const [failure, setFailure] = createSignal<{ id: string; error: unknown }>()
 
-  const [resource] = createResource(
-    () => input.sessionID(),
-    (id) => {
+  // 冷历史请求不能进入 Solid Resource，否则会阻塞路由的 shadow transition。
+  createEffect(
+    on(input.sessionID, (id) => {
       clearRefresh()
+      setFailure(undefined)
       if (!id) return
 
       const cached = untrack(() => sync().data.message[id] !== undefined)
@@ -31,13 +33,17 @@ export function createTimelineModel(input: {
           refreshTimer = undefined
           if (input.sessionID() !== id) return
           untrack(() => {
-            if (stale) void sync().session.sync(id, { force: true })
+            if (stale) void sync().session.sync(id, { force: true }).catch(() => {})
           })
         }, 0)
       })
 
-      return sync().session.sync(id)
-    },
+      void sync()
+        .session.sync(id)
+        .catch((error) => {
+          if (input.sessionID() === id) setFailure({ id, error })
+        })
+    }),
   )
   const messages = createMemo(() => {
     const id = input.sessionID()
@@ -45,6 +51,8 @@ export function createTimelineModel(input: {
   })
   const ready = createMemo(() => {
     const id = input.sessionID()
+    const failed = failure()
+    if (id && failed?.id === id) throw failed.error
     return !id || isTimelineReady(sync().data.message[id], serverSync().session.history.loading(id))
   })
   const userMessages = createMemo(() => selectUserMessages(messages()), emptyUserMessages, { equals: same })
@@ -81,7 +89,6 @@ export function createTimelineModel(input: {
     lastUserMessage: createMemo(() => visibleUserMessages().at(-1)),
     messages,
     ready,
-    resource,
     userMessages,
     visibleUserMessages,
   }

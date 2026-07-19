@@ -521,7 +521,6 @@ export default function Page() {
   const lastUserMessage = timeline.lastUserMessage
   const messages = timeline.messages
   const messagesReady = timeline.ready
-  const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
 
@@ -2082,7 +2081,6 @@ export default function Page() {
   )
   const sessionPanelContent = () => (
     <>
-      {sessionSync() ?? ""}
       <div class="relative flex-1 min-h-0 overflow-hidden">
         <SessionFindBar
           open={findOpen()}

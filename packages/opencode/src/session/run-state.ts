@@ -11,6 +11,7 @@ import { acquireInstanceActivity, type InstanceActivity } from "@/effect/instanc
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
+  readonly promote: (sessionID: SessionID) => Effect.Effect<void>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
     sessionID: SessionID,
@@ -99,8 +100,13 @@ const layer = Layer.effect(
       if (existing?.runner.busy) yield* busyError(sessionID)
     })
 
+    const promote = Effect.fn("SessionRunState.promote")(function* (sessionID: SessionID) {
+      yield* promoteChildJobs(background, sessionID)
+    })
+
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      yield* cancelBackgroundJobs(background, sessionID)
+      // 先将直接子任务转为后台以释放同步等待，再停止 Runner；子代理仅由 task_async_abort 显式终止。
+      yield* promote(sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing) {
@@ -150,42 +156,24 @@ const layer = Layer.effect(
       )
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, promote, cancel, ensureRunning, startShell })
   }),
 )
 
-const cancelBackgroundJobs = Effect.fn("SessionRunState.cancelBackgroundJobs")(function* (
+const promoteChildJobs = Effect.fn("SessionRunState.promoteChildJobs")(function* (
   background: BackgroundJob.Interface,
   sessionID: SessionID,
 ) {
   const jobs = yield* background.list()
-  const pending = new Set<string>([sessionID])
-  const cancelled = new Set<string>()
-  const matches = (job: BackgroundJob.Info) => {
-    if (job.status !== "running") return false
-    if (cancelled.has(job.id)) return false
-    if (pending.has(job.id)) return true
-    if (typeof job.metadata?.sessionId === "string" && pending.has(job.metadata.sessionId)) return true
-    return typeof job.metadata?.parentSessionId === "string" && pending.has(job.metadata.parentSessionId)
-  }
-  let batch = jobs.filter(matches)
-  while (batch.length > 0) {
-    yield* Effect.forEach(
-      batch,
+  yield* Effect.forEach(
+    jobs.filter(
       (job) =>
-        background.cancel(job.id).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              cancelled.add(job.id)
-              pending.add(job.id)
-              if (typeof job.metadata?.sessionId === "string") pending.add(job.metadata.sessionId)
-            }),
-          ),
-        ),
-      { concurrency: "unbounded", discard: true },
-    )
-    batch = jobs.filter(matches)
-  }
+        job.status === "running" &&
+        (job.metadata?.sessionId === sessionID || job.metadata?.parentSessionId === sessionID),
+    ),
+    (job) => background.promote(job.id),
+    { concurrency: "unbounded", discard: true },
+  )
 })
 
 function busyError(sessionID: SessionID) {

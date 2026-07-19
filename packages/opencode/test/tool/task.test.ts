@@ -17,12 +17,12 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
-import { TaskAsyncStatusTool, TaskAsyncWaitTool } from "../../src/tool/task-async"
+import { TaskAsyncAbortTool, TaskAsyncStatusTool, TaskAsyncWaitTool } from "../../src/tool/task-async"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { disposeAllInstances } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 
@@ -303,25 +303,25 @@ describe("tool.task", () => {
     }),
   )
 
-  it.instance("execute cancels child session when abort signal fires", () =>
+  it.instance("execute promotes the child session when abort signal fires", () =>
     Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
       const ready = defer<SessionPrompt.PromptInput>()
-      const cancelled = defer<SessionID>()
       const abort = new AbortController()
+      const cancelled: SessionID[] = []
       const promptOps: TaskPromptOps = {
         cancel: (sessionID) =>
           Effect.sync(() => {
-            cancelled.resolve(sessionID)
+            cancelled.push(sessionID)
           }),
         resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
         prompt: (input) =>
-          Effect.promise(() => {
+          Effect.sync(() => {
             ready.resolve(input)
-            return cancelled.promise
-          }).pipe(Effect.as(reply(input, "cancelled"))),
+          }).pipe(Effect.andThen(Effect.never)),
       }
 
       const fiber = yield* def
@@ -347,10 +347,12 @@ describe("tool.task", () => {
 
       const input = yield* Effect.promise(() => ready.promise)
       abort.abort()
-      expect(yield* Effect.promise(() => cancelled.promise)).toBe(input.sessionID)
-
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isSuccess(exit)).toBe(true)
+      expect(cancelled).toEqual([])
+      const child = yield* jobs.get(input.sessionID)
+      expect(child?.status).toBe("running")
+      expect(child?.metadata?.background).toBe(true)
     }),
   )
 
@@ -1056,21 +1058,128 @@ describe("tool.task", () => {
     }),
   )
 
-  it.instance("cancelling the parent run cancels running background tasks", () =>
+  it.instance("cancelling a waiting parent promotes the child job instead of stopping it", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const runState = yield* SessionRunState.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
+      const childStarted = yield* Deferred.make<SessionID>()
+      const parentFiber = yield* runState
+        .ensureRunning(
+          chat.id,
+          Effect.succeed(
+            reply(
+              {
+                sessionID: chat.id,
+                messageID: assistant.id,
+                agent: "build",
+                model: ref,
+                parts: [],
+              },
+              "interrupted",
+            ),
+          ),
+          def
+            .execute(
+              {
+                description: "inspect bug",
+                prompt: "look into the cache key path",
+                subagent_type: "general",
+                wait: true,
+              },
+              {
+                sessionID: chat.id,
+                messageID: assistant.id,
+                agent: "build",
+                abort: new AbortController().signal,
+                extra: {
+                  promptOps: {
+                    ...stubOps(),
+                    prompt: (input) =>
+                      Deferred.succeed(childStarted, input.sessionID).pipe(Effect.andThen(Effect.never)),
+                  } satisfies TaskPromptOps,
+                },
+                messages: [],
+                metadata: () => Effect.void,
+                ask: () => Effect.void,
+              },
+            )
+            .pipe(
+              Effect.as(
+                reply(
+                  {
+                    sessionID: chat.id,
+                    messageID: assistant.id,
+                    agent: "build",
+                    model: ref,
+                    parts: [],
+                  },
+                  "completed",
+                ),
+              ),
+            ),
+        )
+        .pipe(Effect.forkChild)
+      const childID = yield* Deferred.await(childStarted)
+      yield* pollWithTimeout(
+        runState.assertNotBusy(chat.id).pipe(
+          Effect.exit,
+          Effect.map((exit) => (Exit.isFailure(exit) ? true : undefined)),
+        ),
+        "timed out waiting for the parent task wait to become busy",
+      )
+      yield* runState.cancel(chat.id)
+      expect(Exit.isSuccess(yield* Fiber.await(parentFiber))).toBe(true)
+      const child = yield* pollWithTimeout(
+        jobs.get(childID).pipe(Effect.map((job) => (job?.metadata?.background === true ? job : undefined))),
+        "timed out waiting for the interrupted task to become a background job",
+      )
+      expect(child.status).toBe("running")
+      expect(Exit.isSuccess(yield* runState.assertNotBusy(chat.id).pipe(Effect.exit))).toBe(true)
+    }),
+  )
 
-      const result = yield* def.execute(
-        {
-          description: "inspect bug",
-          prompt: "look into the cache key path",
-          subagent_type: "general",
-          background: true,
-        },
+  it.instance("task_async_abort cancels both the BackgroundJob and child runner", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const abortTool = yield* TaskAsyncAbortTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const started = yield* Deferred.make<void>()
+      const childFiber = yield* runState
+        .ensureRunning(
+          child.id,
+          Effect.succeed(
+            reply(
+              {
+                sessionID: child.id,
+                messageID: MessageID.ascending(),
+                agent: "build",
+                model: ref,
+                parts: [],
+              },
+              "interrupted",
+            ),
+          ),
+          Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id },
+        run: Effect.never,
+      })
+
+      const cancelled: SessionID[] = []
+      const tool = yield* abortTool.init()
+      const result = yield* tool.execute(
+        { task_id: child.id },
         {
           sessionID: chat.id,
           messageID: assistant.id,
@@ -1078,9 +1187,12 @@ describe("tool.task", () => {
           abort: new AbortController().signal,
           extra: {
             promptOps: {
-              ...stubOps(),
-              prompt: () => Effect.never,
-            } satisfies TaskPromptOps,
+              cancel: (sessionID: SessionID) =>
+                Effect.gen(function* () {
+                  cancelled.push(sessionID)
+                  yield* runState.cancel(sessionID)
+                }),
+            },
           },
           messages: [],
           metadata: () => Effect.void,
@@ -1088,60 +1200,11 @@ describe("tool.task", () => {
         },
       )
 
-      yield* runState.cancel(chat.id)
-      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
-      expect(waited.timedOut).toBe(false)
-      expect(waited.info?.status).toBe("cancelled")
-    }),
-  )
-
-  it.instance("cancelling a child run cancels its own pre-runner task job", () =>
-    Effect.gen(function* () {
-      const jobs = yield* BackgroundJob.Service
-      const runState = yield* SessionRunState.Service
-      const sessions = yield* Session.Service
-      const { chat } = yield* seed()
-      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
-
-      yield* jobs.start({
-        id: child.id,
-        type: "task",
-        metadata: { parentSessionId: chat.id, sessionId: child.id },
-        run: Effect.never,
-      })
-
-      yield* runState.cancel(child.id)
-
+      expect(result.output).toContain(`Aborted async task: ${child.id}`)
+      expect(cancelled).toEqual([child.id])
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
-    }),
-  )
-
-  it.instance("cancelling a parent run recursively cancels descendant background tasks", () =>
-    Effect.gen(function* () {
-      const jobs = yield* BackgroundJob.Service
-      const runState = yield* SessionRunState.Service
-      const sessions = yield* Session.Service
-      const { chat } = yield* seed()
-      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
-      const grandchild = yield* sessions.create({ parentID: child.id, title: "grandchild" })
-
-      yield* jobs.start({
-        id: child.id,
-        type: "task",
-        metadata: { parentSessionId: chat.id, sessionId: child.id },
-        run: Effect.never,
-      })
-      yield* jobs.start({
-        id: grandchild.id,
-        type: "task",
-        metadata: { parentSessionId: child.id, sessionId: grandchild.id },
-        run: Effect.never,
-      })
-
-      yield* runState.cancel(chat.id)
-
-      expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
-      expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
+      expect(Exit.isSuccess(yield* Fiber.await(childFiber))).toBe(true)
+      expect(Exit.isSuccess(yield* runState.assertNotBusy(child.id).pipe(Effect.exit))).toBe(true)
     }),
   )
 })

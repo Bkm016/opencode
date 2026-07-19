@@ -135,7 +135,7 @@ const layer = Layer.effect(
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
-        prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
+        prompt: (input: PromptInput) => promptImpl(input, false).pipe(Effect.catch(Effect.die)),
       } satisfies TaskPromptOps
     })
 
@@ -1040,9 +1040,10 @@ const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
-    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
-      "SessionPrompt.prompt",
-    )(function* (input: PromptInput) {
+    const promptImpl = Effect.fn("SessionPrompt.promptImpl")(function* (
+      input: PromptInput,
+      promoteWaitingTask: boolean,
+    ) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1058,7 +1059,17 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+      if (promoteWaitingTask) {
+        // 用户消息已持久化，提升直接子任务后由现有 Runner 在安全边界继续处理最新消息。
+        yield* state.promote(input.sessionID)
+      }
       return yield* loop({ sessionID: input.sessionID })
+    })
+
+    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
+      "SessionPrompt.prompt",
+    )(function* (input: PromptInput) {
+      return yield* promptImpl(input, true)
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {

@@ -1056,6 +1056,77 @@ it.instance(
 )
 
 it.instance(
+  "new prompt releases a waiting task without interrupting its assistant",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const background = yield* BackgroundJob.Service
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.tool("task", {
+        description: "inspect bug",
+        prompt: "look into the cache key path",
+        subagent_type: "general",
+        wait: true,
+      })
+      yield* llm.hang
+
+      const first = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "start the investigation" }],
+        })
+        .pipe(Effect.forkChild)
+
+      const child = yield* pollWithTimeout(
+        background.list().pipe(
+          Effect.map((jobs) =>
+            jobs.find((job) => job.status === "running" && job.metadata?.parentSessionId === chat.id),
+          ),
+        ),
+        "timed out waiting for task(wait:true) child job",
+      )
+      yield* llm.wait(2)
+
+      yield* llm.text("new response")
+      const second = yield* awaitWithTimeout(
+        prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "stop waiting" }],
+        }),
+        "new prompt did not start while the child task was waiting",
+      )
+
+      expect(second.parts.some((part) => part.type === "text" && part.text === "new response")).toBe(true)
+      expect(Exit.isSuccess(yield* awaitWithTimeout(Fiber.await(first), "initial prompt did not release"))).toBe(true)
+
+      const promoted = yield* background.get(child.id)
+      expect(promoted?.status).toBe("running")
+      expect(promoted?.metadata?.background).toBe(true)
+
+      const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+      const taskMessage = messages.find(
+        (message) => message.info.role === "assistant" && message.parts.some((part) => part.type === "tool"),
+      )
+      const taskPart = taskMessage?.parts.find(
+        (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task",
+      )
+      expect(taskPart?.state.status).toBe("completed")
+      if (taskMessage?.info.role === "assistant") expect(taskMessage.info.error?.name).not.toBe("MessageAbortedError")
+    }),
+  10_000,
+)
+
+it.instance(
   "loop sets status to busy then idle",
   () =>
     Effect.gen(function* () {

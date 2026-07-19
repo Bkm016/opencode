@@ -509,11 +509,11 @@ export const TaskTool = Tool.define(
         return backgroundResult()
       }
 
-      const runCancel = yield* EffectBridge.make()
-      const cancel = ops.cancel(nextSession.id)
+      const runPromote = yield* EffectBridge.make()
+      const promote = background.promote(nextSession.id)
 
       function onAbort() {
-        runCancel.fork(cancel)
+        runPromote.fork(promote)
       }
 
       return yield* Effect.acquireUseRelease(
@@ -540,8 +540,8 @@ export const TaskTool = Tool.define(
           }),
         (_, exit) =>
           Effect.gen(function* () {
-            if (Exit.hasInterrupts(exit))
-              yield* Effect.all([cancel, background.cancel(nextSession.id)], { discard: true })
+            // 父会话停止等待时保留子代理，并转为后台任务继续回传结果。
+            if (Exit.hasInterrupts(exit)) yield* promote
           }).pipe(
             Effect.ensuring(
               Effect.sync(() => {

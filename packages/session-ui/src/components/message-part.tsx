@@ -181,6 +181,7 @@ export interface MessagePartProps {
   onContentRendered?: () => void
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
+  onViewFile?: (file: string) => void
 }
 
 function MessageActionButton(
@@ -1498,6 +1499,7 @@ export function Part(props: MessagePartProps) {
           onContentRendered={props.onContentRendered}
           showAssistantCopyPartID={props.showAssistantCopyPartID}
           turnDurationMs={props.turnDurationMs}
+          onViewFile={props.onViewFile}
         />
       </div>
     </Show>
@@ -1520,6 +1522,7 @@ export interface ToolProps {
   onContentRendered?: () => void
   forceOpen?: boolean
   locked?: boolean
+  onViewFile?: (file: string) => void
 }
 
 export type ToolComponent = Component<ToolProps>
@@ -1544,6 +1547,29 @@ export function getTool(name: string) {
 export const ToolRegistry = {
   register: registerTool,
   render: getTool,
+}
+
+// 在 edit/write/apply_patch 折叠态 trigger 上显示的「打开文件」按钮，点击用系统默认编辑器打开源文件
+function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) => void }) {
+  const i18n = useI18n()
+  const label = () => i18n.t("ui.sessionReview.openFile")
+  return (
+    <Show when={props.onViewFile && props.filePath}>
+      <Tooltip value={label()} placement="top" gutter={4}>
+        <button
+          data-slot="message-part-open-file"
+          type="button"
+          aria-label={label()}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onViewFile?.(props.filePath)
+          }}
+        >
+          <Icon name="open-file" size="small" />
+        </button>
+      </Tooltip>
+    </Show>
+  )
 }
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1675,6 +1701,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               deferContent={props.deferToolContent}
               virtualizeDiff={props.virtualizeDiff}
               onContentRendered={props.onContentRendered}
+              onViewFile={props.onViewFile}
             />
           </Match>
         </Switch>
@@ -2540,6 +2567,7 @@ ToolRegistry.register({
                 <Show when={!pending() && props.metadata.filediff}>
                   <DiffChanges changes={props.metadata.filediff} />
                 </Show>
+                <OpenFileButton filePath={props.input.filePath ?? ""} onViewFile={props.onViewFile} />
               </div>
             </div>
           }
@@ -2603,7 +2631,10 @@ ToolRegistry.register({
                   </div>
                 </Show>
               </div>
-              <div data-slot="message-part-actions">{/* <DiffChanges diff={diff} /> */}</div>
+              <div data-slot="message-part-actions">
+                {/* <DiffChanges diff={diff} /> */}
+                <OpenFileButton filePath={props.input.filePath ?? ""} onViewFile={props.onViewFile} />
+              </div>
             </div>
           }
         >
@@ -2789,6 +2820,7 @@ ToolRegistry.register({
                   <Show when={!pending()}>
                     <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
                   </Show>
+                  <OpenFileButton filePath={single()!.filePath} onViewFile={props.onViewFile} />
                 </div>
               </div>
             }

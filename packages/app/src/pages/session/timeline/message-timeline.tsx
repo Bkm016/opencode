@@ -68,6 +68,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
@@ -358,6 +359,7 @@ export function MessageTimeline(props: {
   const tabs = useTabs()
   const dialog = useDialog()
   const language = useLanguage()
+  const server = useServer()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const cached = timelineCache.get(ownerSessionKey)
@@ -1095,6 +1097,17 @@ export function MessageTimeline(props: {
       return partDefaultOpen(item, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())
     })
 
+    // 用系统默认编辑器打开 edit/write/apply_patch 改动的源文件
+    const onViewFile = (filePath: string) => {
+      if (!platform.openPath) return
+      if (!server.isLocal()) return
+      const dir = sdk().directory
+      const abs = filePath.includes("/") && !/^[A-Za-z]:[\\/]/.test(filePath) && !filePath.startsWith("/")
+        ? (dir.endsWith("/") || dir.endsWith("\\") ? dir : dir + "/") + filePath
+        : filePath
+      platform.openPath(abs).catch((err) => showToast({ variant: "error", title: language.t("ui.sessionReview.openFile"), description: String(err) }))
+    }
+
     return (
       <Show when={message()}>
         {(message) => (
@@ -1111,6 +1124,7 @@ export function MessageTimeline(props: {
                 deferToolContent
                 virtualizeDiff={false}
                 onContentRendered={input.onSizeChange}
+                onViewFile={onViewFile}
               />
             )}
           </Show>

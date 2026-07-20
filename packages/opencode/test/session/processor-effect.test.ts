@@ -814,6 +814,78 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
   ),
 )
 
+it.live("session.processor effect tests detect doom loops across assistant messages", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(reply().tool("lookup", { query: "same" }))
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "doom loop")
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        for (let index = 0; index < 2; index++) {
+          const history = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: history.id,
+            sessionID: chat.id,
+            type: "tool",
+            tool: "lookup",
+            callID: `history_${index}`,
+            state: {
+              status: "completed",
+              input: { query: "same" },
+              output: "result:same",
+              title: "Lookup",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+        }
+
+        let toolExecutions = 0
+        const lookup = tool({
+          description: "Look up information",
+          inputSchema: z.object({ query: z.string() }),
+          execute: async (input) => {
+            toolExecutions += 1
+            return { title: "Lookup", output: `result:${input.query}`, metadata: {} }
+          },
+        })
+        const processInput = {
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "doom loop" }],
+          tools: { lookup },
+        } satisfies LLM.StreamInput
+
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+        const result = yield* handle.process(processInput)
+
+        expect(result).toBe("stop")
+        expect(toolExecutions).toBe(0)
+      }),
+    { config: (url) => ({ ...providerCfg(url), permission: { doom_loop: "deny" as const } }) },
+  ),
+)
+
 it.live("session.processor effect tests mark pending tools as aborted on cleanup", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

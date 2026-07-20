@@ -4,6 +4,7 @@ const disposers = new Set<(directory: string) => Promise<void>>()
 type ActivityGate = {
   active: number
   reloading: boolean
+  draining: boolean
   idle: Set<() => void>
   ready: Set<() => void>
 }
@@ -16,6 +17,7 @@ function activityGate(directory: string) {
   const gate: ActivityGate = {
     active: 0,
     reloading: false,
+    draining: false,
     idle: new Set(),
     ready: new Set(),
   }
@@ -69,6 +71,11 @@ export async function acquireInstanceActivity(directory: string, signal?: AbortS
       if (references > 0) return
       gate.active -= 1
       if (gate.active > 0) return
+      // 只有最后一个旧租约同步释放时才关闭 admission，避免 reload 等待期间饿死后续工作。
+      if (gate.draining) {
+        gate.draining = false
+        gate.reloading = true
+      }
       for (const complete of [...gate.idle]) complete()
     },
   }
@@ -76,14 +83,22 @@ export async function acquireInstanceActivity(directory: string, signal?: AbortS
 
 export async function beginInstanceReload(directory: string, signal?: AbortSignal): Promise<() => void> {
   const gate = activityGate(directory)
-  while (gate.reloading) await wait(gate.ready, signal)
-  gate.reloading = true
-  try {
-    while (gate.active > 0) await wait(gate.idle, signal)
-  } catch (error) {
-    gate.reloading = false
-    for (const complete of [...gate.ready]) complete()
-    throw error
+  while (gate.reloading || gate.draining) await wait(gate.ready, signal)
+  gate.draining = true
+  if (gate.active > 0) {
+    try {
+      await wait(gate.idle, signal)
+    } catch (error) {
+      // abort 与最后一个租约释放可能交错；失败路径必须清理本轮拥有的全部 gate 状态。
+      gate.draining = false
+      gate.reloading = false
+      for (const complete of [...gate.ready]) complete()
+      throw error
+    }
+  }
+  if (gate.draining) {
+    gate.draining = false
+    gate.reloading = true
   }
   let released = false
   return () => {

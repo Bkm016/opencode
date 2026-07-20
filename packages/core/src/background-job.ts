@@ -330,7 +330,14 @@ export const make = Effect.gen(function* () {
       }),
     )
     if (result.info && result.promoted) yield* Deferred.succeed(result.promoted, result.info).pipe(Effect.ignore)
-    if (result.onPromote) yield* result.onPromote.pipe(Effect.ignore)
+    if (result.onPromote) {
+      // 提升只负责改变任务状态，通知回调不可阻塞取消请求本身。
+      yield* result.onPromote.pipe(
+        Effect.ignore,
+        Effect.forkIn(state.scope, { startImmediately: true }),
+        Effect.asVoid,
+      )
+    }
     return result.info
   })
 

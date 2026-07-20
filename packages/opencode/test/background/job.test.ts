@@ -227,6 +227,27 @@ describe("background.job", () => {
     }),
   )
 
+  it.instance("does not wait for promotion callbacks", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const callbackGate = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "test",
+        onPromote: Deferred.await(callbackGate),
+        run: Effect.never,
+      })
+
+      const promoted = yield* Effect.raceFirst(
+        jobs.promote(job.id).pipe(Effect.as("returned" as const)),
+        Effect.sleep("250 millis").pipe(Effect.as("timed out" as const)),
+      )
+
+      expect(promoted).toBe("returned")
+      yield* Deferred.succeed(callbackGate, undefined)
+      yield* jobs.cancel(job.id)
+    }),
+  )
+
   it.instance("returns immutable snapshots", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

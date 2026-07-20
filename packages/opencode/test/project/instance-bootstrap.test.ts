@@ -4,9 +4,13 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Cause, Effect, Exit, Fiber, Option } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
-import { acquireInstanceActivity } from "../../src/effect/instance-registry"
+import {
+  acquireInstanceActivity,
+  beginInstanceReload,
+  registerDisposer,
+} from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
@@ -119,6 +123,18 @@ it.live("InstanceStore.reload waits for active instance work", () =>
   Effect.gen(function* () {
     const tmp = yield* bootstrapFixture
     const store = yield* InstanceStore.Service
+    const reloading = yield* Deferred.make<void>()
+    const releaseReload = yield* Deferred.make<() => void>()
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        registerDisposer((directory) => {
+          if (directory !== tmp.directory) return Promise.resolve()
+          Deferred.doneUnsafe(reloading, Effect.void)
+          return new Promise<void>((resolve) => Deferred.doneUnsafe(releaseReload, Effect.succeed(resolve)))
+        }),
+      ),
+      (off) => Effect.sync(off),
+    )
     yield* store.load({ directory: tmp.directory })
     const activity = yield* Effect.promise((signal) => acquireInstanceActivity(tmp.directory, signal))
     yield* Effect.addFinalizer(() => Effect.sync(activity.release))
@@ -127,16 +143,43 @@ it.live("InstanceStore.reload waits for active instance work", () =>
     const blocked = yield* Fiber.join(reload).pipe(Effect.timeoutOption("20 millis"))
     expect(Option.isNone(blocked)).toBe(true)
 
+    const admittedWhileDraining = yield* Effect.promise((signal) => acquireInstanceActivity(tmp.directory, signal))
+    admittedWhileDraining.release()
+
+    activity.release()
+    yield* Deferred.await(reloading).pipe(Effect.timeout("2 seconds"))
+
     const queued = yield* Effect.promise((signal) => acquireInstanceActivity(tmp.directory, signal)).pipe(
       Effect.forkScoped({ startImmediately: true }),
     )
     const acquiredDuringReload = yield* Fiber.join(queued).pipe(Effect.timeoutOption("20 millis"))
     expect(Option.isNone(acquiredDuringReload)).toBe(true)
 
-    activity.release()
+    const finishReload = yield* Deferred.await(releaseReload).pipe(Effect.timeout("2 seconds"))
+    yield* Effect.sync(finishReload)
     yield* Fiber.join(reload).pipe(Effect.timeout("2 seconds"))
     const nextActivity = yield* Fiber.join(queued).pipe(Effect.timeout("2 seconds"))
     nextActivity.release()
   }),
   20_000,
+)
+
+it.live("aborted reload drain reopens instance admission", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const activity = yield* Effect.promise((signal) => acquireInstanceActivity(directory, signal))
+    yield* Effect.addFinalizer(() => Effect.sync(activity.release))
+    const controller = new AbortController()
+
+    const reload = beginInstanceReload(directory, controller.signal)
+    controller.abort()
+    activity.release()
+    const exit = yield* Effect.promise(() => reload).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+
+    const next = yield* Effect.promise((signal) => acquireInstanceActivity(directory, signal)).pipe(
+      Effect.timeout("2 seconds"),
+    )
+    next.release()
+  }),
 )

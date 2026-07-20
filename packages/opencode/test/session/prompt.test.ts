@@ -1127,6 +1127,98 @@ it.instance(
 )
 
 it.instance(
+  "new prompt releases task_async_wait without aborting the parent or child job",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const background = yield* BackgroundJob.Service
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      // 已是 background=true 的子 job：promote 幂等，只能靠 onUserPrompt 的 wait registration 释放。
+      const child = yield* sessions.create({ parentID: chat.id, title: "async child" })
+      const childDone = yield* Deferred.make<void>()
+      yield* background.start({
+        id: child.id,
+        type: "task",
+        title: "async child",
+        metadata: {
+          parentSessionId: chat.id,
+          sessionId: child.id,
+          background: true,
+        },
+        run: Deferred.await(childDone).pipe(Effect.as("child done")),
+      })
+
+      yield* llm.tool("task_async_wait", { task_id: child.id })
+      yield* llm.text("user interrupted wait")
+
+      const waiting = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "wait for the async task" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
+          const tool = assistant?.parts.find(
+            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_async_wait",
+          )
+          if (tool?.state.status === "running" && tool.state.metadata?.registered === true) return true as const
+        }),
+        "timed out waiting for task_async_wait registration",
+      )
+
+      const second = yield* awaitWithTimeout(
+        prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "stop waiting and answer now" }],
+        }),
+        "new prompt did not start while task_async_wait was blocked",
+      )
+
+      expect(second.parts.some((part) => part.type === "text" && part.text === "user interrupted wait")).toBe(true)
+      expect(
+        Exit.isSuccess(yield* awaitWithTimeout(Fiber.await(waiting), "waiting prompt did not release")),
+      ).toBe(true)
+
+      const stillRunning = yield* background.get(child.id)
+      expect(stillRunning?.status).toBe("running")
+      expect(stillRunning?.metadata?.background).toBe(true)
+
+      const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+      const waitMessage = messages.find(
+        (message) =>
+          message.info.role === "assistant" &&
+          message.parts.some((part) => part.type === "tool" && part.tool === "task_async_wait"),
+      )
+      const waitPart = waitMessage?.parts.find(
+        (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_async_wait",
+      )
+      expect(waitPart?.state.status).toBe("completed")
+      if (waitPart?.state.status === "completed") {
+        expect(waitPart.state.metadata?.released).toBe(true)
+        expect(waitPart.state.output).toContain("released: true")
+      }
+      if (waitMessage?.info.role === "assistant") {
+        expect(waitMessage.info.error?.name).not.toBe("MessageAbortedError")
+      }
+      yield* Deferred.succeed(childDone, undefined)
+    }),
+  15_000,
+)
+
+it.instance(
   "loop sets status to busy then idle",
   () =>
     Effect.gen(function* () {

@@ -1207,4 +1207,395 @@ describe("tool.task", () => {
       expect(Exit.isSuccess(yield* runState.assertNotBusy(child.id).pipe(Effect.exit))).toBe(true)
     }),
   )
+
+  const waitCtx = (
+    chat: { id: SessionID },
+    assistant: { id: MessageID },
+    opts?: { registered?: Deferred.Deferred<void>; callID?: string },
+  ) => ({
+    sessionID: chat.id,
+    messageID: assistant.id,
+    agent: "build",
+    abort: new AbortController().signal,
+    callID: opts?.callID,
+    messages: [] as [],
+    metadata: (input: { metadata?: Record<string, unknown> }) =>
+      input.metadata?.registered === true && opts?.registered
+        ? Deferred.succeed(opts.registered, undefined).pipe(Effect.ignore)
+        : Effect.void,
+    ask: () => Effect.void,
+  })
+
+  it.instance("task_async_wait releases once on onUserPrompt without cancelling the job", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const done = yield* Deferred.make<void>()
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        title: "child",
+        metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+        run: Deferred.await(done).pipe(Effect.as("child done")),
+      })
+
+      const def = yield* waitTool.init()
+      const registered = yield* Deferred.make<void>()
+      const callID = "wait-call-1"
+      const fiber = yield* def
+        .execute(
+          { task_id: child.id, timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered, callID }),
+        )
+        .pipe(Effect.forkChild)
+
+      yield* Deferred.await(registered)
+      // 单次 onUserPrompt：生产路径不会重复 release。
+      yield* runState.onUserPrompt(chat.id, [callID])
+      const waited = yield* Fiber.join(fiber)
+      expect(waited.metadata.released).toBe(true)
+      expect(waited.metadata.pending).toBe(1)
+      expect(waited.metadata.timed_out).toBe(false)
+      expect(waited.output).toContain("released: true")
+      expect(waited.output).toContain("still running")
+      expect((yield* jobs.get(child.id))?.status).toBe("running")
+
+      // 再次 wait 用新 callID，可正常等到完成（旧 sticky 不得误伤）。
+      const registeredAgain = yield* Deferred.make<void>()
+      const again = yield* def
+        .execute(
+          { task_id: child.id, timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered: registeredAgain, callID: "wait-call-2" }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(registeredAgain)
+      yield* Deferred.succeed(done, undefined)
+      const finished = yield* Fiber.join(again)
+      expect(finished.metadata.completed).toBe(1)
+      expect(finished.metadata.released).toBe(false)
+      expect(finished.metadata.pending).toBe(0)
+    }),
+  )
+
+  it.instance("task_async_wait onUserPrompt is scoped to the parent session only", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed("parent-a")
+      const other = yield* sessions.create({ title: "parent-b" })
+      const childA = yield* sessions.create({ parentID: chat.id, title: "child-a" })
+      const childB = yield* sessions.create({ parentID: other.id, title: "child-b" })
+      const doneA = yield* Deferred.make<void>()
+      const doneB = yield* Deferred.make<void>()
+      yield* jobs.start({
+        id: childA.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: childA.id, background: true },
+        run: Deferred.await(doneA).pipe(Effect.as("a")),
+      })
+      yield* jobs.start({
+        id: childB.id,
+        type: "task",
+        metadata: { parentSessionId: other.id, sessionId: childB.id, background: true },
+        run: Deferred.await(doneB).pipe(Effect.as("b")),
+      })
+
+      const def = yield* waitTool.init()
+      const registeredA = yield* Deferred.make<void>()
+      const registeredB = yield* Deferred.make<void>()
+      const waitA = yield* def
+        .execute(
+          { task_id: childA.id, timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered: registeredA, callID: "a-wait" }),
+        )
+        .pipe(Effect.forkChild)
+      const waitB = yield* def
+        .execute(
+          { task_id: childB.id, timeout_seconds: 30 },
+          {
+            ...waitCtx(chat, assistant, { registered: registeredB, callID: "b-wait" }),
+            sessionID: other.id,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      yield* Deferred.await(registeredA)
+      yield* Deferred.await(registeredB)
+      yield* runState.onUserPrompt(chat.id, ["a-wait"])
+      const releasedA = yield* Fiber.join(waitA)
+      expect(releasedA.metadata.released).toBe(true)
+      const otherStillWaiting = yield* Fiber.join(waitB).pipe(
+        Effect.timeoutOption("50 millis"),
+        Effect.map((opt) => opt._tag === "None"),
+      )
+      expect(otherStillWaiting).toBe(true)
+
+      yield* Deferred.succeed(doneB, undefined)
+      const finishedB = yield* Fiber.join(waitB)
+      expect(finishedB.metadata.completed).toBe(1)
+      expect(finishedB.metadata.released).toBe(false)
+      yield* Deferred.succeed(doneA, undefined)
+    }),
+  )
+
+  it.instance("task_async_wait all/any release pending batch rows on onUserPrompt", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const first = yield* sessions.create({ parentID: chat.id, title: "one" })
+      const second = yield* sessions.create({ parentID: chat.id, title: "two" })
+      const done = yield* Deferred.make<void>()
+      for (const child of [first, second]) {
+        yield* jobs.start({
+          id: child.id,
+          type: "task",
+          metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+          run: Deferred.await(done).pipe(Effect.as("ok")),
+        })
+      }
+
+      const def = yield* waitTool.init()
+
+      const allRegistered = yield* Deferred.make<void>()
+      const allFiber = yield* def
+        .execute(
+          { task_ids: [first.id, second.id], wait_for: "all", timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered: allRegistered, callID: "all-wait" }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(allRegistered)
+      yield* runState.onUserPrompt(chat.id, ["all-wait"])
+      const all = yield* Fiber.join(allFiber)
+      expect(all.metadata.released).toBe(true)
+      expect(all.metadata.pending).toBe(2)
+      expect(all.metadata.timed_out).toBe(false)
+      expect(all.metadata.completed).toBe(0)
+
+      const anyRegistered = yield* Deferred.make<void>()
+      const anyFiber = yield* def
+        .execute(
+          { task_ids: [first.id, second.id], wait_for: "any", timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered: anyRegistered, callID: "any-wait" }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(anyRegistered)
+      yield* runState.onUserPrompt(chat.id, ["any-wait"])
+      const any = yield* Fiber.join(anyFiber)
+      expect(any.metadata.released).toBe(true)
+      expect(any.metadata.pending).toBe(2)
+      expect(any.metadata.completed).toBe(0)
+      expect((yield* jobs.get(first.id))?.status).toBe("running")
+      expect((yield* jobs.get(second.id))?.status).toBe("running")
+      yield* Deferred.succeed(done, undefined)
+    }),
+  )
+
+  it.instance("task_async_wait completion wins race without pending completed rows", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+        run: Effect.succeed("done"),
+      })
+      yield* jobs.wait({ id: child.id })
+
+      const def = yield* waitTool.init()
+      const finished = yield* def.execute(
+        { task_id: child.id, timeout_seconds: 5 },
+        waitCtx(chat, assistant, { callID: "done-wait" }),
+      )
+      expect(finished.metadata.completed).toBe(1)
+      expect(finished.metadata.pending).toBe(0)
+      expect(finished.metadata.released).toBe(false)
+      expect(finished.metadata.timed_out).toBe(false)
+    }),
+  )
+
+  it.instance("task_async_wait cancel does not report new-message release", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const done = yield* Deferred.make<void>()
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+        run: Deferred.await(done).pipe(Effect.as("x")),
+      })
+
+      const def = yield* waitTool.init()
+      const registered = yield* Deferred.make<void>()
+      const fiber = yield* runState
+        .ensureRunning(
+          chat.id,
+          Effect.succeed(
+            reply(
+              {
+                sessionID: chat.id,
+                messageID: assistant.id,
+                agent: "build",
+                model: ref,
+                parts: [],
+              },
+              "interrupted",
+            ),
+          ),
+          def
+            .execute(
+              { task_id: child.id, timeout_seconds: 30 },
+              waitCtx(chat, assistant, { registered, callID: "cancel-wait" }),
+            )
+            .pipe(
+              Effect.as(
+                reply(
+                  {
+                    sessionID: chat.id,
+                    messageID: assistant.id,
+                    agent: "build",
+                    model: ref,
+                    parts: [],
+                  },
+                  "completed",
+                ),
+              ),
+            ),
+        )
+        .pipe(Effect.forkChild)
+
+      yield* Deferred.await(registered)
+      yield* runState.cancel(chat.id)
+      expect(Exit.isSuccess(yield* Fiber.await(fiber))).toBe(true)
+      // cancel 不发布 new-message release；子 job 仍 running。
+      expect((yield* jobs.get(child.id))?.status).toBe("running")
+      yield* Deferred.succeed(done, undefined)
+    }),
+  )
+
+  it.instance("task_async_wait sticky only matches the running callID", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const done = yield* Deferred.make<void>()
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+        run: Deferred.await(done).pipe(Effect.as("x")),
+      })
+
+      // 仅 sticky 指定 callID；不同 callID 的 wait 不得被旧 release 误伤。
+      yield* runState.onUserPrompt(chat.id, ["sticky-call"])
+      const def = yield* waitTool.init()
+      const sticky = yield* def.execute(
+        { task_id: child.id, timeout_seconds: 30 },
+        waitCtx(chat, assistant, { callID: "sticky-call" }),
+      )
+      expect(sticky.metadata.released).toBe(true)
+      expect(sticky.metadata.pending).toBe(1)
+
+      const registered = yield* Deferred.make<void>()
+      const next = yield* def
+        .execute(
+          { task_id: child.id, timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered, callID: "fresh-call" }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(registered)
+      const stillWaiting = yield* Fiber.join(next).pipe(
+        Effect.timeoutOption("50 millis"),
+        Effect.map((opt) => opt._tag === "None"),
+      )
+      expect(stillWaiting).toBe(true)
+      yield* Deferred.succeed(done, undefined)
+      const finished = yield* Fiber.join(next)
+      expect(finished.metadata.completed).toBe(1)
+      expect(finished.metadata.released).toBe(false)
+    }),
+  )
+
+  it.instance("task_async_wait busy runner without running wait callIDs does not sticky", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const waitTool = yield* TaskAsyncWaitTool
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const done = yield* Deferred.make<void>()
+      const gate = yield* Deferred.make<void>()
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id, background: true },
+        run: Deferred.await(done).pipe(Effect.as("x")),
+      })
+
+      // 普通 busy 流（无 running wait callID）后的新 wait 必须正常阻塞。
+      const parentFiber = yield* runState
+        .ensureRunning(
+          chat.id,
+          Effect.succeed(
+            reply(
+              {
+                sessionID: chat.id,
+                messageID: assistant.id,
+                agent: "build",
+                model: ref,
+                parts: [],
+              },
+              "interrupted",
+            ),
+          ),
+          Deferred.succeed(gate, undefined).pipe(Effect.andThen(Effect.never)),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(gate)
+      yield* runState.onUserPrompt(chat.id, [])
+
+      const def = yield* waitTool.init()
+      const registered = yield* Deferred.make<void>()
+      const fiber = yield* def
+        .execute(
+          { task_id: child.id, timeout_seconds: 30 },
+          waitCtx(chat, assistant, { registered, callID: "later-wait" }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(registered)
+      const stillWaiting = yield* Fiber.join(fiber).pipe(
+        Effect.timeoutOption("50 millis"),
+        Effect.map((opt) => opt._tag === "None"),
+      )
+      expect(stillWaiting).toBe(true)
+      yield* Deferred.succeed(done, undefined)
+      const finished = yield* Fiber.join(fiber)
+      expect(finished.metadata.completed).toBe(1)
+      expect(finished.metadata.released).toBe(false)
+
+      yield* runState.cancel(chat.id)
+      yield* Fiber.await(parentFiber)
+    }),
+  )
 })

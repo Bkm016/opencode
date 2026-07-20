@@ -1060,8 +1060,25 @@ const layer = Layer.effect(
 
       if (input.noReply === true) return message
       if (promoteWaitingTask) {
-        // 用户消息已持久化，提升直接子任务后由现有 Runner 在安全边界继续处理最新消息。
-        yield* state.promote(input.sessionID)
+        // 用户消息已持久化：提升前台子任务并协作式释放 task_async_wait，现有 Runner 在安全边界继续。
+        // sticky 仅绑定当前仍 running 的 task_async_wait callID，避免普通 busy 流误释放后续 wait。
+        const runningWaitCallIDs = yield* sessions.messages({ sessionID: input.sessionID }).pipe(
+          Effect.map((msgs) =>
+            [
+              ...new Set(
+                msgs.flatMap((msg) =>
+                  msg.parts.flatMap((part) => {
+                    if (part.type !== "tool" || part.tool !== "task_async_wait") return []
+                    if (part.state.status !== "running" || !part.callID) return []
+                    return [part.callID]
+                  }),
+                ),
+              ),
+            ],
+          ),
+          Effect.orDie,
+        )
+        yield* state.onUserPrompt(input.sessionID, runningWaitCallIDs)
       }
       return yield* loop({ sessionID: input.sessionID })
     })

@@ -1,11 +1,12 @@
 import * as Tool from "./tool"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
+import { SessionRunState } from "@/session/run-state"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { Database } from "@opencode-ai/core/database/database"
-import { Effect, Option, Schema, Scope } from "effect"
+import { Deferred, Effect, Option, Schema, Scope } from "effect"
 import { getBatch, getTaskMeta, registerBatch, registerTask, type TaskMeta } from "./task-registry"
 import type { TaskPromptOps } from "./task"
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -82,6 +83,8 @@ type WaitRow = {
   status: string
   output?: string
   timedOut?: boolean
+  /** 父会话新 prompt 协作式释放，任务本身仍在运行。 */
+  released?: boolean
 }
 
 function clip(value: string, limit: number) {
@@ -166,11 +169,18 @@ function assistantOutput(messages: SessionV1.WithParts[]) {
   return clip(messageText(assistant) || "No assistant result yet.", TASK_RESULT_LIMIT)
 }
 
-function formatWaitSummary(completed: WaitRow[], pending: WaitRow[], timedOut: boolean) {
+function formatWaitSummary(completed: WaitRow[], pending: WaitRow[], timedOut: boolean, released: boolean) {
   return [
     `completed: ${completed.length}`,
     `pending: ${pending.length}`,
     `timed_out: ${timedOut}`,
+    `released: ${released}`,
+    ...(released
+      ? [
+          "wait stopped: a new user message arrived while tasks were still running",
+          "tasks continue in the background; use task_async_status / task_async_wait again if needed",
+        ]
+      : []),
     ...completed.map((row) => `done ${row.id} | ${row.status} | ${row.title}`),
     ...pending.map((row) => `pending ${row.id} | ${row.status} | ${row.title}`),
   ]
@@ -281,18 +291,19 @@ export const TaskAsyncWaitTool = Tool.define(
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const sessions = yield* Session.Service
+    const runState = yield* SessionRunState.Service
 
-    const waitOne = Effect.fn("TaskAsyncWait.waitOne")(function* (
+    // 统一终态快照：仅仍 running 的行可标 released/timedOut，避免 completed+pending 矛盾。
+    const snapshotRow = Effect.fn("TaskAsyncWait.snapshotRow")(function* (
       id: string,
-      timeoutMs: number,
       includeOutput: boolean,
+      flags?: { timedOut?: boolean; released?: boolean },
     ) {
       const meta = getTaskMeta(id)
       const sessionID = resolveSessionID(id)
       const session = yield* sessions.get(sessionID).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
       const title = meta?.title ?? session?.title ?? id
       const job = yield* background.get(id)
-
       if (!job) {
         const messages = includeOutput ? yield* sessions.messages({ sessionID }) : []
         return {
@@ -302,7 +313,6 @@ export const TaskAsyncWaitTool = Tool.define(
           output: includeOutput ? assistantOutput(messages) : undefined,
         } satisfies WaitRow
       }
-
       if (job.status !== "running") {
         const output = includeOutput
           ? job.output
@@ -319,32 +329,20 @@ export const TaskAsyncWaitTool = Tool.define(
           output,
         } satisfies WaitRow
       }
-
-      const waited = yield* background.wait({ id, timeout: timeoutMs })
-      if (waited.timedOut) {
-        return {
-          id,
-          title: waited.info?.title ?? title,
-          status: waited.info?.status ?? "running",
-          timedOut: true,
-        } satisfies WaitRow
-      }
-
-      const info = waited.info
-      const output = includeOutput
-        ? info?.output
-          ? clip(info.output, TASK_RESULT_LIMIT)
-          : yield* sessions.messages({ sessionID }).pipe(
-              Effect.map(assistantOutput),
-              Effect.catchCause(() => Effect.succeed(undefined)),
-            )
-        : undefined
       return {
         id,
-        title: info?.title ?? title,
-        status: info?.status ?? "completed",
-        output,
+        title: job.title ?? title,
+        status: "running",
+        timedOut: flags?.timedOut === true ? true : undefined,
+        released: flags?.released === true ? true : undefined,
       } satisfies WaitRow
+    })
+
+    // 单任务完成 effect：不参与 release race；all/any 外层只 race 一次会话 release。
+    const awaitJobDone = Effect.fn("TaskAsyncWait.awaitJobDone")(function* (id: string) {
+      const job = yield* background.get(id)
+      if (!job || job.status !== "running") return
+      yield* background.wait({ id }).pipe(Effect.asVoid)
     })
 
     return {
@@ -352,6 +350,7 @@ export const TaskAsyncWaitTool = Tool.define(
         "Wait until one or more async child-session tasks finish.",
         "Pass task_id, task_ids, or batch_id. Uses BackgroundJob.wait (Effect Deferred), not shell sleep.",
         "Default wait_for=all; timeout_seconds defaults to 600.",
+        "A new user message in this session cooperatively stops the wait (tasks keep running).",
       ].join(" "),
       parameters: WaitParameters,
       execute: (params: Schema.Schema.Type<typeof WaitParameters>, ctx: Tool.Context) =>
@@ -375,65 +374,53 @@ export const TaskAsyncWaitTool = Tool.define(
           const waitFor = params.wait_for ?? "all"
           const timeoutMs = (params.timeout_seconds ?? WAIT_TIMEOUT_SECONDS) * 1000
           const includeOutput = params.include_output === true
+
+          // 先原子注册再 await：同 callID 的 sticky 覆盖 pre-register 窗口；
+          // register 后 onUserPrompt 唤醒 active waiter。注册完成写 metadata 供 readiness。
+          const registration = yield* runState.registerWait(ctx.sessionID, ctx.callID)
+          type WaitKind = "done" | "released" | "timeout"
+
+          const jobsDone =
+            waitFor === "any"
+              ? Effect.raceAll(targets.map((id) => awaitJobDone(id)))
+              : Effect.forEach(targets, (id) => awaitJobDone(id), {
+                  concurrency: "unbounded",
+                  discard: true,
+                })
+
+          const outcome = yield* Effect.gen(function* () {
+            yield* ctx.metadata({
+              title: "wait",
+              metadata: { waiting: true, registered: true },
+            })
+            return yield* Effect.raceFirst(
+              jobsDone.pipe(Effect.as("done" as const)),
+              Deferred.await(registration.released).pipe(Effect.as("released" as const)),
+            ).pipe(
+              Effect.timeoutOption(timeoutMs),
+              Effect.map((opt): WaitKind => (Option.isNone(opt) ? "timeout" : opt.value)),
+            )
+          }).pipe(
+            Effect.ensuring(runState.unregisterWait(ctx.sessionID, registration.token)),
+          )
+
           const completed: WaitRow[] = []
           const pending: WaitRow[] = []
+          const releaseWon = outcome === "released"
+          const timeoutWon = outcome === "timeout"
 
-          if (waitFor === "any") {
-            // First real completion wins; overall timeout covers the race.
-            const raced = yield* Effect.raceAll(
-              targets.map((id) =>
-                waitOne(id, timeoutMs, includeOutput).pipe(
-                  Effect.filterOrFail(
-                    (row) => !row.timedOut && !isPendingState(row.status),
-                    () => new Error("pending"),
-                  ),
-                ),
-              ),
-            ).pipe(Effect.timeoutOption(timeoutMs))
-
-            if (Option.isNone(raced)) {
-              for (const id of targets) {
-                const job = yield* background.get(id)
-                const meta = getTaskMeta(id)
-                const session = yield* sessions.get(resolveSessionID(id)).pipe(
-                  Effect.catchCause(() => Effect.succeed(undefined)),
-                )
-                pending.push({
-                  id,
-                  title: meta?.title ?? session?.title ?? id,
-                  status: jobStatus(job),
-                  timedOut: true,
-                })
-              }
-            } else {
-              completed.push(raced.value)
-              for (const id of targets) {
-                if (id === raced.value.id) continue
-                const job = yield* background.get(id)
-                const meta = getTaskMeta(id)
-                const session = yield* sessions.get(resolveSessionID(id)).pipe(
-                  Effect.catchCause(() => Effect.succeed(undefined)),
-                )
-                const title = meta?.title ?? session?.title ?? id
-                const state = jobStatus(job)
-                if (isPendingState(state)) pending.push({ id, title, status: state })
-                else completed.push({ id, title, status: state })
-              }
-            }
-          } else {
-            const rows = yield* Effect.forEach(
-              targets,
-              (id) => waitOne(id, timeoutMs, includeOutput),
-              { concurrency: "unbounded" },
-            )
-            for (const row of rows) {
-              if (row.timedOut || isPendingState(row.status)) pending.push(row)
-              else completed.push(row)
-            }
+          for (const id of targets) {
+            const row = yield* snapshotRow(id, includeOutput, {
+              released: releaseWon || undefined,
+              timedOut: timeoutWon || undefined,
+            })
+            if (isPendingState(row.status)) pending.push(row)
+            else completed.push(row)
           }
 
-          const timedOut = pending.some((row) => row.timedOut) || (waitFor === "all" && pending.length > 0)
-          const lines = formatWaitSummary(completed, pending, timedOut)
+          const released = pending.some((row) => row.released === true)
+          const timedOut = pending.some((row) => row.timedOut === true)
+          const lines = formatWaitSummary(completed, pending, timedOut, released)
           if (includeOutput) {
             for (const row of completed) {
               if (!row.output) continue
@@ -444,6 +431,7 @@ export const TaskAsyncWaitTool = Tool.define(
             completed: completed.length,
             pending: pending.length,
             timed_out: timedOut,
+            released,
             task_ids: targets,
           })
         }).pipe(Effect.orDie),

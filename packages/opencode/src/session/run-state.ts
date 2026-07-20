@@ -3,15 +3,41 @@ import { InstanceState } from "@/effect/instance-state"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
-import { Effect, Latch, Layer, Scope, Context } from "effect"
+import { Deferred, Effect, Latch, Layer, Scope, Context, SynchronizedRef } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
 import { acquireInstanceActivity, type InstanceActivity } from "@/effect/instance-registry"
 
+/** 单次 task_async_wait 注册：独立 release Deferred，finally 注销。 */
+export type WaitRegistration = {
+  readonly token: symbol
+  readonly released: Deferred.Deferred<void>
+}
+
+type WaitEntry = {
+  token: symbol
+  /** tool callID；缺失时仍可被 onUserPrompt 释放，但不参与 sticky。 */
+  callID?: string
+  released: Deferred.Deferred<void>
+}
+
+/** 每会话 waiter 与按 callID 的 sticky（仅覆盖已 running 但尚未 register 的 wait）。 */
+type SessionWaits = {
+  waiters: Map<symbol, WaitEntry>
+  stickyCallIDs: Set<string>
+}
+
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
-  readonly promote: (sessionID: SessionID) => Effect.Effect<void>
+  /**
+   * 用户消息已持久化后调用：提升前台子任务，并协作式释放本会话 active async wait。
+   * runningCallIDs 为当前仍 running 的 task_async_wait 的 callID；仅这些未注册的调用可 sticky。
+   */
+  readonly onUserPrompt: (sessionID: SessionID, runningCallIDs?: readonly string[]) => Effect.Effect<void>
+  /** 原子注册一次 wait；callID 用于消费匹配的 sticky。 */
+  readonly registerWait: (sessionID: SessionID, callID?: string) => Effect.Effect<WaitRegistration>
+  readonly unregisterWait: (sessionID: SessionID, token: symbol) => Effect.Effect<void>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
     sessionID: SessionID,
@@ -45,6 +71,8 @@ const layer = Layer.effect(
             releaseIfIdle(): void
           }
         >()
+        // SynchronizedRef：register / release / unregister 在无交叉 yield 的临界区内完成。
+        const waits = yield* SynchronizedRef.make(new Map<SessionID, SessionWaits>())
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (entry) => entry.runner.cancel, {
@@ -52,9 +80,16 @@ const layer = Layer.effect(
               discard: true,
             })
             runners.clear()
+            const snapshot = yield* SynchronizedRef.get(waits)
+            for (const session of snapshot.values()) {
+              for (const entry of session.waiters.values()) {
+                yield* Deferred.succeed(entry.released, undefined).pipe(Effect.ignore)
+              }
+            }
+            yield* SynchronizedRef.set(waits, new Map())
           }),
         )
-        return { runners, scope }
+        return { runners, waits, scope }
       }),
     )
 
@@ -100,13 +135,97 @@ const layer = Layer.effect(
       if (existing?.runner.busy) yield* busyError(sessionID)
     })
 
-    const promote = Effect.fn("SessionRunState.promote")(function* (sessionID: SessionID) {
+    const isEmpty = (session: SessionWaits) => session.waiters.size === 0 && session.stickyCallIDs.size === 0
+
+    const registerWait = Effect.fn("SessionRunState.registerWait")(function* (
+      sessionID: SessionID,
+      callID?: string,
+    ) {
+      const data = yield* InstanceState.get(state)
+      const token = Symbol("task_async_wait")
+      const released = yield* Deferred.make<void>()
+      // modify 临界区内纯同步：仅匹配 callID 的 sticky 可立即完成。
+      const immediate = yield* SynchronizedRef.modify(data.waits, (map) => {
+        const current = map.get(sessionID) ?? { waiters: new Map(), stickyCallIDs: new Set<string>() }
+        if (callID && current.stickyCallIDs.has(callID)) {
+          const stickyCallIDs = new Set(current.stickyCallIDs)
+          stickyCallIDs.delete(callID)
+          const next: SessionWaits = { waiters: current.waiters, stickyCallIDs }
+          const copy = new Map(map)
+          if (isEmpty(next)) copy.delete(sessionID)
+          else copy.set(sessionID, next)
+          return [true, copy] as const
+        }
+        const waiters = new Map(current.waiters)
+        waiters.set(token, { token, callID, released })
+        const copy = new Map(map)
+        copy.set(sessionID, { waiters, stickyCallIDs: current.stickyCallIDs })
+        return [false, copy] as const
+      })
+      if (immediate) yield* Deferred.succeed(released, undefined).pipe(Effect.ignore)
+      return { token, released } satisfies WaitRegistration
+    })
+
+    const unregisterWait = Effect.fn("SessionRunState.unregisterWait")(function* (
+      sessionID: SessionID,
+      token: symbol,
+    ) {
+      const data = yield* InstanceState.get(state)
+      yield* SynchronizedRef.update(data.waits, (map) => {
+        const current = map.get(sessionID)
+        if (!current || !current.waiters.has(token)) return map
+        const waiters = new Map(current.waiters)
+        waiters.delete(token)
+        const next: SessionWaits = { waiters, stickyCallIDs: current.stickyCallIDs }
+        const copy = new Map(map)
+        if (isEmpty(next)) copy.delete(sessionID)
+        else copy.set(sessionID, next)
+        return copy
+      })
+    })
+
+    // 唤醒全部 active waiter；仅为 runningCallIDs 中尚未注册的 call 写 sticky。
+    const releaseWaits = Effect.fn("SessionRunState.releaseWaits")(function* (
+      sessionID: SessionID,
+      runningCallIDs: readonly string[],
+    ) {
+      const data = yield* InstanceState.get(state)
+      const pending = yield* SynchronizedRef.modify(data.waits, (map) => {
+        const current = map.get(sessionID) ?? { waiters: new Map(), stickyCallIDs: new Set<string>() }
+        const entries = [...current.waiters.values()]
+        const registered = new Set(
+          entries.flatMap((entry) => (entry.callID ? [entry.callID] : [])),
+        )
+        // runningCallIDs 是当前权威快照；旧 sticky 不在其中时直接淘汰。
+        const stickyCallIDs = new Set(runningCallIDs.filter((id) => !registered.has(id)))
+
+        const next: SessionWaits = {
+          waiters: new Map(),
+          stickyCallIDs,
+        }
+        const copy = new Map(map)
+        if (isEmpty(next)) copy.delete(sessionID)
+        else copy.set(sessionID, next)
+        return [entries, copy] as const
+      })
+      yield* Effect.forEach(pending, (entry) => Deferred.succeed(entry.released, undefined).pipe(Effect.ignore), {
+        concurrency: "unbounded",
+        discard: true,
+      })
+    })
+
+    const onUserPrompt = Effect.fn("SessionRunState.onUserPrompt")(function* (
+      sessionID: SessionID,
+      runningCallIDs: readonly string[] = [],
+    ) {
       yield* promoteChildJobs(background, sessionID)
+      // 已是 background 的 job 上 promote 幂等；release 负责协作式结束 task_async_wait。
+      yield* releaseWaits(sessionID, runningCallIDs)
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      // 先将直接子任务转为后台以释放同步等待，再停止 Runner；子代理仅由 task_async_abort 显式终止。
-      yield* promote(sessionID)
+      // 仅提升子任务并停 Runner；不发布「新用户消息」式 wait release（避免 released 语义误用）。
+      yield* promoteChildJobs(background, sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing) {
@@ -156,7 +275,15 @@ const layer = Layer.effect(
       )
     })
 
-    return Service.of({ assertNotBusy, promote, cancel, ensureRunning, startShell })
+    return Service.of({
+      assertNotBusy,
+      onUserPrompt,
+      registerWait,
+      unregisterWait,
+      cancel,
+      ensureRunning,
+      startShell,
+    })
   }),
 )
 

@@ -942,6 +942,7 @@ export const dict = {
   "session.header.open.app.androidStudio": "Android Studio",
   "session.header.open.app.powershell": "PowerShell",
   "session.header.open.app.sublimeText": "Sublime Text",
+  "session.header.open.app.intellijIdea": "IntelliJ IDEA",
   "debugBar.ariaLabel": "Diagnóstico de desempenho de desenvolvimento",
   "debugBar.na": "n/a",
   "debugBar.nav.label": "NAV",

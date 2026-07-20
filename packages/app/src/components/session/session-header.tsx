@@ -41,6 +41,7 @@ const OPEN_APPS = [
   "android-studio",
   "powershell",
   "sublime-text",
+  "intellij-idea",
 ] as const
 
 type OpenApp = (typeof OPEN_APPS)[number]
@@ -83,8 +84,6 @@ const MAC_APPS = [
 
 const WINDOWS_APPS = [
   { id: "vscode", label: "session.header.open.app.vscode", icon: "vscode", openWith: "code" },
-  { id: "cursor", label: "session.header.open.app.cursor", icon: "cursor", openWith: "cursor" },
-  { id: "zed", label: "session.header.open.app.zed", icon: "zed", openWith: "zed" },
   {
     id: "powershell",
     label: "session.header.open.app.powershell",
@@ -92,10 +91,10 @@ const WINDOWS_APPS = [
     openWith: "powershell",
   },
   {
-    id: "sublime-text",
-    label: "session.header.open.app.sublimeText",
-    icon: "sublime-text",
-    openWith: "Sublime Text",
+    id: "intellij-idea",
+    label: "session.header.open.app.intellijIdea",
+    icon: "intellij-idea",
+    openWith: "idea64.exe",
   },
 ] as const
 

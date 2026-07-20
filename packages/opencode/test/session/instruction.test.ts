@@ -246,6 +246,46 @@ describe("Instruction.system", () => {
       )
     }),
   )
+
+  it.live("loads project AGENTS.local.md without config", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.local.md": "# Local Instructions" })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const local = path.join(projectTmp, "AGENTS.local.md")
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(local)).toBe(true)
+
+        const rules = yield* svc.system()
+        expect(rules).toContain(`Instructions from: ${local}\n# Local Instructions`)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("prefers AGENTS.local.md over AGENTS.md at project level", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpWithFiles({
+        "AGENTS.local.md": "# Local Instructions",
+        "AGENTS.md": "# Project Instructions",
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const local = path.join(projectTmp, "AGENTS.local.md")
+        const agents = path.join(projectTmp, "AGENTS.md")
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(local)).toBe(true)
+        expect(paths.has(agents)).toBe(false)
+
+        const rules = yield* svc.system()
+        expect(rules.some((rule) => rule.includes("# Local Instructions"))).toBe(true)
+        expect(rules.some((rule) => rule.includes("# Project Instructions"))).toBe(false)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
 })
 
 describe("Instruction.systemPaths global config", () => {

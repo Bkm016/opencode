@@ -1978,6 +1978,19 @@ export default function LegacyLayout(props: ParentProps) {
                           <DropdownMenu.ItemLabel>{language.t("sidebar.project.skills")}</DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
                         <DropdownMenu.Item
+                          data-action="project-instructions"
+                          data-project={slug()}
+                          onSelect={() => {
+                            void import("@/components/settings-instructions").then((x) => {
+                              dialog.show(() => <x.DialogInstructions directory={worktree()} />)
+                            })
+                          }}
+                        >
+                          <DropdownMenu.ItemLabel>
+                            {language.t("settings.tab.instructions")}
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
                           data-action="project-archived-sessions"
                           data-project={slug()}
                           onSelect={() => {

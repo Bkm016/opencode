@@ -1,4 +1,5 @@
 import { Button } from "@opencode-ai/ui/button"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
@@ -29,9 +30,11 @@ function isURL(source: string) {
 
 async function loadInstructions(
   sdk: ReturnType<ReturnType<typeof useServerSDK>>,
+  directory?: string,
 ): Promise<InstructionEntry[] | undefined> {
   try {
-    const result = await sdk.client.config.instructions()
+    // 显式 directory 时按目标项目解析；省略则走当前 instance 默认目录
+    const result = await sdk.client.config.instructions(directory ? { directory } : undefined)
     if (result.error || !Array.isArray(result.data)) return undefined
     return result.data.filter(
       (row): row is InstructionEntry =>
@@ -47,15 +50,23 @@ function copyText(text: string) {
   return Promise.reject(new Error("Clipboard unavailable"))
 }
 
-export const SettingsInstructions: Component = () => {
+export const SettingsInstructions: Component<{ directory?: string }> = (props) => {
   return (
     <SettingsServerScope>
-      <SettingsInstructionsContent />
+      <SettingsInstructionsContent directory={props.directory} />
     </SettingsServerScope>
   )
 }
 
-const SettingsInstructionsContent: Component = () => {
+export function DialogInstructions(props: { directory: string }) {
+  return (
+    <Dialog size="x-large" transition>
+      <SettingsInstructions directory={props.directory} />
+    </Dialog>
+  )
+}
+
+const SettingsInstructionsContent: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const server = useServer()
@@ -64,8 +75,8 @@ const SettingsInstructionsContent: Component = () => {
   const [copied, setCopied] = createSignal(false)
 
   const [remote] = createResource(
-    () => serverSDK(),
-    (sdk) => loadInstructions(sdk),
+    () => ({ sdk: serverSDK(), directory: props.directory }),
+    ({ sdk, directory }) => loadInstructions(sdk, directory),
   )
 
   const items = createMemo<InstructionItem[]>(() => {
@@ -90,7 +101,14 @@ const SettingsInstructionsContent: Component = () => {
     return items().find((item) => item.id === id)
   })
 
-  // 与 prompts 面板一致:未选中时默认落到第一项,避免右侧空白
+  // directory / server 切换后清空选中，避免右侧残留上一个项目的内容
+  createEffect((prev: string | undefined) => {
+    const key = `${serverSDK().url}\0${props.directory ?? ""}`
+    if (prev !== undefined && prev !== key) setSelectedID(undefined)
+    return key
+  })
+
+  // 与 prompts 面板一致：未选中时默认落到第一项，避免右侧空白
   createEffect(() => {
     if (selectedID()) return
     const first = list.flat()[0]

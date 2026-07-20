@@ -71,7 +71,9 @@ const layer: Layer.Layer<
       path.join(global.config, "AGENTS.md"),
       ...(!flags.disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
     ]
+    // AGENTS.local.md 优先于 AGENTS.md：first project-level match wins，本地覆盖不叠加。
     const instructionFiles = [
+      "AGENTS.local.md",
       "AGENTS.md",
       ...(!flags.disableClaudeCodePrompt ? ["CLAUDE.md"] : []),
       "CONTEXT.md", // deprecated

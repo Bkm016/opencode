@@ -78,6 +78,8 @@ export type UsageInput = Usage | ConstructorParameters<typeof Usage>[0]
 export const StepStart = Schema.Struct({
   type: Schema.tag("step-start"),
   index: Schema.Number,
+  /** 已知时，实际发送给 provider 的最终 HTTP 请求体 UTF-8 字节数。 */
+  requestBodyBytes: Schema.optional(Schema.Number),
 }).annotate({ identifier: "LLM.Event.StepStart" })
 export type StepStart = Schema.Schema.Type<typeof StepStart>
 

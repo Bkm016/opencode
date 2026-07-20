@@ -15,6 +15,8 @@ export function adapterState() {
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
     copilotTotalNanoAiu: undefined as number | undefined,
+    /** 已知时，最近一次 doStream() 实际发送的最终 HTTP body UTF-8 字节数。 */
+    requestBodyBytes: undefined as number | undefined,
   }
 }
 
@@ -82,7 +84,12 @@ export function toLLMEvents(
       return Effect.succeed([])
 
     case "start-step":
-      return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
+      return Effect.succeed([
+        LLMEvent.stepStart({
+          index: state.step,
+          ...(state.requestBodyBytes === undefined ? {} : { requestBodyBytes: state.requestBodyBytes }),
+        }),
+      ])
 
     case "finish-step":
       return Effect.sync(() => {

@@ -465,6 +465,7 @@ export const dict = {
   "context.stats.totalTokens": "Ukupno tokena",
   "context.stats.usage": "Korištenje",
   "context.stats.inputTokens": "Ulazni tokeni",
+  "context.stats.requestBody": "Tijelo zahtjeva",
   "context.stats.outputTokens": "Izlazni tokeni",
   "context.stats.reasoningTokens": "Tokeni za rasuđivanje",
   "context.stats.cacheTokens": "Cache tokeni (čitanje/pisanje)",

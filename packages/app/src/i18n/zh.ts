@@ -538,6 +538,7 @@ export const dict = {
   "context.stats.totalTokens": "总 token",
   "context.stats.usage": "使用率",
   "context.stats.inputTokens": "输入 token",
+  "context.stats.requestBody": "请求体大小",
   "context.stats.outputTokens": "输出 token",
   "context.stats.reasoningTokens": "推理 token",
   "context.stats.cacheTokens": "缓存 token（读/写）",

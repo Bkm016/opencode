@@ -434,6 +434,7 @@ export const dict = {
   "context.stats.totalTokens": "総トークン数",
   "context.stats.usage": "使用量",
   "context.stats.inputTokens": "入力トークン",
+  "context.stats.requestBody": "リクエストボディ",
   "context.stats.outputTokens": "出力トークン",
   "context.stats.reasoningTokens": "推論トークン",
   "context.stats.cacheTokens": "キャッシュトークン (読込/書込)",

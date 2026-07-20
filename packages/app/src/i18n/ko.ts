@@ -352,6 +352,7 @@ export const dict = {
   "context.stats.totalTokens": "총 토큰",
   "context.stats.usage": "사용량",
   "context.stats.inputTokens": "입력 토큰",
+  "context.stats.requestBody": "요청 본문",
   "context.stats.outputTokens": "출력 토큰",
   "context.stats.reasoningTokens": "추론 토큰",
   "context.stats.cacheTokens": "캐시 토큰 (읽기/쓰기)",

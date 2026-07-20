@@ -13,6 +13,8 @@ export interface TransportRuntime {
 export interface Transport<Body, Prepared, Frame> {
   readonly id: string
   readonly prepare: (input: TransportPrepareInput<Body>) => Effect.Effect<Prepared, LLMError>
+  /** 已知时，从已准备的 transport 请求读取最终 body 字节数。 */
+  readonly requestBodyBytes?: (prepared: Prepared) => number
   readonly frames: (
     prepared: Prepared,
     request: LLMRequest,

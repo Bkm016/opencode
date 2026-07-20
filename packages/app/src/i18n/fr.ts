@@ -437,6 +437,7 @@ export const dict = {
   "context.stats.totalTokens": "Total des jetons",
   "context.stats.usage": "Utilisation",
   "context.stats.inputTokens": "Jetons d'entrée",
+  "context.stats.requestBody": "Corps de la requête",
   "context.stats.outputTokens": "Jetons de sortie",
   "context.stats.reasoningTokens": "Jetons de raisonnement",
   "context.stats.cacheTokens": "Jetons de cache (lecture/écriture)",

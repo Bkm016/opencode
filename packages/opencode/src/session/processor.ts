@@ -507,6 +507,10 @@ const layer = Layer.effect(
 
           case "step-start":
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
+            if (value.requestBodyBytes !== undefined) {
+              ctx.assistantMessage.requestBodyBytes = value.requestBodyBytes
+              yield* session.updateMessage(ctx.assistantMessage)
+            }
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,

@@ -10,10 +10,11 @@ import { WebSocketExecutor } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
 import * as ProviderShared from "../protocols/shared"
-import type { LLMError, LLMEvent, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
+import type { LLMError, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
 import {
   GenerationOptions,
   HttpOptions,
+  LLMEvent,
   LLMRequest,
   LLMResponse,
   Model,
@@ -278,6 +279,8 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
         }),
       streamPrepared: (prepared: Prepared, request: LLMRequest, runtime: TransportRuntime) => {
         const route = `${request.model.provider}/${request.model.route.id}`
+        const requestBodyBytes = routeInput.transport.requestBodyBytes?.(prepared)
+        let attachedRequestBodyBytes = false
         const events = routeInput.transport
           .frames(prepared, request, runtime)
           .pipe(
@@ -290,6 +293,12 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
             protocol.stream.step,
             protocol.stream.onHalt ? { onHalt: protocol.stream.onHalt } : undefined,
           ),
+          Stream.map((event) => {
+            if (attachedRequestBodyBytes || event.type !== "step-start" || requestBodyBytes === undefined) return event
+            // 一个 transport stream 对应一次真实请求，只给该请求的首个 step 标记 body 大小。
+            attachedRequestBodyBytes = true
+            return LLMEvent.stepStart({ ...event, requestBodyBytes })
+          }),
           Stream.catchCause((cause) => Stream.fail(streamError(route, `Failed to read ${route} stream`, cause))),
         )
       },

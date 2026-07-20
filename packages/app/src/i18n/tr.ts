@@ -468,6 +468,7 @@ export const dict = {
   "context.stats.totalTokens": "Toplam Token",
   "context.stats.usage": "Kullanım",
   "context.stats.inputTokens": "Girdi Tokenleri",
+  "context.stats.requestBody": "İstek gövdesi",
   "context.stats.outputTokens": "Çıktı Tokenleri",
   "context.stats.reasoningTokens": "Akıl Yürütme Tokenleri",
   "context.stats.cacheTokens": "Önbellek Tokenleri (okuma/yazma)",

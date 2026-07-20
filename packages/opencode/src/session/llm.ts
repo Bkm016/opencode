@@ -275,8 +275,11 @@ const live: Layer.Layer<
       })
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
+      // 状态需覆盖 middleware 与事件适配器，确保 start-step 携带 provider 已序列化的真实 body 大小。
+      const state = LLMAISDK.adapterState()
       return {
         type: "ai-sdk" as const,
+        state,
         result: streamText({
           onError(error) {
             bridge.fork(
@@ -338,6 +341,13 @@ const live: Layer.Layer<
                   }
                   return args.params
                 },
+                async wrapStream({ doStream }) {
+                  const result = await doStream()
+                  const body = result.request?.body
+                  const bodyText = typeof body === "string" ? body : body == null ? undefined : JSON.stringify(body)
+                  state.requestBodyBytes = bodyText === undefined ? undefined : new TextEncoder().encode(bodyText).byteLength
+                  return result
+                },
               },
             ],
           }),
@@ -369,11 +379,10 @@ const live: Layer.Layer<
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState()
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(result.state, event)),
               Stream.flatMap((events) => Stream.fromIterable(events)),
             )
           }),

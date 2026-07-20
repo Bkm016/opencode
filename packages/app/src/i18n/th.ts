@@ -463,6 +463,7 @@ export const dict = {
   "context.stats.totalTokens": "โทเค็นทั้งหมด",
   "context.stats.usage": "การใช้งาน",
   "context.stats.inputTokens": "โทเค็นนำเข้า",
+  "context.stats.requestBody": "ขนาดคำขอ",
   "context.stats.outputTokens": "โทเค็นส่งออก",
   "context.stats.reasoningTokens": "โทเค็นการใช้เหตุผล",
   "context.stats.cacheTokens": "โทเค็นแคช (อ่าน/เขียน)",

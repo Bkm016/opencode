@@ -19,6 +19,8 @@ export interface JsonRequestParts<Body = unknown> {
 export interface HttpPrepared<Frame> {
   readonly request: HttpClientRequest.HttpClientRequest
   readonly framing: FramingDef<Frame>
+  /** 应用 overlay 后最终 JSON 请求体的 UTF-8 字节数。 */
+  readonly requestBodyBytes: number
 }
 
 const applyQuery = (url: string, query: Record<string, string> | undefined) => {
@@ -118,6 +120,7 @@ export interface HttpJsonTransport<Body, Frame> extends Transport<Body, HttpPrep
 export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJsonTransport<Body, Frame> => ({
   id: "http-json",
   with: (patch) => httpJson({ ...input, ...patch }),
+  requestBodyBytes: (prepared) => prepared.requestBodyBytes,
   prepare: (prepareInput) =>
     jsonRequestParts({
       ...prepareInput,
@@ -125,6 +128,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
       Effect.map((parts) => ({
         request: ProviderShared.jsonPost({ url: parts.url, body: parts.bodyText, headers: parts.headers }),
         framing: input.framing,
+        requestBodyBytes: new TextEncoder().encode(parts.bodyText).byteLength,
       })),
     ),
   frames: (prepared, request, runtime) =>

@@ -443,6 +443,14 @@ export function SessionContextTab() {
 
   const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const requestBodyBytes = createMemo(() => {
+    const message = findLast(
+      messages(),
+      (message) => message.role === "assistant" && message.requestBodyBytes !== undefined,
+    )
+    if (message?.role !== "assistant") return
+    return message.requestBodyBytes
+  })
 
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
@@ -526,6 +534,7 @@ export function SessionContextTab() {
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total) },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage) },
     { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input) },
+    { label: "context.stats.requestBody", value: () => formatter().bytes(requestBodyBytes()) },
     { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.message.tokens.output) },
     { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.message.tokens.reasoning) },
     {

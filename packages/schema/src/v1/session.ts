@@ -482,6 +482,8 @@ export const Assistant = Schema.Struct({
   structured: Schema.optional(Schema.Any),
   variant: Schema.optional(Schema.String),
   finish: Schema.optional(Schema.String),
+  /** 已知时，该 assistant turn 实际发送的最终 HTTP 请求体 UTF-8 字节数。 */
+  requestBodyBytes: Schema.optional(NonNegativeInt),
 }).annotate({ identifier: "AssistantMessage" })
 export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
   error?: AssistantError

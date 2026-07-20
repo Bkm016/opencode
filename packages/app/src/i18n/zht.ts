@@ -500,6 +500,7 @@ export const dict = {
   "context.stats.totalTokens": "總 token",
   "context.stats.usage": "使用量",
   "context.stats.inputTokens": "輸入 token",
+  "context.stats.requestBody": "請求體大小",
   "context.stats.outputTokens": "輸出 token",
   "context.stats.reasoningTokens": "推理 token",
   "context.stats.cacheTokens": "快取 token（讀/寫）",

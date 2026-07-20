@@ -433,6 +433,7 @@ export const dict = {
   "context.stats.totalTokens": "إجمالي الرموز",
   "context.stats.usage": "استخدام",
   "context.stats.inputTokens": "رموز الإدخال",
+  "context.stats.requestBody": "حجم الطلب",
   "context.stats.outputTokens": "رموز الإخراج",
   "context.stats.reasoningTokens": "رموز الاستنتاج",
   "context.stats.cacheTokens": "رموز التخزين المؤقت (قراءة/كتابة)",

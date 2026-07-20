@@ -339,6 +339,20 @@ export const dict = {
   "dialog.archivedSessions.empty": "没有已归档的会话",
   "dialog.archivedSessions.unarchive": "恢复",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "当前项目可用的 Skills",
+  "dialog.skills.scope.project": "当前项目",
+  "dialog.skills.scope.global": "全局",
+  "dialog.skills.search.placeholder": "搜索 Skills",
+  "dialog.skills.empty.project": "当前项目没有 Skills",
+  "dialog.skills.empty.global": "没有全局 Skills",
+  "dialog.skills.loadError": "Skills 加载失败",
+  "dialog.skills.retry": "重试",
+  "dialog.skills.select": "选择一个 Skill 查看完整说明",
+  "dialog.skills.back": "返回",
+  "dialog.skills.source": "来源",
+  "dialog.skills.instructions": "说明内容",
+
   "dialog.mcp.empty": "未配置 MCPs",
 
   "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
@@ -779,6 +793,7 @@ export const dict = {
   "sidebar.gettingStarted.line1": "OpenCode 提供免费模型，你可以立即开始使用。",
   "sidebar.gettingStarted.line2": "连接任意提供商即可使用更多模型，如 Claude、GPT、Gemini 等。",
   "sidebar.project.archivedSessions": "已归档会话",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 

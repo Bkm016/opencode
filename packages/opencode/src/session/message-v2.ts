@@ -30,7 +30,7 @@ import { or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
-import { errorMessage } from "@/util/error"
+import { errorMessageWithCause } from "@/util/error"
 import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
@@ -803,12 +803,14 @@ export function fromError(
         { cause: e },
       ).toObject()
     case e instanceof Error: {
-      const message = errorMessage(e)
+      // 保留 undici 等传输错误的 cause 链，避免重试卡片只显示外层 terminated。
+      const message = errorMessageWithCause(e)
       const lower = message.toLowerCase()
       // Mid-stream TCP drop from undici/fetch surfaces as TypeError: terminated
       // (or "other side closed"). Treat as retryable transport, not a terminal Unknown.
       if (
         lower === "terminated" ||
+        lower.startsWith("terminated (") ||
         lower.includes("other side closed") ||
         lower.includes("socket hang up") ||
         (e.name === "TypeError" && (lower.includes("fetch") || lower.includes("network") || lower.includes("terminated")))

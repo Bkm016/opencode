@@ -3,7 +3,6 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Spinner } from "@opencode-ai/ui/spinner"
 
 export function SessionRetry(props: {
@@ -36,13 +35,7 @@ export function SessionRetry(props: {
     if (current.message.includes("exceeded your current quota") && current.message.includes("gemini")) {
       return i18n.t("ui.sessionTurn.retry.geminiHot")
     }
-    if (current.message.length > 80) return current.message.slice(0, 80) + "..."
     return current.message
-  })
-  const truncated = createMemo(() => {
-    const current = retry()
-    if (!current) return false
-    return current.message.length > 80
   })
   const info = createMemo(() => {
     const current = retry()
@@ -62,13 +55,7 @@ export function SessionRetry(props: {
           <div class="flex items-start gap-2">
             <Spinner class="size-4 mt-0.5" />
             <div class="min-w-0 flex-1">
-              <Show when={truncated()} fallback={<div data-slot="session-turn-retry-message">{message()}</div>}>
-                <Tooltip value={retry()?.message ?? ""} placement="top">
-                  <div data-slot="session-turn-retry-message" class="cursor-help truncate">
-                    {message()}
-                  </div>
-                </Tooltip>
-              </Show>
+              <div data-slot="session-turn-retry-message">{message()}</div>
               <Show when={info()}>{(line) => <div data-slot="session-turn-retry-info">{line()}</div>}</Show>
             </div>
             <Show when={props.onRetryNow}>

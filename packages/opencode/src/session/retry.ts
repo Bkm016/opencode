@@ -2,7 +2,6 @@ import type { NamedError } from "@opencode-ai/core/util/error"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Clock, Context, Deferred, Duration, Effect, Layer, Schedule } from "effect"
-import { MessageV2 } from "./message-v2"
 import { InstanceState } from "@/effect/instance-state"
 import type { SessionID } from "./schema"
 import { iife } from "@/util/iife"
@@ -109,6 +108,7 @@ function isTransientMessage(msg: string) {
     lower.includes("connection closed") ||
     lower.includes("other side closed") ||
     lower === "terminated" ||
+    lower.startsWith("terminated (") ||
     lower.includes("timed out") ||
     lower.includes("timeout") ||
     lower.includes("temporarily unavailable") ||
@@ -180,7 +180,11 @@ export function retryable(error: Err, provider: string) {
         },
       }
     }
-    return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
+    const body = error.data.responseBody?.trim()
+    if (body && !error.data.message.includes(body)) {
+      return { message: `${error.data.message}: ${body}` }
+    }
+    return { message: error.data.message }
   }
 
   // Check for rate limit / transport patterns in plain text error messages

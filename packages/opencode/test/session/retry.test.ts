@@ -251,6 +251,37 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Bad gateway" })
   })
 
+  test("appends the complete responseBody to a retry message", () => {
+    const body = `<html><body><h1>Bad Gateway</h1><pre>${"upstream detail\n".repeat(20)}</pre></body></html>`
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "Bad Gateway",
+        isRetryable: true,
+        statusCode: 502,
+        responseBody: body,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({
+      message: `Bad Gateway: ${body}`,
+    })
+  })
+
+  test("does not duplicate responseBody already present in message", () => {
+    const body = '{"error":"already in message"}'
+    const message = `Provider request failed with HTTP 502: ${body}`
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message,
+        isRetryable: true,
+        statusCode: 502,
+        responseBody: body,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message })
+  })
+
   test("retries 503 service unavailable errors", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
@@ -298,6 +329,17 @@ describe("session.retry.retryable", () => {
     const request = MessageV2.fromError(new TypeError("terminated"), { providerID })
     expect(SessionV1.APIError.isInstance(request)).toBe(true)
     expect(SessionRetry.retryable(request, retryProvider)).toEqual({ message: "terminated" })
+  })
+
+  test("retries terminated errors with nested undici socket cause", () => {
+    const socket = new Error("other side closed")
+    socket.name = "SocketError"
+    ;(socket as Error & { code: string }).code = "UND_ERR_SOCKET"
+    const request = MessageV2.fromError(new TypeError("terminated", { cause: socket }), { providerID })
+    expect(SessionV1.APIError.isInstance(request)).toBe(true)
+    expect(SessionRetry.retryable(request, retryProvider)).toEqual({
+      message: "terminated (cause: SocketError: other side closed [UND_ERR_SOCKET])",
+    })
   })
 
   test("retries other side closed transport errors", () => {

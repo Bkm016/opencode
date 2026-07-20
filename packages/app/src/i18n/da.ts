@@ -300,6 +300,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} af {{total}} aktiveret",
   "dialog.mcp.empty": "Ingen MCP'er konfigureret",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills tilgængelige for det aktuelle projekt",
+  "dialog.skills.scope.project": "Aktuelt projekt",
+  "dialog.skills.scope.global": "Global",
+  "dialog.skills.search.placeholder": "Søg skills",
+  "dialog.skills.empty.project": "Ingen skills i dette projekt",
+  "dialog.skills.empty.global": "Ingen globale skills",
+  "dialog.skills.loadError": "Kunne ikke indlæse skills",
+  "dialog.skills.retry": "Prøv igen",
+  "dialog.skills.select": "Vælg en skill for at se instruktionerne",
+  "dialog.skills.back": "Tilbage",
+  "dialog.skills.source": "Kilde",
+  "dialog.skills.instructions": "Instruktioner",
   "dialog.lsp.empty": "LSP'er registreret automatisk fra filtyper",
   "dialog.plugins.empty": "Plugins konfigureret i opencode.json",
 
@@ -715,6 +728,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "Kom i gang",
   "sidebar.gettingStarted.line1": "OpenCode inkluderer gratis modeller så du kan starte med det samme.",
   "sidebar.gettingStarted.line2": "Forbind enhver udbyder for at bruge modeller, inkl. Claude, GPT, Gemini osv.",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "Ingen åbne projekter",
   "sidebar.empty.description": "Åbn et projekt for at komme i gang",
 

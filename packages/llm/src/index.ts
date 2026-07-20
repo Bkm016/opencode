@@ -2,6 +2,7 @@ export { LLMClient } from "./route/client"
 export { Auth } from "./route/auth"
 export { Provider } from "./provider"
 export { isContextOverflow, isContextOverflowFailure } from "./provider-error"
+export { redactSensitiveBodyFields } from "./redact"
 export type {
   RouteModelInput,
   RouteRoutedModelInput,

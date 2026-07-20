@@ -303,6 +303,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} з {{total}} увімкнено",
   "dialog.mcp.empty": "MCP не налаштовано",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills, доступні поточному проєкту",
+  "dialog.skills.scope.project": "Поточний проєкт",
+  "dialog.skills.scope.global": "Глобальні",
+  "dialog.skills.search.placeholder": "Пошук skills",
+  "dialog.skills.empty.project": "У цьому проєкті немає skills",
+  "dialog.skills.empty.global": "Немає глобальних skills",
+  "dialog.skills.loadError": "Не вдалося завантажити skills",
+  "dialog.skills.retry": "Повторити",
+  "dialog.skills.select": "Виберіть skill, щоб переглянути інструкції",
+  "dialog.skills.back": "Назад",
+  "dialog.skills.source": "Джерело",
+  "dialog.skills.instructions": "Інструкції",
   "dialog.lsp.empty": "LSP автоматично виявлені за типами файлів",
   "dialog.plugins.empty": "Плагіни налаштовані в opencode.json",
 
@@ -788,6 +801,7 @@ export const dict = {
   "sidebar.gettingStarted.line1": "OpenCode містить безкоштовні моделі, тому ви можете почати негайно.",
   "sidebar.gettingStarted.line2":
     "Підключіть будь-якого провайдера, щоб використовувати моделі, включаючи Claude, GPT, Gemini тощо.",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "Немає відкритих проєктів",
   "sidebar.empty.description": "Відкрийте проєкт, щоб почати",
 

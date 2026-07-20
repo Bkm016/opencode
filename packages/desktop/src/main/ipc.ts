@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { stat } from "node:fs/promises"
 import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
@@ -183,9 +183,30 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app) return shell.openPath(path)
     await new Promise<void>((resolve, reject) => {
-      const [cmd, args] =
-        process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
-      execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
+      if (process.platform === "darwin") {
+        execFile("open", ["-a", app, path], (err) => (err ? reject(err) : resolve()))
+        return
+      }
+      // PowerShell 会把裸路径参数当命令；且 GUI 宿主下 detached spawn 带 DETACHED_PROCESS，
+      // 控制台子系统不会分配窗口。经 cmd start 新建控制台，cwd 设为项目目录。
+      const base = basename(app).toLowerCase()
+      if (
+        process.platform === "win32" &&
+        (base === "powershell" || base === "powershell.exe" || base === "pwsh" || base === "pwsh.exe")
+      ) {
+        const child = spawn(
+          process.env.COMSPEC || "cmd.exe",
+          ["/d", "/c", "start", "", app, "-NoExit", "-NoLogo"],
+          { cwd: path, detached: true, stdio: "ignore", windowsHide: true },
+        )
+        child.once("error", reject)
+        child.once("spawn", () => {
+          child.unref()
+          resolve()
+        })
+        return
+      }
+      execFile(app, [path], (err) => (err ? reject(err) : resolve()))
     })
   })
 

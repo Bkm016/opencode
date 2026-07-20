@@ -302,6 +302,19 @@ export const dict = {
   "dialog.mcp.description": "已啟用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未設定 MCP",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "目前專案可用的 Skills",
+  "dialog.skills.scope.project": "目前專案",
+  "dialog.skills.scope.global": "全域",
+  "dialog.skills.search.placeholder": "搜尋 Skills",
+  "dialog.skills.empty.project": "目前專案沒有 Skills",
+  "dialog.skills.empty.global": "沒有全域 Skills",
+  "dialog.skills.loadError": "Skills 載入失敗",
+  "dialog.skills.retry": "重試",
+  "dialog.skills.select": "選擇一個 Skill 查看完整說明",
+  "dialog.skills.back": "返回",
+  "dialog.skills.source": "來源",
+  "dialog.skills.instructions": "說明內容",
   "dialog.lsp.empty": "已從檔案類型自動偵測到 LSPs",
   "dialog.plugins.empty": "在 opencode.json 中設定的外掛程式",
 
@@ -746,6 +759,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "開始使用",
   "sidebar.gettingStarted.line1": "OpenCode 提供免費模型，你可以立即開始使用。",
   "sidebar.gettingStarted.line2": "連線任意提供者即可使用更多模型，如 Claude、GPT、Gemini 等。",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "未開啟任何專案",
   "sidebar.empty.description": "開啟專案以開始使用",
 

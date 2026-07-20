@@ -2,7 +2,7 @@ import { APICallError } from "ai"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
 import type { ProviderV2 } from "@opencode-ai/core/provider"
-import { isContextOverflow } from "@opencode-ai/llm"
+import { isContextOverflow, redactSensitiveBodyFields } from "@opencode-ai/llm"
 
 export class HeaderTimeoutError extends Error {
   public override readonly name = "ProviderHeaderTimeoutError"
@@ -27,47 +27,32 @@ function isOpenAiErrorRetryable(e: APICallError) {
   return status === 404 || e.isRetryable
 }
 
+function redactedResponseBody(body: string | undefined) {
+  if (body === undefined) return undefined
+  return redactSensitiveBodyFields(body)
+}
+
 // Providers not reliably handled in this function:
 // - z.ai: can accept overflow silently (needs token-count/context-window checks)
-function message(providerID: ProviderV2.ID, e: APICallError) {
-  return iife(() => {
-    const msg = e.message
-    if (msg === "") {
-      if (e.responseBody) return e.responseBody
-      if (e.statusCode) {
-        const err = STATUS_CODES[e.statusCode]
-        if (err) return err
+function message(e: APICallError, responseBody: string | undefined) {
+  return redactSensitiveBodyFields(
+    iife(() => {
+      const msg = e.message
+      if (msg === "") {
+        if (responseBody) return responseBody
+        if (e.statusCode) {
+          const err = STATUS_CODES[e.statusCode]
+          if (err) return err
+        }
+        return "Unknown error"
       }
-      return "Unknown error"
-    }
 
-    if (!e.responseBody || (e.statusCode && msg !== STATUS_CODES[e.statusCode])) {
-      return msg
-    }
-
-    try {
-      const body = JSON.parse(e.responseBody)
-      // try to extract common error message fields
-      const errMsg = body.message || body.error || body.error?.message
-      if (errMsg && typeof errMsg === "string") {
-        return `${msg}: ${errMsg}`
-      }
-    } catch {}
-
-    // If responseBody is HTML (e.g. from a gateway or proxy error page),
-    // provide a human-readable message instead of dumping raw markup
-    if (/^\s*<!doctype|^\s*<html/i.test(e.responseBody)) {
-      if (e.statusCode === 401) {
-        return "Unauthorized: request was blocked by a gateway or proxy. Your authentication token may be missing or expired — try running `opencode auth login <your provider URL>` to re-authenticate."
-      }
-      if (e.statusCode === 403) {
-        return "Forbidden: request was blocked by a gateway or proxy. You may not have permission to access this resource — check your account and provider settings."
-      }
-      return msg
-    }
-
-    return `${msg}: ${e.responseBody}`
-  }).trim()
+      // 用原始 body 判断是否已嵌入，避免脱敏后 includes 失败而重复拼接。
+      const rawBody = e.responseBody
+      if (!responseBody || (rawBody && msg.includes(rawBody)) || msg.includes(responseBody)) return msg
+      return `${msg}: ${responseBody}`
+    }).trim(),
+  )
 }
 
 function json(input: unknown) {
@@ -104,7 +89,7 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
   const body = typeof raw?.message === "string" ? (json(raw.message) ?? raw) : raw
   if (!body) return
 
-  const responseBody = JSON.stringify(body)
+  const responseBody = redactSensitiveBodyFields(JSON.stringify(body))
   if (body.type !== "error") return
 
   switch (body?.error?.code) {
@@ -131,7 +116,10 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
     case "invalid_prompt":
       return {
         type: "api_error",
-        message: typeof body?.error?.message === "string" ? body?.error?.message : "Invalid prompt.",
+        message:
+          typeof body?.error?.message === "string"
+            ? redactSensitiveBodyFields(body.error.message)
+            : "Invalid prompt.",
         isRetryable: false,
         responseBody,
       }
@@ -139,7 +127,10 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
     case "server_error":
       return {
         type: "api_error",
-        message: typeof body?.error?.message === "string" ? body?.error?.message : "Server error.",
+        message:
+          typeof body?.error?.message === "string"
+            ? redactSensitiveBodyFields(body.error.message)
+            : "Server error.",
         isRetryable: true,
         responseBody,
       }
@@ -163,13 +154,14 @@ export type ParsedAPICallError =
     }
 
 export function parseAPICallError(input: { providerID: ProviderV2.ID; error: APICallError }): ParsedAPICallError {
-  const m = message(input.providerID, input.error)
+  const responseBody = redactedResponseBody(input.error.responseBody)
+  const m = message(input.error, responseBody)
   const body = json(input.error.responseBody)
   if (isContextOverflow(m) || input.error.statusCode === 413 || body?.error?.code === "context_length_exceeded") {
     return {
       type: "context_overflow",
       message: m,
-      responseBody: input.error.responseBody,
+      responseBody,
     }
   }
 
@@ -180,7 +172,7 @@ export function parseAPICallError(input: { providerID: ProviderV2.ID; error: API
     statusCode: input.error.statusCode,
     isRetryable: input.providerID.startsWith("openai") ? isOpenAiErrorRetryable(input.error) : input.error.isRetryable,
     responseHeaders: input.error.responseHeaders,
-    responseBody: input.error.responseBody,
+    responseBody,
     metadata,
   }
 }

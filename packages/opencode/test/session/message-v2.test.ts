@@ -1504,6 +1504,58 @@ describe("session.message-v2.fromError", () => {
     expect(SessionV1.APIError.isInstance(result)).toBe(true)
   })
 
+  test("preserves an HTML gateway response in the displayed error message", () => {
+    const responseBody = "<html><body><h1>Bad Gateway</h1><pre>upstream connection failed</pre></body></html>"
+    const result = MessageV2.fromError(
+      new APICallError({
+        message: "Bad Gateway",
+        url: "https://example.com",
+        requestBodyValues: {},
+        statusCode: 502,
+        responseHeaders: { "content-type": "text/html" },
+        responseBody,
+        isRetryable: true,
+      }),
+      { providerID },
+    )
+
+    expect(result).toMatchObject({
+      name: "APIError",
+      data: {
+        message: `Bad Gateway: ${responseBody}`,
+        responseBody,
+      },
+    })
+  })
+
+  test("redacts sensitive fields in AI SDK responseBody and message", () => {
+    const responseBody =
+      '{"error":{"message":"bad","api_key":"sk-live-secret","key":"body-secret","detail":"token=query-secret"}}'
+    const result = MessageV2.fromError(
+      new APICallError({
+        message: "Request failed",
+        url: "https://example.com",
+        requestBodyValues: {},
+        statusCode: 400,
+        responseHeaders: { "content-type": "application/json" },
+        responseBody,
+        isRetryable: false,
+      }),
+      { providerID },
+    )
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.responseBody).toContain('"api_key":"<redacted>"')
+    expect(result.data.responseBody).toContain('"key":"<redacted>"')
+    expect(result.data.responseBody).toContain("token=<redacted>")
+    expect(result.data.responseBody).not.toContain("sk-live-secret")
+    expect(result.data.responseBody).not.toContain("body-secret")
+    expect(result.data.responseBody).not.toContain("query-secret")
+    expect(result.data.message).toContain("<redacted>")
+    expect(result.data.message).not.toContain("sk-live-secret")
+  })
+
   test("serializes unknown inputs", () => {
     const result = MessageV2.fromError(123, { providerID })
 
@@ -1551,6 +1603,79 @@ describe("session.message-v2.fromError", () => {
     const result = MessageV2.fromError(zlibError, { providerID, aborted: true })
 
     expect(result.name).toBe("MessageAbortedError")
+  })
+
+  test("includes nested undici cause and code on terminated transport errors", () => {
+    const socket = new Error("other side closed")
+    socket.name = "SocketError"
+    ;(socket as Error & { code: string }).code = "UND_ERR_SOCKET"
+    const error = new TypeError("terminated", { cause: socket })
+
+    const result = MessageV2.fromError(error, { providerID })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.isRetryable).toBe(true)
+    expect(result.data.message).toBe("terminated (cause: SocketError: other side closed [UND_ERR_SOCKET])")
+  })
+
+  test("includes BodyTimeoutError name and code for retry display", () => {
+    const timeout = new Error("Body Timeout Error")
+    timeout.name = "BodyTimeoutError"
+    ;(timeout as Error & { code: string }).code = "UND_ERR_BODY_TIMEOUT"
+    const error = new TypeError("terminated", { cause: timeout })
+
+    const result = MessageV2.fromError(error, { providerID })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.isRetryable).toBe(true)
+    expect(result.data.message).toBe("terminated (cause: BodyTimeoutError: Body Timeout Error [UND_ERR_BODY_TIMEOUT])")
+  })
+
+  test("does not re-append cause text already present in the outer message", () => {
+    const cause = new Error("other side closed")
+    cause.name = "SocketError"
+    ;(cause as Error & { code: string }).code = "UND_ERR_SOCKET"
+    const message = "terminated (cause: SocketError: other side closed [UND_ERR_SOCKET])"
+    const error = new TypeError(message, { cause })
+
+    const result = MessageV2.fromError(error, { providerID })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.message).toBe(message)
+  })
+
+  test("breaks cyclic cause chains without hanging", () => {
+    const outer = new TypeError("terminated")
+    const inner = new Error("other side closed")
+    inner.name = "SocketError"
+    ;(inner as Error & { code: string }).code = "UND_ERR_SOCKET"
+    outer.cause = inner
+    inner.cause = outer
+
+    const result = MessageV2.fromError(outer, { providerID })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.message).toBe("terminated (cause: SocketError: other side closed [UND_ERR_SOCKET] (cause: ...))")
+  })
+
+  test("handles deep cause chains through the session error entrypoint", () => {
+    let cause: Error = new Error("leaf")
+    for (let index = 0; index < 5_000; index++) {
+      cause = new Error(`layer-${index}`, { cause })
+    }
+
+    const result = MessageV2.fromError(new TypeError("terminated", { cause }), { providerID })
+
+    expect(SessionV1.APIError.isInstance(result)).toBe(true)
+    if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.isRetryable).toBe(true)
+    expect(result.data.message.startsWith("terminated (cause: layer-4999")).toBe(true)
+    expect(result.data.message).toContain("layer-0")
+    expect(result.data.message).toContain("leaf")
   })
 })
 

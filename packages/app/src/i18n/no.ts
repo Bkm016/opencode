@@ -292,6 +292,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} av {{total}} aktivert",
   "dialog.mcp.empty": "Ingen MCP-er konfigurert",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills tilgjengelig for gjeldende prosjekt",
+  "dialog.skills.scope.project": "Gjeldende prosjekt",
+  "dialog.skills.scope.global": "Global",
+  "dialog.skills.search.placeholder": "Søk i skills",
+  "dialog.skills.empty.project": "Ingen skills i dette prosjektet",
+  "dialog.skills.empty.global": "Ingen globale skills",
+  "dialog.skills.loadError": "Kunne ikke laste skills",
+  "dialog.skills.retry": "Prøv igjen",
+  "dialog.skills.select": "Velg en skill for å se instruksjonene",
+  "dialog.skills.back": "Tilbake",
+  "dialog.skills.source": "Kilde",
+  "dialog.skills.instructions": "Instruksjoner",
   "dialog.lsp.empty": "LSP-er automatisk oppdaget fra filtyper",
   "dialog.plugins.empty": "Plugins konfigurert i opencode.json",
 
@@ -1047,6 +1060,7 @@ export const dict = {
   "session.new.workspace.local": "Lokalt depot",
   "session.new.workspace.existing": "Arbeidsområde…",
 
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "Ingen åpne prosjekter",
   "sidebar.empty.description": "Åpne et prosjekt for å komme i gang",
 

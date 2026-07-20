@@ -328,6 +328,20 @@ export const dict = {
   "dialog.archivedSessions.empty": "No archived sessions",
   "dialog.archivedSessions.unarchive": "Restore",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills available to the current project",
+  "dialog.skills.scope.project": "Current project",
+  "dialog.skills.scope.global": "Global",
+  "dialog.skills.search.placeholder": "Search skills",
+  "dialog.skills.empty.project": "No skills in this project",
+  "dialog.skills.empty.global": "No global skills",
+  "dialog.skills.loadError": "Failed to load skills",
+  "dialog.skills.retry": "Retry",
+  "dialog.skills.select": "Select a skill to view its instructions",
+  "dialog.skills.back": "Back",
+  "dialog.skills.source": "Source",
+  "dialog.skills.instructions": "Instructions",
+
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in opencode.json",
 
@@ -861,6 +875,7 @@ export const dict = {
   "sidebar.gettingStarted.line1": "OpenCode includes free models so you can start immediately.",
   "sidebar.gettingStarted.line2": "Connect any provider to use models, inc. Claude, GPT, Gemini etc.",
   "sidebar.project.archivedSessions": "Archived sessions",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",
 

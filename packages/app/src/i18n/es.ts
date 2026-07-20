@@ -301,6 +301,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} de {{total}} habilitados",
   "dialog.mcp.empty": "No hay MCPs configurados",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills disponibles para el proyecto actual",
+  "dialog.skills.scope.project": "Proyecto actual",
+  "dialog.skills.scope.global": "Global",
+  "dialog.skills.search.placeholder": "Buscar skills",
+  "dialog.skills.empty.project": "No hay skills en este proyecto",
+  "dialog.skills.empty.global": "No hay skills globales",
+  "dialog.skills.loadError": "Error al cargar skills",
+  "dialog.skills.retry": "Reintentar",
+  "dialog.skills.select": "Selecciona un skill para ver sus instrucciones",
+  "dialog.skills.back": "Atrás",
+  "dialog.skills.source": "Origen",
+  "dialog.skills.instructions": "Instrucciones",
   "dialog.lsp.empty": "LSPs detectados automáticamente por tipo de archivo",
   "dialog.plugins.empty": "Plugins configurados en opencode.json",
 
@@ -721,6 +734,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "Empezando",
   "sidebar.gettingStarted.line1": "OpenCode incluye modelos gratuitos para que puedas empezar inmediatamente.",
   "sidebar.gettingStarted.line2": "Conecta cualquier proveedor para usar modelos, inc. Claude, GPT, Gemini etc.",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "No hay proyectos abiertos",
   "sidebar.empty.description": "Abre un proyecto para empezar",
 

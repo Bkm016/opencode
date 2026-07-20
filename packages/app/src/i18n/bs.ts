@@ -302,6 +302,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
   "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills dostupni trenutnom projektu",
+  "dialog.skills.scope.project": "Trenutni projekat",
+  "dialog.skills.scope.global": "Globalno",
+  "dialog.skills.search.placeholder": "Pretraži skills",
+  "dialog.skills.empty.project": "Nema skills u ovom projektu",
+  "dialog.skills.empty.global": "Nema globalnih skills",
+  "dialog.skills.loadError": "Učitavanje skills nije uspjelo",
+  "dialog.skills.retry": "Pokušaj ponovo",
+  "dialog.skills.select": "Odaberi skill da vidiš upute",
+  "dialog.skills.back": "Nazad",
+  "dialog.skills.source": "Izvor",
+  "dialog.skills.instructions": "Upute",
   "dialog.lsp.empty": "LSP-ovi se automatski otkrivaju prema tipu datoteke",
   "dialog.plugins.empty": "Plugini su konfigurisani u opencode.json",
 
@@ -718,6 +731,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "Početak",
   "sidebar.gettingStarted.line1": "OpenCode uključuje besplatne modele, tako da možeš odmah početi.",
   "sidebar.gettingStarted.line2": "Poveži bilo kojeg provajdera da koristiš modele, npr. Claude, GPT, Gemini itd.",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "Nema otvorenih projekata",
   "sidebar.empty.description": "Otvori projekat za početak",
 

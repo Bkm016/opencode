@@ -306,6 +306,19 @@ export const dict = {
   "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
   "dialog.mcp.empty": "Yapılandırılmış MCP yok",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Geçerli proje için kullanılabilir Skills",
+  "dialog.skills.scope.project": "Geçerli proje",
+  "dialog.skills.scope.global": "Genel",
+  "dialog.skills.search.placeholder": "Skills ara",
+  "dialog.skills.empty.project": "Bu projede skill yok",
+  "dialog.skills.empty.global": "Genel skill yok",
+  "dialog.skills.loadError": "Skills yüklenemedi",
+  "dialog.skills.retry": "Yeniden dene",
+  "dialog.skills.select": "Talimatlarını görmek için bir skill seçin",
+  "dialog.skills.back": "Geri",
+  "dialog.skills.source": "Kaynak",
+  "dialog.skills.instructions": "Talimatlar",
   "dialog.lsp.empty": "LSP'ler dosya türlerinden otomatik algılanır",
   "dialog.plugins.empty": "Eklentiler opencode.json içinde yapılandırılır",
 
@@ -723,6 +736,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "Başlarken",
   "sidebar.gettingStarted.line1": "OpenCode ücretsiz modeller içerir, böylece hemen başlayabilirsiniz.",
   "sidebar.gettingStarted.line2": "Claude, GPT, Gemini vb. modelleri kullanmak için herhangi bir sağlayıcı bağlayın.",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "Açık proje yok",
   "sidebar.empty.description": "Başlamak için bir proje açın",
 

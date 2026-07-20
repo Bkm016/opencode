@@ -301,6 +301,19 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} จาก {{total}} ที่เปิดใช้งาน",
   "dialog.mcp.empty": "ไม่มี MCP ที่กำหนดค่า",
 
+  "dialog.skills.title": "Skills",
+  "dialog.skills.description": "Skills ที่ใช้ได้กับโปรเจกต์ปัจจุบัน",
+  "dialog.skills.scope.project": "โปรเจกต์ปัจจุบัน",
+  "dialog.skills.scope.global": "ทั่วโลก",
+  "dialog.skills.search.placeholder": "ค้นหา Skills",
+  "dialog.skills.empty.project": "ไม่มี Skills ในโปรเจกต์นี้",
+  "dialog.skills.empty.global": "ไม่มี Skills ทั่วโลก",
+  "dialog.skills.loadError": "โหลด Skills ไม่สำเร็จ",
+  "dialog.skills.retry": "ลองอีกครั้ง",
+  "dialog.skills.select": "เลือก Skill เพื่อดูคำแนะนำ",
+  "dialog.skills.back": "กลับ",
+  "dialog.skills.source": "แหล่งที่มา",
+  "dialog.skills.instructions": "คำแนะนำ",
   "dialog.lsp.empty": "LSPs ตรวจจับอัตโนมัติจากประเภทไฟล์",
   "dialog.plugins.empty": "ปลั๊กอินที่กำหนดค่าใน opencode.json",
 
@@ -711,6 +724,7 @@ export const dict = {
   "sidebar.gettingStarted.title": "เริ่มต้นใช้งาน",
   "sidebar.gettingStarted.line1": "OpenCode รวมถึงโมเดลฟรีเพื่อให้คุณเริ่มต้นได้ทันที",
   "sidebar.gettingStarted.line2": "เชื่อมต่อผู้ให้บริการใด ๆ เพื่อใช้โมเดล รวมถึง Claude, GPT, Gemini ฯลฯ",
+  "sidebar.project.skills": "Skills",
   "sidebar.empty.title": "ไม่มีโปรเจกต์ที่เปิดอยู่",
   "sidebar.empty.description": "เปิดโปรเจกต์เพื่อเริ่มต้น",
 

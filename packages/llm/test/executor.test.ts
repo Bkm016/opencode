@@ -295,7 +295,7 @@ describe("RequestExecutor", () => {
     }),
   )
 
-  it.effect("does not retry non-retryable status responses and truncates large bodies", () =>
+  it.effect("does not retry non-retryable status responses and preserves large bodies", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service
       const error = yield* executor.execute(request).pipe(Effect.flip)
@@ -303,8 +303,9 @@ describe("RequestExecutor", () => {
       expectLLMError(error)
       expect(error.reason).toMatchObject({ _tag: "Authentication" })
       expect(error.retryable).toBe(false)
-      expect(errorHttp(error)?.bodyTruncated).toBe(true)
-      expect(errorHttp(error)?.body).toHaveLength(16_384)
+      expect(errorHttp(error)?.bodyTruncated).toBeUndefined()
+      expect(errorHttp(error)?.body).toHaveLength(20_000)
+      expect(error.reason.message).toBe(`Provider request failed with HTTP 401: ${"x".repeat(20_000)}`)
     }).pipe(
       Effect.provide(
         responsesLayer([

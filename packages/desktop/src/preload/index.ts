@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, WslServersEvent } from "./types"
+import type { ElectronAPI, ServerReadyData, WslServersEvent } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -9,11 +9,20 @@ const updaterHandler = (_: unknown, state: UpdaterState) => {
   updaterState = state
   updaterCallbacks.forEach((callback) => callback(state))
 }
+const serverReconnectCallbacks = new Set<(data: ServerReadyData) => void>()
+let serverReconnectData: ServerReadyData | undefined
+ipcRenderer.on("server-reconnect", (_event, data: ServerReadyData) => {
+  serverReconnectData = data
+  serverReconnectCallbacks.forEach((callback) => callback(data))
+})
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   installCli: () => ipcRenderer.invoke("install-cli"),
-  awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
+  awaitInitialization: async () => {
+    const data: ServerReadyData = await ipcRenderer.invoke("await-initialization")
+    return serverReconnectData ?? data
+  },
   wslServers: {
     getState: () => ipcRenderer.invoke("wsl-servers-get-state"),
     subscribe: (cb) => {
@@ -86,6 +95,11 @@ const api: ElectronAPI = {
     const handler = (_: unknown, urls: string[]) => cb(urls)
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
+  },
+  onServerReconnect: (cb) => {
+    serverReconnectCallbacks.add(cb)
+    if (serverReconnectData) cb(serverReconnectData)
+    return () => serverReconnectCallbacks.delete(cb)
   },
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),

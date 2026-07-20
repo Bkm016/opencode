@@ -4,7 +4,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { NamedError } from "@opencode-ai/core/util/error"
 import { APICallError } from "ai"
 import { setTimeout as sleep } from "node:timers/promises"
-import { Effect, Schedule, Schema } from "effect"
+import { Deferred, Effect, Fiber, Schedule, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { SessionRetry } from "../../src/session/retry"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -16,7 +16,9 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 
 const providerID = ProviderV2.ID.make("test")
 const retryProvider = "test"
-const it = testEffect(LayerNode.compile(LayerNode.group([SessionStatus.node, CrossSpawnSpawner.node])))
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([SessionStatus.node, SessionRetry.node, CrossSpawnSpawner.node])),
+)
 
 function apiError(headers?: Record<string, string>): SessionV1.APIError {
   return Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
@@ -91,6 +93,7 @@ describe("session.retry.delay", () => {
       const sessionID = SessionID.make("session-retry-test")
       const error = apiError({ "retry-after-ms": "0" })
       const status = yield* SessionStatus.Service
+      const retry = yield* SessionRetry.Service
 
       const step = yield* Schedule.toStepWithMetadata(
         SessionRetry.policy({
@@ -103,6 +106,7 @@ describe("session.retry.delay", () => {
               message: info.message,
               next: info.next,
             }),
+          wait: (ms, ready) => retry.wait(sessionID, ms, ready),
         }),
       )
       yield* step(error)
@@ -113,6 +117,37 @@ describe("session.retry.delay", () => {
         attempt: 2,
         message: "boom",
       })
+    }),
+  )
+})
+
+describe("session.retry.wake", () => {
+  it.instance("wakes a live wait immediately", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionID.make("session-retry-wake")
+      const retry = yield* SessionRetry.Service
+      const result = yield* Deferred.make<boolean>()
+      const fiber = yield* retry
+        .wait(
+          sessionID,
+          30_000,
+          Effect.gen(function* () {
+            const woke = yield* retry.wake(sessionID, Effect.void)
+            yield* Deferred.succeed(result, woke)
+          }),
+        )
+        .pipe(Effect.forkChild)
+
+      yield* Fiber.join(fiber)
+      expect(yield* Deferred.await(result)).toBe(true)
+    }),
+  )
+
+  it.instance("idle wake is a harmless no-op", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionID.make("session-retry-idle")
+      const retry = yield* SessionRetry.Service
+      expect(yield* retry.wake(sessionID, Effect.void)).toBe(false)
     }),
   )
 })

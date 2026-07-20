@@ -1294,7 +1294,15 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <SessionRetry status={sessionStatus()} show={activeMessageID() === retryRow().userMessageID} />
+              <SessionRetry
+                status={sessionStatus()}
+                show={activeMessageID() === retryRow().userMessageID}
+                onRetryNow={() => {
+                  const id = sessionID()
+                  if (!id) return
+                  void sdk().client.session.retry({ sessionID: id }).catch(() => {})
+                }}
+              />
             </div>
           </TimelineRowFrame>
         )

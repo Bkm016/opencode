@@ -68,6 +68,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "за {{seconds}}с",
   "ui.sessionTurn.retry.attempt": "спроба №{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} — спроба №{{attempt}}",
+  "ui.sessionTurn.retry.now": "Повторити зараз",
   "ui.sessionTurn.retry.geminiHot": "gemini зараз перевантажений",
   "ui.sessionTurn.error.freeUsageExceeded": "Перевищено ліміт безкоштовного використання",
   "ui.sessionTurn.error.addCredits": "Додати кредити",

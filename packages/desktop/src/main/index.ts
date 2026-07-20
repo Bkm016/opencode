@@ -14,7 +14,7 @@ import contextMenu from "electron-context-menu"
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
+import { broadcastServerReconnect, registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
@@ -64,8 +64,18 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
 let server: SidecarListener | null = null
+let appQuitting = false
+let restartEnabled = false
+let restartInProgress: Promise<void> | undefined
+let sidecarGeneration = 0
+let latestServerReady: ServerReadyData | undefined
 
 const pendingDeepLinks: string[] = []
+
+const SIDECAR_RESTART_DELAY = 1000
+const SIDECAR_MAX_RESTART_ATTEMPTS = 5
+const SIDECAR_RESTART_BACKOFF = 2000
+const SIDECAR_RESTART_HEALTH_TIMEOUT = 3000
 
 function useEnvProxy() {
   try {
@@ -83,11 +93,125 @@ function emitDeepLinks(urls: string[]) {
   if (win) sendDeepLinks(win, urls)
 }
 
-async function killSidecar() {
-  if (!server) return
+async function killSidecar(intentional = true) {
+  if (intentional) restartEnabled = false
+  // 即使进程仍在启动或重试等待中，也要先使当前代际失效并阻止后续拉起。
+  sidecarGeneration++
   const current = server
   server = null
+  if (!current) return
   await current.stop()
+}
+
+async function pickFreePort(useConfiguredPort: boolean): Promise<number> {
+  const fromEnv = useConfiguredPort ? process.env.OPENCODE_PORT : undefined
+  if (fromEnv !== undefined) {
+    const parsed = Number.parseInt(fromEnv, 10)
+    if (!Number.isNaN(parsed)) return parsed
+  }
+
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.on("error", reject)
+    srv.listen(0, "127.0.0.1", () => {
+      const address = srv.address()
+      if (typeof address !== "object" || !address) {
+        srv.close()
+        reject(new Error("Failed to get port"))
+        return
+      }
+      const port = address.port
+      srv.close(() => resolve(port))
+    })
+  })
+}
+
+async function startSidecar(useConfiguredPort: boolean): Promise<{ data: ServerReadyData; health: Promise<void> }> {
+  if (server) throw new Error("Cannot start sidecar while another sidecar is active")
+  const generation = ++sidecarGeneration
+  const port = await pickFreePort(useConfiguredPort)
+  const hostname = "127.0.0.1"
+  const url = `http://${hostname}:${port}`
+  const password = randomUUID()
+  let running = false
+  let exited = false
+
+  logger.log("spawning sidecar", { url })
+  const { listener, health } = await spawnLocalServer(hostname, port, password, {
+    userDataPath: app.getPath("userData"),
+    onStdout: (message) => writeLog("server", "stdout", { message }),
+    onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+    onExit: (code) => {
+      exited = true
+      writeLog("utility", "sidecar exited", { code }, "warn")
+      if (generation !== sidecarGeneration) return
+      server = null
+      if (running && restartEnabled && !appQuitting) restartSidecar()
+    },
+  })
+  if (exited) {
+    await listener.stop()
+    throw new Error("Sidecar exited before startup completed")
+  }
+  if (generation !== sidecarGeneration || appQuitting) {
+    await listener.stop()
+    throw new Error("Sidecar start superseded")
+  }
+  server = listener
+  running = true
+
+  return {
+    data: { url, username: "opencode", password },
+    health: health.wait,
+  }
+}
+
+function restartSidecar() {
+  if (appQuitting || !restartEnabled) return
+  if (restartInProgress) return
+
+  let becameHealthy = false
+  restartInProgress = (async () => {
+    for (let attempt = 1; attempt <= SIDECAR_MAX_RESTART_ATTEMPTS; attempt++) {
+      const wait = SIDECAR_RESTART_DELAY + (attempt - 1) * SIDECAR_RESTART_BACKOFF
+      logger.log("sidecar restart scheduled", { attempt, wait })
+      await new Promise((resolve) => setTimeout(resolve, wait))
+      if (appQuitting || !restartEnabled) return
+
+      try {
+        const { data, health } = await startSidecar(false)
+        await waitForHealth(health, SIDECAR_RESTART_HEALTH_TIMEOUT)
+        becameHealthy = true
+        latestServerReady = data
+        logger.log("sidecar restarted", { url: data.url })
+        broadcastServerReconnect(data)
+        return
+      } catch (error) {
+        logger.error("sidecar restart failed", { attempt, error: error instanceof Error ? error.message : String(error) })
+        await killSidecar(false).catch((stopError) => logger.error("failed to stop unhealthy sidecar", stopError))
+      }
+    }
+
+    logger.error("sidecar restart attempts exhausted", { attempts: SIDECAR_MAX_RESTART_ATTEMPTS })
+  })().finally(() => {
+    restartInProgress = undefined
+    // 健康检查后立即崩溃可能发生在当前 Promise 收尾前，此时补一次重启请求。
+    if (becameHealthy && !server && restartEnabled && !appQuitting) restartSidecar()
+  })
+}
+
+async function waitForHealth(health: Promise<void>, timeout: number) {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    await Promise.race([
+      health,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Sidecar health check timed out after ${timeout}ms`)), timeout)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function ensureLoopbackNoProxy() {
@@ -167,6 +291,7 @@ const main = Effect.gen(function* () {
     wslServers.stopAll()
   }
   const relaunch = () => {
+    appQuitting = true
     setAppQuitting()
     void stopSidecars().finally(() => {
       app.relaunch()
@@ -220,11 +345,13 @@ const main = Effect.gen(function* () {
   })
 
   app.on("before-quit", () => {
+    appQuitting = true
     setAppQuitting()
     void stopSidecars()
   })
 
   app.on("will-quit", () => {
+    appQuitting = true
     setAppQuitting()
     void stopSidecars()
   })
@@ -243,6 +370,7 @@ const main = Effect.gen(function* () {
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
+      appQuitting = true
       setAppQuitting()
       void stopSidecars().finally(() => app.exit(0))
     })
@@ -276,6 +404,10 @@ const main = Effect.gen(function* () {
     awaitInitialization: Effect.fnUntraced(
       function* () {
         logger.log("awaiting server ready")
+        if (latestServerReady) {
+          logger.log("server ready", { url: latestServerReady.url })
+          return latestServerReady
+        }
         const res = yield* Deferred.await(serverReady)
         logger.log("server ready", { url: res.url })
         return res
@@ -307,67 +439,23 @@ const main = Effect.gen(function* () {
     ),
   )
 
-  const port = yield* Effect.gen(function* () {
-    const fromEnv = process.env.OPENCODE_PORT
-    if (fromEnv) {
-      const parsed = Number.parseInt(fromEnv, 10)
-      if (!Number.isNaN(parsed)) return parsed
-    }
-
-    const res = yield* Deferred.make<number, unknown>()
-    const server = createServer()
-    server.on("error", (e) => Deferred.failSync(res, () => e))
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        Deferred.failSync(res, () => new Error("Failed to get port"))
-        return
-      }
-      const port = address.port
-      server.close(() => Effect.runSync(Deferred.succeed(res, port)))
-    })
-
-    return yield* Deferred.await(res)
-  })
-  const hostname = "127.0.0.1"
-  const url = `http://${hostname}:${port}`
-  const password = randomUUID()
-
   const loadingTask = yield* Effect.gen(function* () {
-    logger.log("sidecar connection started", { url })
+    logger.log("sidecar connection started")
 
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    logger.log("spawning sidecar", { url })
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
-        userDataPath: app.getPath("userData"),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
-    )
-    server = listener
-    yield* Deferred.succeed(serverReady, {
-      url,
-      username: "opencode",
-      password,
-    })
+    restartEnabled = true
+    const { data, health } = yield* Effect.promise(() => startSidecar(true))
+    latestServerReady = data
+    yield* Deferred.succeed(serverReady, data)
 
     if (process.platform === "win32") {
       void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
     }
 
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
-    )
+    // ready 消息已经表示监听完成，健康检查只做后台诊断，不能阻塞窗口最多 30 秒。
+    void waitForHealth(health, 30_000).catch((error) => logger.error("sidecar health check failed", error))
 
     logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)

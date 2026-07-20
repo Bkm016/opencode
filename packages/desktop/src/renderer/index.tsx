@@ -336,7 +336,14 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
   const [windowCount] = createResource(() => window.api.getWindowCount())
 
   // Fetch sidecar credentials (available immediately, before health check)
-  const [sidecar] = createResource(() => window.api.awaitInitialization())
+  const [sidecar, sidecarActions] = createResource(() => window.api.awaitInitialization())
+
+  onMount(() => {
+    const unsubscribe = window.api.onServerReconnect((data) => {
+      sidecarActions.mutate(data)
+    })
+    onCleanup(unsubscribe)
+  })
 
   const [defaultServer] = createResource(() => platform.getDefaultServer?.())
   const [locale] = createResource(loadLocale)
@@ -375,7 +382,11 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
     const wslServers = useWslServers()
     const ready = createMemo(
       () =>
-        !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading && !wslServers.isLoading,
+        !defaultServer.loading &&
+        initializationReady(sidecar) &&
+        !windowCount.loading &&
+        !locale.loading &&
+        !wslServers.isLoading,
     )
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
@@ -400,22 +411,26 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
     )
     return (
       <Show when={ready()} fallback={<LoadingSplash />}>
-        <Show when={effectiveDefaultServer()} keyed>
-          {(key) => (
-            <AppInterface
-              defaultServer={key}
-              servers={servers()}
-              router={router}
-              startup={onboarding.promise}
-              serverScoped={
-                <DesktopFirstLaunchOnboarding
-                  initialUrl={getLastActiveUrl(platform.windowID ?? "browser")}
-                  onLoaded={onboarding.resolve}
-                />
-              }
-            >
-              <Inner />
-            </AppInterface>
+        <Show when={sidecar()} keyed>
+          {(_data) => (
+            <Show when={effectiveDefaultServer()} keyed>
+              {(key) => (
+                <AppInterface
+                  defaultServer={key}
+                  servers={servers()}
+                  router={router}
+                  startup={onboarding.promise}
+                  serverScoped={
+                    <DesktopFirstLaunchOnboarding
+                      initialUrl={getLastActiveUrl(platform.windowID ?? "browser")}
+                      onLoaded={onboarding.resolve}
+                    />
+                  }
+                >
+                  <Inner />
+                </AppInterface>
+              )}
+            </Show>
           )}
         </Show>
       </Show>

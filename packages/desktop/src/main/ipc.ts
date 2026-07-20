@@ -270,3 +270,11 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
 }
+
+export function broadcastServerReconnect(data: ServerReadyData) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send("server-reconnect", data)
+    }
+  }
+}

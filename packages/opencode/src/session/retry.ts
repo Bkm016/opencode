@@ -1,7 +1,10 @@
 import type { NamedError } from "@opencode-ai/core/util/error"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Cause, Clock, Duration, Effect, Schedule } from "effect"
+import { Cause, Clock, Context, Deferred, Duration, Effect, Layer, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
+import { InstanceState } from "@/effect/instance-state"
+import type { SessionID } from "./schema"
 import { iife } from "@/util/iife"
 import { isRecord } from "@/util/record"
 
@@ -228,6 +231,8 @@ export function policy(opts: {
   provider: string
   parse: (error: unknown) => Err
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
+  // 自动退避与会话级主动唤醒在这里竞争，Schedule 本身不再重复休眠。
+  wait: (ms: number, ready: Effect.Effect<void>) => Effect.Effect<void>
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
@@ -235,18 +240,79 @@ export function policy(opts: {
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        const waitMs = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
-        yield* opts.set({
-          attempt: meta.attempt,
-          message: retry.message,
-          action: retry.action,
-          next: now + wait,
-        })
-        return [meta.attempt, Duration.millis(wait)] as [number, Duration.Duration]
+        // wait() 已负责休眠和主动唤醒，返回零延迟避免 Effect.retry 再等待一次。
+        yield* opts.wait(
+          waitMs,
+          opts.set({
+            attempt: meta.attempt,
+            message: retry.message,
+            action: retry.action,
+            next: now + waitMs,
+          }),
+        )
+        return [meta.attempt, Duration.zero] as [number, Duration.Duration]
       })
     }),
   )
 }
+
+export interface Interface {
+  // 注册唤醒器后执行 ready，再等待指定时长或由同一会话的 wake() 提前唤醒。
+  readonly wait: (sessionID: SessionID, ms: number, ready: Effect.Effect<void>) => Effect.Effect<void>
+  // 先执行 beforeWake 再结束进行中的等待；当前没有等待时返回 false。
+  readonly wake: (sessionID: SessionID, beforeWake: Effect.Effect<void>) => Effect.Effect<boolean>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRetry") {}
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const state = yield* InstanceState.make(
+      Effect.fn("SessionRetry.state")(() => Effect.succeed(new Map<SessionID, Deferred.Deferred<void>>())),
+    )
+
+    const wait = Effect.fn("SessionRetry.wait")(function* (
+      sessionID: SessionID,
+      ms: number,
+      ready: Effect.Effect<void>,
+    ) {
+      const data = yield* InstanceState.get(state)
+      const previous = data.get(sessionID)
+      if (previous) {
+        data.delete(sessionID)
+        yield* Deferred.succeed(previous, undefined).pipe(Effect.ignore)
+      }
+      const deferred = yield* Deferred.make<void>()
+      data.set(sessionID, deferred)
+      yield* Effect.gen(function* () {
+        yield* ready
+        yield* Effect.raceFirst(Effect.sleep(Duration.millis(ms)), Deferred.await(deferred))
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (data.get(sessionID) === deferred) data.delete(sessionID)
+          }),
+        ),
+      )
+    })
+
+    const wake = Effect.fn("SessionRetry.wake")(function* (sessionID: SessionID, beforeWake: Effect.Effect<void>) {
+      const data = yield* InstanceState.get(state)
+      const deferred = data.get(sessionID)
+      if (!deferred) return false
+      data.delete(sessionID)
+      yield* beforeWake
+      yield* Deferred.succeed(deferred, undefined).pipe(Effect.ignore)
+      return true
+    })
+
+    return Service.of({ wait, wake })
+  }),
+)
+
+export const node = LayerNode.make({ service: Service, layer, deps: [] })
 
 export * as SessionRetry from "./retry"

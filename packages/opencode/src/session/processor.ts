@@ -93,6 +93,7 @@ const layer = Layer.effect(
     const summary = yield* SessionSummary.Service
     const scope = yield* Scope.Scope
     const status = yield* SessionStatus.Service
+    const retry = yield* SessionRetry.Service
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
 
@@ -788,6 +789,7 @@ const layer = Layer.effect(
                     next: info.next,
                   })
                 },
+                wait: (ms, ready) => retry.wait(ctx.sessionID, ms, ready),
               }),
             ),
             Effect.catch(halt),
@@ -827,6 +829,7 @@ export const node = LayerNode.make({
     Plugin.node,
     SessionSummary.node,
     SessionStatus.node,
+    SessionRetry.node,
     Image.node,
     EventV2Bridge.node,
   ],

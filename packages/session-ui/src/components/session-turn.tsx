@@ -160,6 +160,7 @@ export function SessionTurn(
     editToolDefaultOpen?: boolean
     active?: boolean
     status?: SessionStatus
+    onRetryNow?: () => void
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -431,7 +432,7 @@ export function SessionTurn(
                   </Show>
                 </div>
               </Show>
-              <SessionRetry status={status()} show={active()} />
+              <SessionRetry status={status()} show={active()} onRetryNow={props.onRetryNow} />
               <Show when={edited() > 0 && !working()}>
                 <div
                   data-slot="session-turn-diffs"

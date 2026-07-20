@@ -1392,6 +1392,23 @@ const scenarios: Scenario[] = [
       check(body === true, "missing session abort should remain a no-op success")
     }),
   http.protected
+    .post("/session/{sessionID}/retry", "session.retry")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Retry session" }))
+    .at((ctx) => ({ path: route("/session/{sessionID}/retry", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      check(body === false, "idle retry wake should return false")
+    }),
+  http.protected
+    .post("/session/{sessionID}/retry", "session.retry.missing")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/retry", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(body === false, "missing session retry should remain a no-op success")
+    }),
+  http.protected
     .post("/session/{sessionID}/init", "session.init")
     .preserveDatabase()
     .withLlm()

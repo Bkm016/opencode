@@ -306,12 +306,16 @@ function createServerNotificationState(input: {
 
   const lookup = async (directory: string, sessionID?: string) => {
     if (!sessionID) return undefined
-    const sync = serverSync().ensureDirSyncContext(directory)
-    const session = sync.session.get(sessionID)
-    if (session) return session
-    return sync.session
+    const sessions = serverSync().session
+    const session = sessions.get(sessionID)
+    if (session?.directory === directory) return session
+    return sessions
       .sync(sessionID)
-      .then(() => sync.session.get(sessionID))
+      .then(() => {
+        const next = sessions.get(sessionID)
+        if (next?.directory !== directory) return undefined
+        return next
+      })
       .catch(() => undefined)
   }
 

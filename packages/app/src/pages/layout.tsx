@@ -1133,15 +1133,15 @@ export default function LegacyLayout(props: ParentProps) {
     }
     const openSession = async (target: { directory: string; id: string }) => {
       if (!canOpen(target.directory)) return false
-      const sync = serverSync().ensureDirSyncContext(target.directory)
-      if (sync.session.get(target.id)) {
+      const session = serverSync().session
+      if (session.get(target.id)?.directory === target.directory) {
         setStore("lastProjectSession", root, { directory: target.directory, id: target.id, at: Date.now() })
         navigateWithSidebarReset(`/${base64Encode(target.directory)}/session/${target.id}`)
         return true
       }
-      const resolved = await sync.session
+      const resolved = await session
         .sync(target.id)
-        .then(() => sync.session.get(target.id))
+        .then(() => session.get(target.id))
         .catch(() => undefined)
       if (!resolved?.directory) return false
       if (!canOpen(resolved.directory)) return false

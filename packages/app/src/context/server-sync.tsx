@@ -30,7 +30,7 @@ import { loadRootSessionsWithFallback } from "./global-sync/session-load"
 import type { ProjectMeta } from "./global-sync/types"
 import { SESSION_LIST_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
-import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createRefreshQueue } from "./global-sync/queue"
 import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
@@ -123,9 +123,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
 
-  const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
-    queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
-  }))
+  const configQuery = useQuery(() => queryOptionsApi.globalConfig())
+  const providerQuery = useQuery(() => queryOptionsApi.providers(null))
+  const pathQuery = useQuery(() => queryOptionsApi.path(null))
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     get ready() {

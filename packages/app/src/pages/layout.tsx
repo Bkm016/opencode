@@ -762,7 +762,7 @@ export default function LegacyLayout(props: ParentProps) {
 
   async function archiveSession(session: Session) {
     const [store, setStore] = serverSync().child(session.directory)
-    const sessions = store.session ?? []
+    const sessions = (store.session ?? []).filter((s) => !s.parentID && !s.time?.archived)
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
@@ -779,6 +779,10 @@ export default function LegacyLayout(props: ParentProps) {
       }),
     )
     if (session.id === params.id) {
+      if (session.parentID) {
+        navigate(`/${params.dir}/session/${session.parentID}`)
+        return
+      }
       if (nextSession) {
         navigate(`/${params.dir}/session/${nextSession.id}`)
       } else {

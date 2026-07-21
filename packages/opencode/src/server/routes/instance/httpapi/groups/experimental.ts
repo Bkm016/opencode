@@ -118,10 +118,18 @@ const StorageTableStats = Schema.Struct({
   rows: Schema.optional(Schema.Number),
 }).annotate({ identifier: "StorageTableStats" })
 
+const StorageSessionStats = Schema.Struct({
+  retentionDays: Schema.Number,
+  unloadedProjects: Schema.Literals(["available", "unavailable"]),
+  candidates: Schema.Number,
+  blocked: Schema.Number,
+}).annotate({ identifier: "StorageSessionStats" })
+
 export const StorageBudget = Schema.Struct({
   database: StorageDatabaseStats,
   toolOutput: StorageFileStats,
   logs: StorageFileStats,
+  sessions: StorageSessionStats,
   retentionDays: Schema.Number,
   dataRoot: Schema.String,
   dataBytes: Schema.Number,
@@ -129,12 +137,20 @@ export const StorageBudget = Schema.Struct({
   tables: Schema.Array(StorageTableStats),
 }).annotate({ identifier: "StorageBudget" })
 
+// App 侧当前打开的 project worktree 目录；用于规则 A，不能依赖 InstanceStore.listLoaded。
+export const StorageBudgetQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  openProjectDirectories: Schema.optional(Schema.Array(Schema.String)),
+})
+
 export const StorageCompactPayload = Schema.Struct({
   checkpoint: Schema.optional(Schema.Boolean),
   vacuum: Schema.optional(Schema.Boolean),
   toolOutput: Schema.optional(Schema.Boolean),
   logs: Schema.optional(Schema.Boolean),
+  sessions: Schema.optional(Schema.Boolean),
   retentionDays: Schema.optional(Schema.Number),
+  openProjectDirectories: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "StorageCompactPayload" })
 
 const StorageCompactResult = Schema.Struct({
@@ -144,6 +160,7 @@ const StorageCompactResult = Schema.Struct({
   toolOutputBytes: Schema.optional(Schema.Number),
   logsRemoved: Schema.optional(Schema.Number),
   logsBytes: Schema.optional(Schema.Number),
+  sessionsRemoved: Schema.optional(Schema.Number),
   before: StorageBudget,
   after: StorageBudget,
   durationMs: Schema.Number,
@@ -320,14 +337,14 @@ export const ExperimentalApi = HttpApi.make("experimental")
           }),
         ),
         HttpApiEndpoint.get("storage", ExperimentalPaths.storage, {
-          query: WorkspaceRoutingQuery,
+          query: StorageBudgetQuery,
           success: described(StorageBudget, "Local storage budget"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "experimental.storage.get",
             summary: "Get local storage budget",
             description:
-              "Report SQLite size, reclaimable freelist space, and expired tool-output / log files. Safe read-only diagnostics for storage maintenance.",
+              "Report SQLite size, reclaimable freelist space, expired tool-output / log files, and optional session cleanup candidates. Pass openProjectDirectories so rule A can exclude currently open projects.",
           }),
         ),
         HttpApiEndpoint.post("storageCompact", ExperimentalPaths.storageCompact, {
@@ -340,7 +357,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.storage.compact",
             summary: "Compact local storage",
             description:
-              "Safely reclaim disk space: WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Does not delete sessions or credentials.",
+              "Safely reclaim disk space: optional session cleanup via Session.remove, WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Pass openProjectDirectories for session rule A. Does not delete credentials.",
           }),
         ),
       )

@@ -887,4 +887,48 @@ describe("HttpApi SDK", () => {
       }),
     ),
   )
+
+  httpapiInstance(
+    "generated SDK maps storage compact body and openProjectDirectories query",
+    { serverPath: "default" },
+    ({ sdk, directory }) =>
+      Effect.gen(function* () {
+        const bodies: unknown[] = []
+        const queries: string[] = []
+        const observed = yield* client("default", directory, {
+          onRequest: (request) => {
+            queries.push(new URL(request.url).search)
+            if (request.method === "POST" && request.url.includes("/experimental/storage/compact")) {
+              bodies.push(request.clone().json())
+            }
+          },
+        })
+
+        const budget = yield* capture(() =>
+          observed.experimental.storage.get({
+            openProjectDirectories: [directory],
+          }),
+        )
+        expect(budget.status).toBe(200)
+        expect(queries.some((query) => query.includes("openProjectDirectories"))).toBe(true)
+        expect(record(record(budget.data).sessions).unloadedProjects).toBe("available")
+
+        const compact = yield* capture(() =>
+          observed.experimental.storage.compact({
+            storageCompactPayload: {
+              sessions: true,
+              openProjectDirectories: [directory],
+            },
+          }),
+        )
+        expect(compact.status).toBe(200)
+        const body = yield* Effect.promise(() => Promise.all(bodies as Promise<unknown>[]))
+        expect(body.length).toBe(1)
+        expect(record(body[0]).sessions).toBe(true)
+        expect(array(record(body[0]).openProjectDirectories)).toEqual([directory])
+        expect(typeof record(compact.data).sessionsRemoved === "number" || record(compact.data).sessionsRemoved === undefined).toBe(
+          true,
+        )
+      }),
+  )
 })

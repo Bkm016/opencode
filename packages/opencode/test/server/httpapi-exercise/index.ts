@@ -131,10 +131,18 @@ const scenarios: Scenario[] = [
     object(body.database)
     object(body.toolOutput)
     object(body.logs)
+    object(body.sessions)
     check(typeof body.retentionDays === "number", "retentionDays should be present")
     check(typeof body.database.path === "string", "database.path should be present")
     check(typeof body.toolOutput.bytes === "number", "toolOutput.bytes should be present")
     check(typeof body.logs.expiredFiles === "number", "logs.expiredFiles should be present")
+    check(typeof body.sessions.candidates === "number", "sessions.candidates should be present")
+    check(typeof body.sessions.blocked === "number", "sessions.blocked should be present")
+    check(typeof body.sessions.retentionDays === "number", "sessions.retentionDays should be present")
+    check(
+      body.sessions.unloadedProjects === "available" || body.sessions.unloadedProjects === "unavailable",
+      "sessions.unloadedProjects should be available or unavailable",
+    )
     check(typeof body.dataRoot === "string", "dataRoot should be present")
     check(typeof body.dataBytes === "number", "dataBytes should be present")
     check(Array.isArray(body.entries), "entries should be an array")

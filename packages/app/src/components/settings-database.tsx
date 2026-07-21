@@ -6,6 +6,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 import { SettingsList } from "./settings-list"
@@ -47,6 +48,7 @@ type CompactActions = {
   vacuum: boolean
   toolOutput: boolean
   logs: boolean
+  sessions: boolean
 }
 
 export const SettingsDatabase: Component = () => {
@@ -60,6 +62,7 @@ export const SettingsDatabase: Component = () => {
 const SettingsDatabaseContent: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
+  const server = useServer()
   const serverSDK = useServerSDK()
   const dialog = useDialog()
   const [copied, setCopied] = createSignal<string>()
@@ -68,8 +71,12 @@ const SettingsDatabaseContent: Component = () => {
     vacuum: true,
     toolOutput: true,
     logs: true,
+    sessions: false,
   })
   const [busy, setBusy] = createSignal(false)
+
+  // App 当前打开的 project worktree；传给 storage API 作为规则 A 权威输入
+  const openProjectDirectories = createMemo(() => server.projects.list().map((project) => project.worktree))
 
   const [path, { refetch: refetchPath }] = createResource(
     () => serverSDK(),
@@ -82,10 +89,10 @@ const SettingsDatabaseContent: Component = () => {
   )
 
   const [budget, { refetch: refetchBudget }] = createResource(
-    () => serverSDK(),
-    (sdk) =>
+    () => ({ sdk: serverSDK(), open: openProjectDirectories() }),
+    ({ sdk, open }) =>
       sdk.client.experimental.storage
-        .get()
+        .get({ openProjectDirectories: open })
         .then((res) => res.data as StorageBudget | undefined)
         .catch(() => undefined),
     { initialValue: undefined },
@@ -100,7 +107,19 @@ const SettingsDatabaseContent: Component = () => {
 
   const selected = createMemo(() => {
     const current = actions()
-    return current.checkpoint || current.vacuum || current.toolOutput || current.logs
+    return current.checkpoint || current.vacuum || current.toolOutput || current.logs || current.sessions
+  })
+
+  const budgetReady = createMemo(() => budget.latest?.sessions !== undefined && !budget.error)
+
+  const unloadedProjectsAvailable = createMemo(
+    () => budget.latest?.sessions?.unloadedProjects === "available",
+  )
+
+  const sessionCandidates = createMemo(() => {
+    const info = budget.latest?.sessions
+    if (!info) return 0
+    return Math.max(0, info.candidates - info.blocked)
   })
 
   const estimateBytes = createMemo(() => {
@@ -144,10 +163,14 @@ const SettingsDatabaseContent: Component = () => {
     try {
       const current = actions()
       const result = await serverSDK().client.experimental.storage.compact({
-        checkpoint: current.checkpoint,
-        vacuum: current.vacuum,
-        toolOutput: current.toolOutput,
-        logs: current.logs,
+        storageCompactPayload: {
+          checkpoint: current.checkpoint,
+          vacuum: current.vacuum,
+          toolOutput: current.toolOutput,
+          logs: current.logs,
+          sessions: current.sessions,
+          openProjectDirectories: openProjectDirectories(),
+        },
       })
       if (result.error) {
         showToast({
@@ -160,16 +183,30 @@ const SettingsDatabaseContent: Component = () => {
       const data = result.data as StorageCompactResult | undefined
       refresh()
       const reclaimed = compactReclaimed(data)
+      const sessionsRemoved = data?.sessionsRemoved ?? 0
+      const parts: string[] = []
+      if (reclaimed > 0) {
+        parts.push(
+          language.t("settings.database.compact.toast.success.description", {
+            size: formatBytes(reclaimed),
+            before: formatBytes(databaseFootprint(data?.before?.database)),
+            after: formatBytes(databaseFootprint(data?.after?.database)),
+          }),
+        )
+      }
+      if (current.sessions && sessionsRemoved > 0) {
+        parts.push(
+          language.t("settings.database.compact.toast.success.sessions", {
+            count: formatCount(sessionsRemoved),
+          }),
+        )
+      }
       showToast({
         variant: "success",
         title: language.t("settings.database.compact.toast.success.title"),
         description:
-          reclaimed > 0
-            ? language.t("settings.database.compact.toast.success.description", {
-                size: formatBytes(reclaimed),
-                before: formatBytes(databaseFootprint(data?.before?.database)),
-                after: formatBytes(databaseFootprint(data?.after?.database)),
-              })
+          parts.length > 0
+            ? parts.join(" ")
             : language.t("settings.database.compact.toast.success.none"),
       })
     } catch (err) {
@@ -223,9 +260,19 @@ const SettingsDatabaseContent: Component = () => {
                   })}
                 </li>
               </Show>
+              <Show when={actions().sessions}>
+                <li>
+                  {language.t("settings.database.compact.action.sessions.detail", {
+                    count: formatCount(sessionCandidates()),
+                    days: String(budget.latest?.sessions?.retentionDays ?? 7),
+                  })}
+                </li>
+              </Show>
             </ul>
             <span class="text-12-regular text-text-weak">
-              {language.t("settings.database.compact.confirm.safe")}
+              {actions().sessions
+                ? language.t("settings.database.compact.confirm.sessions")
+                : language.t("settings.database.compact.confirm.safe")}
             </span>
           </div>
           <div class="flex justify-end gap-2">
@@ -297,6 +344,7 @@ const SettingsDatabaseContent: Component = () => {
     description: string
     checked: boolean
     onChange: () => void
+    disabled?: boolean
   }> = (props) => {
     return (
       <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
@@ -305,7 +353,7 @@ const SettingsDatabaseContent: Component = () => {
           <span class="text-12-regular text-text-weak">{props.description}</span>
         </div>
         <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
-          <Switch checked={props.checked} onChange={props.onChange} />
+          <Switch checked={props.checked} onChange={props.onChange} disabled={props.disabled} />
         </div>
       </div>
     )
@@ -461,6 +509,19 @@ const SettingsDatabaseContent: Component = () => {
                       })}
                     />
                     <StatRow
+                      title={language.t("settings.database.compact.row.sessions.title")}
+                      value={language.t("settings.database.compact.row.sessions.value", {
+                        count: formatCount(sessionCandidates()),
+                        blocked: formatCount(budget.latest?.sessions?.blocked),
+                      })}
+                    />
+                    <Show when={!unloadedProjectsAvailable()}>
+                      <StatRow
+                        title={language.t("settings.database.compact.row.sessions.unloaded.title")}
+                        value={language.t("settings.database.compact.row.sessions.unloaded.unavailable")}
+                      />
+                    </Show>
+                    <StatRow
                       title={language.t("settings.database.compact.row.estimate.title")}
                       value={formatBytes(estimateBytes())}
                     />
@@ -492,12 +553,32 @@ const SettingsDatabaseContent: Component = () => {
                       checked={actions().logs}
                       onChange={() => toggle("logs")}
                     />
+                    <ActionRow
+                      title={language.t("settings.database.compact.action.sessions")}
+                      description={
+                        !budgetReady()
+                          ? language.t("settings.database.compact.action.sessions.budgetUnavailable")
+                          : unloadedProjectsAvailable()
+                            ? language.t("settings.database.compact.action.sessions.description", {
+                                days: String(budget.latest?.sessions?.retentionDays ?? 7),
+                              })
+                            : language.t("settings.database.compact.action.sessions.archivedOnly", {
+                                days: String(budget.latest?.sessions?.retentionDays ?? 7),
+                              })
+                      }
+                      checked={actions().sessions && budgetReady()}
+                      onChange={() => {
+                        if (!budgetReady()) return
+                        toggle("sessions")
+                      }}
+                      disabled={!budgetReady()}
+                    />
                   </SettingsList>
                   <div class="flex justify-end pt-3">
                     <Button
                       size="small"
                       variant="secondary"
-                      disabled={!selected() || busy() || budget.loading}
+                      disabled={!selected() || busy() || budget.loading || !budgetReady()}
                       onClick={openConfirm}
                     >
                       {busy()

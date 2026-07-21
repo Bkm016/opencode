@@ -2281,6 +2281,13 @@ export type StorageFileStats = {
   expiredFiles: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
+export type StorageSessionStats = {
+  retentionDays: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  unloadedProjects: "available" | "unavailable"
+  candidates: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  blocked: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type StorageEntry = {
   name: string
   path: string
@@ -2297,6 +2304,7 @@ export type StorageBudget = {
   database: StorageDatabaseStats
   toolOutput: StorageFileStats
   logs: StorageFileStats
+  sessions: StorageSessionStats
   retentionDays: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   dataRoot: string
   dataBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -2309,7 +2317,9 @@ export type StorageCompactPayload = {
   vacuum?: boolean
   toolOutput?: boolean
   logs?: boolean
+  sessions?: boolean
   retentionDays?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  openProjectDirectories?: Array<string>
 }
 
 export type StorageCompactResult = {
@@ -2319,6 +2329,7 @@ export type StorageCompactResult = {
   toolOutputBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   logsRemoved?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   logsBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  sessionsRemoved?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   before: StorageBudget
   after: StorageBudget
   durationMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -7996,6 +8007,7 @@ export type ExperimentalStorageGetData = {
   query?: {
     directory?: string
     workspace?: string
+    openProjectDirectories?: Array<string> | string
   }
   url: "/experimental/storage"
 }

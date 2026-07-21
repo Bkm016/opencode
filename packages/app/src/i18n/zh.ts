@@ -877,10 +877,15 @@ export const dict = {
   "settings.database.action.copied": "已复制",
   "settings.database.section.compact": "安全清理",
   "settings.database.compact.description":
-    "回收已释放空间，不会删除会话、项目或凭证。先查看预算，确认后才会执行。",
+    "回收数据库与过期文件占用的空间。会话清理可选且默认关闭。先查看预算，确认后才会执行。",
   "settings.database.compact.row.reclaimable.title": "SQLite 空闲页（VACUUM）",
   "settings.database.compact.row.toolOutput.title": "过期 tool-output 文件",
   "settings.database.compact.row.logs.title": "过期日志文件",
+  "settings.database.compact.row.sessions.title": "会话清理候选",
+  "settings.database.compact.row.sessions.value": "{{count}} 可删 · {{blocked}} 受阻",
+  "settings.database.compact.row.sessions.unloaded.title": "未打开项目",
+  "settings.database.compact.row.sessions.unloaded.unavailable":
+    "不可用（当前未上报打开项目，已跳过以免误删）",
   "settings.database.compact.row.files.value": "{{size}} · {{count}} 个文件",
   "settings.database.compact.row.estimate.title": "当前勾选预估",
   "settings.database.compact.action.checkpoint": "Checkpoint WAL",
@@ -896,17 +901,28 @@ export const dict = {
   "settings.database.compact.action.logs": "删除过期日志",
   "settings.database.compact.action.logs.description": "删除超过 {{days}} 天的日志文件。",
   "settings.database.compact.action.logs.detail": "删除 {{count}} 个日志文件（{{size}}），超过 {{days}} 天",
+  "settings.database.compact.action.sessions": "删除过期会话",
+  "settings.database.compact.action.sessions.description":
+    "永久删除未打开项目中超过 {{days}} 天的会话，以及超过 {{days}} 天的已归档会话。会删除消息与事件。",
+  "settings.database.compact.action.sessions.archivedOnly":
+    "仅清理超过 {{days}} 天的已归档会话（未打开项目清理不可用——未上报打开项目）。会删除消息与事件。",
+  "settings.database.compact.action.sessions.budgetUnavailable": "存储预算加载成功前不可用会话清理。",
+  "settings.database.compact.action.sessions.detail":
+    "删除 {{count}} 个会话（及其消息/事件），超过 {{days}} 天",
   "settings.database.compact.review": "预览清理…",
   "settings.database.compact.running": "清理中…",
   "settings.database.compact.confirm.title": "确认安全清理",
   "settings.database.compact.confirm.body": "仅执行下列已勾选操作？",
   "settings.database.compact.confirm.estimate": "预估可回收：{{size}}",
   "settings.database.compact.confirm.safe": "不会删除会话、消息、账号或凭证。",
+  "settings.database.compact.confirm.sessions":
+    "会话清理会永久删除匹配的会话、消息与事件。账号与凭证不受影响。",
   "settings.database.compact.confirm.run": "开始清理",
   "settings.database.compact.toast.success.title": "清理完成",
   "settings.database.compact.toast.success.description": "回收 {{size}}（数据库 {{before}} → {{after}}）",
+  "settings.database.compact.toast.success.sessions": "已删除 {{count}} 个会话（含消息与事件）。",
   "settings.database.compact.toast.success.none":
-    "无可回收空间：空闲页为空，也没有超过保留期的 tool-output/日志。安全清理不会删除会话。",
+    "无可回收空间：空闲页为空，也没有超过保留期的 tool-output/日志/会话。",
   "settings.database.compact.toast.failed.title": "清理失败",
   "settings.database.action.reveal": "在资源管理器中显示",
   "settings.database.action.refresh": "刷新",

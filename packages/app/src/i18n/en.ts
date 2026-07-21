@@ -984,10 +984,15 @@ export const dict = {
   "settings.database.action.refresh": "Refresh",
   "settings.database.section.compact": "Safe cleanup",
   "settings.database.compact.description":
-    "Reclaim free space without deleting sessions, projects, or credentials. Review a budget first, then confirm before anything runs.",
+    "Reclaim free space from the database and expired files. Session cleanup is optional and off by default. Review a budget first, then confirm before anything runs.",
   "settings.database.compact.row.reclaimable.title": "SQLite freelist (VACUUM)",
   "settings.database.compact.row.toolOutput.title": "Expired tool-output files",
   "settings.database.compact.row.logs.title": "Expired log files",
+  "settings.database.compact.row.sessions.title": "Session cleanup candidates",
+  "settings.database.compact.row.sessions.value": "{{count}} removable · {{blocked}} blocked",
+  "settings.database.compact.row.sessions.unloaded.title": "Unopened projects",
+  "settings.database.compact.row.sessions.unloaded.unavailable":
+    "Unavailable (no open projects reported — skipped to avoid accidental deletes)",
   "settings.database.compact.row.files.value": "{{size}} · {{count}} files",
   "settings.database.compact.row.estimate.title": "Selected estimate",
   "settings.database.compact.action.checkpoint": "Checkpoint WAL",
@@ -1004,6 +1009,15 @@ export const dict = {
   "settings.database.compact.action.logs": "Delete expired logs",
   "settings.database.compact.action.logs.description": "Remove log files older than {{days}} days.",
   "settings.database.compact.action.logs.detail": "Delete {{count}} log files ({{size}}) older than {{days}} days",
+  "settings.database.compact.action.sessions": "Delete old sessions",
+  "settings.database.compact.action.sessions.description":
+    "Permanently delete sessions older than {{days}} days from unopened projects, and archived sessions older than {{days}} days. Removes messages and events.",
+  "settings.database.compact.action.sessions.archivedOnly":
+    "Only archived sessions older than {{days}} days (unopened-project cleanup unavailable — no open projects reported). Removes messages and events.",
+  "settings.database.compact.action.sessions.budgetUnavailable":
+    "Session cleanup unavailable until the storage budget loads successfully.",
+  "settings.database.compact.action.sessions.detail":
+    "Delete {{count}} sessions (and their messages/events) older than {{days}} days",
   "settings.database.compact.review": "Review cleanup…",
   "settings.database.compact.running": "Cleaning…",
   "settings.database.compact.confirm.title": "Confirm safe cleanup",
@@ -1011,11 +1025,14 @@ export const dict = {
   "settings.database.compact.confirm.estimate": "Estimated reclaimable: {{size}}",
   "settings.database.compact.confirm.safe":
     "This will not delete sessions, messages, accounts, or credentials.",
+  "settings.database.compact.confirm.sessions":
+    "Session cleanup permanently deletes matching sessions, messages, and events. Accounts and credentials are not touched.",
   "settings.database.compact.confirm.run": "Run cleanup",
   "settings.database.compact.toast.success.title": "Cleanup finished",
   "settings.database.compact.toast.success.description": "Reclaimed {{size}} (database {{before}} → {{after}})",
+  "settings.database.compact.toast.success.sessions": "Removed {{count}} sessions (messages and events).",
   "settings.database.compact.toast.success.none":
-    "Nothing to reclaim — freelist empty and no expired tool-output/logs. Sessions are not deleted by safe cleanup.",
+    "Nothing to reclaim — freelist empty and no expired tool-output/logs/sessions matched.",
   "settings.database.compact.toast.failed.title": "Cleanup failed",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integration",

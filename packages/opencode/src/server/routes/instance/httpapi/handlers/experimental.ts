@@ -7,21 +7,32 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
-import type { SessionID } from "@/session/schema"
+import { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
 import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
+import { ProjectTable } from "@opencode-ai/core/project/sql"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
-import { sql } from "drizzle-orm"
+import { inArray, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import fs from "fs/promises"
 import path from "path"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  ConsoleSwitchPayload,
+  SessionListQuery,
+  StorageBudgetQuery,
+  StorageCompactPayload,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
+import { planSessionCleanup, SESSION_RETENTION_DAYS } from "./storage-session-cleanup"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -157,6 +168,44 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
     const { db } = yield* Database.Service
+
+    // App 传入 worktree 目录 → ProjectTable.worktree 映射 project id；空/缺失则规则 A unavailable。
+    const openProjectIDs = Effect.fn("ExperimentalHttpApi.openProjectIDs")(function* (
+      directories: readonly string[] | undefined,
+    ) {
+      if (!directories || directories.length === 0) return new Set<string>()
+      const resolved = [...new Set(directories.map((directory) => FSUtil.resolve(directory)))]
+      const rows = yield* db
+        .select({ id: ProjectTable.id, worktree: ProjectTable.worktree })
+        .from(ProjectTable)
+        .all()
+        .pipe(Effect.orDie)
+      const open = new Set(resolved)
+      return new Set(rows.filter((row) => open.has(FSUtil.resolve(row.worktree))).map((row) => row.id))
+    })
+
+    const sessionCleanupPlan = Effect.fn("ExperimentalHttpApi.sessionCleanupPlan")(function* (input: {
+      cutoff: number
+      openProjectDirectories?: readonly string[]
+    }) {
+      const rows = yield* db
+        .select({
+          id: SessionTable.id,
+          project_id: SessionTable.project_id,
+          parent_id: SessionTable.parent_id,
+          time_updated: SessionTable.time_updated,
+          time_archived: SessionTable.time_archived,
+        })
+        .from(SessionTable)
+        .all()
+        .pipe(Effect.orDie)
+      const openIDs = yield* openProjectIDs(input.openProjectDirectories)
+      return planSessionCleanup({
+        rows,
+        openProjectIDs: openIDs,
+        cutoff: input.cutoff,
+      })
+    })
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
       return { backgroundSubagents: flags.experimentalBackgroundSubagents }
@@ -297,8 +346,17 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
-    const storageBudget = Effect.fn("ExperimentalHttpApi.storage")(function* (retentionDays = DEFAULT_RETENTION_DAYS) {
-      const days = Number.isFinite(retentionDays) && retentionDays > 0 ? retentionDays : DEFAULT_RETENTION_DAYS
+    const storageBudget = Effect.fn("ExperimentalHttpApi.storage")(function* (input?: {
+      retentionDays?: number
+      openProjectDirectories?: readonly string[]
+      // 与 compact 同一次请求共用 cutoff，便于 before/after 对比
+      cutoff?: number
+    }) {
+      const days =
+        input?.retentionDays !== undefined && Number.isFinite(input.retentionDays) && input.retentionDays > 0
+          ? input.retentionDays
+          : DEFAULT_RETENTION_DAYS
+      const cutoff = input?.cutoff ?? Date.now() - SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000
       const dbPath = Database.path()
       const dataRoot = Global.Path.data
       const [size, walSize, shmSize, entries] = yield* Effect.promise(() =>
@@ -349,6 +407,10 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         }),
       )
       const logs = yield* Effect.promise(() => directoryStats(Global.Path.log, { retentionDays: days }))
+      const plan = yield* sessionCleanupPlan({
+        cutoff,
+        openProjectDirectories: input?.openProjectDirectories,
+      })
       const dataBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0)
       return {
         database: {
@@ -363,6 +425,12 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         },
         toolOutput,
         logs,
+        sessions: {
+          retentionDays: plan.retentionDays,
+          unloadedProjects: plan.unloadedProjects,
+          candidates: plan.candidates,
+          blocked: plan.blocked,
+        },
         retentionDays: days,
         dataRoot,
         dataBytes,
@@ -371,14 +439,16 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       }
     })
 
+    const storageGet = Effect.fn("ExperimentalHttpApi.storageGet")(function* (ctx: {
+      query: typeof StorageBudgetQuery.Type
+    }) {
+      return yield* storageBudget({
+        openProjectDirectories: ctx.query.openProjectDirectories,
+      })
+    })
+
     const storageCompact = Effect.fn("ExperimentalHttpApi.storageCompact")(function* (ctx: {
-      payload: {
-        checkpoint?: boolean
-        vacuum?: boolean
-        toolOutput?: boolean
-        logs?: boolean
-        retentionDays?: number
-      }
+      payload: typeof StorageCompactPayload.Type
     }) {
       const payload = ctx.payload
       const actions = {
@@ -386,23 +456,54 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         vacuum: payload.vacuum === true,
         toolOutput: payload.toolOutput === true,
         logs: payload.logs === true,
+        sessions: payload.sessions === true,
       }
-      if (!actions.checkpoint && !actions.vacuum && !actions.toolOutput && !actions.logs) {
+      if (!actions.checkpoint && !actions.vacuum && !actions.toolOutput && !actions.logs && !actions.sessions) {
         return yield* Effect.fail(new HttpApiError.BadRequest({}))
       }
       const retentionDays =
         payload.retentionDays !== undefined && Number.isFinite(payload.retentionDays) && payload.retentionDays > 0
           ? payload.retentionDays
           : DEFAULT_RETENTION_DAYS
+      // 单次 POST 冻结 started/cutoff；before 与执行计划共用同一 cutoff
       const started = Date.now()
-      const before = yield* storageBudget(retentionDays)
+      const cutoff = started - SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+      const openProjectDirectories = payload.openProjectDirectories
+      const before = yield* storageBudget({
+        retentionDays,
+        openProjectDirectories,
+        cutoff,
+      })
       let checkpoint: boolean | undefined
       let vacuum: boolean | undefined
       let toolOutputRemoved: number | undefined
       let toolOutputBytes: number | undefined
       let logsRemoved: number | undefined
       let logsBytes: number | undefined
+      let sessionsRemoved: number | undefined
 
+      // 会话删除必须在 checkpoint/VACUUM 之前，使 freelist 反映删除结果
+      if (actions.sessions) {
+        const plan = yield* sessionCleanupPlan({
+          cutoff,
+          openProjectDirectories,
+        })
+        for (const root of plan.roots) {
+          yield* sessions.remove(SessionID.make(root)).pipe(Effect.catch(() => Effect.void))
+        }
+        // 以库内实际消失数量为准，避免 Session.remove 吞错导致虚报
+        if (plan.removableIDs.length === 0) {
+          sessionsRemoved = 0
+        } else {
+          const remaining = yield* db
+            .select({ id: SessionTable.id })
+            .from(SessionTable)
+            .where(inArray(SessionTable.id, plan.removableIDs.map((id) => SessionID.make(id))))
+            .all()
+            .pipe(Effect.orDie)
+          sessionsRemoved = plan.removableIDs.length - remaining.length
+        }
+      }
       if (actions.checkpoint || actions.vacuum) {
         yield* db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`).pipe(Effect.catch(() => Effect.void))
         checkpoint = true
@@ -431,12 +532,17 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         logsBytes = result.bytes
       }
 
-      const after = yield* storageBudget(retentionDays)
+      const after = yield* storageBudget({
+        retentionDays,
+        openProjectDirectories,
+        cutoff,
+      })
       return {
         ...(checkpoint !== undefined ? { checkpoint } : {}),
         ...(vacuum !== undefined ? { vacuum } : {}),
         ...(toolOutputRemoved !== undefined ? { toolOutputRemoved, toolOutputBytes } : {}),
         ...(logsRemoved !== undefined ? { logsRemoved, logsBytes } : {}),
+        ...(sessionsRemoved !== undefined ? { sessionsRemoved } : {}),
         before,
         after,
         durationMs: Date.now() - started,
@@ -457,7 +563,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
-      .handle("storage", () => storageBudget())
+      .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)
   }),
 )

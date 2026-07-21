@@ -840,6 +840,27 @@ export const dict = {
   "settings.updates.toast.latest.title": "已是最新版本",
   "settings.updates.toast.latest.description": "你正在使用最新版本的 OpenCode。",
 
+  "settings.database.compact.description":
+    "回收資料庫與過期檔案佔用的空間。工作階段清理可選且預設關閉。先查看預算，確認後才會執行。",
+  "settings.database.compact.row.sessions.title": "工作階段清理候選",
+  "settings.database.compact.row.sessions.value": "{{count}} 可刪 · {{blocked}} 受阻",
+  "settings.database.compact.row.sessions.unloaded.title": "未開啟專案",
+  "settings.database.compact.row.sessions.unloaded.unavailable":
+    "不可用（目前未回報開啟專案，已略過以免誤刪）",
+  "settings.database.compact.action.sessions": "刪除過期工作階段",
+  "settings.database.compact.action.sessions.description":
+    "永久刪除未開啟專案中超過 {{days}} 天的工作階段，以及超過 {{days}} 天的已封存工作階段。會刪除訊息與事件。",
+  "settings.database.compact.action.sessions.archivedOnly":
+    "僅清理超過 {{days}} 天的已封存工作階段（未開啟專案清理不可用——未回報開啟專案）。會刪除訊息與事件。",
+  "settings.database.compact.action.sessions.budgetUnavailable": "儲存預算載入成功前不可用工作階段清理。",
+  "settings.database.compact.action.sessions.detail":
+    "刪除 {{count}} 個工作階段（及其訊息/事件），超過 {{days}} 天",
+  "settings.database.compact.confirm.sessions":
+    "工作階段清理會永久刪除符合條件的工作階段、訊息與事件。帳號與憑證不受影響。",
+  "settings.database.compact.toast.success.sessions": "已刪除 {{count}} 個工作階段（含訊息與事件）。",
+  "settings.database.compact.toast.success.none":
+    "無可回收空間：空閒頁為空，也沒有超過保留期的 tool-output/日誌/工作階段。",
+
   "sound.option.none": "無",
   "sound.option.alert01": "警報 01",
   "sound.option.alert02": "警報 02",

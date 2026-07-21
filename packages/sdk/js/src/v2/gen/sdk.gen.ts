@@ -919,12 +919,13 @@ export class Storage extends HeyApiClient {
   /**
    * Get local storage budget
    *
-   * Report SQLite size, reclaimable freelist space, and expired tool-output / log files. Safe read-only diagnostics for storage maintenance.
+   * Report SQLite size, reclaimable freelist space, expired tool-output / log files, and optional session cleanup candidates. Pass openProjectDirectories so rule A can exclude currently open projects.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
       workspace?: string
+      openProjectDirectories?: Array<string> | string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -935,6 +936,7 @@ export class Storage extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "openProjectDirectories" },
           ],
         },
       ],
@@ -953,7 +955,7 @@ export class Storage extends HeyApiClient {
   /**
    * Compact local storage
    *
-   * Safely reclaim disk space: WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Does not delete sessions or credentials.
+   * Safely reclaim disk space: optional session cleanup via Session.remove, WAL checkpoint, VACUUM freelist pages, and delete expired tool-output / log files. Pass openProjectDirectories for session rule A. Does not delete credentials.
    */
   public compact<ThrowOnError extends boolean = false>(
     parameters?: {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { AbsolutePath } from "@opencode-ai/schema/schema"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { eq } from "drizzle-orm"
@@ -8,6 +9,8 @@ import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/grou
 import { Session } from "@/session/session"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Database } from "@opencode-ai/core/database/database"
+import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { AccountV2 } from "@opencode-ai/core/account"
 import { AccountTable } from "@opencode-ai/core/account/sql"
 import { Worktree } from "../../src/worktree"
@@ -92,6 +95,55 @@ function setSessionUpdated(session: Session.Info, updated: number) {
       .where(eq(SessionTable.id, session.id))
       .run()
       .pipe(Effect.orDie)
+  })
+}
+
+function setSessionTimes(
+  sessionID: Session.Info["id"],
+  times: { updated?: number; archived?: number | null; projectID?: ProjectV2.ID },
+) {
+  return Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    yield* db
+      .update(SessionTable)
+      .set({
+        ...(times.updated !== undefined ? { time_updated: times.updated } : {}),
+        ...(times.archived !== undefined ? { time_archived: times.archived } : {}),
+        ...(times.projectID !== undefined ? { project_id: times.projectID } : {}),
+      })
+      .where(eq(SessionTable.id, sessionID))
+      .run()
+      .pipe(Effect.orDie)
+  })
+}
+
+function sessionExists(sessionID: Session.Info["id"]) {
+  return Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+    return row !== undefined
+  })
+}
+
+function insertClosedProject(worktree: string) {
+  return Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const id = ProjectV2.ID.make("proj_closed_foreign")
+    yield* db
+      .insert(ProjectTable)
+      .values({
+        id,
+        // 使用与当前打开目录不同的 worktree，避免 openProjectDirectories 映射误命中
+        worktree: AbsolutePath.make(worktree),
+        vcs: null,
+        name: "closed-foreign",
+        time_created: Date.now(),
+        time_updated: Date.now(),
+        sandboxes: [],
+      })
+      .run()
+      .pipe(Effect.orDie)
+    return id
   })
 }
 
@@ -292,6 +344,94 @@ describe("experimental HttpApi", () => {
         const afterRemove = yield* request(ExperimentalPaths.worktree, tmp.directory)
         expect(afterRemove.status).toBe(200)
         expect(yield* json(afterRemove)).toEqual([])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "storage budget and compact use openProjectDirectories and Session.remove",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const day = 24 * 60 * 60 * 1000
+        const old = Date.now() - 10 * day
+        const recent = Date.now() - 1 * day
+
+        const closedProjectID = yield* insertClosedProject(`${tmp.directory}-closed`)
+        const oldClosed = yield* createSession({ title: "old-closed" })
+        const oldOpen = yield* createSession({ title: "old-open" })
+        const oldArchivedOpen = yield* createSession({ title: "old-archived-open" })
+        const recentArchived = yield* createSession({ title: "recent-archived" })
+        const parent = yield* createSession({ title: "parent" })
+        const childKeep = yield* createSession({ title: "child-keep", parentID: parent.id })
+        const childGone = yield* createSession({ title: "child-gone", parentID: parent.id })
+
+        // 关闭项目 worktree 不在 openProjectDirectories → 规则 A 候选
+        yield* setSessionTimes(oldClosed.id, { updated: old, projectID: closedProjectID })
+        yield* setSessionTimes(oldOpen.id, { updated: old })
+        yield* setSessionTimes(oldArchivedOpen.id, { updated: recent, archived: old })
+        yield* setSessionTimes(recentArchived.id, { updated: recent, archived: recent })
+        yield* setSessionTimes(parent.id, { updated: old, projectID: closedProjectID })
+        yield* setSessionTimes(childKeep.id, { updated: old })
+        yield* setSessionTimes(childGone.id, { updated: old, projectID: closedProjectID })
+
+        const openDirs = [tmp.directory]
+        const query = new URLSearchParams()
+        for (const directory of openDirs) query.append("openProjectDirectories", directory)
+        const budgetRes = yield* request(`${ExperimentalPaths.storage}?${query}`, tmp.directory)
+        expect(budgetRes.status).toBe(200)
+        const budget = yield* json<{
+          sessions: {
+            retentionDays: number
+            unloadedProjects: "available" | "unavailable"
+            candidates: number
+            blocked: number
+          }
+        }>(budgetRes)
+        expect(budget.sessions.retentionDays).toBe(7)
+        expect(budget.sessions.unloadedProjects).toBe("available")
+        // oldClosed, oldArchivedOpen, parent, childGone → 4 candidates; parent blocked by childKeep
+        expect(budget.sessions.candidates).toBe(4)
+        expect(budget.sessions.blocked).toBe(1)
+
+        const emptyBudgetRes = yield* request(ExperimentalPaths.storage, tmp.directory)
+        expect(emptyBudgetRes.status).toBe(200)
+        const emptyBudget = yield* json<{ sessions: { unloadedProjects: string; candidates: number } }>(emptyBudgetRes)
+        expect(emptyBudget.sessions.unloadedProjects).toBe("unavailable")
+        // 仅规则 B：oldArchivedOpen
+        expect(emptyBudget.sessions.candidates).toBe(1)
+
+        const beforeCount = yield* Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).length
+        })
+
+        const compactRes = yield* request(ExperimentalPaths.storageCompact, tmp.directory, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessions: true,
+            openProjectDirectories: openDirs,
+          }),
+        })
+        expect(compactRes.status).toBe(200)
+        const compact = yield* json<{ sessionsRemoved?: number }>(compactRes)
+        // oldClosed + oldArchivedOpen + childGone = 3
+        expect(compact.sessionsRemoved).toBe(3)
+
+        const afterCount = yield* Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).length
+        })
+        expect(beforeCount - afterCount).toBe(3)
+
+        expect(yield* sessionExists(oldClosed.id)).toBe(false)
+        expect(yield* sessionExists(oldOpen.id)).toBe(true)
+        expect(yield* sessionExists(oldArchivedOpen.id)).toBe(false)
+        expect(yield* sessionExists(recentArchived.id)).toBe(true)
+        expect(yield* sessionExists(parent.id)).toBe(true)
+        expect(yield* sessionExists(childKeep.id)).toBe(true)
+        expect(yield* sessionExists(childGone.id)).toBe(false)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

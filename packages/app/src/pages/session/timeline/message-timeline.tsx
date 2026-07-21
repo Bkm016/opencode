@@ -1690,38 +1690,38 @@ export function MessageTimeline(props: {
                       placement="bottom"
                       buttonAppearance="default"
                     />
-                    <Show when={!parentID()}>
-                      <DropdownMenu
-                        gutter={4}
-                        placement="bottom-end"
-                        open={title.menuOpen}
-                        onOpenChange={(open) => {
-                          setTitle("menuOpen", open)
-                          if (open) return
+                    <DropdownMenu
+                      gutter={4}
+                      placement="bottom-end"
+                      open={title.menuOpen}
+                      onOpenChange={(open) => {
+                        setTitle("menuOpen", open)
+                        if (open) return
+                      }}
+                    >
+                      <DropdownMenu.Trigger
+                        as={IconButton}
+                        icon="dot-grid"
+                        variant="ghost"
+                        class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
+                        aria-label={language.t("common.moreOptions")}
+                        aria-expanded={title.menuOpen}
+                        ref={(el: HTMLButtonElement) => {
+                          more = el
                         }}
-                      >
-                        <DropdownMenu.Trigger
-                          as={IconButton}
-                          icon="dot-grid"
-                          variant="ghost"
-                          class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
-                          aria-label={language.t("common.moreOptions")}
-                          aria-expanded={title.menuOpen}
-                          ref={(el: HTMLButtonElement) => {
-                            more = el
+                      />
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          style={{ "min-width": "104px" }}
+                          onCloseAutoFocus={(event) => {
+                            if (title.pendingRename) {
+                              event.preventDefault()
+                              setTitle("pendingRename", false)
+                              openTitleEditor()
+                            }
                           }}
-                        />
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            style={{ "min-width": "104px" }}
-                            onCloseAutoFocus={(event) => {
-                              if (title.pendingRename) {
-                                event.preventDefault()
-                                setTitle("pendingRename", false)
-                                openTitleEditor()
-                              }
-                            }}
-                          >
+                        >
+                          <Show when={!parentID()}>
                             <DropdownMenu.Item
                               onSelect={() => {
                                 setTitle("pendingRename", true)
@@ -1730,34 +1730,36 @@ export function MessageTimeline(props: {
                             >
                               <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
-                            <DropdownMenu.Sub>
-                              <DropdownMenu.SubTrigger class="flex items-center gap-2">
-                                <span data-slot="dropdown-menu-item-label" class="flex-1">
-                                  {language.t("session.export.action.export")}
-                                </span>
-                                <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
-                              </DropdownMenu.SubTrigger>
-                              <DropdownMenu.Portal>
-                                <DropdownMenu.SubContent class="min-w-[180px]">
-                                  <DropdownMenu.Item
-                                    onSelect={() => void runExport("summary")}
-                                    disabled={exporting()}
-                                  >
-                                    <DropdownMenu.ItemLabel>
-                                      {language.t("session.export.action.summary")}
-                                    </DropdownMenu.ItemLabel>
-                                  </DropdownMenu.Item>
-                                  <DropdownMenu.Item
-                                    onSelect={() => void runExport("full")}
-                                    disabled={exporting()}
-                                  >
-                                    <DropdownMenu.ItemLabel>
-                                      {language.t("session.export.action.full")}
-                                    </DropdownMenu.ItemLabel>
-                                  </DropdownMenu.Item>
-                                </DropdownMenu.SubContent>
-                              </DropdownMenu.Portal>
-                            </DropdownMenu.Sub>
+                          </Show>
+                          <DropdownMenu.Sub>
+                            <DropdownMenu.SubTrigger class="flex items-center gap-2">
+                              <span data-slot="dropdown-menu-item-label" class="flex-1">
+                                {language.t("session.export.action.export")}
+                              </span>
+                              <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
+                            </DropdownMenu.SubTrigger>
+                            <DropdownMenu.Portal>
+                              <DropdownMenu.SubContent class="min-w-[180px]">
+                                <DropdownMenu.Item
+                                  onSelect={() => void runExport("summary")}
+                                  disabled={exporting()}
+                                >
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.export.action.summary")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  onSelect={() => void runExport("full")}
+                                  disabled={exporting()}
+                                >
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.export.action.full")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                              </DropdownMenu.SubContent>
+                            </DropdownMenu.Portal>
+                          </DropdownMenu.Sub>
+                          <Show when={!parentID()}>
                             <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
                               <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
@@ -1767,10 +1769,10 @@ export function MessageTimeline(props: {
                             >
                               <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu>
-                    </Show>
+                          </Show>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu>
                   </div>
                 )}
               </Show>

@@ -28,6 +28,11 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      - name: Resolve desktop version
+        run: |
+          VERSION=$(bun -e "console.log((await Bun.file('./packages/desktop/package.json').json()).version)")
+          echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Cache Electron binaries
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -42,7 +47,7 @@ jobs:
         run: bun ./scripts/prepare.ts
         working-directory: packages/desktop
         env:
-          OPENCODE_CHANNEL: dev
+          OPENCODE_CHANNEL: prod
           RUST_TARGET: x86_64-pc-windows-msvc
 
       - name: Build
@@ -50,14 +55,14 @@ jobs:
         working-directory: packages/desktop
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-          OPENCODE_CHANNEL: dev
+          OPENCODE_CHANNEL: prod
 
       - name: Package
         run: npx electron-builder --win --publish never --config electron-builder.config.ts
         working-directory: packages/desktop
         timeout-minutes: 60
         env:
-          OPENCODE_CHANNEL: dev
+          OPENCODE_CHANNEL: prod
 
       - name: Upload Windows desktop exe
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

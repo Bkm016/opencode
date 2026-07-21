@@ -1,0 +1,35 @@
+diff --git a/dist/index.js b/dist/index.js
+index 7dd0394011ed5081c6bc46327e5274455561f8b2..b0625b2949d837769a8e6e2a43e5427aba1ba1aa 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -915,6 +915,9 @@ function Routes(props) {
+   }
+   const disposers = [];
+   let root;
++  // dispose the detached per-route roots when this component unmounts, otherwise
++  // they stay subscribed to `matches` and crash on a later navigation (#451)
++  onCleanup(() => disposers.forEach(dispose => dispose()));
+   const routeStates = createMemo(on(props.routerState.matches, (nextMatches, prevMatches, prev) => {
+     let equal = prevMatches && nextMatches.length === prevMatches.length;
+     const next = [];
+diff --git a/dist/routers/components.jsx b/dist/routers/components.jsx
+index f413be0643a31b8f3cd79aca670282456755dfda..2f768c1633fcc4d001fe5e3dc2e425d9f75f1593 100644
+--- a/dist/routers/components.jsx
++++ b/dist/routers/components.jsx
+@@ -1,5 +1,5 @@
+ /*@refresh skip*/
+-import { children, createMemo, createRoot, getOwner, mergeProps, on, Show, untrack } from "solid-js";
++import { children, createMemo, createRoot, getOwner, mergeProps, on, onCleanup, Show, untrack } from "solid-js";
+ import { getRequestEvent, isServer } from "solid-js/web";
+ import { createBranches, createRouteContext, createRouterContext, getIntent, getRouteMatches, RouteContextObj, RouterContextObj, setInPreloadFn } from "../routing.js";
+ export const createRouterComponent = (router) => (props) => {
+@@ -54,6 +54,9 @@ function Routes(props) {
+     }
+     const disposers = [];
+     let root;
++    // dispose the detached per-route roots when this component unmounts, otherwise
++    // they stay subscribed to `matches` and crash on a later navigation (#451)
++    onCleanup(() => disposers.forEach(dispose => dispose()));
+     const routeStates = createMemo(on(props.routerState.matches, (nextMatches, prevMatches, prev) => {
+         let equal = prevMatches && nextMatches.length === prevMatches.length;
+         const next = [];

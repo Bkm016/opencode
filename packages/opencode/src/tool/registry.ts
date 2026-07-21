@@ -11,7 +11,7 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
-import { TaskTool } from "./task"
+import { ProjectTaskTool, TaskTool } from "./task"
 import {
   TaskAsyncStatusTool,
   TaskAsyncWaitTool,
@@ -56,6 +56,7 @@ import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
 import { BackgroundJob } from "@/background/job"
+import { InstanceStore } from "@/project/instance-store"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -104,6 +105,7 @@ const layer = Layer.effect(
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
+    const projectTask = yield* ProjectTaskTool
     const taskAsyncStatus = yield* TaskAsyncStatusTool
     const taskAsyncWait = yield* TaskAsyncWaitTool
     const taskAsyncAbort = yield* TaskAsyncAbortTool
@@ -223,6 +225,7 @@ const layer = Layer.effect(
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),
+          projectTask: Tool.init(projectTask),
           taskAsyncStatus: Tool.init(taskAsyncStatus),
           taskAsyncWait: Tool.init(taskAsyncWait),
           taskAsyncAbort: Tool.init(taskAsyncAbort),
@@ -250,6 +253,7 @@ const layer = Layer.effect(
             tool.edit,
             tool.write,
             tool.task,
+            tool.projectTask,
             // Alias for models / plugins that call task_async; same launcher as task.
             { ...tool.task, id: "task_async" },
             tool.taskAsyncStatus,
@@ -359,7 +363,9 @@ const layer = Layer.effect(
             id: tool.id,
             description: [
               output.description,
-              tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
+              tool.id === TaskTool.id || tool.id === ProjectTaskTool.id
+                ? yield* describeTask(input.agent)
+                : undefined,
               tool.id === "execute" ? codeModeDescription : undefined,
             ]
               .filter(Boolean)
@@ -486,6 +492,7 @@ export const node = LayerNode.make({
     MCP.node,
     Database.node,
     Ripgrep.node,
+    InstanceStore.node,
   ],
 })
 

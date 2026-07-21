@@ -23,6 +23,7 @@ export interface LoadInput {
 }
 
 export interface Interface {
+  readonly listLoaded: () => Effect.Effect<InstanceContext[]>
   readonly load: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
@@ -267,6 +268,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       ).pipe(Effect.withSpan("InstanceStore.load"))
     }
 
+    const listLoaded = Effect.fn("InstanceStore.listLoaded")(function* () {
+      return yield* Effect.forEach([...cache.values()], (entry) => Deferred.await(entry.deferred))
+    })
+
     const reload = (input: LoadInput): Effect.Effect<InstanceContext> => {
       const directory = FSUtil.resolve(input.directory)
       return Effect.gen(function* () {
@@ -346,6 +351,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     )
 
     return Service.of({
+      listLoaded,
       load,
       reload,
       dispose,

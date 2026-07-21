@@ -134,7 +134,12 @@ const resolveBatchTargets = Effect.fnUntraced(function* (
     ...new Set(
       messages.flatMap((message) =>
         message.parts.flatMap((part) => {
-          if (part.type !== "tool" || (part.tool !== "task" && part.tool !== "task_async")) return []
+          if (
+            part.type !== "tool" ||
+            (part.tool !== "task" && part.tool !== "task_async" && part.tool !== "project_task")
+          ) {
+            return []
+          }
           if (!("metadata" in part.state) || part.state.metadata?.batchID !== batchId) return []
           const ids = part.state.metadata.taskIDs
           if (!Array.isArray(ids)) return []

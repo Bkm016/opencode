@@ -16,7 +16,11 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 
-import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { ProjectTaskTool, TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { InstanceState } from "../../src/effect/instance-state"
+import { InstanceStore } from "../../src/project/instance-store"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { tmpdirScoped } from "../fixture/fixture"
 import { TaskAsyncAbortTool, TaskAsyncStatusTool, TaskAsyncWaitTool } from "../../src/tool/task-async"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
@@ -25,6 +29,7 @@ import { disposeAllInstances } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import path from "node:path"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -1596,6 +1601,262 @@ describe("tool.task", () => {
 
       yield* runState.cancel(chat.id)
       yield* Fiber.await(parentFiber)
+    }),
+  )
+})
+
+describe("tool.project_task", () => {
+  it.instance("execute creates a child session in the target project directory", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const target = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      yield* store.load({ directory: target })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+      let seen: SessionPrompt.PromptInput | undefined
+      let promptDirectory: string | undefined
+      const promptOps = stubOps({
+        text: "cross-project",
+        onPrompt: (input) => {
+          seen = input
+        },
+      })
+      const wrapped: TaskPromptOps = {
+        ...promptOps,
+        prompt: (input) =>
+          Effect.gen(function* () {
+            promptDirectory = yield* InstanceState.directory
+            return yield* promptOps.prompt(input)
+          }),
+      }
+
+      const asks: unknown[] = []
+      const result = yield* def.execute(
+        {
+          project: path.basename(target),
+          description: "cross project",
+          prompt: "inspect the other repo",
+          subagent_type: "general",
+          wait: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: wrapped },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: (input) =>
+            Effect.sync(() => {
+              asks.push(input)
+            }),
+        },
+      )
+
+      const child = yield* sessions.get(result.metadata.sessionId as SessionID)
+      expect(child.directory).toBe(FSUtil.resolve(target))
+      expect(child.parentID).toBe(chat.id)
+      expect(result.metadata.directory).toBe(FSUtil.resolve(target))
+      expect(seen?.sessionID).toBe(child.id)
+      expect(promptDirectory).toBe(FSUtil.resolve(target))
+      expect(asks).toEqual([
+        {
+          permission: "project_task",
+          patterns: [FSUtil.resolve(target), "general"],
+          always: [FSUtil.resolve(target), "*"],
+          metadata: {
+            directory: FSUtil.resolve(target),
+            description: "cross project",
+            subagent_type: "general",
+          },
+        },
+      ])
+      expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
+    }),
+  )
+
+  it.instance("rejects a project that is not currently open", () =>
+    Effect.gen(function* () {
+      const store = yield* InstanceStore.Service
+      const { chat, assistant } = yield* seed()
+      const target = yield* tmpdirScoped({ git: true })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+
+      const exit = yield* def
+        .execute(
+          {
+            project: target,
+            description: "closed project",
+            prompt: "should fail",
+            subagent_type: "general",
+            wait: true,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("currently open in OpenCode")
+      expect((yield* store.listLoaded()).some((ctx) => ctx.directory === FSUtil.resolve(target))).toBe(false)
+    }),
+  )
+
+  it.instance("rejects an ambiguous open project name", () =>
+    Effect.gen(function* () {
+      const store = yield* InstanceStore.Service
+      const origin = yield* InstanceState.context
+      const { chat, assistant } = yield* seed()
+      const left = yield* tmpdirScoped()
+      const right = yield* tmpdirScoped()
+      yield* store.load({
+        directory: left,
+        worktree: left,
+        project: { ...origin.project, name: "shared", worktree: left },
+      })
+      yield* store.load({
+        directory: right,
+        worktree: right,
+        project: { ...origin.project, name: "shared", worktree: right },
+      })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+
+      const exit = yield* def
+        .execute(
+          {
+            project: "shared",
+            description: "ambiguous project",
+            prompt: "should fail",
+            subagent_type: "general",
+            wait: true,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(String(exit.cause)).toContain("selector is ambiguous")
+        expect(String(exit.cause)).toContain(left)
+        expect(String(exit.cause)).toContain(right)
+      }
+    }),
+  )
+
+  it.instance("rejects task_id resume when existing session directory does not match target", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const other = yield* sessions.create({ parentID: chat.id, title: "same-project child" })
+      const target = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      yield* store.load({ directory: target })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+
+      const exit = yield* def
+        .execute(
+          {
+            project: target,
+            description: "resume mismatch",
+            prompt: "should fail",
+            subagent_type: "general",
+            task_id: other.id,
+            wait: true,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const message = String(exit.cause)
+        expect(message).toContain("belongs to directory")
+        expect(message).toContain(other.directory)
+      }
+    }),
+  )
+
+  it.instance("resumes task_id when existing session directory matches target", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const target = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      const child = yield* store.provide(
+        { directory: target },
+        sessions.create({ parentID: chat.id, title: "target child" }),
+      )
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+      let seen: SessionPrompt.PromptInput | undefined
+
+      const result = yield* def.execute(
+        {
+          project: target,
+          description: "resume match",
+          prompt: "continue",
+          subagent_type: "general",
+          task_id: child.id,
+          wait: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "resumed", onPrompt: (input) => (seen = input) }) },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.metadata.sessionId).toBe(child.id)
+      expect(seen?.sessionID).toBe(child.id)
+      expect(yield* sessions.children(chat.id)).toHaveLength(1)
+    }),
+  )
+
+  it.instance("is registered alongside task", () =>
+    Effect.gen(function* () {
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.tools({ ...ref, agent: build })
+      expect(tools.some((tool) => tool.id === "project_task")).toBe(true)
+      expect(tools.some((tool) => tool.id === "task")).toBe(true)
     }),
   )
 })

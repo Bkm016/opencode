@@ -4,6 +4,7 @@ import type { Agent } from "./agent"
 /** Tools that launch or orchestrate child sessions; denied by default on nested subagents. */
 export const ORCHESTRATION_TOOLS = [
   "task",
+  "project_task",
   "task_async",
   "task_async_status",
   "task_async_wait",

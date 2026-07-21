@@ -1,0 +1,24 @@
+Launch one or more specialized agents as child sessions in a project that is already open in the current OpenCode process.
+
+Unlike task, project_task loads the target project's full InstanceStore context (config, agents, AGENTS instructions, tools) for the child. Results are still returned and injected into the originating parent session.
+
+By default tasks run asynchronously: the tool returns immediately with a running task_id (child session id). You are notified when a task finishes. Do not sleep, poll, or duplicate work the task is doing.
+
+When to use project_task:
+- Work must run against another project's config, agents, or instructions
+- You need a subagent session rooted in a different directory than the parent session
+
+When NOT to use project_task:
+- Same-project work: use the normal task tool
+- Reading a single file path: use Read or Glob
+- Searching for a class or symbol: use Grep
+
+Usage notes:
+1. project is required. Use an open project's full directory, directory name, or project name.
+2. project_task never discovers or opens a project from the filesystem. No match fails; ambiguous names fail with matching open-project candidates.
+3. Cross-project permission is asked as project_task for the resolved directory and each subagent_type.
+4. Default is async. Pass wait=true (or background=false) only when you must block until the result is ready.
+5. Launch independent work in parallel via tasks: [{ description, prompt, subagent_type, ... }] (max 20), or a single description+prompt+subagent_type.
+6. Use task_id only to resume a child that already belongs to the same target directory; mismatches are rejected.
+7. Nested task tools are denied in the child by default. Set allow_nested_tasks=true only when the child itself must spawn further tasks.
+8. The result returned by a completed agent is not visible to the user; summarize it yourself when needed.

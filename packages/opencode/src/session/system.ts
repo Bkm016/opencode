@@ -33,7 +33,7 @@ export function provider(model: Provider.Model, prompts?: Record<string, string>
 }
 
 export interface Interface {
-  readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly environment: () => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
 }
@@ -48,14 +48,13 @@ const layer = Layer.effect(
     const locations = yield* LocationServiceMap.Service
 
     return Service.of({
-      environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
+      environment: Effect.fn("SystemPrompt.environment")(function* () {
         const ctx = yield* InstanceState.context
         const references = yield* Effect.gen(function* () {
           return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
         return [
           [
-            `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
             `Here is some useful information about the environment you are running in:`,
             `<env>`,
             `  Working directory: ${ctx.directory}`,

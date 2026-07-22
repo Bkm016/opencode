@@ -264,7 +264,7 @@ describe("Instruction.system", () => {
     }),
   )
 
-  it.live("prefers AGENTS.local.md over AGENTS.md at project level", () =>
+  it.live("loads both AGENTS.local.md and AGENTS.md at project level", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpdirScoped()
       const projectTmp = yield* tmpWithFiles({
@@ -278,12 +278,41 @@ describe("Instruction.system", () => {
         const agents = path.join(projectTmp, "AGENTS.md")
         const paths = yield* svc.systemPaths()
         expect(paths.has(local)).toBe(true)
-        expect(paths.has(agents)).toBe(false)
+        expect(paths.has(agents)).toBe(true)
 
         const rules = yield* svc.system()
         expect(rules.some((rule) => rule.includes("# Local Instructions"))).toBe(true)
-        expect(rules.some((rule) => rule.includes("# Project Instructions"))).toBe(false)
+        expect(rules.some((rule) => rule.includes("# Project Instructions"))).toBe(true)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("loads all project instruction file types and ancestor levels", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped({ git: true })
+      yield* writeFiles(projectTmp, {
+        "AGENTS.md": "# Root Agents",
+        "CLAUDE.md": "# Root Claude",
+        "subdir/AGENTS.local.md": "# Subdir Local",
+        "subdir/AGENTS.md": "# Subdir Agents",
+        "subdir/CONTEXT.md": "# Subdir Context",
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules).toContain(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Root Agents`)
+        expect(rules).toContain(`Instructions from: ${path.join(projectTmp, "CLAUDE.md")}\n# Root Claude`)
+        expect(rules).toContain(
+          `Instructions from: ${path.join(projectTmp, "subdir", "AGENTS.local.md")}\n# Subdir Local`,
+        )
+        expect(rules).toContain(`Instructions from: ${path.join(projectTmp, "subdir", "AGENTS.md")}\n# Subdir Agents`)
+        expect(rules).toContain(`Instructions from: ${path.join(projectTmp, "subdir", "CONTEXT.md")}\n# Subdir Context`)
+      }).pipe(
+        provideInstance(path.join(projectTmp, "subdir")),
+        provideInstruction({ home: globalTmp, config: globalTmp }),
+      )
     }),
   )
 })

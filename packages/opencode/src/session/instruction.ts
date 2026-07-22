@@ -71,7 +71,7 @@ const layer: Layer.Layer<
       path.join(global.config, "AGENTS.md"),
       ...(!flags.disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
     ]
-    // AGENTS.local.md 优先于 AGENTS.md：first project-level match wins，本地覆盖不叠加。
+    // 项目目录中所有存在的 instruction 文件都会加载，彼此叠加。
     const instructionFiles = [
       "AGENTS.local.md",
       "AGENTS.md",
@@ -131,7 +131,7 @@ const layer: Layer.Layer<
         }
       }
 
-      // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
+      // 项目目录中每种 instruction 文件都会加载，包括向上发现的所有祖先层级。
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
         for (const file of instructionFiles) {
           const matches = yield* fs
@@ -139,7 +139,6 @@ const layer: Layer.Layer<
             .pipe(Effect.catch(() => Effect.succeed([])))
           if (matches.length > 0) {
             matches.forEach((item) => paths.add(path.resolve(item)))
-            break
           }
         }
       }

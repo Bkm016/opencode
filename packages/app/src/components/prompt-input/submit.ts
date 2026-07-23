@@ -72,6 +72,7 @@ type FollowupSendInput = {
   messageID?: string
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
+  openProjectDirectories?: string[]
 }
 
 const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? part.content : "")).join("")
@@ -121,6 +122,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           url: attachment.dataUrl,
           filename: attachment.filename,
         })),
+        openProjectDirectories: input.openProjectDirectories,
       })
       return true
     } catch (err) {
@@ -185,6 +187,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       messageID,
       parts: requestParts,
       variant: input.draft.variant,
+      openProjectDirectories: input.openProjectDirectories,
     })
     return true
   } catch (err) {
@@ -218,6 +221,7 @@ type PromptSubmitInput = {
   onAbort?: () => void
   onSubmit?: () => void
   model?: ModelSelection
+  openProjectDirectories?: Accessor<string[]>
 }
 
 export function createPromptSubmit(input: PromptSubmitInput) {
@@ -513,6 +517,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               url: attachment.dataUrl,
               filename: attachment.filename,
             })),
+            openProjectDirectories: input.openProjectDirectories?.(),
           })
           .catch((err) => {
             showToast({
@@ -605,6 +610,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === projectDirectory,
       before: waitForWorktree,
+      openProjectDirectories: input.openProjectDirectories?.(),
     }).catch((err) => {
       pending.delete(pendingKey(session.id))
       if (sessionDirectory === projectDirectory) {

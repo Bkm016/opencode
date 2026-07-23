@@ -1646,7 +1646,7 @@ describe("tool.project_task", () => {
           messageID: assistant.id,
           agent: "build",
           abort: new AbortController().signal,
-          extra: { promptOps: wrapped },
+          extra: { promptOps: wrapped, openProjectDirectories: [target] },
           messages: [],
           metadata: () => Effect.void,
           ask: (input) =>
@@ -1661,6 +1661,7 @@ describe("tool.project_task", () => {
       expect(child.parentID).toBe(chat.id)
       expect(result.metadata.directory).toBe(FSUtil.resolve(target))
       expect(seen?.sessionID).toBe(child.id)
+      expect(seen?.openProjectDirectories).toEqual([target])
       expect(promptDirectory).toBe(FSUtil.resolve(target))
       expect(asks).toEqual([
         {
@@ -1714,6 +1715,77 @@ describe("tool.project_task", () => {
     }),
   )
 
+  it.instance("rejects a loaded project without Desktop open-project authorization", () =>
+    Effect.gen(function* () {
+      const store = yield* InstanceStore.Service
+      const { chat, assistant } = yield* seed()
+      const target = yield* tmpdirScoped({ git: true })
+      yield* store.load({ directory: target })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+
+      const exit = yield* def
+        .execute(
+          {
+            project: target,
+            description: "not open in desktop",
+            prompt: "should fail",
+            subagent_type: "general",
+            wait: true,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("currently open in OpenCode")
+    }),
+  )
+
+  it.instance("accepts a project that is in Desktop openProjectDirectories", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const target = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      yield* store.load({ directory: target })
+      const tool = yield* ProjectTaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          project: path.basename(target),
+          description: "open in desktop",
+          prompt: "should work",
+          subagent_type: "general",
+          wait: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "ok" }), openProjectDirectories: [target] },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = yield* sessions.get(result.metadata.sessionId as SessionID)
+      expect(child.directory).toBe(FSUtil.resolve(target))
+    }),
+  )
+
   it.instance("rejects an ambiguous open project name", () =>
     Effect.gen(function* () {
       const store = yield* InstanceStore.Service
@@ -1748,7 +1820,7 @@ describe("tool.project_task", () => {
             messageID: assistant.id,
             agent: "build",
             abort: new AbortController().signal,
-            extra: { promptOps: stubOps() },
+            extra: { promptOps: stubOps(), openProjectDirectories: [left, right] },
             messages: [],
             metadata: () => Effect.void,
             ask: () => Effect.void,
@@ -1791,7 +1863,7 @@ describe("tool.project_task", () => {
             messageID: assistant.id,
             agent: "build",
             abort: new AbortController().signal,
-            extra: { promptOps: stubOps() },
+            extra: { promptOps: stubOps(), openProjectDirectories: [target] },
             messages: [],
             metadata: () => Effect.void,
             ask: () => Effect.void,
@@ -1836,7 +1908,10 @@ describe("tool.project_task", () => {
           messageID: assistant.id,
           agent: "build",
           abort: new AbortController().signal,
-          extra: { promptOps: stubOps({ text: "resumed", onPrompt: (input) => (seen = input) }) },
+          extra: {
+            promptOps: stubOps({ text: "resumed", onPrompt: (input) => (seen = input) }),
+            openProjectDirectories: [target],
+          },
           messages: [],
           metadata: () => Effect.void,
           ask: () => Effect.void,

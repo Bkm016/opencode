@@ -1075,6 +1075,7 @@ export default function Page() {
         serverSync: serverSync(),
         draft: item,
         optimisticBusy: item.sessionDirectory === sdk().directory,
+        openProjectDirectories: layout.projects.list().map((project) => project.worktree),
       }).catch((err) => {
         setFollowup("failed", input.sessionID, input.id)
         fail(err)
@@ -1274,6 +1275,7 @@ export default function Page() {
         variant: local.model.variant.current(),
       },
       optimisticBusy: true,
+      openProjectDirectories: layout.projects.list().map((project) => project.worktree),
     }).catch((err) => {
       fail(err)
       promptSession.set(value)

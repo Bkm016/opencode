@@ -209,28 +209,54 @@ export function taskPromptWithContext(input: {
   ].join("\n\n")
 }
 
-export function resolveOpenedProject(selector: string, loaded: readonly InstanceContext[]) {
+export function resolveOpenedProject(
+  selector: string,
+  loaded: readonly InstanceContext[],
+  openProjectDirectories?: readonly string[],
+) {
   const value = selector.trim()
   if (!value) throw new Error("project_task requires a non-empty project selector")
 
-  const exact = loaded.filter((ctx) => sameDirectory(ctx.directory, value))
+  // InstanceStore 只补充项目元数据，开放状态必须完全来自 Desktop。
+  const eligible = filterByOpenDirectories(loaded, openProjectDirectories ?? [])
+
+  const exact = eligible.filter((ctx) => sameDirectory(ctx.directory, value))
   if (exact.length === 1) return exact[0]!
 
   const normalized = value.toLowerCase()
-  const matches = loaded.filter((ctx) =>
+  const matches = eligible.filter((ctx) =>
     [path.basename(ctx.directory), path.basename(ctx.worktree), ctx.project.name]
       .filter((candidate): candidate is string => Boolean(candidate))
       .some((candidate) => candidate.toLowerCase() === normalized),
   )
   if (matches.length === 1) return matches[0]!
 
-  const candidates = loaded.map((ctx) => `${ctx.project.name ?? path.basename(ctx.directory)} (${ctx.directory})`)
+  const candidates = eligible.map((ctx) => `${ctx.project.name ?? path.basename(ctx.directory)} (${ctx.directory})`)
   if (matches.length > 1) {
     throw new Error(`project_task selector is ambiguous: ${selector}. Matches: ${matches.map((ctx) => ctx.directory).join(", ")}`)
   }
   throw new Error(
-    `project_task can only use projects currently open in OpenCode. No open project matches: ${selector}.${candidates.length > 0 ? ` Open projects: ${candidates.join(", ")}` : " No projects are currently open."}`,
+    `project_task can only use projects currently open in OpenCode Desktop. No open project matches: ${selector}.${candidates.length > 0 ? ` Open projects: ${candidates.join(", ")}` : " No projects are currently open in Desktop."}`,
   )
+}
+
+function filterByOpenDirectories(
+  loaded: readonly InstanceContext[],
+  openProjectDirectories: readonly string[],
+): readonly InstanceContext[] {
+  const open = new Set(
+    openProjectDirectories.map((dir) => {
+      const resolved = FSUtil.resolve(dir)
+      return process.platform === "win32" ? resolved.toLowerCase() : resolved
+    }),
+  )
+  return loaded.filter((ctx) => {
+    const directories = [ctx.directory, ctx.worktree].map((dir) => {
+      const resolved = FSUtil.resolve(dir)
+      return process.platform === "win32" ? resolved.toLowerCase() : resolved
+    })
+    return directories.some((dir) => open.has(dir))
+  })
 }
 
 function sameDirectory(a: string, b: string) {
@@ -364,6 +390,7 @@ function makeTaskExecutor(input: {
     toolId: string
   }) {
     const { entry, ctx, parent, cfg, variant, wait, batchId, projectDirectory, toolId } = input
+    const openProjectDirectories = ctx.extra?.openProjectDirectories as readonly string[] | undefined
 
     const next = yield* inProject(projectDirectory, agent.get(entry.subagent_type))
     if (!next) {
@@ -471,6 +498,7 @@ function makeTaskExecutor(input: {
             variant: next.model ? undefined : variant,
             agent: next.name,
             parts,
+            openProjectDirectories,
           })
           return result.parts.findLast((item) => item.type === "text")?.text ?? ""
         }),
@@ -503,6 +531,7 @@ function makeTaskExecutor(input: {
               }),
             },
           ],
+          openProjectDirectories,
         })
         .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
     })
@@ -628,8 +657,9 @@ function makeTaskExecutor(input: {
     ctx: Tool.Context,
     options: TaskRunOptions,
   ) {
+    const openProjectDirectories = ctx.extra?.openProjectDirectories as readonly string[] | undefined
     const projectDirectory = options.projectSelector
-      ? resolveOpenedProject(options.projectSelector, yield* store.listLoaded()).directory
+      ? resolveOpenedProject(options.projectSelector, yield* store.listLoaded(), openProjectDirectories).directory
       : undefined
 
     // 深度和父会话属于来源项目，子代理配置则由目标项目决定。
@@ -820,7 +850,7 @@ export const TaskTool = Tool.define(
 export const ProjectTaskParameters = Schema.Struct({
   project: Schema.String.annotate({
     description:
-      "An OpenCode project that is currently open. Accepts its directory path, directory name, or project name.",
+      "An OpenCode project currently open in Desktop. Accepts its directory path, directory name, or project name.",
   }),
   description: Parameters.fields.description,
   prompt: Parameters.fields.prompt,

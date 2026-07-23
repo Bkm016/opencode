@@ -1,4 +1,4 @@
-Launch one or more specialized agents as child sessions in a project that is already open in the current OpenCode process.
+Launch one or more specialized agents as child sessions in a project that is currently open in OpenCode Desktop.
 
 Unlike task, project_task loads the target project's full InstanceStore context (config, agents, AGENTS instructions, tools) for the child. Results are still returned and injected into the originating parent session.
 
@@ -14,8 +14,8 @@ When NOT to use project_task:
 - Searching for a class or symbol: use Grep
 
 Usage notes:
-1. project is required. Use an open project's full directory, directory name, or project name.
-2. project_task never discovers or opens a project from the filesystem. No match fails; ambiguous names fail with matching open-project candidates.
+1. project is required. Use a project currently open in Desktop by full directory, directory name, or project name.
+2. project_task never discovers or opens a project from the filesystem or the server's loaded-instance cache. No match fails; ambiguous names fail with matching Desktop open-project candidates.
 3. Cross-project permission is asked as project_task for the resolved directory and each subagent_type.
 4. Default is async. Pass wait=true (or background=false) only when you must block until the result is ready.
 5. Launch independent work in parallel via tasks: [{ description, prompt, subagent_type, ... }] (max 20), or a single description+prompt+subagent_type.

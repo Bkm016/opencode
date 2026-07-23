@@ -24,6 +24,7 @@ import {
 } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useServer } from "@/context/server"
 import { useComments } from "@/context/comments"
 import { Button } from "@opencode-ai/ui/button"
 import { DockShellForm, DockTray } from "@opencode-ai/ui/dock-surface"
@@ -104,6 +105,7 @@ const EXAMPLES = [
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
+  const server = useServer()
 
   const sync = useSync()
   const prompt = props.state ?? usePrompt()
@@ -1135,6 +1137,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onAbort: props.onAbort,
       onSubmit: props.onSubmit,
       model: props.controls.model.selection,
+      openProjectDirectories: () => server.projects.list().map((project) => project.worktree),
     })
 
   const handleKeyDown = (event: KeyboardEvent) => {

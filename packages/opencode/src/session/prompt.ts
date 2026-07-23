@@ -131,6 +131,8 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const { db } = database
+    // 每次请求覆盖 Desktop 当前开放项目，避免沿用上一轮状态扩大跨项目授权。
+    const openProjectDirs = new Map<SessionID, readonly string[]>()
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -318,7 +320,7 @@ const layer = Layer.effect(
           sessionID,
           abort: taskAbort.signal,
           callID: part.callID,
-          extra: { bypassAgentCheck: true, promptOps },
+          extra: { bypassAgentCheck: true, promptOps, openProjectDirectories: openProjectDirs.get(sessionID) },
           messages: msgs,
           metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
             Effect.gen(function* () {
@@ -1059,6 +1061,7 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+      openProjectDirs.set(input.sessionID, input.openProjectDirectories ?? [])
       if (promoteWaitingTask) {
         // 用户消息已持久化：提升前台子任务并协作式释放 task_async_wait，现有 Runner 在安全边界继续。
         // sticky 仅绑定当前仍 running 的 task_async_wait callID，避免普通 busy 流误释放后续 wait。
@@ -1249,6 +1252,7 @@ const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              openProjectDirectories: openProjectDirs.get(sessionID),
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -1371,7 +1375,10 @@ const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+      const run = runLoop(input.sessionID).pipe(
+        Effect.ensuring(Effect.sync(() => openProjectDirs.delete(input.sessionID))),
+      )
+      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), run)
     })
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
@@ -1498,6 +1505,7 @@ const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
+        openProjectDirectories: input.openProjectDirectories,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -1545,6 +1553,7 @@ export const PromptInput = Schema.Struct({
       SessionV1.SubtaskPartInput,
     ]).annotate({ discriminator: "type" }),
   ),
+  openProjectDirectories: Schema.optional(Schema.Array(Schema.String)),
 })
 export type PromptInput = Schema.Schema.Type<typeof PromptInput>
 
@@ -1586,6 +1595,7 @@ export const CommandInput = Schema.Struct({
       ]).annotate({ discriminator: "type" }),
     ),
   ),
+  openProjectDirectories: Schema.optional(Schema.Array(Schema.String)),
 })
 export type CommandInput = Schema.Schema.Type<typeof CommandInput>
 

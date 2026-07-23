@@ -9783,6 +9783,7 @@ export type SessionPromptData = {
     system?: string
     variant?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+    openProjectDirectories?: Array<string>
   }
   path: {
     sessionID: string
@@ -10160,6 +10161,7 @@ export type SessionPromptAsyncData = {
     system?: string
     variant?: string
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+    openProjectDirectories?: Array<string>
   }
   path: {
     sessionID: string
@@ -10209,6 +10211,7 @@ export type SessionCommandData = {
       url: string
       source?: FilePartSource
     }>
+    openProjectDirectories?: Array<string>
   }
   path: {
     sessionID: string

@@ -3691,6 +3691,7 @@ export class Session2 extends HeyApiClient {
       system?: string
       variant?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+      openProjectDirectories?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3711,6 +3712,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "parts" },
+            { in: "body", key: "openProjectDirectories" },
           ],
         },
       ],
@@ -4076,6 +4078,7 @@ export class Session2 extends HeyApiClient {
       system?: string
       variant?: string
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+      openProjectDirectories?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4096,6 +4099,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
             { in: "body", key: "parts" },
+            { in: "body", key: "openProjectDirectories" },
           ],
         },
       ],
@@ -4136,6 +4140,7 @@ export class Session2 extends HeyApiClient {
         url: string
         source?: FilePartSource
       }>
+      openProjectDirectories?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4154,6 +4159,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
             { in: "body", key: "parts" },
+            { in: "body", key: "openProjectDirectories" },
           ],
         },
       ],

@@ -7,7 +7,7 @@ import * as path from "path"
 import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
-import { createTwoFilesPatch, diffLines } from "diff"
+import { createTwoFilesPatch, diffArrays, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
 import { FileSystem } from "@opencode-ai/core/filesystem"
 import { Watcher } from "@opencode-ai/core/filesystem/watcher"
@@ -219,6 +219,8 @@ export type Replacer = (content: string, find: string) => Generator<string, void
 // Similarity thresholds for block anchor fallback matching
 const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.65
 const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.65
+const STALE_BLOCK_SIMILARITY_THRESHOLD = 0.9
+const STALE_BLOCK_SIMILARITY_MARGIN = 0.05
 
 /**
  * Levenshtein distance algorithm implementation
@@ -496,6 +498,78 @@ export const IndentationFlexibleReplacer: Replacer = function* (content, find) {
   }
 }
 
+export const StaleBlockReplacer: Replacer = function* (content, find) {
+  const findLines = find.split("\n")
+  if (findLines.length < 3) return
+
+  const contentLines = content.split("\n")
+  const expectedLines = findLines.map((line) => line.trim())
+  const candidates: Array<{ block: string; score: number }> = []
+  const requiredExact = Math.max(2, Math.ceil(expectedLines.filter(Boolean).length / 2))
+
+  for (let i = 0; i <= contentLines.length - findLines.length; i++) {
+    const blockLines = contentLines.slice(i, i + findLines.length)
+    const actualLines = blockLines.map((line) => line.trim())
+    const exact = actualLines.filter((line, index) => expectedLines[index] && line === expectedLines[index]).length
+    if (exact < requiredExact) continue
+
+    let score = 0
+    for (let j = 0; j < expectedLines.length; j++) {
+      const expected = expectedLines[j]
+      const actual = actualLines[j]
+      const length = Math.max(expected.length, actual.length)
+      score += length === 0 ? 1 : 1 - levenshtein(expected, actual) / length
+    }
+
+    score /= findLines.length
+    if (score >= STALE_BLOCK_SIMILARITY_THRESHOLD) {
+      candidates.push({ block: blockLines.join("\n"), score })
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score)
+  const best = candidates[0]
+  if (!best) return
+  const next = candidates[1]
+  if (next && best.score - next.score < STALE_BLOCK_SIMILARITY_MARGIN) return
+  yield best.block
+}
+
+function mergeStaleReplacement(current: string, oldString: string, newString: string) {
+  const currentLines = current.split("\n")
+  const oldLines = oldString.split("\n")
+  if (currentLines.length !== oldLines.length) return newString
+
+  // 将本次 oldString -> newString 的差异施加到当前块，保留之前编辑过但本次未触及的行。
+  const output: string[] = []
+  let offset = 0
+  let removed: string[] | undefined
+  for (const change of diffArrays(oldLines, newString.split("\n"))) {
+    if (change.added) {
+      if (removed?.length === change.value.length) {
+        const current = removed
+        output.push(
+          ...change.value.map((line, index) => `${current[index].match(/^\s*/)?.[0] ?? ""}${line.trimStart()}`),
+        )
+        removed = undefined
+        continue
+      }
+      output.push(...change.value)
+      removed = undefined
+      continue
+    }
+    if (change.removed) {
+      removed = currentLines.slice(offset, offset + change.value.length)
+      offset += change.value.length
+      continue
+    }
+    removed = undefined
+    output.push(...currentLines.slice(offset, offset + change.value.length))
+    offset += change.value.length
+  }
+  return output.join("\n")
+}
+
 export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
   const unescapeString = (str: string): string => {
     return str.replace(/\\(n|t|r|'|"|`|\\|\n|\$)/g, (match, capturedChar) => {
@@ -697,6 +771,7 @@ export function replace(content: string, oldString: string, newString: string, r
     BlockAnchorReplacer,
     WhitespaceNormalizedReplacer,
     IndentationFlexibleReplacer,
+    StaleBlockReplacer,
     EscapeNormalizedReplacer,
     TrimmedBoundaryReplacer,
     ContextAwareReplacer,
@@ -711,18 +786,19 @@ export function replace(content: string, oldString: string, newString: string, r
           "Refusing replacement because the matched span is much larger than oldString. Re-read the file and provide the full exact oldString for the intended replacement.",
         )
       }
+      const replacement = search === oldString ? newString : mergeStaleReplacement(search, oldString, newString)
       if (replaceAll) {
-        return content.replaceAll(search, newString)
+        return content.replaceAll(search, replacement)
       }
       const lastIndex = content.lastIndexOf(search)
       if (index !== lastIndex) continue
-      return content.substring(0, index) + newString + content.substring(index + search.length)
+      return content.substring(0, index) + replacement + content.substring(index + search.length)
     }
   }
 
   if (notFound) {
     throw new Error(
-      "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.",
+      "Could not find oldString in the file. Re-read the current file and provide more unchanged surrounding lines for a safe unique match.",
     )
   }
   throw new Error("Found multiple matches for oldString. Provide more surrounding context to make the match unique.")

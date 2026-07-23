@@ -251,6 +251,51 @@ describe("tool.edit", () => {
       }),
     )
 
+    it.instance("applies a unique stale block edit without reverting prior changes", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "table.tsx")
+        yield* put(
+          filepath,
+          [
+            "const row = [",
+            '  <td className="mono">{u.upstream}</td>',
+            "  <td>{fmtNum(u.total)}</td>",
+            "  <td>{fmtNum(u.available)}</td>",
+            "]",
+          ].join("\n"),
+        )
+
+        yield* run({
+          filePath: filepath,
+          oldString: [
+            "const row = [",
+            '    <td className="mono">{u.upstream}</td>',
+            "    <td>{u.total}</td>",
+            "    <td>{fmtNum(u.available)}</td>",
+            "]",
+          ].join("\n"),
+          newString: [
+            "const row = [",
+            '    <td className="mono">{u.upstream}</td>',
+            "    <td>{u.total}</td>",
+            "    <td>{fmtNum(u.availablePercent)}</td>",
+            "]",
+          ].join("\n"),
+        })
+
+        expect(yield* load(filepath)).toBe(
+          [
+            "const row = [",
+            '  <td className="mono">{u.upstream}</td>',
+            "  <td>{fmtNum(u.total)}</td>",
+            "  <td>{fmtNum(u.availablePercent)}</td>",
+            "]",
+          ].join("\n"),
+        )
+      }),
+    )
+
     it.instance("replaces all occurrences with replaceAll option", () =>
       Effect.gen(function* () {
         const test = yield* TestInstance

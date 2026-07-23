@@ -27,6 +27,33 @@ type PendingPrompt = {
 
 const pending = new Map<string, PendingPrompt>()
 
+const collectDescendantSessionIDs = (rootID: string, sessions: Session[]) => {
+  const byParent = new Map<string, string[]>()
+  for (const session of sessions) {
+    if (!session.parentID) continue
+    const existing = byParent.get(session.parentID)
+    if (existing) existing.push(session.id)
+    else byParent.set(session.parentID, [session.id])
+  }
+
+  const result: string[] = []
+  const seen = new Set<string>()
+  const stack = [rootID]
+  while (stack.length) {
+    const parentID = stack.pop()
+    if (!parentID) continue
+    if (seen.has(parentID)) continue
+    seen.add(parentID)
+    const children = byParent.get(parentID)
+    if (!children) continue
+    for (const child of children) {
+      result.push(child)
+      stack.push(child)
+    }
+  }
+  return result
+}
+
 export type FollowupDraft = {
   sessionID: string
   sessionDirectory: string
@@ -216,7 +243,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return language.t("common.requestFailed")
   }
 
-  const abort = async () => {
+  const abort = async (options?: { cascade?: boolean }) => {
     const sessionID = params.id
     if (!sessionID) return Promise.resolve()
 
@@ -230,13 +257,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       queued.abort.abort()
       queued.cleanup()
       pending.delete(key)
-      return Promise.resolve()
+      if (!options?.cascade) return Promise.resolve()
     }
-    return sdk()
-      .client.session.abort({
-        sessionID,
-      })
-      .catch(() => {})
+
+    const client = sdk().client
+    const targets = options?.cascade
+      ? [sessionID, ...collectDescendantSessionIDs(sessionID, sync().data.session)]
+      : [sessionID]
+    await Promise.all(targets.map((id) => client.session.abort({ sessionID: id }).catch(() => {})))
   }
 
   const restoreCommentItems = (

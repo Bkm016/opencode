@@ -23,6 +23,7 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
+const aborted: Array<{ sessionID: string; directory: string }> = []
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -81,7 +82,10 @@ const clientFor = (directory: string) => {
       prompt: async () => ({ data: undefined }),
       promptAsync: async () => ({ data: undefined }),
       command: async () => ({ data: undefined }),
-      abort: async () => ({ data: undefined }),
+      abort: async (input: { sessionID: string }) => {
+        aborted.push({ sessionID: input.sessionID, directory })
+        return { data: undefined }
+      },
     },
     worktree: {
       create: async () => ({ data: { directory: `${directory}/new` } }),
@@ -183,7 +187,15 @@ beforeAll(async () => {
 
   mock.module("@/context/sync", () => ({
     useSync: () => () => ({
-      data: { command: [] },
+      data: {
+        command: [],
+        session: [
+          { id: "session-root", directory: "/repo/main" },
+          { id: "session-child", directory: "/repo/main", parentID: "session-root" },
+          { id: "session-grandchild", directory: "/repo/main", parentID: "session-child" },
+          { id: "session-unrelated", directory: "/repo/main" },
+        ],
+      },
       session: {
         optimistic: {
           add: (value: {
@@ -264,6 +276,7 @@ beforeEach(() => {
   variant = undefined
   permissionServer = "server-a"
   createSessionGate = undefined
+  aborted.length = 0
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
@@ -489,5 +502,61 @@ describe("prompt submit worktree selection", () => {
 
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
     expect(optimisticSeeded).toEqual([true])
+  })
+})
+
+describe("prompt submit abort", () => {
+  test("aborts only the current session by default", async () => {
+    params = { id: "session-root" }
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-root" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.abort()
+
+    expect(aborted).toEqual([{ sessionID: "session-root", directory: "/repo/main" }])
+  })
+
+  test("cascade abort stops the current session and all descendants, not unrelated sessions", async () => {
+    params = { id: "session-root" }
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-root" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.abort({ cascade: true })
+
+    expect(aborted.map((item) => item.sessionID)).toEqual([
+      "session-root",
+      "session-child",
+      "session-grandchild",
+    ])
   })
 })

@@ -1189,7 +1189,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
 
       if (working()) {
-        void abort()
+        void abort({ cascade: event.ctrlKey })
         event.preventDefault()
         event.stopPropagation()
         return
@@ -1258,7 +1258,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         return
       }
       if (working()) {
-        void abort()
+        void abort({ cascade: event.ctrlKey })
         event.preventDefault()
       }
       return
@@ -1478,6 +1478,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   variant="primary"
                   class="size-8"
                   aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                  onClick={(event) => {
+                    if (!stopping()) return
+                    if (!event.ctrlKey) return
+                    event.preventDefault()
+                    void abort({ cascade: true })
+                  }}
                 />
               </Tooltip>
             </div>

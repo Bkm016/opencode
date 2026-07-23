@@ -6,7 +6,7 @@ import type { FollowupDraft } from "./submit"
 export type PromptInputState = ReturnType<typeof usePrompt>
 
 export type PromptInputSubmission = {
-  abort: () => Promise<void> | void
+  abort: (options?: { cascade?: boolean }) => Promise<void> | void
   handleSubmit: (event: Event) => Promise<void> | void
 }
 

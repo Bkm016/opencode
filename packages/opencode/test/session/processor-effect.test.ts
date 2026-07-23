@@ -1223,11 +1223,19 @@ function repeatingToolReply() {
           },
         ],
       },
+      toolArgsChunk('{"content":"'),
       toolArgsChunk(REPEAT_SENTENCE),
       toolArgsChunk(REPEAT_SENTENCE),
       toolArgsChunk(REPEAT_SENTENCE),
+      toolArgsChunk('"}'),
     ],
-    tail: [],
+    tail: [
+      {
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        choices: [{ delta: {}, finish_reason: "tool_calls" }],
+      },
+    ],
   })
 }
 
@@ -1331,7 +1339,7 @@ it.live("session.processor effect tests keep retrying repeated output until reco
   ),
 )
 
-it.live("session.processor effect tests retry when tool-input repetition is detected before execution", () =>
+it.live("session.processor effect tests allow repeated content in tool input", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -1339,7 +1347,6 @@ it.live("session.processor effect tests retry when tool-input repetition is dete
 
         let toolExecutions = 0
         yield* llm.push(repeatingToolReply())
-        yield* llm.text("recovered answer")
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "tool loop")
@@ -1379,18 +1386,16 @@ it.live("session.processor effect tests retry when tool-input repetition is dete
 
         const parts = yield* MessageV2.parts(msg.id)
         const tools = parts.filter((part): part is SessionV1.ToolPart => part.type === "tool")
-        const texts = parts.filter((part): part is SessionV1.TextPart => part.type === "text")
 
+        expect(handle.message.error).toBeUndefined()
         expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(2)
-        expect(toolExecutions).toBe(0)
+        expect(yield* llm.calls).toBe(1)
+        expect(toolExecutions).toBe(1)
         expect(tools).toHaveLength(1)
         expect(tools[0]?.state).toMatchObject({
-          status: "error",
-          error: "Model tool input repetition detected",
+          status: "completed",
+          input: { content: REPEAT_SENTENCE.repeat(3) },
         })
-        expect(texts.some((part) => part.text === "recovered answer")).toBe(true)
-        expect(handle.message.error).toBeUndefined()
       }),
     { config: (url) => providerCfg(url) },
   ),

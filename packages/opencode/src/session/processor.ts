@@ -261,7 +261,7 @@ const layer = Layer.effect(
 
       const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
 
-      const settleRepetitionPart = Effect.fnUntraced(function* (kind: "text" | "reasoning" | "tool", id: string) {
+      const settleRepetitionPart = Effect.fnUntraced(function* (kind: "text" | "reasoning", id: string) {
         if (kind === "text") {
           if (!ctx.currentText) return
           const part = ctx.currentText
@@ -280,22 +280,6 @@ const layer = Layer.effect(
           yield* session.updatePart(part)
           return
         }
-        const match = yield* readToolCall(id)
-        if (!match) return
-        const state = match.part.state
-        if (state.status === "completed" || state.status === "error") return
-        const end = Date.now()
-        yield* session.updatePart({
-          ...match.part,
-          state: {
-            status: "error",
-            input: state.input,
-            error: "Model tool input repetition detected",
-            metadata: state.status === "running" ? state.metadata : undefined,
-            time: { start: state.status === "running" ? state.time.start : end, end },
-          },
-        })
-        yield* settleToolCall(id)
       })
 
       const failRepetition = Effect.fnUntraced(function* () {
@@ -311,12 +295,13 @@ const layer = Layer.effect(
       })
 
       const guardEvent = Effect.fnUntraced(function* (value: StreamEvent) {
-        if (value.type !== "text-delta" && value.type !== "reasoning-delta" && value.type !== "tool-input-delta") return
+        // 工具参数允许包含重复的补丁或文件内容；跨轮次的相同工具调用由 doom-loop 权限单独处理。
+        if (value.type !== "text-delta" && value.type !== "reasoning-delta") return
         const key = `${value.type}:${value.id}`
         const accumulated = `${repetitionBuffers.get(key) ?? ""}${value.text}`.slice(-REPETITION_WINDOW)
         repetitionBuffers.set(key, accumulated)
         if (!detectRepetition(accumulated)) return
-        const kind = value.type === "text-delta" ? "text" : value.type === "reasoning-delta" ? "reasoning" : "tool"
+        const kind = value.type === "text-delta" ? "text" : "reasoning"
         yield* settleRepetitionPart(kind, value.id)
         return yield* failRepetition()
       })

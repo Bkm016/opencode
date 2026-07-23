@@ -177,6 +177,7 @@ const WorkspaceActions = (props: {
           data-action="workspace-menu"
           data-workspace={base64Encode(props.directory)}
           aria-label={props.language.t("common.moreOptions")}
+          disabled={props.busy()}
         />
       </Tooltip>
       <DropdownMenu.Portal>
@@ -222,6 +223,7 @@ const WorkspaceActions = (props: {
           data-action="workspace-new-session"
           data-workspace={base64Encode(props.directory)}
           aria-label={props.language.t("command.session.new")}
+          disabled={props.busy()}
           onClick={(event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -387,7 +389,7 @@ export const SortableWorkspace = (props: {
       use:sortable
       classList={{
         "opacity-30": sortable.isActiveDraggable,
-        "opacity-50 pointer-events-none": busy(),
+        "opacity-50": busy(),
       }}
     >
       <Collapsible variant="ghost" open={open()} class="shrink-0" onOpenChange={openWrapper}>

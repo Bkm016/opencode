@@ -62,6 +62,7 @@ import { createSessionLineage } from "@/pages/session/session-lineage"
 import { SessionPage, SessionRouteErrorBoundary } from "@/pages/session"
 import { LegacyHome } from "@/pages/home"
 import { gsapEnter, gsapSplash } from "@/utils/gsap-motion"
+import { NavigationDiagnostics } from "@/components/navigation-diagnostics"
 
 const SessionRoute = () => {
   const params = useParams()
@@ -207,6 +208,7 @@ function SharedProviders(props: ParentProps) {
   return (
     <>
       <BodyDesignClass />
+      <NavigationDiagnostics />
       <CommandProvider>
         <DesktopCommands />
         <HighlightsProvider>{props.children}</HighlightsProvider>

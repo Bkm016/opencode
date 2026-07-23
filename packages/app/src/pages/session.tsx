@@ -474,16 +474,28 @@ export default function Page() {
     }),
   )
 
+  let deferFrame: number | undefined
+  let deferTimer: number | undefined
   createComputed((prev) => {
     const key = sessionKey()
     if (key !== prev) {
       setStore("deferRender", true)
-      const owner = sessionOwnership.capture()
-      requestAnimationFrame(() => {
-        setTimeout(() => owner.run(() => setStore("deferRender", false)), 0)
+      if (deferFrame !== undefined) cancelAnimationFrame(deferFrame)
+      if (deferTimer !== undefined) clearTimeout(deferTimer)
+      deferFrame = requestAnimationFrame(() => {
+        deferFrame = undefined
+        deferTimer = window.setTimeout(() => {
+          deferTimer = undefined
+          setStore("deferRender", false)
+        }, 0)
       })
     }
     return key
+  })
+
+  onCleanup(() => {
+    if (deferFrame !== undefined) cancelAnimationFrame(deferFrame)
+    if (deferTimer !== undefined) clearTimeout(deferTimer)
   })
 
   let todoFrame: number | undefined

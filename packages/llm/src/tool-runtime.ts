@@ -19,9 +19,20 @@ export interface DispatchResult extends ToolSettlement {
   readonly events: ReadonlyArray<LLMEvent>
 }
 
+/** Exact match first, then a unique case-insensitive tool name match. */
+export const resolveToolName = (names: Iterable<string>, name: string): string | undefined => {
+  const list = Array.from(names)
+  if (list.includes(name)) return name
+  const lower = name.toLowerCase()
+  const matches = list.filter((item) => item.toLowerCase() === lower)
+  if (matches.length === 1) return matches[0]
+  return undefined
+}
+
 /** Execute one canonical tool call without owning provider IO or continuation. */
 export const dispatch = (tools: Tools, call: ToolCallPart): Effect.Effect<DispatchResult> => {
-  const tool = tools[call.name]
+  const resolved = resolveToolName(Object.keys(tools), call.name)
+  const tool = resolved === undefined ? undefined : tools[resolved]
   if (!tool) return Effect.succeed(result(call, { type: "error", value: `Unknown tool: ${call.name}` }))
   if (!tool.execute)
     return Effect.succeed(result(call, { type: "error", value: `Tool has no execute handler: ${call.name}` }))

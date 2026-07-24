@@ -180,6 +180,15 @@ describe("ToolRegistry", () => {
         }),
       ).toEqual({ type: "error", value: "Unknown tool: missing" })
 
+      yield* service.register({ echo: make() })
+      expect(
+        yield* executeTool(service, {
+          sessionID,
+          ...identity,
+          call: { type: "tool-call", id: "echo-case", name: "ECHO", input: { text: "ECHO" } },
+        }),
+      ).toEqual({ type: "text", value: "ECHO" })
+
       yield* service.register({
         defect: Tool.make({
           description: "Defect",

@@ -124,7 +124,12 @@ const live: Layer.Layer<
         workflowModel.sessionID = input.sessionID
         workflowModel.systemPrompt = prepared.system.join("\n")
         workflowModel.toolExecutor = async (toolName, argsJson, _requestID) => {
-          const t = prepared.tools[toolName]
+          const names = Object.keys(prepared.tools)
+          const lower = toolName.toLowerCase()
+          const matches = names.filter((name) => name.toLowerCase() === lower)
+          const resolved =
+            prepared.tools[toolName] !== undefined ? toolName : matches.length === 1 ? matches[0] : undefined
+          const t = resolved === undefined ? undefined : prepared.tools[resolved]
           if (!t || !t.execute) {
             return { result: "", error: `Unknown tool: ${toolName}` }
           }
@@ -298,11 +303,16 @@ const live: Layer.Layer<
           // Copilot returns the authoritative billed amount only in provider-specific response fields.
           includeRawChunks: input.model.providerID.includes("github-copilot"),
           async experimental_repairToolCall(failed) {
-            const lower = failed.toolCall.toolName.toLowerCase()
-            if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
+            const requested = failed.toolCall.toolName
+            if (prepared.tools[requested]) return failed.toolCall
+            const lower = requested.toLowerCase()
+            const matches = Object.keys(prepared.tools).filter(
+              (name) => name !== "invalid" && name.toLowerCase() === lower,
+            )
+            if (matches.length === 1) {
               return {
                 ...failed.toolCall,
-                toolName: lower,
+                toolName: matches[0],
               }
             }
             return {

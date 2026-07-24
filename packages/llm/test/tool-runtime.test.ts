@@ -632,6 +632,16 @@ describe("LLMClient tools", () => {
     }),
   )
 
+  it.effect("resolves tool names case-insensitively when unique", () =>
+    Effect.gen(function* () {
+      const settlement = yield* ToolRuntime.dispatch(
+        { get_weather },
+        { type: "tool-call", id: "call_case", name: "Get_Weather", input: { city: "SF" } },
+      )
+      expect(settlement.result).toMatchObject({ type: "json" })
+    }),
+  )
+
   it.effect("emits tool-error when the LLM input fails the parameters schema", () =>
     Effect.gen(function* () {
       const layer = scriptedResponses([

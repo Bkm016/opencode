@@ -39,6 +39,21 @@ export interface Settlement {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/ToolRegistry") {}
 
+/** Exact match first, then a unique case-insensitive name match. */
+export function resolveToolName(names: Iterable<string>, name: string): string | undefined {
+  const list = Array.from(names)
+  if (list.includes(name)) return name
+  const lower = name.toLowerCase()
+  const matches = list.filter((item) => item.toLowerCase() === lower)
+  if (matches.length === 1) return matches[0]
+  return undefined
+}
+
+function getByToolName<T>(map: ReadonlyMap<string, T>, name: string): T | undefined {
+  const resolved = resolveToolName(map.keys(), name)
+  return resolved === undefined ? undefined : map.get(resolved)
+}
+
 const registryLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -48,8 +63,10 @@ const registryLayer = Layer.effect(
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
+      const localName = resolveToolName(local.keys(), input.call.name)
       const registration =
-        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
+        (localName ? local.get(localName)?.at(-1)?.registration : undefined) ??
+        getByToolName(applications.entries(), input.call.name)
       if (!registration)
         return {
           result: {
@@ -114,7 +131,7 @@ const registryLayer = Layer.effect(
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {
-            const registration = registrations.get(input.call.name)
+            const registration = getByToolName(registrations, input.call.name)
             if (registration) return settleWith(input, registration.identity)
             return Effect.succeed({ result: { type: "error", value: `Unknown tool: ${input.call.name}` } })
           },

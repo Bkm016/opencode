@@ -17,6 +17,12 @@ export function adapterState() {
     copilotTotalNanoAiu: undefined as number | undefined,
     /** 已知时，最近一次 doStream() 实际发送的最终 HTTP body UTF-8 字节数。 */
     requestBodyBytes: undefined as number | undefined,
+    /** 该 provider turn 交给模型运行时的工具定义列表。 */
+    injectedTools: undefined as
+      | ReadonlyArray<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+      | undefined,
+    /** 该 provider turn 交给模型运行时的 system prompt 块。 */
+    injectedSystem: undefined as ReadonlyArray<string> | undefined,
   }
 }
 
@@ -88,6 +94,8 @@ export function toLLMEvents(
         LLMEvent.stepStart({
           index: state.step,
           ...(state.requestBodyBytes === undefined ? {} : { requestBodyBytes: state.requestBodyBytes }),
+          ...(state.injectedTools === undefined ? {} : { injectedTools: state.injectedTools }),
+          ...(state.injectedSystem === undefined ? {} : { injectedSystem: state.injectedSystem }),
         }),
       ])
 

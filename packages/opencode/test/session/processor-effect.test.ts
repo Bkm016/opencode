@@ -1455,3 +1455,69 @@ it.live("session.processor effect tests do not false-fire on a normal varied res
     { config: (url) => providerCfg(url) },
   ),
 )
+
+// 通过 step-start 注入请求元数据，验证 processor 会随 assistant 消息持久化。
+const injectedMetadataLLM = Layer.succeed(
+  LLM.Service,
+  LLM.Service.of({
+    stream: () =>
+      Stream.make(
+        LLMEvent.stepStart({
+          index: 0,
+          injectedTools: [
+            { name: "read", description: "Read a file", inputSchema: { type: "object", properties: {} } },
+          ],
+          injectedSystem: ["You are a coding agent.", "Today's date: 2025-01-01"],
+        }),
+        LLMEvent.textStart({ id: "text-1" }),
+        LLMEvent.textDelta({ id: "text-1", text: "ok" }),
+        LLMEvent.textEnd({ id: "text-1" }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ),
+  }),
+)
+const injectedMetadataEnv = LayerNode.compile(root, [...replacements, [LLM.node, injectedMetadataLLM]])
+const itInjectedMetadata = testEffect(injectedMetadataEnv)
+
+itInjectedMetadata.live("session.processor persists injectedSystem and injectedTools on the assistant message", () =>
+  provideTmpdirServer(
+    ({ dir }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "hi")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "hi" }],
+          tools: {},
+        })
+
+        expect(value).toBe("continue")
+        expect(handle.message.injectedSystem).toEqual(["You are a coding agent.", "Today's date: 2025-01-01"])
+        expect(handle.message.injectedTools).toHaveLength(1)
+        expect(handle.message.injectedTools?.[0]?.name).toBe("read")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)

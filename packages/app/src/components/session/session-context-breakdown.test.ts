@@ -30,7 +30,7 @@ describe("estimateSessionContextBreakdown", () => {
       messages,
       parts,
       input: 20,
-      systemPrompt: "system prompt",
+      systemPrompts: ["system prompt"],
     })
 
     const map = Object.fromEntries(output.segments.map((segment) => [segment.key, segment.tokens]))
@@ -65,12 +65,23 @@ describe("estimateSessionContextBreakdown", () => {
       messages,
       parts,
       input: 10,
-      systemPrompt: "z".repeat(200),
+      systemPrompts: ["z".repeat(200)],
     })
 
     const total = output.segments.reduce((sum, segment) => sum + segment.tokens, 0)
     expect(total).toBeLessThanOrEqual(10)
     expect(output.segments.every((segment) => segment.width <= 100)).toBeTrue()
+  })
+
+  test("aggregates every system block into one prompt row", () => {
+    const output = estimateSessionContextBreakdown({
+      messages: [],
+      parts: {},
+      input: 100,
+      systemPrompts: ["first paragraph\n\nsecond paragraph", "separate developer block"],
+    })
+
+    expect(output.prompts.filter((row) => row.kind === "system")).toHaveLength(1)
   })
 
   test("exposes tool ranking and reasoning details", () => {
@@ -174,5 +185,82 @@ describe("estimateSessionContextBreakdown", () => {
     expect(systemNames).toEqual(expect.arrayContaining(["section-1", "core/environment", "core/date", "instructions"]))
     expect(output.prompts.some((row) => row.kind === "user")).toBeTrue()
     expect(output.prompts.some((row) => row.kind === "synthetic")).toBeTrue()
+  })
+
+  test("uses inclusive context input (input + cache) as the breakdown budget denominator", () => {
+    const messages = [user("u1"), assistant("a1")]
+    const parts = {
+      u1: [{ type: "text", text: "hello world" }] as unknown as Part[],
+      a1: [{ type: "text", text: "assistant response" }] as unknown as Part[],
+    }
+
+    const inclusiveInput = 100
+
+    const output = estimateSessionContextBreakdown({
+      messages,
+      parts,
+      input: inclusiveInput,
+      systemPrompts: ["system prompt"],
+    })
+
+    const map = Object.fromEntries(output.segments.map((segment) => [segment.key, segment.tokens]))
+    expect(map.system).toBe(4)
+    expect(map.user).toBe(3)
+    expect(map.assistant).toBe(5)
+    expect(map.other).toBe(88)
+
+    const systemSeg = output.segments.find((segment) => segment.key === "system")
+    expect(systemSeg?.percent).toBe(4)
+    const otherSeg = output.segments.find((segment) => segment.key === "other")
+    expect(otherSeg?.percent).toBe(88)
+  })
+
+  test("keeps the parent user message while excluding the boundary assistant and later messages", () => {
+    const messages = [user("u1"), assistant("a1"), user("u2"), assistant("a2"), user("u3")]
+    const parts = {
+      u1: [{ type: "text", text: "first user" }] as unknown as Part[],
+      a1: [{ type: "text", text: "first assistant" }] as unknown as Part[],
+      u2: [{ type: "text", text: "second user" }] as unknown as Part[],
+      a2: [{ type: "text", text: "second assistant" }] as unknown as Part[],
+      u3: [{ type: "text", text: "later user that must not be counted" }] as unknown as Part[],
+    }
+
+    const output = estimateSessionContextBreakdown({
+      messages,
+      parts,
+      input: 100,
+      boundaryMessageID: "a2",
+    })
+
+    const map = Object.fromEntries(output.segments.map((segment) => [segment.key, segment.tokens]))
+    expect(map.user).toBe(6)
+    expect(map.assistant).toBe(4)
+    expect(map.assistant).not.toBe(8)
+  })
+
+  test("excludes the boundary assistant reasoning/text parts but includes earlier assistant content", () => {
+    const messages = [user("u1"), assistant("a1"), assistant("a2")]
+    const parts = {
+      u1: [{ type: "text", text: "prompt" }] as unknown as Part[],
+      a1: [
+        { type: "reasoning", text: "thinking about the prompt" },
+        { type: "text", text: "earlier answer" },
+      ] as unknown as Part[],
+      a2: [
+        { type: "reasoning", text: "thinking again" },
+        { type: "text", text: "current answer being displayed" },
+      ] as unknown as Part[],
+    }
+
+    const output = estimateSessionContextBreakdown({
+      messages,
+      parts,
+      input: 200,
+      boundaryMessageID: "a2",
+    })
+
+    const map = Object.fromEntries(output.segments.map((segment) => [segment.key, segment.tokens]))
+    expect(map.assistant).toBe(10)
+    expect(map.assistant).not.toBe(21)
   })
 })

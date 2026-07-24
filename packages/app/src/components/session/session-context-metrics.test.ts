@@ -96,4 +96,16 @@ describe("getSessionContext", () => {
 
     expect(ctx).toBeUndefined()
   })
+
+  test("contextInput is the inclusive prompt size (input + cache.read + cache.write)", () => {
+    const messages = [
+      assistant("a1", { input: 600, output: 200, reasoning: 100, read: 50, write: 50 }, 0.5),
+    ]
+    const providers = [{ id: "openai", models: {} }]
+
+    const ctx = getSessionContext(messages, providers)
+
+    expect(ctx?.contextInput).toBe(700)
+    expect(ctx?.input).toBe(600)
+  })
 })

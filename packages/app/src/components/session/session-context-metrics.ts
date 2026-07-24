@@ -20,14 +20,23 @@ type Context = {
   providerLabel: string
   modelLabel: string
   limit: number | undefined
+  /** 未缓存的输入 token，与“输入 token”统计项保持一致。 */
   input: number
   total: number
   usage: number | null
+  /**
+   * 完整输入上下文 = input + cache.read + cache.write，用作上下文拆分的总量。
+   */
+  contextInput: number
 }
 
 const tokenTotal = (msg: AssistantMessage) => {
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
 }
+
+/** 合并未缓存输入、缓存读取和缓存写入，得到完整输入上下文。 */
+const contextInputOf = (msg: AssistantMessage) =>
+  msg.tokens.input + msg.tokens.cache.read + msg.tokens.cache.write
 
 const lastAssistantWithTokens = (messages: Message[]) => {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -57,6 +66,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
     input: message.tokens.input,
     total,
     usage: limit ? Math.round((total / limit) * 100) : null,
+    contextInput: contextInputOf(message),
   }
 }
 

@@ -484,6 +484,18 @@ export const Assistant = Schema.Struct({
   finish: Schema.optional(Schema.String),
   /** 已知时，该 assistant turn 实际发送的最终 HTTP 请求体 UTF-8 字节数。 */
   requestBodyBytes: Schema.optional(NonNegativeInt),
+  /** 该 assistant turn 交给模型运行时的工具定义列表。 */
+  injectedTools: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        description: Schema.String,
+        inputSchema: Schema.Record(Schema.String, Schema.Unknown),
+      }),
+    ),
+  ),
+  /** 该 assistant turn 交给模型运行时的 system prompt 块；字符串兼容已持久化的早期格式。 */
+  injectedSystem: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.String])),
 }).annotate({ identifier: "AssistantMessage" })
 export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
   error?: AssistantError

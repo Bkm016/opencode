@@ -59,7 +59,6 @@ export type SessionContextBreakdownResult = {
   tools: SessionContextShare[]
 }
 
-const PREVIEW_MAX = 96
 const PREVIEW_LIMIT = 3
 
 const estimateTokens = (chars: number) => Math.ceil(chars / 4)
@@ -68,10 +67,7 @@ const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(t
 const scaleTokens = (tokens: number, scale: number) => Math.floor(tokens * scale)
 
 const previewText = (text: string) => {
-  const collapsed = text.replace(/\s+/g, " ").trim()
-  if (!collapsed) return ""
-  if (collapsed.length <= PREVIEW_MAX) return collapsed
-  return `${collapsed.slice(0, PREVIEW_MAX - 1)}…`
+  return text.trim()
 }
 
 const pushPreview = (list: string[], text: string) => {
@@ -231,37 +227,11 @@ const addAssistantPart = (assistant: Bucket, tool: Bucket, messageID: string, pa
   tool.tools.set(part.tool, current)
 }
 
-/** Label known system-context blocks; fall back to section-N. */
-const classifySystemSection = (text: string) => {
-  const head = text.trimStart()
-  if (head.startsWith("Here is some useful information about the environment")) return "core/environment"
-  if (head.startsWith("The environment you are running in is now:")) return "core/environment"
-  if (head.startsWith("Today's date")) return "core/date"
-  if (head.startsWith("Instructions from:")) return "instructions"
-  if (head.startsWith("<env>")) return "core/environment"
-  if (head.includes("Working directory:") && head.includes("</env>")) return "core/environment"
-  return undefined
-}
-
-const splitSystemPrompt = (text: string) => {
-  const blocks = text
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean)
+const systemPromptSections = (prompts: string[]) => {
+  const blocks = prompts.map((block) => block.trim()).filter(Boolean)
   if (blocks.length === 0) return [] as { key: string; chars: number; preview: string }[]
-
-  const counts = new Map<string, number>()
-  return blocks.map((block, index) => {
-    const classified = classifySystemSection(block)
-    const base = classified ?? `section-${index + 1}`
-    const n = (counts.get(base) ?? 0) + 1
-    counts.set(base, n)
-    return {
-      key: n > 1 ? `${base}#${n}` : base,
-      chars: block.length,
-      preview: previewText(block),
-    }
-  })
+  const text = blocks.join("\n")
+  return [{ key: "system", chars: text.length, preview: previewText(text) }]
 }
 
 const factsFromContent = (acc: ContentAcc, scale: number): SessionContextShareFact[] => {
@@ -444,8 +414,13 @@ const buildSegments = (
 export function estimateSessionContextBreakdown(args: {
   messages: Message[]
   parts: Record<string, Part[] | undefined>
+  /** 用作拆分总量的完整输入上下文：input + cache.read + cache.write。 */
   input: number
-  systemPrompt?: string
+  systemPrompts?: string[]
+  /**
+   * 指定后在该 assistant 消息前停止；该消息自身及后续消息不属于它的 provider 请求。
+   */
+  boundaryMessageID?: string
 }): SessionContextBreakdownResult {
   if (!args.input) return { segments: [], prompts: [], tools: [] }
 
@@ -453,12 +428,13 @@ export function estimateSessionContextBreakdown(args: {
   const assistant = emptyBucket()
   const tool = emptyBucket()
   const system = emptyBucket()
-  const systemSections = args.systemPrompt ? splitSystemPrompt(args.systemPrompt) : []
+  const systemSections = systemPromptSections(args.systemPrompts ?? [])
   system.chars = systemSections.reduce((sum, section) => sum + section.chars, 0)
-  if (system.chars === 0) system.chars = args.systemPrompt?.length ?? 0
   if (system.chars > 0) system.messages = Math.max(1, systemSections.length)
 
   for (const msg of args.messages) {
+    // 当前 assistant 的输出不属于自身请求，但它前面的父级用户消息必须保留。
+    if (args.boundaryMessageID !== undefined && msg.id === args.boundaryMessageID) break
     const parts = args.parts[msg.id] ?? []
     if (msg.role === "user") {
       user.messages += 1

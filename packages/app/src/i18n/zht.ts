@@ -492,6 +492,13 @@ export const dict = {
   "context.rawMessages.copy": "複製 JSON",
   "context.rawMessages.copied": "已複製",
 
+  "context.injectedTools.title": "注入工具",
+  "context.injectedTools.description": "該助手輪次實際傳送給模型的工具定義",
+  "context.injectedTools.empty": "該輪次未注入工具",
+  "context.injectedTools.unavailable": "該輪次未擷取工具定義（舊工作階段可能缺少此資料）",
+  "context.injectedTools.copySchema": "複製 Schema",
+  "context.injectedTools.copied": "已複製",
+
   "context.stats.session": "工作階段",
   "context.stats.messages": "訊息數",
   "context.stats.provider": "提供者",

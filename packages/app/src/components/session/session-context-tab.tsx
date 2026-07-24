@@ -8,6 +8,8 @@ import { Button } from "@opencode-ai/ui/button"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -129,9 +131,7 @@ function shareLabel(
   row: SessionContextShare,
   t: (key: string, vars?: Record<string, string>) => string,
 ) {
-  if (row.kind === "system") {
-    return t("context.breakdown.share.system", { name: row.name ?? "system" })
-  }
+  if (row.kind === "system") return t("context.breakdown.system")
   if (row.kind === "tool") return row.name ?? "tool"
   if (row.kind === "agent") return t("context.breakdown.share.agent")
   if (row.kind === "user") return t("context.breakdown.share.user")
@@ -158,6 +158,75 @@ function shareFactLabel(
   return t("context.breakdown.share.fact.preview", { text: fact.text })
 }
 
+function ShareDetailDialog(props: {
+  row: SessionContextShare
+  number: (value: number) => string
+  t: (key: string, vars?: Record<string, string>) => string
+  intl: string
+}) {
+  const label = shareLabel(props.row, props.t)
+  const meta = () => props.row.facts.filter((fact) => fact.kind !== "preview")
+  const previews = () => props.row.facts.filter((fact) => fact.kind === "preview")
+
+  return (
+    <Dialog
+      title={label}
+      description={props.t("context.breakdown.tooltip.tokens", {
+        tokens: props.number(props.row.tokens),
+        percent: props.row.percent.toLocaleString(props.intl),
+      })}
+      size="large"
+      class="!overflow-hidden h-[min(70vh,32rem)] min-h-0"
+    >
+      <div class="flex flex-col gap-4 px-4 pb-4 min-w-0 min-h-0 h-full overflow-hidden">
+        <div class="flex items-center gap-2 min-w-0 shrink-0">
+          <div class="size-2.5 shrink-0 rounded-sm" style={{ "background-color": SHARE_COLOR[props.row.kind] }} />
+          <div class="min-w-0 flex-1 text-12-regular text-text-strong truncate">{label}</div>
+          <Show when={props.row.count !== undefined}>
+            <div class="text-11-regular text-text-weaker tabular-nums shrink-0">
+              {props.t("context.breakdown.share.count", { count: props.number(props.row.count ?? 0) })}
+            </div>
+          </Show>
+          <div class="w-24 h-1.5 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
+            <div
+              class="h-full rounded-full"
+              style={{
+                width: `${Math.min(100, Math.max(props.row.percent, props.row.tokens > 0 ? 2 : 0))}%`,
+                "background-color": SHARE_COLOR[props.row.kind],
+              }}
+            />
+          </div>
+        </div>
+
+        <Show when={meta().length > 0}>
+          <div class="flex flex-col gap-1.5 shrink-0">
+            <div class="flex flex-wrap gap-x-3 gap-y-1 text-12-regular text-text-weak">
+              <For each={meta()}>{(fact) => <span>{shareFactLabel(fact, props.t, props.number)}</span>}</For>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={previews().length > 0}>
+          <div class="flex-1 min-h-0 min-w-0 overflow-hidden rounded-md border border-border-weak-base bg-background-base">
+            <ScrollView class="h-full min-w-0">
+              <For each={previews()}>
+                {(fact) => (
+                  <div class="min-w-0 px-3 py-2 border-b border-border-weak-base last:border-b-0">
+                    <Markdown
+                      text={fact.kind === "preview" ? fact.text : shareFactLabel(fact, props.t, props.number)}
+                      class="text-12-regular min-w-0 pl-3 pr-1 break-words [&_p]:whitespace-pre-wrap [&_li]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:break-words"
+                    />
+                  </div>
+                )}
+              </For>
+            </ScrollView>
+          </div>
+        </Show>
+      </div>
+    </Dialog>
+  )
+}
+
 function ShareList(props: {
   title: string
   empty: string
@@ -166,6 +235,14 @@ function ShareList(props: {
   t: (key: string, vars?: Record<string, string>) => string
   intl: string
 }) {
+  const dialog = useDialog()
+
+  const openRow = (row: SessionContextShare) => {
+    dialog.show(() => (
+      <ShareDetailDialog row={row} number={props.number} t={props.t} intl={props.intl} />
+    ))
+  }
+
   return (
     <div class="flex flex-col gap-2">
       <div class="text-12-regular text-text-weak">{props.title}</div>
@@ -173,54 +250,41 @@ function ShareList(props: {
         when={props.rows.length > 0}
         fallback={<div class="text-11-regular text-text-weaker">{props.empty}</div>}
       >
-        <div class="border border-border-base rounded-md bg-surface-base divide-y divide-border-weak-base">
+        <div class="border border-border-base rounded-md bg-background-base divide-y divide-border-weak-base overflow-hidden">
           <For each={props.rows}>
             {(row) => {
-              const meta = () => row.facts.filter((fact) => fact.kind !== "preview")
-              const previews = () => row.facts.filter((fact) => fact.kind === "preview")
+              const label = shareLabel(row, props.t)
               return (
-                <div class="flex flex-col gap-1 px-3 py-2">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <div class="size-2 shrink-0 rounded-sm" style={{ "background-color": SHARE_COLOR[row.kind] }} />
-                    <div class="min-w-0 flex-1 text-12-regular text-text-strong truncate">
-                      {shareLabel(row, props.t)}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  class="flex items-center gap-2 min-w-0 px-3 py-2 cursor-pointer hover:bg-surface-raised-base focus-visible:outline-none focus-visible:bg-surface-raised-base"
+                  onClick={() => openRow(row)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    openRow(row)
+                  }}
+                >
+                  <div class="size-2 shrink-0 rounded-sm" style={{ "background-color": SHARE_COLOR[row.kind] }} />
+                  <div class="min-w-0 flex-1 text-12-regular text-text-strong truncate">{label}</div>
+                  <Show when={row.count !== undefined}>
+                    <div class="text-11-regular text-text-weaker tabular-nums shrink-0">
+                      {props.t("context.breakdown.share.count", { count: props.number(row.count ?? 0) })}
                     </div>
-                    <Show when={row.count !== undefined}>
-                      <div class="text-11-regular text-text-weaker tabular-nums shrink-0">
-                        {props.t("context.breakdown.share.count", { count: props.number(row.count ?? 0) })}
-                      </div>
-                    </Show>
-                    <div class="text-11-regular text-text-weak tabular-nums shrink-0">
-                      {props.number(row.tokens)} · {row.percent.toLocaleString(props.intl)}%
-                    </div>
-                    <div class="w-16 h-1 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
-                      <div
-                        class="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(100, Math.max(row.percent, row.tokens > 0 ? 2 : 0))}%`,
-                          "background-color": SHARE_COLOR[row.kind],
-                        }}
-                      />
-                    </div>
+                  </Show>
+                  <div class="text-11-regular text-text-weak tabular-nums shrink-0">
+                    {props.number(row.tokens)} · {row.percent.toLocaleString(props.intl)}%
                   </div>
-                  <Show when={meta().length > 0}>
-                    <div class="flex flex-wrap gap-x-2 gap-y-0.5 pl-4 text-11-regular text-text-weaker">
-                      <For each={meta()}>
-                        {(fact) => <span>{shareFactLabel(fact, props.t, props.number)}</span>}
-                      </For>
-                    </div>
-                  </Show>
-                  <Show when={previews().length > 0}>
-                    <div class="flex flex-col gap-0.5 pl-4">
-                      <For each={previews()}>
-                        {(fact) => (
-                          <div class="text-11-regular text-text-weaker truncate" title={fact.kind === "preview" ? fact.text : undefined}>
-                            {shareFactLabel(fact, props.t, props.number)}
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
+                  <div class="w-16 h-1 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
+                    <div
+                      class="h-full rounded-full"
+                      style={{
+                        width: `${Math.min(100, Math.max(row.percent, row.tokens > 0 ? 2 : 0))}%`,
+                        "background-color": SHARE_COLOR[row.kind],
+                      }}
+                    />
+                  </div>
                 </div>
               )
             }}
@@ -397,6 +461,59 @@ function RawMessage(props: {
 
 const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
+type InjectedTool = { name: string; description: string; inputSchema: unknown }
+type AssistantWithInjectedTools = Extract<Message, { role: "assistant" }> & { injectedTools?: InjectedTool[] }
+type AssistantWithInjectedSystem = Extract<Message, { role: "assistant" }> & { injectedSystem?: string[] | string }
+
+function InjectedToolItem(props: {
+  tool: InjectedTool
+  t: (key: "context.injectedTools.copied" | "context.injectedTools.copySchema") => string
+}) {
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const schema = createMemo(() => JSON.stringify(props.tool.inputSchema, null, 2))
+
+  const copy = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(schema()).then(() => {
+      setCopied(true)
+      if (copiedTimer !== undefined) clearTimeout(copiedTimer)
+      copiedTimer = setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  onCleanup(() => {
+    if (copiedTimer !== undefined) clearTimeout(copiedTimer)
+  })
+
+  return (
+    <Accordion.Item value={props.tool.name}>
+      <StickyAccordionHeader>
+        <Accordion.Trigger>
+          <div class="flex items-center gap-2 w-full min-w-0">
+            <span class="shrink-0 text-11-medium font-mono text-text-strong">{props.tool.name}</span>
+            <span class="min-w-0 truncate text-12-regular text-text-weak">{props.tool.description}</span>
+            <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
+          </div>
+        </Accordion.Trigger>
+      </StickyAccordionHeader>
+      <Accordion.Content class="bg-background-base">
+        <div class="p-3 flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-11-regular text-text-weaker">{props.tool.description}</div>
+            <Button size="small" variant="ghost" class="shrink-0" onClick={copy}>
+              {copied() ? props.t("context.injectedTools.copied") : props.t("context.injectedTools.copySchema")}
+            </Button>
+          </div>
+          <pre class="text-11-regular font-mono text-text-strong whitespace-pre-wrap break-words select-text max-h-96 overflow-auto rounded-md border border-border-weak-base bg-background-base px-3 py-2">
+            {schema()}
+          </pre>
+        </div>
+      </Accordion.Content>
+    </Accordion.Item>
+  )
+}
 
 export function SessionContextTab() {
   const sync = useSync()
@@ -451,6 +568,12 @@ export function SessionContextTab() {
     if (message?.role !== "assistant") return
     return message.requestBodyBytes
   })
+  // 生成器恢复后可移除此局部扩展；SDK runtime 不会丢弃服务端返回的额外 JSON 字段。
+  const injectedTools = createMemo(() => (ctx()?.message as AssistantWithInjectedTools | undefined)?.injectedTools)
+  // 优先使用该 turn 实际注入的完整 system prompt；旧消息回退到历史 user.system。
+  const injectedSystem = createMemo(
+    () => (ctx()?.message as AssistantWithInjectedSystem | undefined)?.injectedSystem,
+  )
 
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
@@ -467,14 +590,24 @@ export function SessionContextTab() {
     }
   })
 
-  const systemPrompt = createMemo(() => {
+  const systemPrompts = createMemo(() => {
+    // 优先使用该 turn 记录的真实 system 块，旧消息再从 user.system 回退估算。
+    const captured = injectedSystem()
+    if (Array.isArray(captured)) {
+      const prompts = captured.filter((prompt) => prompt.trim())
+      if (prompts.length > 0) return prompts
+    }
+    if (captured?.trim()) {
+      return [captured]
+    }
     const msg = findLast(visibleUserMessages(), (m) => !!m.system)
     const system = msg?.system
-    if (!system) return
+    if (!system) return []
     const trimmed = system.trim()
-    if (!trimmed) return
-    return trimmed
+    if (!trimmed) return []
+    return [system]
   })
+  const systemPrompt = createMemo(() => systemPrompts().join("\n"))
 
   const providerLabel = createMemo(() => {
     const c = ctx()
@@ -492,16 +625,17 @@ export function SessionContextTab() {
 
   const breakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
+      () => [ctx()?.message.id, ctx()?.contextInput, messages().length, systemPrompts().join("\0")],
       () => {
         const c = ctx()
-        if (!c?.input) return emptyBreakdown
+        if (!c?.contextInput) return emptyBreakdown
         try {
           return estimateSessionContextBreakdown({
             messages: messages(),
             parts: sync().data.part as Record<string, Part[] | undefined>,
-            input: c.input,
-            systemPrompt: systemPrompt(),
+            input: c.contextInput,
+            systemPrompts: systemPrompts(),
+            boundaryMessageID: c.message.id,
           })
         } catch {
           return emptyBreakdown
@@ -623,7 +757,7 @@ export function SessionContextTab() {
       }}
       onScroll={handleScroll}
     >
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
@@ -674,7 +808,6 @@ export function SessionContextTab() {
                   )}
                 </For>
               </div>
-              <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
             </div>
 
             <div class="grid grid-cols-1 @[40rem]:grid-cols-2 gap-4">
@@ -698,16 +831,29 @@ export function SessionContextTab() {
           </div>
         </Show>
 
-        <Show when={systemPrompt()}>
-          {(prompt) => (
-            <div class="flex flex-col gap-2">
-              <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
-              <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
-                <Markdown text={prompt()} class="text-12-regular" />
-              </div>
-            </div>
-          )}
-        </Show>
+        <div class="flex flex-col gap-2">
+          <div class="text-12-regular text-text-weak">{language.t("context.injectedTools.title")}</div>
+          <Show
+            when={injectedTools()}
+            fallback={
+              <div class="text-11-regular text-text-weaker">{language.t("context.injectedTools.unavailable")}</div>
+            }
+          >
+            {(tools) => (
+              <Show
+                when={tools().length > 0}
+                fallback={
+                  <div class="text-11-regular text-text-weaker">{language.t("context.injectedTools.empty")}</div>
+                }
+              >
+                <div class="text-11-regular text-text-weaker">{language.t("context.injectedTools.description")}</div>
+                <Accordion multiple>
+                  <For each={tools()}>{(tool) => <InjectedToolItem tool={tool} t={language.t} />}</For>
+                </Accordion>
+              </Show>
+            )}
+          </Show>
+        </div>
 
         <div class="flex flex-col gap-2">
           <div class="text-12-regular text-text-weak">{language.t("context.rawMessages.title")}</div>

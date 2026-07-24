@@ -175,6 +175,15 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+
+  /* BasicTool 默认按内容收缩，任务卡需要等宽铺满列表。 */
+  [data-slot="basic-tool-tool-trigger-content"],
+  [data-slot="basic-tool-tool-info"] {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
 }
 
 [data-component="task-tool-card"] {

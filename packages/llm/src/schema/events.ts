@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { ContentBlockID, FinishReason, JsonSchema, ProtocolID, ProviderMetadata, RouteID, ToolCallID } from "./ids"
+import { ContentBlockID, FinishReason, ProtocolID, ProviderMetadata, RouteID, ToolCallID } from "./ids"
 import { ModelSchema } from "./options"
 import { Message, ToolCallPart, ToolOutput, ToolResultPart, ToolResultValue, type ContentPart } from "./messages"
 import { ProviderFailureClassification } from "./errors"
@@ -75,22 +75,11 @@ export class Usage extends Schema.Class<Usage>("LLM.Usage")({
 
 export type UsageInput = Usage | ConstructorParameters<typeof Usage>[0]
 
-export const InjectedToolDefinition = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  inputSchema: JsonSchema,
-}).annotate({ identifier: "LLM.Event.InjectedToolDefinition" })
-export type InjectedToolDefinition = Schema.Schema.Type<typeof InjectedToolDefinition>
-
 export const StepStart = Schema.Struct({
   type: Schema.tag("step-start"),
   index: Schema.Number,
   /** 已知时，实际发送给 provider 的最终 HTTP 请求体 UTF-8 字节数。 */
   requestBodyBytes: Schema.optional(Schema.Number),
-  /** 该 provider turn 交给模型运行时的工具定义。 */
-  injectedTools: Schema.optional(Schema.Array(InjectedToolDefinition)),
-  /** 该 provider turn 交给模型运行时的 system prompt 块；字符串兼容升级期间已生成的事件。 */
-  injectedSystem: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.String])),
 }).annotate({ identifier: "LLM.Event.StepStart" })
 export type StepStart = Schema.Schema.Type<typeof StepStart>
 

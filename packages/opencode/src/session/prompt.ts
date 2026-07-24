@@ -95,6 +95,16 @@ export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
+  readonly systemPrompt: (
+    sessionID: SessionID,
+  ) => Effect.Effect<
+    string[],
+    | Session.NotFound
+    | Provider.ModelNotFoundError
+    | Provider.DefaultModelError
+    | FSUtil.Error
+    | NamedError
+  >
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
@@ -1159,6 +1169,75 @@ const layer = Layer.effect(
         .replace("${timeUsedSeconds}", () => goal.timeUsedSeconds.toString())
     }
 
+    // 模型执行与 preview 共用可动态重建的 provider turn system 块。
+    const providerTurnSystem = Effect.fn("SessionPrompt.providerTurnSystem")(function* (input: {
+      agent: Agent.Info
+      session: Session.Info
+      format?: SessionV1.Format
+      goal?: Goal.Info
+    }) {
+      const cfg = yield* config.get()
+      const [skills, env, instructions, mcpInstructions] = yield* Effect.all([
+        sys.skills(input.agent),
+        sys.environment(),
+        instruction.system(),
+        sys.mcp(input.agent, input.session.permission),
+      ])
+      const system = [
+        ...env,
+        ...instructions,
+        ...(mcpInstructions ? [mcpInstructions] : []),
+        ...(skills ? [skills] : []),
+        ...(input.session.parentID ? [PromptCatalog.resolve("session.subagent_workspace", cfg.prompts)] : []),
+      ]
+      if (input.goal) {
+        // 注入 Goal Contract + lessons + budget reminder
+        system.push(buildGoalSystemPrompt(input.goal, cfg.prompts))
+        const lessons = buildLessonsPrompt(yield* goalSvc.lessons(input.goal.goalID), cfg.prompts)
+        if (lessons) system.push(lessons)
+        const budget = buildBudgetReminder(input.goal, cfg.prompts)
+        if (budget) system.push(budget)
+      }
+      if (input.format?.type === "json_schema") {
+        system.push(PromptCatalog.resolve("runtime.structured_output_system", cfg.prompts))
+      }
+      return system
+    })
+
+    const systemPrompt = Effect.fn("SessionPrompt.systemPrompt")(function* (sessionID: SessionID) {
+      const session = yield* sessions.get(sessionID)
+      const msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+        Effect.provideService(Database.Service, database),
+      )
+      const lastUser = MessageV2.latest(msgs).user
+      const agentName = lastUser?.agent ?? session.agent
+      const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+      if (!agent) {
+        return yield* Effect.fail(new NamedError.Unknown({ message: `Agent not found: "${agentName}".` }))
+      }
+      const modelRef =
+        lastUser?.model ??
+        (session.model
+          ? { providerID: session.model.providerID, modelID: session.model.id }
+          : yield* provider.defaultModel())
+      const model = yield* provider.getModel(modelRef.providerID, modelRef.modelID)
+      const currentGoal = yield* goalSvc.get(sessionID)
+      const system = yield* providerTurnSystem({
+        agent,
+        session,
+        format: lastUser?.format,
+        goal: currentGoal?.status === "active" ? currentGoal : undefined,
+      })
+      const cfg = yield* config.get()
+      return SystemPrompt.assemble({
+        model,
+        agent,
+        system,
+        userSystem: lastUser?.system,
+        prompts: cfg.prompts,
+      })
+    })
+
     const createGoalContinuation = Effect.fn("SessionPrompt.createGoalContinuation")(function* (
       sessionID: SessionID,
       goal: Goal.Info,
@@ -1377,20 +1456,6 @@ const layer = Layer.effect(
           const capturedGoal = yield* goalSvc.get(sessionID)
           const goalIsActive = capturedGoal && capturedGoal.status === "active"
 
-          // 注入 Goal Contract + lessons + budget reminder
-          const goalReminderParts: string[] = []
-          if (goalIsActive) {
-            const cfg = yield* config.get()
-            goalReminderParts.push(buildGoalSystemPrompt(capturedGoal!, cfg.prompts))
-            const activeLessons = yield* goalSvc.lessons(capturedGoal!.goalID)
-            const lessonsPrompt = buildLessonsPrompt(activeLessons, cfg.prompts)
-            if (lessonsPrompt) goalReminderParts.push(lessonsPrompt)
-            if (capturedGoal!.tokenBudget !== undefined && capturedGoal!.tokenBudget > 0) {
-              const budgetPrompt = buildBudgetReminder(capturedGoal!, cfg.prompts)
-              if (budgetPrompt) goalReminderParts.push(budgetPrompt)
-            }
-          }
-
           const msg: SessionV1.Assistant = {
             id: MessageID.ascending(),
             parentID: lastUser.id,
@@ -1471,25 +1536,16 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
-              sys.environment(),
-              instruction.system().pipe(Effect.orDie),
-              sys.mcp(agent, session.permission),
+            const [system, modelMsgs] = yield* Effect.all([
+              providerTurnSystem({
+                agent,
+                session,
+                format: lastUser.format,
+                goal: goalIsActive ? capturedGoal : undefined,
+              }).pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [
-              ...env,
-              ...instructions,
-              ...(mcpInstructions ? [mcpInstructions] : []),
-              ...(skills ? [skills] : []),
-              ...(session.parentID ? [PromptCatalog.resolve("session.subagent_workspace", cfg.prompts)] : []),
-              ...goalReminderParts,
-            ]
             const format = lastUser.format ?? { type: "text" as const }
-            if (format.type === "json_schema") {
-              system.push(PromptCatalog.resolve("runtime.structured_output_system", cfg.prompts))
-            }
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1828,6 +1884,7 @@ const layer = Layer.effect(
       cancel,
       prompt,
       loop,
+      systemPrompt,
       shell,
       command,
       resolvePromptParts,

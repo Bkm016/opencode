@@ -6,7 +6,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { asSchema, streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import { LLMEvent } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
@@ -29,7 +29,6 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
-import { isRecord } from "@/util/record"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -112,21 +111,6 @@ const live: Layer.Layer<
         flags,
         isWorkflow,
       })
-      // 直接读取最终 prepared.tools，确保权限过滤、MCP 与 provider 兼容工具均按本轮请求记录。
-      const injectedTools = Object.entries(prepared.tools).map(([name, tool]) => {
-        const schema =
-          isRecord(tool.inputSchema) && isRecord(tool.inputSchema.jsonSchema)
-            ? tool.inputSchema.jsonSchema
-            : asSchema(tool.inputSchema).jsonSchema
-        return {
-          name,
-          description: tool.description ?? "",
-          inputSchema: isRecord(schema) ? schema : {},
-        }
-      })
-      // 原样保留 LLMRequestPrep 生成的 system 块，避免展示时丢失 provider 请求边界。
-      const injectedSystem = prepared.system
-
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
       // and results sent back over the WebSocket.
@@ -261,14 +245,8 @@ const live: Layer.Layer<
             "llm.provider": input.model.providerID,
             "llm.model": input.model.id,
           })
-          // 原生 runtime 的 step-start 由协议 lifecycle 生成，此处补入同一请求的上下文元数据。
-          const stream = native.stream.pipe(
-            Stream.map((event) =>
-              event.type === "step-start"
-                ? LLMEvent.stepStart({ ...event, injectedTools, injectedSystem })
-                : event,
-            ),
-          )
+          // 原生 runtime 的 step-start 由协议 lifecycle 生成，此处原样透传。
+          const stream = native.stream
           return {
             type: "native" as const,
             stream,
@@ -300,9 +278,6 @@ const live: Layer.Layer<
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
       // 状态需覆盖 middleware 与事件适配器，确保 start-step 携带 provider 已序列化的真实 body 大小。
       const state = LLMAISDK.adapterState()
-      // AI SDK 通过 activeTools 排除仅用于失败修复的 invalid，记录时必须使用相同集合。
-      state.injectedTools = injectedTools.filter((tool) => tool.name !== "invalid")
-      state.injectedSystem = injectedSystem
       return {
         type: "ai-sdk" as const,
         state,

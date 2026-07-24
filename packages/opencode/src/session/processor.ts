@@ -501,25 +501,6 @@ const layer = Layer.effect(
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
             if (value.requestBodyBytes !== undefined) {
               ctx.assistantMessage.requestBodyBytes = value.requestBodyBytes
-            }
-            // 保留该 turn 实际注入的工具定义；与 requestBodyBytes 同步写入 assistant 消息。
-            if (value.injectedTools !== undefined) {
-              ctx.assistantMessage.injectedTools = value.injectedTools.map((tool) => ({
-                ...tool,
-                inputSchema: { ...tool.inputSchema },
-              }))
-            }
-            // 保留该 turn 的 system prompt 块；与 injectedTools 同步写入 assistant 消息。
-            if (value.injectedSystem !== undefined) {
-              ctx.assistantMessage.injectedSystem = Array.isArray(value.injectedSystem)
-                ? [...value.injectedSystem]
-                : [value.injectedSystem]
-            }
-            if (
-              value.requestBodyBytes !== undefined ||
-              value.injectedTools !== undefined ||
-              value.injectedSystem !== undefined
-            ) {
               yield* session.updateMessage(ctx.assistantMessage)
             }
             yield* session.updatePart({

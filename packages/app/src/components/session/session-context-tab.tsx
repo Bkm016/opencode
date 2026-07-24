@@ -1,4 +1,4 @@
-import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createResource, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
 import { findLast } from "@opencode-ai/core/util/array"
@@ -471,11 +471,10 @@ function RawMessage(props: {
 const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
 type InjectedTool = { name: string; description: string; inputSchema: unknown }
-type AssistantWithInjectedTools = Extract<Message, { role: "assistant" }> & { injectedTools?: InjectedTool[] }
-type AssistantWithInjectedSystem = Extract<Message, { role: "assistant" }> & { injectedSystem?: string[] | string }
 
 function InjectedToolItem(props: {
   tool: InjectedTool
+  opened: boolean
   t: (key: "context.injectedTools.copied" | "context.injectedTools.copySchema") => string
 }) {
   const [copied, setCopied] = createSignal(false)
@@ -508,17 +507,23 @@ function InjectedToolItem(props: {
         </Accordion.Trigger>
       </StickyAccordionHeader>
       <Accordion.Content class="bg-background-base">
-        <div class="p-3 flex flex-col gap-2">
-          <div class="flex items-center justify-between gap-2">
-            <div class="text-11-regular text-text-weaker">{props.tool.description}</div>
-            <Button size="small" variant="ghost" class="shrink-0" onClick={copy}>
-              {copied() ? props.t("context.injectedTools.copied") : props.t("context.injectedTools.copySchema")}
-            </Button>
+        <Show when={props.opened}>
+          <div class="p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-11-regular text-text-weaker">{props.tool.description}</div>
+              <Button size="small" variant="ghost" class="shrink-0" onClick={copy}>
+                {copied() ? props.t("context.injectedTools.copied") : props.t("context.injectedTools.copySchema")}
+              </Button>
+            </div>
+            <ScrollView class="max-h-96">
+              <Markdown
+                text={`\`\`\`json\n${schema()}\n\`\`\``}
+                cacheKey={`context-injected-tool:${props.tool.name}`}
+                class="text-11-regular select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_[data-slot=markdown-copy-button]]:hidden"
+              />
+            </ScrollView>
           </div>
-          <pre class="text-11-regular font-mono text-text-strong whitespace-pre-wrap break-words select-text max-h-96 overflow-auto rounded-md border border-border-weak-base bg-background-base px-3 py-2">
-            {schema()}
-          </pre>
-        </div>
+        </Show>
       </Accordion.Content>
     </Accordion.Item>
   )
@@ -577,11 +582,55 @@ export function SessionContextTab() {
     if (message?.role !== "assistant") return
     return message.requestBodyBytes
   })
-  // 生成器恢复后可移除此局部扩展；SDK runtime 不会丢弃服务端返回的额外 JSON 字段。
-  const injectedTools = createMemo(() => (ctx()?.message as AssistantWithInjectedTools | undefined)?.injectedTools)
-  // 优先使用该 turn 实际注入的完整 system prompt；旧消息回退到历史 user.system。
-  const injectedSystem = createMemo(
-    () => (ctx()?.message as AssistantWithInjectedSystem | undefined)?.injectedSystem,
+  const [injectedTools] = createResource(
+    () => ctx()?.message.id,
+    () => {
+      const message = ctx()?.message
+      if (!message?.providerID || !message.modelID) return
+      return sdk()
+        .client.tool.list({ provider: message.providerID, model: message.modelID })
+        .then((result) =>
+          (result.data ?? []).map((item) => ({
+            name: item.id,
+            description: item.description,
+            inputSchema: item.parameters,
+          })),
+        )
+        .catch(() => undefined)
+    },
+  )
+  const fallbackSystemPrompts = createMemo(() => {
+    const msg = findLast(visibleUserMessages(), (message) => !!message.system)
+    const system = msg?.system
+    if (!system?.trim()) return []
+    return [system]
+  })
+  const systemPromptPreviewKey = createMemo(
+    () => {
+      const sessionID = params.id
+      const messageID = ctx()?.message.id
+      if (!sessionID || !messageID) return
+      const session = info()
+      return [
+        sdk().directory,
+        sessionID,
+        messageID,
+        session?.agent,
+        session?.model?.providerID,
+        session?.model?.id,
+        session?.model?.variant,
+      ] as const
+    },
+    undefined,
+    { equals: same },
+  )
+  const [systemPromptPreview] = createResource(
+    systemPromptPreviewKey,
+    ([, sessionID]) =>
+      sdk()
+        .client.experimental.session.systemPrompt({ sessionID })
+        .then((result) => result.data)
+        .catch(() => undefined),
   )
 
   const cost = createMemo(() => {
@@ -599,23 +648,7 @@ export function SessionContextTab() {
     }
   })
 
-  const systemPrompts = createMemo(() => {
-    // 优先使用该 turn 记录的真实 system 块，旧消息再从 user.system 回退估算。
-    const captured = injectedSystem()
-    if (Array.isArray(captured)) {
-      const prompts = captured.filter((prompt) => prompt.trim())
-      if (prompts.length > 0) return prompts
-    }
-    if (captured?.trim()) {
-      return [captured]
-    }
-    const msg = findLast(visibleUserMessages(), (m) => !!m.system)
-    const system = msg?.system
-    if (!system) return []
-    const trimmed = system.trim()
-    if (!trimmed) return []
-    return [system]
-  })
+  const systemPrompts = createMemo(() => systemPromptPreview() ?? fallbackSystemPrompts())
   const systemPrompt = createMemo(() => systemPrompts().join("\n"))
 
   const providerLabel = createMemo(() => {
@@ -695,6 +728,7 @@ export function SessionContextTab() {
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
   let pending: { x: number; y: number } | undefined
+  const [expandedTools, setExpandedTools] = createSignal<string[]>([])
   const [expanded, setExpanded] = createSignal<string[]>([])
   const getParts = (id: string) => (sync().data.part[id] ?? []) as Part[]
 
@@ -856,8 +890,20 @@ export function SessionContextTab() {
                 }
               >
                 <div class="text-11-regular text-text-weaker">{language.t("context.injectedTools.description")}</div>
-                <Accordion multiple>
-                  <For each={tools()}>{(tool) => <InjectedToolItem tool={tool} t={language.t} />}</For>
+                <Accordion
+                  multiple
+                  value={expandedTools()}
+                  onChange={(value) => setExpandedTools(Array.isArray(value) ? value : value ? [value] : [])}
+                >
+                  <For each={tools()}>
+                    {(tool) => (
+                      <InjectedToolItem
+                        tool={tool}
+                        opened={expandedTools().includes(tool.name)}
+                        t={language.t}
+                      />
+                    )}
+                  </For>
                 </Accordion>
               </Show>
             )}

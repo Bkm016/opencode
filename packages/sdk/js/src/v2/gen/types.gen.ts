@@ -2329,6 +2329,8 @@ export type GlobalSession = {
   project: ProjectSummary | null
 }
 
+export type SystemPromptPreview = Array<string>
+
 export type McpResource = {
   name: string
   uri: string
@@ -8187,6 +8189,38 @@ export type ExperimentalSessionBackgroundResponses = {
 
 export type ExperimentalSessionBackgroundResponse =
   ExperimentalSessionBackgroundResponses[keyof ExperimentalSessionBackgroundResponses]
+
+export type ExperimentalSessionSystemPromptData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/system-prompt"
+}
+
+export type ExperimentalSessionSystemPromptErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ExperimentalSessionSystemPromptError =
+  ExperimentalSessionSystemPromptErrors[keyof ExperimentalSessionSystemPromptErrors]
+
+export type ExperimentalSessionSystemPromptResponses = {
+  /**
+   * System prompt preview
+   */
+  200: SystemPromptPreview
+}
+
+export type ExperimentalSessionSystemPromptResponse =
+  ExperimentalSessionSystemPromptResponses[keyof ExperimentalSessionSystemPromptResponses]
 
 export type ExperimentalResourceListData = {
   body?: never

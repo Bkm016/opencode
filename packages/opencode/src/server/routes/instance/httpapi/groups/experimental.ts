@@ -54,6 +54,7 @@ const ToolListItem = Schema.Struct({
   parameters: Schema.Unknown,
 }).annotate({ identifier: "ToolListItem" })
 const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
+const SystemPromptPreview = Schema.Array(Schema.String).annotate({ identifier: "SystemPromptPreview" })
 export const ToolListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   provider: ProviderV2.ID,
@@ -176,6 +177,7 @@ export const ExperimentalPaths = {
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
+  sessionSystemPrompt: "/experimental/session/:sessionID/system-prompt",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
   storage: "/experimental/storage",
@@ -324,6 +326,19 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "Background subagents",
             description:
               "Detach any synchronous subagents currently blocking the session and continue them in the background.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionSystemPrompt", ExperimentalPaths.sessionSystemPrompt, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(SystemPromptPreview, "System prompt preview"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.systemPrompt",
+            summary: "Preview system prompt",
+            description:
+              "Dynamically build the current system prompt for a session without creating messages or invoking a model.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

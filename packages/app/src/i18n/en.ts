@@ -534,10 +534,9 @@ export const dict = {
   "context.rawMessages.copied": "Copied",
 
   "context.injectedTools.title": "Injected tools",
-  "context.injectedTools.description": "Actual tool definitions sent to the model for this assistant turn",
-  "context.injectedTools.empty": "No tools were injected for this turn",
-  "context.injectedTools.unavailable":
-    "Tool definitions were not captured for this turn (older sessions may lack this data)",
+  "context.injectedTools.description": "Tool definitions currently available from the backend for the selected model",
+  "context.injectedTools.empty": "No tools are currently available",
+  "context.injectedTools.unavailable": "Could not load tool definitions from the backend",
   "context.injectedTools.copySchema": "Copy schema",
   "context.injectedTools.copied": "Copied",
 

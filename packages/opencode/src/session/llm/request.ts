@@ -58,15 +58,13 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
   const config = yield* Config.Service
   const cfg = yield* config.get()
-  const system = [
-    [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model, cfg.prompts)),
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
-      .filter((x) => x)
-      .join("\n"),
-  ]
+  const system = SystemPrompt.assemble({
+    model: input.model,
+    agent: input.agent,
+    system: input.system,
+    userSystem: input.user.system,
+    prompts: cfg.prompts,
+  })
 
   const header = system[0]
   yield* input.plugin.trigger(

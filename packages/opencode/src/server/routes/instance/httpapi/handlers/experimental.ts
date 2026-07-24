@@ -7,6 +7,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
+import { SessionPrompt } from "@/session/prompt"
 import { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
@@ -165,6 +166,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const registry = yield* ToolRegistry.Service
     const worktreeSvc = yield* Worktree.Service
     const sessions = yield* Session.Service
+    const sessionPrompt = yield* SessionPrompt.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
     const { db } = yield* Database.Service
@@ -340,6 +342,14 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       )
       const promoted = yield* Effect.forEach(jobs, (job) => background.promote(job.id), { concurrency: "unbounded" })
       return promoted.some((job) => job !== undefined)
+    })
+
+    const sessionSystemPrompt = Effect.fn("ExperimentalHttpApi.sessionSystemPrompt")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      return yield* sessionPrompt
+        .systemPrompt(ctx.params.sessionID)
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
     })
 
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
@@ -562,6 +572,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
+      .handle("sessionSystemPrompt", sessionSystemPrompt)
       .handle("resource", resource)
       .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)

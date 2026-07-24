@@ -32,6 +32,25 @@ export function provider(model: Provider.Model, prompts?: Record<string, string>
   return [PromptCatalog.resolve("system.default", prompts)]
 }
 
+// 模型请求与只读预览共用同一基础拼装顺序，避免两条路径漂移。
+export function assemble(input: {
+  model: Provider.Model
+  agent: Agent.Info
+  system: string[]
+  userSystem?: string
+  prompts?: Record<string, string>
+}) {
+  return [
+    [
+      ...(input.agent.prompt ? [input.agent.prompt] : provider(input.model, input.prompts)),
+      ...input.system,
+      ...(input.userSystem ? [input.userSystem] : []),
+    ]
+      .filter((part) => part)
+      .join("\n"),
+  ]
+}
+
 export interface Interface {
   readonly environment: () => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>

@@ -483,7 +483,7 @@ export function getToolInfo(
         title: i18n.t("ui.tool.read"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
       }
-    case "list":
+    case "list_dir":
       return {
         icon: "bullet-list",
         title: i18n.t("ui.tool.list"),
@@ -684,7 +684,7 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
+const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list_dir"])
 const HIDDEN_TOOLS = new Set(["todowrite"])
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
@@ -964,10 +964,10 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
         args,
       }
     }
-    case "list":
+    case "list_dir":
       return {
         title: i18n.t("ui.tool.list"),
-        subtitle: getDirectory(path),
+        subtitle: getDirectory((typeof input.path === "string" && input.path) || path || "/"),
       }
     case "glob":
       return {
@@ -999,7 +999,7 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
 function contextToolSummary(parts: ToolPart[]) {
   const read = parts.filter((part) => part.tool === "read").length
   const search = parts.filter((part) => part.tool === "glob" || part.tool === "grep").length
-  const list = parts.filter((part) => part.tool === "list").length
+  const list = parts.filter((part) => part.tool === "list_dir").length
   return { read, search, list }
 }
 
@@ -1985,30 +1985,33 @@ ToolRegistry.register({
   },
 })
 
+function ListDirToolRender(props: ToolProps) {
+  const i18n = useI18n()
+  const directory = (typeof props.input.path === "string" && props.input.path) || "/"
+  return (
+    <BasicTool
+      {...props}
+      icon="bullet-list"
+      trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(directory) }}
+    >
+      <Show when={props.output}>
+        <div
+          data-component="tool-output"
+          data-scrollable
+          tabIndex={0}
+          role="region"
+          aria-label={i18n.t("ui.scrollView.ariaLabel")}
+        >
+          <Markdown text={props.output!} />
+        </div>
+      </Show>
+    </BasicTool>
+  )
+}
+
 ToolRegistry.register({
-  name: "list",
-  render(props) {
-    const i18n = useI18n()
-    return (
-      <BasicTool
-        {...props}
-        icon="bullet-list"
-        trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(props.input.path || "/") }}
-      >
-        <Show when={props.output}>
-          <div
-            data-component="tool-output"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
-            <Markdown text={props.output!} />
-          </div>
-        </Show>
-      </BasicTool>
-    )
-  },
+  name: "list_dir",
+  render: ListDirToolRender,
 })
 
 ToolRegistry.register({

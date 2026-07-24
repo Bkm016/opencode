@@ -1,0 +1,5 @@
+- List entries in a directory page (names only; directories end with /)
+- Prefer this over shell ls/dir for browsing project directories
+- Relative paths resolve from the project directory; omit path to list the project root
+- Use offset/limit to page large directories
+- Returns a concise newline-separated listing

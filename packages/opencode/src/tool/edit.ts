@@ -6,6 +6,7 @@
 import * as path from "path"
 import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
+import { InputAlias } from "./input-aliases"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffArrays, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
@@ -66,6 +67,8 @@ export const EditTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
+      // Accepted at the execute boundary only; model-facing schema stays canonical.
+      inputAliases: InputAlias.edit,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           if (!params.filePath) {

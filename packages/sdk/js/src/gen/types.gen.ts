@@ -1392,6 +1392,16 @@ export type ToolListItem = {
   id: string
   description: string
   parameters: unknown
+  /**
+   * Runtime-only tool name aliases accepted at the execute boundary.
+   */
+  nameAliases?: Array<string>
+  /**
+   * Runtime-only input key aliases mapped to canonical parameter names.
+   */
+  inputAliases?: {
+    [key: string]: string
+  }
 }
 
 export type ToolList = Array<ToolListItem>

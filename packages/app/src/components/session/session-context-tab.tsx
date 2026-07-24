@@ -470,10 +470,20 @@ function RawMessage(props: {
 
 const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
-type InjectedTool = { name: string; description: string; inputSchema: unknown }
+type InjectedTool = {
+  name: string
+  description: string
+  inputSchema: unknown
+  nameAliases?: string[]
+  inputAliases?: Record<string, string>
+}
 
 function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
+  const language = useLanguage()
   const schema = createMemo(() => JSON.stringify(props.tool.inputSchema, null, 2))
+  const nameAliases = createMemo(() => props.tool.nameAliases?.filter(Boolean) ?? [])
+  const inputAliases = createMemo(() => Object.entries(props.tool.inputAliases ?? {}))
+  const hasAliases = createMemo(() => nameAliases().length > 0 || inputAliases().length > 0)
 
   return (
     <Accordion.Item value={props.tool.name}>
@@ -500,6 +510,25 @@ function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
                 </div>
               </ScrollView>
             </div>
+            <Show when={hasAliases()}>
+              <div class="rounded-md border border-border-weaker-base bg-background-stronger px-3 py-2 flex flex-col gap-1.5">
+                <div class="text-11-medium text-text-weak">{language.t("context.injectedTools.aliases")}</div>
+                <Show when={nameAliases().length > 0}>
+                  <div class="text-11-regular font-mono text-text-weaker">
+                    <span class="text-text-weak">{language.t("context.injectedTools.nameAliases")}: </span>
+                    {nameAliases().join(", ")}
+                  </div>
+                </Show>
+                <Show when={inputAliases().length > 0}>
+                  <div class="text-11-regular font-mono text-text-weaker">
+                    <span class="text-text-weak">{language.t("context.injectedTools.inputAliases")}: </span>
+                    {inputAliases()
+                      .map(([alias, canonical]) => `${alias} → ${canonical}`)
+                      .join(", ")}
+                  </div>
+                </Show>
+              </div>
+            </Show>
             <div class="rounded-md border border-border-weaker-base bg-background-stronger">
               <ScrollView class="max-h-96">
                 <Markdown
@@ -581,6 +610,8 @@ export function SessionContextTab() {
             name: item.id,
             description: item.description,
             inputSchema: item.parameters,
+            nameAliases: item.nameAliases,
+            inputAliases: item.inputAliases,
           })),
         )
         .catch(() => undefined)

@@ -276,6 +276,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         id: item.id,
         description: item.description,
         parameters: ToolJsonSchema.fromTool(item),
+        ...(item.nameAliases?.length ? { nameAliases: [...item.nameAliases] } : {}),
+        ...(item.inputAliases ? { inputAliases: { ...item.inputAliases } } : {}),
       }))
     })
 

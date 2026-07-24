@@ -53,6 +53,9 @@ const ToolListItem = Schema.Struct({
   id: Schema.String,
   description: Schema.String,
   parameters: Schema.Unknown,
+  // Runtime-only aliases accepted at the execute boundary; not part of model schema.
+  nameAliases: Schema.optional(Schema.Array(Schema.String)),
+  inputAliases: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }).annotate({ identifier: "ToolListItem" })
 const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
 const SystemPromptPreview = Schema.Array(Schema.String).annotate({ identifier: "SystemPromptPreview" })

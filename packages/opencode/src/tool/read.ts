@@ -2,6 +2,7 @@ import { Effect, Option, Schema, Scope, Stream } from "effect"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as path from "path"
 import * as Tool from "./tool"
+import { InputAlias } from "./input-aliases"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { LSP } from "@/lsp/lsp"
 import DESCRIPTION from "./read.txt"
@@ -379,6 +380,8 @@ export const ReadTool = Tool.define<
     return {
       description: DESCRIPTION,
       parameters: Parameters,
+      // Accepted at the execute boundary only; model-facing schema stays canonical.
+      inputAliases: InputAlias.read,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         run(params, ctx).pipe(Effect.orDie),
     }

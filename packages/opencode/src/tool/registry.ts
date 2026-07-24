@@ -10,6 +10,7 @@ import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
+import { ListDirTool } from "./list-dir"
 import { ReadTool } from "./read"
 import { ProjectTaskTool, TaskTool } from "./task"
 import {
@@ -114,6 +115,7 @@ const layer = Layer.effect(
     const taskAsyncAbort = yield* TaskAsyncAbortTool
     const taskAsyncFollowup = yield* TaskAsyncFollowupTool
     const read = yield* ReadTool
+    const listDir = yield* ListDirTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
@@ -225,6 +227,7 @@ const layer = Layer.effect(
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
           read: Tool.init(read),
+          list_dir: Tool.init(listDir),
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
@@ -255,6 +258,7 @@ const layer = Layer.effect(
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
+            tool.list_dir,
             tool.glob,
             tool.grep,
             tool.edit,
@@ -381,6 +385,8 @@ const layer = Layer.effect(
               .join("\n"),
             parameters: output.parameters,
             jsonSchema,
+            inputAliases: tool.inputAliases,
+            nameAliases: tool.nameAliases,
             execute: tool.execute,
             formatValidationError: tool.formatValidationError,
           }

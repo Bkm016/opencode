@@ -7,6 +7,7 @@ import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
+import { ToolNameAlias } from "@/tool/name-alias"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 
@@ -104,16 +105,28 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         .pipe(Effect.orDie),
   })
 
+  const nameAliases: Record<string, string> = {}
+  const inputAliases: Record<string, Readonly<Record<string, string>>> = {}
   for (const item of yield* registry.tools({
     modelID: ModelV2.ID.make(input.model.api.id),
     providerID: input.model.providerID,
     agent: input.agent,
     permission: input.session.permission,
   })) {
+    for (const alias of item.nameAliases ?? []) {
+      nameAliases[alias] = item.id
+      nameAliases[alias.toLowerCase()] = item.id
+    }
+    if (item.inputAliases) inputAliases[item.id] = item.inputAliases
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     tools[item.id] = tool({
       description: item.description,
-      inputSchema: jsonSchema(schema),
+      // Model schema stays canonical; remap runtime input aliases before AI SDK validation.
+      inputSchema: jsonSchema(schema, {
+        validate(value) {
+          return { success: true as const, value: Tool.applyInputAliases(value, item.inputAliases) as never }
+        },
+      }),
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
@@ -148,6 +161,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       },
     })
   }
+  ToolNameAlias.attach(tools, nameAliases)
+  ToolNameAlias.attachInputAliases(tools, inputAliases)
 
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
     (client) => !!client.getServerCapabilities()?.resources,

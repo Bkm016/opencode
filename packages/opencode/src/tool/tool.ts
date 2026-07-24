@@ -52,6 +52,9 @@ export interface ExecuteResult<M extends Metadata = Metadata> {
   attachments?: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[]
 }
 
+/** Runtime-only arg keys mapped onto a canonical parameter before schema decode. Not advertised to the model. */
+export type InputAliases = Readonly<Record<string, string>>
+
 export interface Def<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
   M extends Metadata = Metadata,
@@ -60,6 +63,10 @@ export interface Def<
   description: string
   parameters: Parameters
   jsonSchema?: JSONSchema7
+  /** Accepted call-site keys remapped to canonical parameter names before validation. */
+  inputAliases?: InputAliases
+  /** Call-site tool names that route to this tool id (not advertised to the model). */
+  nameAliases?: readonly string[]
   execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
   formatValidationError?(error: unknown): string
 }
@@ -67,6 +74,25 @@ export type DefWithoutID<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
   M extends Metadata = Metadata,
 > = Omit<Def<Parameters, M>, "id">
+
+export function applyInputAliases(args: unknown, aliases?: InputAliases): unknown {
+  if (!aliases || typeof args !== "object" || args === null || Array.isArray(args)) return args
+  const input = args as Record<string, unknown>
+  let changed = false
+  const next: Record<string, unknown> = { ...input }
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    if (alias === canonical) continue
+    if (next[canonical] === undefined && next[alias] !== undefined) {
+      next[canonical] = next[alias]
+      changed = true
+    }
+    if (alias in next) {
+      delete next[alias]
+      changed = true
+    }
+  }
+  return changed ? next : args
+}
 
 export interface Info<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,
@@ -110,6 +136,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
       // every LLM tool invocation.
       const decode = Schema.decodeUnknownEffect(toolInfo.parameters)
       const execute = toolInfo.execute
+      const inputAliases = toolInfo.inputAliases
       toolInfo.execute = (args, ctx) => {
         const attrs = {
           "tool.name": id,
@@ -118,7 +145,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           ...(ctx.callID ? { "tool.call_id": ctx.callID } : {}),
         }
         return Effect.gen(function* () {
-          const decoded = yield* decode(args).pipe(
+          const decoded = yield* decode(applyInputAliases(args, inputAliases)).pipe(
             Effect.mapError(
               (error) =>
                 new InvalidArgumentsError({

@@ -5,6 +5,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
+import { InputAlias } from "./input-aliases"
 import * as Tool from "./tool"
 
 export const Parameters = Schema.Struct({
@@ -22,6 +23,8 @@ export const GlobTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
+      // Accepted at the execute boundary only; model-facing schema stays canonical.
+      inputAliases: InputAlias.glob,
       execute: (params: { pattern: string; path?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const ins = yield* InstanceState.context

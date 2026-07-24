@@ -496,6 +496,9 @@ export const dict = {
   "context.injectedTools.description": "後端目前為所選模型提供的工具定義",
   "context.injectedTools.empty": "目前沒有可用工具",
   "context.injectedTools.unavailable": "無法從後端載入工具定義",
+  "context.injectedTools.aliases": "執行時別名",
+  "context.injectedTools.nameAliases": "工具名",
+  "context.injectedTools.inputAliases": "參數",
 
   "context.stats.session": "工作階段",
   "context.stats.messages": "訊息數",

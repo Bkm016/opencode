@@ -25,6 +25,8 @@ import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { Tool } from "@/tool/tool"
+import { ToolNameAlias } from "@/tool/name-alias"
 
 const DOOM_LOOP_THRESHOLD = 3
 const REPETITION_RETRY_PROMPT =
@@ -119,6 +121,8 @@ const layer = Layer.effect(
       // Empty drains (mid-stream drop surfaced as a quiet finish) must retry, not idle.
       let hasOutput = false
       let repetitionRetry = false
+      // Tools map for the active stream (includes non-enumerable nameAliases).
+      let activeTools: Record<string, unknown> = {}
       const repetitionBuffers = new Map<string, string>()
 
       const parse = (e: unknown) =>
@@ -377,7 +381,16 @@ const layer = Layer.effect(
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
             hasOutput = true
-            yield* ensureToolCall(value)
+            // Canonicalize call-site tool names (case + nameAliases) before transcript write.
+            yield* ensureToolCall({
+              ...value,
+              name:
+                ToolNameAlias.resolveToolName(
+                  Object.keys(activeTools),
+                  value.name,
+                  ToolNameAlias.fromTools(activeTools),
+                ) ?? value.name,
+            })
             return
 
           case "tool-input-delta":
@@ -394,11 +407,22 @@ const layer = Layer.effect(
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
             hasOutput = true
-            yield* ensureToolCall(value)
-            const input = isRecord(value.input) ? value.input : { value: value.input }
+            const toolName =
+              ToolNameAlias.resolveToolName(
+                Object.keys(activeTools),
+                value.name,
+                ToolNameAlias.fromTools(activeTools),
+              ) ?? value.name
+            yield* ensureToolCall({ ...value, name: toolName })
+            // Canonicalize input aliases before transcript write so UI only sees registered names.
+            const raw = isRecord(value.input) ? value.input : { value: value.input }
+            const input = Tool.applyInputAliases(
+              raw,
+              ToolNameAlias.inputAliasesFromTools(activeTools)?.[toolName],
+            ) as typeof raw
             yield* updateToolCall(value.id, (match) => ({
               ...match,
-              tool: value.name,
+              tool: toolName,
               state:
                 match.state.status === "running"
                   ? { ...match.state, input }
@@ -426,7 +450,7 @@ const layer = Layer.effect(
               !recentParts.every(
                 (part) =>
                   part.type === "tool" &&
-                  part.tool === value.name &&
+                  part.tool === toolName &&
                   part.state.status !== "pending" &&
                   JSON.stringify(part.state.input) === JSON.stringify(input),
               )
@@ -437,10 +461,10 @@ const layer = Layer.effect(
             const agent = yield* agents.get(ctx.assistantMessage.agent)
             yield* permission.ask({
               permission: "doom_loop",
-              patterns: [value.name],
+              patterns: [toolName],
               sessionID: ctx.assistantMessage.sessionID,
-              metadata: { tool: value.name, input },
-              always: [value.name],
+              metadata: { tool: toolName, input },
+              always: [toolName],
               ruleset: agent.permission,
             })
             return
@@ -714,6 +738,7 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
         repetitionRetry = false
+        activeTools = streamInput.tools
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {

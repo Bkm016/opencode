@@ -26,6 +26,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import { ToolNameAlias } from "@/tool/name-alias"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -124,11 +125,11 @@ const live: Layer.Layer<
         workflowModel.sessionID = input.sessionID
         workflowModel.systemPrompt = prepared.system.join("\n")
         workflowModel.toolExecutor = async (toolName, argsJson, _requestID) => {
-          const names = Object.keys(prepared.tools)
-          const lower = toolName.toLowerCase()
-          const matches = names.filter((name) => name.toLowerCase() === lower)
-          const resolved =
-            prepared.tools[toolName] !== undefined ? toolName : matches.length === 1 ? matches[0] : undefined
+          const resolved = ToolNameAlias.resolveToolName(
+            Object.keys(prepared.tools),
+            toolName,
+            ToolNameAlias.fromTools(prepared.tools),
+          )
           const t = resolved === undefined ? undefined : prepared.tools[resolved]
           if (!t || !t.execute) {
             return { result: "", error: `Unknown tool: ${toolName}` }
@@ -305,17 +306,18 @@ const live: Layer.Layer<
           includeRawChunks: input.model.providerID.includes("github-copilot"),
           async experimental_repairToolCall(failed) {
             const requested = failed.toolCall.toolName
-            if (prepared.tools[requested]) return failed.toolCall
-            const lower = requested.toLowerCase()
-            const matches = Object.keys(prepared.tools).filter(
-              (name) => name !== "invalid" && name.toLowerCase() === lower,
+            const resolved = ToolNameAlias.resolveToolName(
+              Object.keys(prepared.tools).filter((name) => name !== "invalid"),
+              requested,
+              ToolNameAlias.fromTools(prepared.tools),
             )
-            if (matches.length === 1) {
+            if (resolved && resolved !== requested) {
               return {
                 ...failed.toolCall,
-                toolName: matches[0],
+                toolName: resolved,
               }
             }
+            if (prepared.tools[requested]) return failed.toolCall
             return {
               ...failed.toolCall,
               input: JSON.stringify({

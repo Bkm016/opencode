@@ -15,6 +15,7 @@ import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
+import { ToolNameAlias } from "@/tool/name-alias"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -179,10 +180,16 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     ? (yield* InstanceState.context).project.id
     : undefined
 
+  const sorted = Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b)))
+  const aliases = ToolNameAlias.fromTools(tools)
+  if (aliases) ToolNameAlias.attach(sorted, aliases)
+  const inputAliases = ToolNameAlias.inputAliasesFromTools(tools)
+  if (inputAliases) ToolNameAlias.attachInputAliases(sorted, inputAliases)
+
   return {
     system,
     messages,
-    tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
+    tools: sorted,
     params,
     messageTransformOptions: options,
     headers: {

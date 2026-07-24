@@ -108,6 +108,7 @@ export const dict = {
   "ui.messagePart.context.list.other": "{{count}} 个列表",
   "ui.messagePart.diagnostic.error": "错误",
   "ui.messagePart.title.edit": "编辑",
+  "ui.messagePart.title.multiedit": "批量编辑",
   "ui.messagePart.title.write": "写入",
   "ui.messagePart.option.typeOwnAnswer": "输入自己的答案",
   "ui.messagePart.review.title": "检查你的答案",

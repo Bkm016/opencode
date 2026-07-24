@@ -28,6 +28,7 @@ export const GrepTool = Tool.define(
       parameters: Parameters,
       // Accepted at the execute boundary only; model-facing schema stays canonical.
       inputAliases: InputAlias.grep,
+      nameAliases: ["codebase_search"],
       execute: (params: { pattern: string; path?: string; include?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const empty = {

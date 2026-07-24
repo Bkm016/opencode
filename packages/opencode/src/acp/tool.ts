@@ -47,6 +47,8 @@ export function toToolKind(toolName: string): ToolKind {
       return "fetch"
 
     case "edit":
+    case "multiedit":
+    case "multi_edit":
     case "apply_patch":
     case "patch":
     case "write":

@@ -620,6 +620,7 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           // Accepted at the execute boundary only; model-facing schema stays canonical.
           inputAliases: InputAlias.shell,
+          nameAliases: ["run_terminal_cmd", "run_terminal_command"],
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
               const instanceCtx = yield* InstanceState.context

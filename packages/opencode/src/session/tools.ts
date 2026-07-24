@@ -6,6 +6,7 @@ import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
+import { InputAlias } from "@/tool/input-aliases"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolNameAlias } from "@/tool/name-alias"
 import { ToolRegistry } from "@/tool/registry"
@@ -124,7 +125,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       // Model schema stays canonical; remap runtime input aliases before AI SDK validation.
       inputSchema: jsonSchema(schema, {
         validate(value) {
-          return { success: true as const, value: Tool.applyInputAliases(value, item.inputAliases) as never }
+          let next = Tool.applyInputAliases(value, item.inputAliases)
+          // Per-entry aliases for multiedit (path/old_string/...) before execute.
+          if (item.id === "multiedit" && isRecord(next) && Array.isArray(next.edits)) {
+            next = {
+              ...next,
+              edits: next.edits.map((entry) => Tool.applyInputAliases(entry, InputAlias.multiEditEntry)),
+            }
+          }
+          return { success: true as const, value: next as never }
         },
       }),
       execute(args, options) {

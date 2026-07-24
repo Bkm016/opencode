@@ -99,6 +99,7 @@ export const dict: Record<string, string> = {
 
   "ui.messagePart.diagnostic.error": "Error",
   "ui.messagePart.title.edit": "Edit",
+  "ui.messagePart.title.multiedit": "Multi-edit",
   "ui.messagePart.title.write": "Write",
   "ui.messagePart.option.typeOwnAnswer": "Type your own answer",
   "ui.messagePart.review.title": "Review your answers",

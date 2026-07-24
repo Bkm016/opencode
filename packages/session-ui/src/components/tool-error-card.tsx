@@ -53,6 +53,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
       websearch: "ui.tool.websearch",
       bash: "ui.tool.shell",
       apply_patch: "ui.tool.patch",
+      multiedit: "ui.messagePart.title.multiedit",
       question: "ui.tool.questions",
     }
     const key = map[split.tool]

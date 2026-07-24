@@ -598,6 +598,14 @@ export function getToolInfo(
         title: i18n.t("ui.messagePart.title.edit"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
       }
+    case "multiedit":
+      return {
+        icon: "code-lines",
+        title: i18n.t("ui.messagePart.title.multiedit"),
+        subtitle: input.edits?.length
+          ? `${input.edits.length} ${i18n.t(input.edits.length > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
+          : undefined,
+      }
     case "write":
       return {
         icon: "code-lines",
@@ -815,7 +823,7 @@ export function isProcessGroup(group: PartGroup, resolve: (ref: PartRef) => Part
 
 function toolDefaultOpen(tool: string, shell = false, edit = false) {
   if (tool === "bash") return shell
-  if (tool === "edit" || tool === "write" || tool === "apply_patch") return edit
+  if (tool === "edit" || tool === "write" || tool === "apply_patch" || tool === "multiedit") return edit
 }
 
 export function partDefaultOpen(part: PartType, shell = false, edit = false) {
@@ -2822,49 +2830,47 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
-  name: "apply_patch",
-  render(props) {
-    const i18n = useI18n()
-    const fileComponent = useFileComponent()
-    const files = createMemo(() => patchFiles(props.metadata.files))
-    const pending = createMemo(() => props.status === "pending" || props.status === "running")
-    const single = createMemo(() => {
-      const list = files()
-      if (list.length !== 1) return
-      return list[0]
-    })
-    const [expanded, setExpanded] = createSignal<string[]>([])
-    let seeded = false
+function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
+  const i18n = useI18n()
+  const fileComponent = useFileComponent()
+  const files = createMemo(() => patchFiles(props.metadata.files))
+  const pending = createMemo(() => props.status === "pending" || props.status === "running")
+  const single = createMemo(() => {
+    const list = files()
+    if (list.length !== 1) return
+    return list[0]
+  })
+  const [expanded, setExpanded] = createSignal<string[]>([])
+  let seeded = false
 
-    createEffect(() => {
-      const list = files()
-      if (list.length === 0) return
-      if (seeded) return
-      seeded = true
-      setExpanded(list.filter((f) => f.type !== "delete").map((f) => f.filePath))
-    })
+  createEffect(() => {
+    const list = files()
+    if (list.length === 0) return
+    if (seeded) return
+    seeded = true
+    setExpanded(list.filter((f) => f.type !== "delete").map((f) => f.filePath))
+  })
 
-    const subtitle = createMemo(() => {
-      const count = files().length
-      if (count === 0) return ""
-      return `${count} ${i18n.t(count > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
-    })
+  const subtitle = createMemo(() => {
+    const count = files().length
+    if (count === 0) return ""
+    return `${count} ${i18n.t(count > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
+  })
 
-    return (
-      <Show
-        when={single()}
-        fallback={
-          <div data-component="apply-patch-tool">
-            <BasicTool
-              {...props}
-              icon="code-lines"
-              defer={props.deferContent !== false}
-              trigger={{
-                title: i18n.t("ui.tool.patch"),
-                subtitle: subtitle(),
-              }}
-            >
+  return (
+    <Show
+      when={single()}
+      fallback={
+        <div data-component="apply-patch-tool">
+          <BasicTool
+            {...props}
+            icon="code-lines"
+            defer={props.deferContent !== false}
+            trigger={{
+              title: i18n.t(props.titleKey),
+              subtitle: subtitle(),
+            }}
+          >
               <Show when={files().length > 0}>
                 <Accordion
                   multiple
@@ -2964,7 +2970,7 @@ ToolRegistry.register({
                 <div data-slot="message-part-title-area">
                   <div data-slot="message-part-title">
                     <span data-slot="message-part-title-text">
-                      <TextShimmer text={i18n.t("ui.tool.patch")} active={pending()} />
+                      <TextShimmer text={i18n.t(props.titleKey)} active={pending()} />
                     </span>
                     <Show when={!pending()}>
                       <span data-slot="message-part-title-filename">{getFilename(single()!.relativePath)}</span>
@@ -3024,6 +3030,19 @@ ToolRegistry.register({
         </div>
       </Show>
     )
+}
+
+ToolRegistry.register({
+  name: "apply_patch",
+  render(props) {
+    return <MultiFileEditRender {...props} titleKey="ui.tool.patch" />
+  },
+})
+
+ToolRegistry.register({
+  name: "multiedit",
+  render(props) {
+    return <MultiFileEditRender {...props} titleKey="ui.messagePart.title.multiedit" />
   },
 })
 

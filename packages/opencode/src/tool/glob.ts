@@ -25,6 +25,7 @@ export const GlobTool = Tool.define(
       parameters: Parameters,
       // Accepted at the execute boundary only; model-facing schema stays canonical.
       inputAliases: InputAlias.glob,
+      nameAliases: ["file_search"],
       execute: (params: { pattern: string; path?: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const ins = yield* InstanceState.context

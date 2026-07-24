@@ -1,0 +1,9 @@
+Apply multiple string replacements in one call. Prefer this when several related edits belong together; otherwise use `edit`.
+
+Usage:
+- Provide `edits`: an ordered array of replacements. Each entry needs `filePath`, `oldString`, and `newString` (same matching rules as `edit`).
+- Optional per-entry `replaceAll` replaces every occurrence of `oldString` in that file.
+- Edits to the same file apply in order against the updated content.
+- You must use `read` on a file before editing it.
+- Prefer editing existing files. Never create files unless required (empty `oldString` can create a new file, same as `edit`).
+- Failures stop the batch; already-applied edits are not rolled back.

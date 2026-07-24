@@ -26,6 +26,7 @@ import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Tool } from "@/tool/tool"
+import { InputAlias } from "@/tool/input-aliases"
 import { ToolNameAlias } from "@/tool/name-alias"
 
 const DOOM_LOOP_THRESHOLD = 3
@@ -416,10 +417,16 @@ const layer = Layer.effect(
             yield* ensureToolCall({ ...value, name: toolName })
             // Canonicalize input aliases before transcript write so UI only sees registered names.
             const raw = isRecord(value.input) ? value.input : { value: value.input }
-            const input = Tool.applyInputAliases(
+            let input = Tool.applyInputAliases(
               raw,
               ToolNameAlias.inputAliasesFromTools(activeTools)?.[toolName],
             ) as typeof raw
+            if (toolName === "multiedit" && isRecord(input) && Array.isArray(input.edits)) {
+              input = {
+                ...input,
+                edits: input.edits.map((entry) => Tool.applyInputAliases(entry, InputAlias.multiEditEntry)),
+              }
+            }
             yield* updateToolCall(value.id, (match) => ({
               ...match,
               tool: toolName,

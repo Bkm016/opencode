@@ -9,6 +9,8 @@ const WORKDIR_KEYS = ["workdir", "working_directory", "cwd", "directory"] as con
 const WRITE_BODY_KEYS = ["content", "contents", "text", "body"] as const
 const EDIT_OLD_KEYS = ["oldString", "old_string", "old_str", "oldText", "old_text"] as const
 const EDIT_NEW_KEYS = ["newString", "new_string", "new_str", "newText", "new_text"] as const
+const EDIT_REPLACE_ALL_KEYS = ["replaceAll", "replace_all"] as const
+const MULTI_EDIT_LIST_KEYS = ["edits", "changes", "operations"] as const
 
 function to(canonical: string, keys: readonly string[]): InputAliases {
   const out: Record<string, string> = {}
@@ -44,6 +46,12 @@ export const oldString = to("oldString", EDIT_OLD_KEYS)
 /** Canonical edit `newString`. */
 export const newString = to("newString", EDIT_NEW_KEYS)
 
+/** Canonical edit `replaceAll`. */
+export const replaceAll = to("replaceAll", EDIT_REPLACE_ALL_KEYS)
+
+/** Canonical multiedit list key `edits`. */
+export const multiEditList = to("edits", MULTI_EDIT_LIST_KEYS)
+
 /** Canonical shell `command`. */
 export const command = to("command", RUN_CMD_KEYS)
 
@@ -52,7 +60,9 @@ export const workdir = to("workdir", WORKDIR_KEYS)
 
 export const read = filePath
 export const write = merge(filePath, content)
-export const edit = merge(filePath, oldString, newString)
+export const edit = merge(filePath, oldString, newString, replaceAll)
+export const multiEdit = multiEditList
+export const multiEditEntry = edit
 export const listDir = path
 export const glob = merge(globPattern, path)
 export const grep = merge(grepPattern, path)

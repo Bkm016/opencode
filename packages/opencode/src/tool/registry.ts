@@ -8,6 +8,7 @@ import { SessionStatus } from "@/session/status"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
+import { MultiEditTool } from "./multiedit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ListDirTool } from "./list-dir"
@@ -126,6 +127,7 @@ const layer = Layer.effect(
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
     const edit = yield* EditTool
+    const multiEdit = yield* MultiEditTool
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
@@ -231,6 +233,7 @@ const layer = Layer.effect(
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
+          multiedit: Tool.init(multiEdit),
           write: Tool.init(writetool),
           task: Tool.init(task),
           projectTask: Tool.init(projectTask),
@@ -262,6 +265,7 @@ const layer = Layer.effect(
             tool.glob,
             tool.grep,
             tool.edit,
+            tool.multiedit,
             tool.write,
             tool.task,
             tool.projectTask,

@@ -69,6 +69,7 @@ export const EditTool = Tool.define(
       parameters: Parameters,
       // Accepted at the execute boundary only; model-facing schema stays canonical.
       inputAliases: InputAlias.edit,
+      nameAliases: ["StrReplace"],
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           if (!params.filePath) {

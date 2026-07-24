@@ -1,5 +1,5 @@
 import { useBeforeLeave, useIsRouting, useLocation } from "@solidjs/router"
-import { batch, createEffect, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -66,6 +66,41 @@ function readNavigationDiagnostic() {
     return value ? (JSON.parse(value) as NavigationDiagnostic) : undefined
   } catch {
     return undefined
+  }
+}
+
+const positionKey = "opencode.debug.position"
+
+type DebugPosition = { x: number; y: number }
+
+function readPosition(): DebugPosition | undefined {
+  try {
+    const value = localStorage.getItem(positionKey)
+    if (!value) return
+    const parsed = JSON.parse(value) as Partial<DebugPosition>
+    if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return
+    return { x: parsed.x, y: parsed.y }
+  } catch {
+    return undefined
+  }
+}
+
+function writePosition(pos: DebugPosition) {
+  try {
+    localStorage.setItem(positionKey, JSON.stringify(pos))
+  } catch {}
+}
+
+// Default offset mirrors the previous CSS (bottom-3 right-3) once measured on
+// first mount; until then the store is undefined and the element stays hidden
+// to avoid a flash at the top-left origin before placement is resolved.
+function clampPosition(pos: DebugPosition, width: number, height: number): DebugPosition {
+  const margin = 12
+  const maxX = Math.max(margin, window.innerWidth - width - margin)
+  const maxY = Math.max(margin, window.innerHeight - height - margin)
+  return {
+    x: Math.min(Math.max(margin, pos.x), maxX),
+    y: Math.min(Math.max(margin, pos.y), maxY),
   }
 }
 
@@ -191,6 +226,70 @@ export function DebugBar(props: { inline?: boolean } = {}) {
       to: recoveredNavigation?.to,
     },
   })
+
+  // Floating overlay position (only used in the non-inline variant). The
+  // default is resolved on mount from the saved position or the previous
+  // bottom-right placement; clamped to the viewport on drag and resize.
+  let aside: HTMLElement | undefined
+  const [position, setPosition] = createSignal<DebugPosition | undefined>(readPosition())
+  const [dragging, setDragging] = createSignal(false)
+
+  const resolveDefault = () => {
+    const el = aside
+    const width = el?.offsetWidth ?? 0
+    const height = el?.offsetHeight ?? 0
+    return clampPosition({ x: window.innerWidth - width - 12, y: window.innerHeight - height - 12 }, width, height)
+  }
+
+  onMount(() => {
+    if (props.inline) return
+    // If there's no saved position, seed it from the previous bottom-right
+    // placement so the first paint is stable rather than stuck at 0,0.
+    if (!position()) setPosition(resolveDefault())
+    makeEventListener(window, "resize", () => {
+      const pos = position()
+      if (!pos || !aside) return
+      setPosition(clampPosition(pos, aside.offsetWidth, aside.offsetHeight))
+    })
+  })
+
+  const startDrag = (event: PointerEvent) => {
+    if (props.inline) return
+    // Only start a drag from the grab handle; ignore presses that originate
+    // from interactive descendants (the focus toggle button, tooltip cells).
+    if (event.button !== 0 && event.pointerType === "mouse") return
+    const el = aside
+    if (!el) return
+    const origin = position() ?? resolveDefault()
+    const startX = event.clientX
+    const startY = event.clientY
+    setDragging(true)
+    el.setPointerCapture(event.pointerId)
+
+    const move = (ev: PointerEvent) => {
+      const next = clampPosition(
+        { x: origin.x + ev.clientX - startX, y: origin.y + ev.clientY - startY },
+        el.offsetWidth,
+        el.offsetHeight,
+      )
+      setPosition(next)
+    }
+    const up = (ev: PointerEvent) => {
+      cleanup()
+      el.releasePointerCapture(ev.pointerId)
+      setDragging(false)
+      const final = position()
+      if (final) writePosition(final)
+    }
+    const cleanup = () => {
+      el.removeEventListener("pointermove", move)
+      el.removeEventListener("pointerup", up)
+      el.removeEventListener("pointercancel", up)
+    }
+    el.addEventListener("pointermove", move)
+    el.addEventListener("pointerup", up)
+    el.addEventListener("pointercancel", up)
+  }
 
   const na = () => language.t("debugBar.na").toUpperCase()
   const heap = () => (state.heap.limit ? (state.heap.used ?? 0) / state.heap.limit : undefined)
@@ -481,14 +580,34 @@ export function DebugBar(props: { inline?: boolean } = {}) {
 
   return (
     <aside
+      ref={aside}
       aria-label={language.t("debugBar.ariaLabel")}
       classList={{
         "pointer-events-auto hidden overflow-hidden text-text-strong md:block": true,
         "mt-[-6px] w-full shrink-0 px-3 py-1": !!props.inline,
-        "fixed bottom-3 right-3 z-50 w-[308px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 shadow-[var(--shadow-lg-border-base)] sm:bottom-4 sm:right-4 sm:w-[324px]":
+        "fixed z-50 w-[308px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 shadow-[var(--shadow-lg-border-base)] sm:w-[324px]":
           !props.inline,
+        "bottom-3 right-3 sm:bottom-4 sm:right-4": !props.inline && !position(),
       }}
+      style={
+        !props.inline && position()
+          ? { left: `${position()!.x}px`, top: `${position()!.y}px` }
+          : undefined
+      }
     >
+      {!props.inline && (
+        <div
+          aria-label="Drag to move performance overlay"
+          role="button"
+          classList={{
+            "flex h-4 cursor-grab touch-none items-center justify-center rounded-t-[8px]": true,
+            "cursor-grabbing": dragging(),
+          }}
+          onPointerDown={startDrag}
+        >
+          <span class="h-1 w-8 rounded-full bg-border-base opacity-70" />
+        </div>
+      )}
       <div
         classList={{
           "font-mono": true,

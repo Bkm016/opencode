@@ -37,9 +37,9 @@ type Data = {
   }
 }
 
-export type NavigateToSessionFn = (sessionID: string) => void
+export type NavigateToSessionFn = (sessionID: string, directory?: string) => void
 
-export type SessionHrefFn = (sessionID: string) => string
+export type SessionHrefFn = (sessionID: string, directory?: string) => string
 
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",

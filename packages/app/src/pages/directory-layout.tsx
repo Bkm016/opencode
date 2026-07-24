@@ -27,9 +27,11 @@ export function DirectoryDataProvider(
   const serverSync = useServerSync()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
-  const href = (sessionID: string) => {
+  const href = (sessionID: string, targetDirectory?: string) => {
     const server = props.server?.()
     if (server) return sessionHref(server, sessionID)
+    // 跨项目子会话必须使用目标目录生成 legacy 路由。
+    if (targetDirectory) return `/${base64Encode(targetDirectory)}/session/${sessionID}`
     return `/${slug()}/session/${sessionID}`
   }
 
@@ -62,7 +64,7 @@ export function DirectoryDataProvider(
         <DataProvider
           data={sync().data}
           directory={directory}
-          onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
+          onNavigateToSession={(sessionID: string, directory?: string) => navigate(href(sessionID, directory))}
           onSessionHref={href}
         >
           <LocalProvider>{props.children}</LocalProvider>

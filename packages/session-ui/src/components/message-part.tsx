@@ -647,10 +647,15 @@ function urls(text: string | undefined) {
     })
 }
 
-function sessionLink(id: string | undefined, path: string, href?: (id: string) => string | undefined) {
+function sessionLink(
+  id: string | undefined,
+  path: string,
+  href?: (id: string, directory?: string) => string | undefined,
+  directory?: string,
+) {
   if (!id) return
 
-  const direct = href?.(id)
+  const direct = href?.(id, directory)
   if (direct) return direct
 
   const idx = path.indexOf("/session")
@@ -1636,16 +1641,24 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const input = () => part().state?.input ?? emptyInput
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
-  const isTaskTool = createMemo(() => part().tool === "task" || part().tool === "task_async")
+  const isTaskTool = createMemo(
+    () => part().tool === "task" || part().tool === "task_async" || part().tool === "project_task",
+  )
   const taskId = createMemo(() => {
     if (!isTaskTool()) return
     const meta = partMetadata()
     if (typeof meta.sessionId === "string" && meta.sessionId) return meta.sessionId
     if (Array.isArray(meta.taskIDs) && typeof meta.taskIDs[0] === "string") return meta.taskIDs[0]
   })
+  const taskDirectory = createMemo(() => {
+    if (!isTaskTool()) return undefined
+    const meta = partMetadata()
+    if (typeof meta.directory === "string" && meta.directory) return meta.directory
+    return undefined
+  })
   const taskHref = createMemo(() => {
     if (!isTaskTool()) return
-    return sessionLink(taskId(), useLocation().pathname, data.sessionHref)
+    return sessionLink(taskId(), useLocation().pathname, data.sessionHref, taskDirectory())
   })
   const taskSubtitle = createMemo(() => {
     if (!isTaskTool()) return undefined
@@ -2134,6 +2147,8 @@ ToolRegistry.register({
 })
 
 function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
+  // project_task 通过 metadata 携带目标项目目录。
+  const directory = typeof metadata.directory === "string" ? metadata.directory : undefined
   const metaTasks = Array.isArray(metadata.tasks) ? metadata.tasks : undefined
   if (metaTasks && metaTasks.length > 0) {
     return metaTasks.flatMap((item, index) => {
@@ -2156,6 +2171,7 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
             (typeof row.title === "string" && row.title) ||
             (typeof row.description === "string" && row.description) ||
             undefined,
+          directory,
         },
       ]
     })
@@ -2182,6 +2198,7 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
             (typeof row.description === "string" && row.description) ||
             (typeof row.title === "string" && row.title) ||
             undefined,
+          directory,
         },
       ]
     })
@@ -2200,6 +2217,7 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
         (typeof metadata.description === "string" && metadata.description) ||
         (typeof metadata.title === "string" && metadata.title) ||
         undefined,
+      directory,
     },
   ]
 }
@@ -2217,6 +2235,7 @@ function TaskCard(props: {
   background?: boolean
   followup?: boolean
   fallbackInput?: Record<string, any>
+  directory?: string
 }) {
   const data = useData()
   const i18n = useI18n()
@@ -2278,14 +2297,14 @@ function TaskCard(props: {
     if (props.background) return `${value} (background)`
     return value
   })
-  const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
+  const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref, props.directory))
   const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
 
   const openSession = () => {
     const id = childSessionId()
     if (!id) return
     if (data.navigateToSession) {
-      data.navigateToSession(id)
+      data.navigateToSession(id, props.directory)
       return
     }
     const value = href()
@@ -2384,6 +2403,7 @@ function TaskToolRender(props: ToolProps) {
             agent={card.agent}
             description={card.description}
             sessionId={card.sessionId}
+            directory={card.directory}
             background={background()}
             fallbackInput={
               single()
@@ -2411,6 +2431,14 @@ ToolRegistry.register({
 // Alias used by models / plugins that call task_async instead of task.
 ToolRegistry.register({
   name: "task_async",
+  render(props) {
+    return <TaskToolRender {...props} />
+  },
+})
+
+// 跨项目委派复用任务卡，并由 metadata.directory 决定子会话路由。
+ToolRegistry.register({
+  name: "project_task",
   render(props) {
     return <TaskToolRender {...props} />
   },

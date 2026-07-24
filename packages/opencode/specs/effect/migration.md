@@ -1,8 +1,7 @@
 # Effect Migration Patterns
 
 This is the compact reference for moving code toward the current Effect
-shape. The high-level roadmap is [`todo.md`](./todo.md); examples and
-rules are in [`guide.md`](./guide.md).
+shape. Examples and rules are in [`guide.md`](./guide.md).
 
 ## Default Shape
 
@@ -53,10 +52,8 @@ When migrating code, migrate touched tests toward
 
 ## Migration Checklist
 
-- [ ] The code has a single Effect body instead of Promise wrappers around
-      service calls.
-- [ ] Expected failures are typed errors, not thrown exceptions or defects.
-- [ ] Layer requirements are explicit.
-- [ ] Tests use Effect-aware fixtures and focused layers.
-- [ ] Public behavior and wire shapes are preserved unless intentionally
-      changed.
+- Prefer a single Effect body instead of Promise wrappers around service calls.
+- Prefer typed expected failures over thrown exceptions or defects.
+- Keep layer requirements explicit.
+- Prefer Effect-aware fixtures and focused layers in tests.
+- Preserve public behavior and wire shapes unless intentionally changed.

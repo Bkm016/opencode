@@ -3,28 +3,20 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
+import { Deferred, Effect, Latch, Option, Stream } from "effect"
 import type { OpenCodeEvent } from "../src"
 
 test("embedded client uses the real router and handlers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Agent, Location, Model, OpenCode, Prompt, Provider, Session, Tool } = await import("../src")
+  const { AbsolutePath, Agent, Location, Model, OpenCode, Prompt, Provider, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
   const model = Model.Ref.make({ id: Model.ID.make("embedded"), providerID: Provider.ID.make("test") })
 
   try {
     const program = Effect.gen(function* () {
       const opencode = yield* OpenCode.create()
-      yield* opencode.tools.register({
-        embedded_tool: Tool.make({
-          description: "Embedded test tool",
-          input: Schema.Struct({}),
-          output: Schema.Struct({ ok: Schema.Boolean }),
-          execute: () => Effect.succeed({ ok: true }),
-        }),
-      })
 
       const created = yield* opencode.sessions.create({
         id: sessionID,
@@ -45,12 +37,7 @@ test("embedded client uses the real router and handlers", async () => {
         sessionID,
         prompt: Prompt.make({ text: "Promote this input" }),
       })
-      const prompted = yield* opencode.sessions.events({ sessionID }).pipe(
-        Stream.filter((event) => event.type === "session.next.prompted" && event.data.messageID === wake.id),
-        Stream.runHead,
-        Effect.timeout("10 seconds"),
-        Effect.map(Option.getOrThrow),
-      )
+      // Admit-only execution: wake is a no-op; input stays admitted until a runner promotes it.
       const wakeContext = yield* opencode.sessions.context({ sessionID })
       const event = yield* opencode.sessions
         .events({ sessionID })
@@ -85,8 +72,8 @@ test("embedded client uses the real router and handlers", async () => {
       expect(page.data.some((session) => session.id === sessionID)).toBe(true)
       expect(active).toEqual({})
       expect(admitted.sessionID).toBe(sessionID)
-      expect(prompted.type).toBe("session.next.prompted")
-      expect(wakeContext).toContainEqual(expect.objectContaining({ id: wake.id, type: "user" }))
+      expect(wake.sessionID).toBe(sessionID)
+      expect(wakeContext).toEqual(context)
       expect(context.some((message) => message.type === "model-switched")).toBe(true)
       expect(event).toMatchObject({ type: "session.next.model.switched", durable: { seq: 1 } })
       expect(message).toEqual(modelMessage)
@@ -100,11 +87,11 @@ test("embedded client uses the real router and handlers", async () => {
     await Effect.runPromise(Effect.scoped(program))
   } finally {
     Flag.OPENCODE_DB = database
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
 })
 
-test("Location-owned runner events reach the ready global client", async () => {
+test("Location-owned durable events reach the ready global client", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-events-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
@@ -115,13 +102,13 @@ test("Location-owned runner events reach the ready global client", async () => {
     const program = Effect.gen(function* () {
       const opencode = yield* OpenCode.create()
       const connected = yield* Latch.make(false)
-      const prompted = yield* Deferred.make<OpenCodeEvent>()
+      const admitted = yield* Deferred.make<OpenCodeEvent>()
       yield* opencode.events.subscribe().pipe(
         Stream.runForEach((event) =>
           event.type === "server.connected"
             ? connected.open
-            : event.type === "session.next.prompted" && event.data.sessionID === sessionID
-              ? Deferred.succeed(prompted, event).pipe(Effect.asVoid)
+            : event.type === "session.next.prompt.admitted" && event.data.sessionID === sessionID
+              ? Deferred.succeed(admitted, event).pipe(Effect.asVoid)
               : Effect.void,
         ),
         Effect.forkScoped,
@@ -133,13 +120,13 @@ test("Location-owned runner events reach the ready global client", async () => {
       })
       yield* opencode.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Observe this input" }) })
 
-      const event = yield* Deferred.await(prompted).pipe(Effect.timeout("4 seconds"))
+      const event = yield* Deferred.await(admitted).pipe(Effect.timeout("4 seconds"))
       expect(event.durable).toEqual(expect.objectContaining({ aggregateID: sessionID, seq: expect.any(Number) }))
     })
     await Effect.runPromise(Effect.scoped(program))
   } finally {
     Flag.OPENCODE_DB = database
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
 }, 10_000)
 
@@ -182,7 +169,7 @@ test("independent embedded hosts do not share live notifications", async () => {
     await Effect.runPromise(Effect.scoped(program))
   } finally {
     Flag.OPENCODE_DB = database
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
 }, 10_000)
 
@@ -207,6 +194,6 @@ test("embedded client is available as a Layer service", async () => {
     expect(created.id).toBe(sessionID)
   } finally {
     Flag.OPENCODE_DB = database
-    await rm(directory, { recursive: true, force: true })
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
 })

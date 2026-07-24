@@ -17,7 +17,7 @@ import { Global } from "@opencode-ai/core/global"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
+
 import { ProviderRequestDump } from "@opencode-ai/llm"
 import { inArray, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
@@ -426,7 +426,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         { concurrency: 1 },
       )
       const toolOutput = yield* Effect.promise(() =>
-        directoryStats(path.join(dataRoot, ToolOutputStore.MANAGED_DIRECTORY), {
+        directoryStats(path.join(dataRoot, "tool-output"), {
           retentionDays: days,
           prefix: "tool_",
         }),
@@ -543,7 +543,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       }
       if (actions.toolOutput) {
         const result = yield* Effect.promise(() =>
-          removeExpiredFiles(path.join(Global.Path.data, ToolOutputStore.MANAGED_DIRECTORY), {
+          removeExpiredFiles(path.join(Global.Path.data, "tool-output"), {
             retentionDays,
             prefix: "tool_",
           }),

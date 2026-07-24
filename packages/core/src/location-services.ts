@@ -24,18 +24,12 @@ import { Pty } from "./pty"
 import { QuestionV2 } from "./question"
 import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
-import * as SessionRunnerLLM from "./session/runner/llm"
-import { SessionRunnerModel } from "./session/runner/model"
 import { SessionTodo } from "./session/todo"
 import { SkillV2 } from "./skill"
 import { SkillGuidance } from "./skill/guidance"
 import { Snapshot } from "./snapshot"
 import { SystemContextBuiltIns } from "./system-context/builtins"
 import { SystemContextRegistry } from "./system-context/registry"
-import { BuiltInTools } from "./tool/builtins"
-import { ReadToolFileSystem } from "./tool/read-filesystem"
-import { ToolRegistry } from "./tool/registry"
-import { ToolOutputStore } from "./tool-output-store"
 
 export { LocationServiceMap } from "./location-service-map"
 
@@ -63,19 +57,12 @@ export const locationServices = LayerNode.group([
   LocationMutation.node,
   FileMutation.node,
   PermissionV2.node,
-  ToolOutputStore.node,
-  ToolRegistry.node,
-  ToolRegistry.toolsNode,
   Image.node,
   SkillGuidance.node,
   ReferenceGuidance.node,
   SessionTodo.node,
   QuestionV2.node,
-  ReadToolFileSystem.node,
-  BuiltInTools.node,
-  SessionRunnerModel.node,
   Snapshot.node,
-  SessionRunnerLLM.node,
 ])
 
 export type LocationServices = LayerNode.Output<typeof locationServices>

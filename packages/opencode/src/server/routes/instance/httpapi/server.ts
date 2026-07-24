@@ -67,7 +67,6 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
-import * as SessionExecutionLocal from "@opencode-ai/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@opencode-ai/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
@@ -302,7 +301,7 @@ export function createRoutes(
     Layer.provide(
       AppNodeBuilderV1.build(SessionV2.node, [
         [LocationServiceMap.node, locationServiceMapV2],
-        [SessionExecution.node, SessionExecutionLocal.node],
+        [SessionExecution.node, SessionExecution.noopLayer],
       ]),
     ),
     Layer.provide(locationServiceMapV2),

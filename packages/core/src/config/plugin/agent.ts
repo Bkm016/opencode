@@ -14,8 +14,6 @@ import { ConfigMigrateV1 } from "../../v1/config/migrate"
 import { Global } from "../../global"
 import { PermissionV2 } from "../../permission"
 import type { LocationMutation } from "../../location-mutation"
-import type { ReadTool } from "../../tool/read"
-import type { EditTool } from "../../tool/edit"
 
 const legacySources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
@@ -24,10 +22,7 @@ const legacySources = [
 const decodeAgent = Schema.decodeUnknownOption(ConfigAgent.Info)
 const decodeLegacyAgent = Schema.decodeUnknownOption(ConfigAgentV1.Info)
 const decodeConfig = Schema.decodeUnknownOption(Config.Info)
-type PathAction =
-  | LocationMutation.ExternalDirectoryAuthorization["action"]
-  | typeof ReadTool.name
-  | typeof EditTool.name
+type PathAction = LocationMutation.ExternalDirectoryAuthorization["action"] | "read" | "edit"
 const pathActions = ["external_directory", "read", "edit"] as const satisfies readonly PathAction[]
 const agentKeys = new Set([
   "model",

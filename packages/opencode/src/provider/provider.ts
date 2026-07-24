@@ -1897,7 +1897,7 @@ const layer = Layer.effect(
         }
       }
 
-      // TODO: Remove these provider-specific assumptions once model syncing reliably reports available deployments.
+      // Azure catalogs omit deployment availability; keep listing without filtering.
       if (providerID === ProviderV2.ID.azure || providerID === ProviderV2.ID.make("azure-cognitive-services")) {
         return undefined
       }

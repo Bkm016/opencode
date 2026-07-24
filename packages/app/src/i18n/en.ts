@@ -537,8 +537,6 @@ export const dict = {
   "context.injectedTools.description": "Tool definitions currently available from the backend for the selected model",
   "context.injectedTools.empty": "No tools are currently available",
   "context.injectedTools.unavailable": "Could not load tool definitions from the backend",
-  "context.injectedTools.copySchema": "Copy schema",
-  "context.injectedTools.copied": "Copied",
 
   "context.stats.session": "Session",
   "context.stats.messages": "Messages",

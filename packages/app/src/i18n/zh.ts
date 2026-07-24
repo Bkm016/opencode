@@ -534,8 +534,6 @@ export const dict = {
   "context.injectedTools.description": "后端当前为所选模型提供的工具定义",
   "context.injectedTools.empty": "当前没有可用工具",
   "context.injectedTools.unavailable": "无法从后端加载工具定义",
-  "context.injectedTools.copySchema": "复制 Schema",
-  "context.injectedTools.copied": "已复制",
   "context.stats.session": "会话",
   "context.stats.messages": "消息数",
   "context.stats.provider": "提供商",

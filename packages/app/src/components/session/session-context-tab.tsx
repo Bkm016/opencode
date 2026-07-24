@@ -472,28 +472,8 @@ const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
 type InjectedTool = { name: string; description: string; inputSchema: unknown }
 
-function InjectedToolItem(props: {
-  tool: InjectedTool
-  opened: boolean
-  t: (key: "context.injectedTools.copied" | "context.injectedTools.copySchema") => string
-}) {
-  const [copied, setCopied] = createSignal(false)
-  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
   const schema = createMemo(() => JSON.stringify(props.tool.inputSchema, null, 2))
-
-  const copy = () => {
-    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-    if (!clipboard?.writeText) return
-    void clipboard.writeText(schema()).then(() => {
-      setCopied(true)
-      if (copiedTimer !== undefined) clearTimeout(copiedTimer)
-      copiedTimer = setTimeout(() => setCopied(false), 1500)
-    })
-  }
-
-  onCleanup(() => {
-    if (copiedTimer !== undefined) clearTimeout(copiedTimer)
-  })
 
   return (
     <Accordion.Item value={props.tool.name}>
@@ -509,19 +489,26 @@ function InjectedToolItem(props: {
       <Accordion.Content class="bg-background-base">
         <Show when={props.opened}>
           <div class="p-3 flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-11-regular text-text-weaker">{props.tool.description}</div>
-              <Button size="small" variant="ghost" class="shrink-0" onClick={copy}>
-                {copied() ? props.t("context.injectedTools.copied") : props.t("context.injectedTools.copySchema")}
-              </Button>
+            <div class="rounded-md border border-border-weaker-base bg-background-stronger">
+              <ScrollView class="max-h-40">
+                <div class="px-3 py-2">
+                  <Markdown
+                    text={props.tool.description}
+                    cacheKey={`context-injected-tool-desc:${props.tool.name}`}
+                    class="text-11-regular text-text-weaker select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_.shiki]:!bg-transparent [&_.shiki]:!p-0 [&_.shiki]:!border-0 [&_[data-slot=markdown-copy-button]]:hidden"
+                  />
+                </div>
+              </ScrollView>
             </div>
-            <ScrollView class="max-h-96">
-              <Markdown
-                text={`\`\`\`json\n${schema()}\n\`\`\``}
-                cacheKey={`context-injected-tool:${props.tool.name}`}
-                class="text-11-regular select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_[data-slot=markdown-copy-button]]:hidden"
-              />
-            </ScrollView>
+            <div class="rounded-md border border-border-weaker-base bg-background-stronger">
+              <ScrollView class="max-h-96">
+                <Markdown
+                  text={`\`\`\`json\n${schema()}\n\`\`\``}
+                  cacheKey={`context-injected-tool:${props.tool.name}`}
+                  class="text-11-regular select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_.shiki]:!bg-transparent [&_.shiki]:!border-0 [&_.shiki]:!rounded-none [&_[data-slot=markdown-copy-button]]:hidden"
+                />
+              </ScrollView>
+            </div>
           </div>
         </Show>
       </Accordion.Content>
@@ -897,11 +884,7 @@ export function SessionContextTab() {
                 >
                   <For each={tools()}>
                     {(tool) => (
-                      <InjectedToolItem
-                        tool={tool}
-                        opened={expandedTools().includes(tool.name)}
-                        t={language.t}
-                      />
+                      <InjectedToolItem tool={tool} opened={expandedTools().includes(tool.name)} />
                     )}
                   </For>
                 </Accordion>

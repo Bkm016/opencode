@@ -210,6 +210,9 @@ export interface JsonPrepared {
   readonly url: string
   readonly headers: Headers.Headers
   readonly message: string
+  /** 应用 overlay 后最终 JSON 请求体（序列化前）。 */
+  readonly jsonBody: unknown
+  readonly requestBodyBytes: number
 }
 
 export interface JsonInput<Body, Message> {
@@ -226,15 +229,19 @@ export interface JsonTransport<Body, Message> extends Transport<Body, JsonPrepar
 export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransport<Body, Message> => ({
   id: "websocket-json",
   with: (patch) => json({ ...input, ...patch }),
+  requestBodyBytes: (prepared) => prepared.requestBodyBytes,
   prepare: (prepareInput) =>
     Effect.gen(function* () {
       const parts = yield* HttpTransport.jsonRequestParts({
         ...prepareInput,
       })
+      const message = input.encodeMessage(yield* input.toMessage(parts.jsonBody))
       return {
         url: yield* webSocketUrl(parts.url),
         headers: parts.headers,
-        message: input.encodeMessage(yield* input.toMessage(parts.jsonBody)),
+        message,
+        jsonBody: parts.jsonBody,
+        requestBodyBytes: new TextEncoder().encode(parts.bodyText).byteLength,
       }
     }),
   frames: (prepared, _request, runtime) => {

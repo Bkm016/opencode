@@ -2331,6 +2331,19 @@ export type GlobalSession = {
 
 export type SystemPromptPreview = Array<string>
 
+export type ProviderRequestDump = {
+  sessionID: string
+  at: number
+  model: string
+  provider: string
+  route: string
+  protocol: string
+  url?: string
+  body: unknown
+  bodyBytes: number
+  runtime?: string
+}
+
 export type McpResource = {
   name: string
   uri: string
@@ -8221,6 +8234,42 @@ export type ExperimentalSessionSystemPromptResponses = {
 
 export type ExperimentalSessionSystemPromptResponse =
   ExperimentalSessionSystemPromptResponses[keyof ExperimentalSessionSystemPromptResponses]
+
+export type ExperimentalSessionProviderRequestData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/provider-request"
+}
+
+export type ExperimentalSessionProviderRequestErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ExperimentalSessionProviderRequestError =
+  ExperimentalSessionProviderRequestErrors[keyof ExperimentalSessionProviderRequestErrors]
+
+export type ExperimentalSessionProviderRequestResponses = {
+  /**
+   * Last provider request dump
+   */
+  200: ProviderRequestDump
+}
+
+export type ExperimentalSessionProviderRequestResponse =
+  ExperimentalSessionProviderRequestResponses[keyof ExperimentalSessionProviderRequestResponses]
 
 export type ExperimentalResourceListData = {
   body?: never

@@ -21,6 +21,10 @@ export interface HttpPrepared<Frame> {
   readonly framing: FramingDef<Frame>
   /** 应用 overlay 后最终 JSON 请求体的 UTF-8 字节数。 */
   readonly requestBodyBytes: number
+  /** 最终请求 URL（含 query）。 */
+  readonly url: string
+  /** 应用 overlay 后最终 JSON 请求体。 */
+  readonly jsonBody: unknown
 }
 
 const applyQuery = (url: string, query: Record<string, string> | undefined) => {
@@ -129,6 +133,8 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
         request: ProviderShared.jsonPost({ url: parts.url, body: parts.bodyText, headers: parts.headers }),
         framing: input.framing,
         requestBodyBytes: new TextEncoder().encode(parts.bodyText).byteLength,
+        url: parts.url,
+        jsonBody: parts.jsonBody,
       })),
     ),
   frames: (prepared, request, runtime) =>

@@ -9,7 +9,27 @@ type SDK = {
         before?: string
       }) => Promise<{ data?: Message[]; error?: unknown }>
     }
+    experimental: {
+      session: {
+        providerRequest: (input: {
+          sessionID: string
+        }) => Promise<{ data?: ProviderRequestDump; error?: unknown }>
+      }
+    }
   }
+}
+
+type ProviderRequestDump = {
+  sessionID: string
+  at: number
+  model: string
+  provider: string
+  route: string
+  protocol: string
+  url?: string
+  body: unknown
+  bodyBytes: number
+  runtime?: string
 }
 
 function isTextPart(part: Part): part is Extract<Part, { type: "text" }> {
@@ -135,4 +155,14 @@ export async function exportFull(sdk: SDK, sessionID: string, title: string): Pr
     messages,
   }
   download(`${safeFilename(title)}-raw.json`, JSON.stringify(dump, null, 2), "application/json")
+}
+
+// 导出进程内最近一次真实发出的 provider wire request body（与桌面手动 dump 同级）
+export async function exportLastRequest(sdk: SDK, sessionID: string): Promise<void> {
+  const res = await sdk.client.experimental.session.providerRequest({ sessionID })
+  if (res.error || !res.data) throw new Error("No provider request captured for this session")
+  const snap = res.data
+  const ts = new Date(snap.at).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+  const model = snap.model.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+  download(`${ts}_${snap.route}_${model}.json`, JSON.stringify(snap.body, null, 2), "application/json")
 }

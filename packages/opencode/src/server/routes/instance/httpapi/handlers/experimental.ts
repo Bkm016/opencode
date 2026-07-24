@@ -18,6 +18,7 @@ import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
+import { ProviderRequestDump } from "@opencode-ai/llm"
 import { inArray, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
@@ -25,6 +26,7 @@ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import fs from "fs/promises"
 import path from "path"
 import { InstanceHttpApi } from "../api"
+import { notFound } from "../errors"
 import {
   ConsoleSwitchPayload,
   SessionListQuery,
@@ -352,6 +354,17 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
     })
 
+    const sessionProviderRequest = Effect.fn("ExperimentalHttpApi.sessionProviderRequest")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      const snapshot = ProviderRequestDump.get(ctx.params.sessionID)
+      if (!snapshot) {
+        return yield* notFound(`No provider request captured for session: ${ctx.params.sessionID}`)
+      }
+      // body 是完整 wire JSON，可能极大且含深层结构；跳过 Schema 编解码，直接 stringify。
+      return HttpServerResponse.jsonUnsafe(snapshot)
+    })
+
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
@@ -573,6 +586,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
       .handle("sessionSystemPrompt", sessionSystemPrompt)
+      .handle("sessionProviderRequest", sessionProviderRequest)
       .handle("resource", resource)
       .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)

@@ -32,6 +32,8 @@ export type RequestInput = {
   readonly maxOutputTokens?: number
   readonly providerOptions?: LLMRequest["providerOptions"]
   readonly headers?: Record<string, string>
+  /** 用于 dump last provider request 的会话关联键。 */
+  readonly sessionID?: string
 }
 
 const providerMetadata = (value: unknown): ProviderMetadata | undefined => {
@@ -190,6 +192,7 @@ export const request = (input: RequestInput) => {
     toolChoice: input.toolChoice,
     generation: generation(input),
     providerOptions: input.providerOptions,
+    metadata: input.sessionID ? { sessionID: input.sessionID } : undefined,
   })
 }
 

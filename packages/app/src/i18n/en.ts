@@ -892,8 +892,11 @@ export const dict = {
   "session.export.action.export": "Export",
   "session.export.action.summary": "Export summary",
   "session.export.action.full": "Export full",
+  "session.export.action.request": "Export last request",
   "session.export.toast.success.title": "Session exported",
   "session.export.toast.failed.title": "Failed to export session",
+  "session.export.toast.request.success.title": "Request exported",
+  "session.export.toast.request.failed.title": "Failed to export request",
 
   "lsp.tooltip.none": "No LSP servers",
   "lsp.label.connected": "{{count}} LSP",

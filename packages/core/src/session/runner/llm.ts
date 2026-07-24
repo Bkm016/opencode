@@ -205,6 +205,7 @@ const layer = Layer.effect(
       const request = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
+        metadata: { sessionID: session.id },
         system: [agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),

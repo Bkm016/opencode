@@ -7,7 +7,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
-import { LLMEvent } from "@opencode-ai/llm"
+import { LLMEvent, ProviderRequestDump } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -243,6 +243,7 @@ const live: Layer.Layer<
           providerOptions: prepared.params.options,
           headers: prepared.headers,
           abort: input.abort,
+          sessionID: input.sessionID,
         })
         if (native.type === "supported") {
           yield* Effect.logInfo("llm runtime selected", {
@@ -358,6 +359,19 @@ const live: Layer.Layer<
                   const bodyText = typeof body === "string" ? body : body == null ? undefined : JSON.stringify(body)
                   state.requestBodyBytes =
                     bodyText === undefined ? undefined : new TextEncoder().encode(bodyText).byteLength
+                  // AI SDK 路径：wrapStream 才拿到最终 wire body。
+                  if (bodyText !== undefined) {
+                    ProviderRequestDump.record({
+                      sessionID: input.sessionID,
+                      model: input.model.id,
+                      provider: input.model.providerID,
+                      route: "ai-sdk",
+                      protocol: "ai-sdk",
+                      body: typeof body === "string" ? body : body,
+                      bodyBytes: state.requestBodyBytes,
+                      runtime: "ai-sdk",
+                    })
+                  }
                   return result
                 },
               },

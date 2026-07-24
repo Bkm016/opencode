@@ -209,6 +209,7 @@ export const make = (dependencies: Dependencies) => {
       .stream(
         LLM.request({
           model: input.model,
+          metadata: { sessionID: input.sessionID },
           messages: [Message.user(summaryPrompt)],
           tools: [],
           generation: { maxTokens: summaryOutput },

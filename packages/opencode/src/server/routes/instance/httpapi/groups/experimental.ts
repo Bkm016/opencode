@@ -7,6 +7,7 @@ import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { ApiNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -55,6 +56,18 @@ const ToolListItem = Schema.Struct({
 }).annotate({ identifier: "ToolListItem" })
 const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
 const SystemPromptPreview = Schema.Array(Schema.String).annotate({ identifier: "SystemPromptPreview" })
+const ProviderRequestDump = Schema.Struct({
+  sessionID: Schema.String,
+  at: Schema.Number,
+  model: Schema.String,
+  provider: Schema.String,
+  route: Schema.String,
+  protocol: Schema.String,
+  url: Schema.optional(Schema.String),
+  body: Schema.Unknown,
+  bodyBytes: Schema.Number,
+  runtime: Schema.optional(Schema.String),
+}).annotate({ identifier: "ProviderRequestDump" })
 export const ToolListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   provider: ProviderV2.ID,
@@ -178,6 +191,7 @@ export const ExperimentalPaths = {
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
   sessionSystemPrompt: "/experimental/session/:sessionID/system-prompt",
+  sessionProviderRequest: "/experimental/session/:sessionID/provider-request",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
   storage: "/experimental/storage",
@@ -339,6 +353,19 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "Preview system prompt",
             description:
               "Dynamically build the current system prompt for a session without creating messages or invoking a model.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionProviderRequest", ExperimentalPaths.sessionProviderRequest, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(ProviderRequestDump, "Last provider request dump"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.providerRequest",
+            summary: "Dump last provider request",
+            description:
+              "Return the most recent provider wire request body captured for this session in the current process. Used for debugging; not persisted to the database.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

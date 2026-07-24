@@ -61,7 +61,7 @@ import { normalize } from "@opencode-ai/session-ui/session-diff"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { exportFull, exportSummary } from "./session-export"
+import { exportFull, exportLastRequest, exportSummary } from "./session-export"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -767,8 +767,8 @@ export function MessageTimeline(props: {
     props.setScrollRef(undefined)
   })
 
-  // 导出会话:summary 导出每轮 user message 的摘要与文件改动;full 导出全部消息
-  const runExport = async (mode: "summary" | "full") => {
+  // 导出会话:summary/full 导出消息;request 导出最近一次 provider wire body
+  const runExport = async (mode: "summary" | "full" | "request") => {
     const id = sessionID()
     const t = titleValue()
     if (!id || exporting()) return
@@ -776,16 +776,25 @@ export function MessageTimeline(props: {
     try {
       const sdk = serverSDK()
       if (mode === "summary") await exportSummary(sdk, id, t)
-      else await exportFull(sdk, id, t)
+      else if (mode === "full") await exportFull(sdk, id, t)
+      else await exportLastRequest(sdk, id)
       showToast({
         variant: "success",
         icon: "circle-check",
-        title: language.t("session.export.toast.success.title"),
+        title: language.t(
+          mode === "request"
+            ? "session.export.toast.request.success.title"
+            : "session.export.toast.success.title",
+        ),
       })
     } catch (err) {
       showToast({
         variant: "error",
-        title: language.t("session.export.toast.failed.title"),
+        title: language.t(
+          mode === "request"
+            ? "session.export.toast.request.failed.title"
+            : "session.export.toast.failed.title",
+        ),
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
@@ -1754,6 +1763,14 @@ export function MessageTimeline(props: {
                                 >
                                   <DropdownMenu.ItemLabel>
                                     {language.t("session.export.action.full")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  onSelect={() => void runExport("request")}
+                                  disabled={exporting()}
+                                >
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.export.action.request")}
                                   </DropdownMenu.ItemLabel>
                                 </DropdownMenu.Item>
                               </DropdownMenu.SubContent>

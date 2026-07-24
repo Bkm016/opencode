@@ -10,6 +10,7 @@ import { WebSocketExecutor } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
 import * as ProviderShared from "../protocols/shared"
+import { ProviderRequestDump } from "../request-dump"
 import type { LLMError, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
 import {
   GenerationOptions,
@@ -280,6 +281,8 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
       streamPrepared: (prepared: Prepared, request: LLMRequest, runtime: TransportRuntime) => {
         const route = `${request.model.provider}/${request.model.route.id}`
         const requestBodyBytes = routeInput.transport.requestBodyBytes?.(prepared)
+        // 在真正开流前捕获最终 body，供 Desktop dump last request。
+        capturePreparedRequest(prepared, request, requestBodyBytes)
         let attachedRequestBodyBytes = false
         const events = routeInput.transport
           .frames(prepared, request, runtime)
@@ -344,6 +347,19 @@ export function make<Body, Prepared, Frame, Event, State>(
     headers: input.headers,
     transport: HttpTransport.httpJson({ framing: input.framing }),
     defaults: input.defaults,
+  })
+}
+
+function capturePreparedRequest(prepared: unknown, request: LLMRequest, bodyBytes: number | undefined) {
+  if (!prepared || typeof prepared !== "object") return
+  const value = prepared as { jsonBody?: unknown; url?: unknown; requestBodyBytes?: unknown }
+  if (value.jsonBody === undefined) return
+  ProviderRequestDump.record({
+    request,
+    body: value.jsonBody,
+    url: typeof value.url === "string" ? value.url : undefined,
+    bodyBytes: bodyBytes ?? (typeof value.requestBodyBytes === "number" ? value.requestBodyBytes : undefined),
+    runtime: "native",
   })
 }
 

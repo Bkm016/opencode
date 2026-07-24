@@ -3,6 +3,8 @@ export { Auth } from "./route/auth"
 export { Provider } from "./provider"
 export { isContextOverflow, isContextOverflowFailure } from "./provider-error"
 export { redactSensitiveBodyFields } from "./redact"
+export { ProviderRequestDump } from "./request-dump"
+export type { ProviderRequestSnapshot } from "./request-dump"
 export type {
   RouteModelInput,
   RouteRoutedModelInput,

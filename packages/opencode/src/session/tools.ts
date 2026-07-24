@@ -23,6 +23,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Goal } from "@/session/goal"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -56,6 +57,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  const goalSvc = yield* Goal.Service
+
+  // Goal active 时为所有 tool part stamp goalID，用于证据归属
+  const activeGoal = yield* goalSvc.get(input.session.id)
+  const goalID = activeGoal && activeGoal.status === "active" ? activeGoal.goalID : undefined
+
+  // 共享 completeToolCall wrapper：无条件合并 captured goalID 到 output.metadata
+  const completeToolCall = (callID: string, output: { title: string; metadata: Record<string, any>; output: string; attachments?: SessionV1.FilePart[] }) =>
+    input.processor.completeToolCall(callID, {
+      ...output,
+      metadata: { ...output.metadata, ...(goalID ? { goalID } : {}) },
+    })
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -68,11 +81,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     metadata: (val) =>
       input.processor.updateToolCall(options.toolCallId, (match) => {
         if (!["running", "pending"].includes(match.state.status)) return match
+        const prevMeta = match.state.status === "running" ? (match.state.metadata ?? {}) : {}
         return {
           ...match,
           state: {
             title: val.title,
-            metadata: val.metadata,
+            metadata: { ...prevMeta, ...val.metadata, ...(goalID ? { goalID } : {}) },
             status: "running",
             input: args,
             time: { start: Date.now() },
@@ -112,6 +126,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const result = yield* item.execute(args, ctx)
             const output = {
               ...result,
+              metadata: { ...result.metadata, ...(goalID ? { goalID } : {}) },
               attachments: result.attachments?.map((attachment) => ({
                 ...attachment,
                 id: PartID.ascending(),
@@ -125,7 +140,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output,
             )
             if (options.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(options.toolCallId, output)
+              yield* completeToolCall(options.toolCallId, output)
             }
             return output
           }),
@@ -203,6 +218,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 ...(parsed.server ? { server: parsed.server } : {}),
                 truncated: truncated.truncated,
                 ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                ...(goalID ? { goalID } : {}),
               },
               output: truncated.content,
             }
@@ -212,7 +228,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output,
             )
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* completeToolCall(opts.toolCallId, output)
             }
             return output
           }),
@@ -286,6 +302,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 ...(parsed.server ? { server: parsed.server } : {}),
                 truncated: truncated.truncated,
                 ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                ...(goalID ? { goalID } : {}),
               },
               output: truncated.content,
             }
@@ -295,7 +312,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output,
             )
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* completeToolCall(opts.toolCallId, output)
             }
             return output
           }),
@@ -362,6 +379,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 attachments: formatted.attachments.length,
                 truncated: truncated.truncated,
                 ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                ...(goalID ? { goalID } : {}),
               },
               output: truncated.content,
               attachments: formatted.attachments.map((attachment) => ({
@@ -377,7 +395,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output,
             )
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* completeToolCall(opts.toolCallId, output)
             }
             return output
           }),
@@ -467,6 +485,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             ...result.metadata,
             truncated: truncated.truncated,
             ...(truncated.truncated && { outputPath: truncated.outputPath }),
+            ...(goalID ? { goalID } : {}),
           }
 
           const output = {
@@ -482,7 +501,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             content: result.content,
           }
           if (opts.abortSignal?.aborted) {
-            yield* input.processor.completeToolCall(opts.toolCallId, output)
+            yield* completeToolCall(opts.toolCallId, output)
           }
           return output
         }),

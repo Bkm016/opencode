@@ -5,6 +5,7 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionGoalDock } from "@/pages/session/composer/session-goal-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 export function SessionComposerRegion(props: {
@@ -54,6 +55,13 @@ export function SessionComposerRegion(props: {
         </Show>
 
         <Show when={controller.showComposer()}>
+          <Show when={controller.sessionID()} keyed>
+            {(sessionID) => (
+              <div class="pb-2 pointer-events-auto">
+                <SessionGoalDock sessionID={sessionID} />
+              </div>
+            )}
+          </Show>
           <Show when={controller.dock()}>
             <div
               classList={{

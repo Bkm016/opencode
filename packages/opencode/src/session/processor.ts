@@ -175,13 +175,20 @@ const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
+        // 合并 running 期间的 metadata（含 goalID）与 output metadata，确保 goalID 不丢
+        const runningMeta = match.part.state.metadata ?? {}
+        const mergedMeta = { ...runningMeta, ...output.metadata }
+        // goalID 不可被 output 覆盖为 undefined
+        if (runningMeta.goalID !== undefined && mergedMeta.goalID === undefined) {
+          mergedMeta.goalID = runningMeta.goalID
+        }
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "completed",
             input: match.part.state.input,
             output: output.output,
-            metadata: output.metadata,
+            metadata: mergedMeta,
             title: output.title,
             time: { start: match.part.state.time.start, end: Date.now() },
             attachments: output.attachments,

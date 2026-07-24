@@ -27,6 +27,26 @@ type PendingPrompt = {
 
 const pending = new Map<string, PendingPrompt>()
 
+const GOAL_PREFIX = "/goal "
+const GOAL_DEFAULT_CONTRACT = {
+  verification: ["Verify the requested outcome with relevant tests, commands, or runtime evidence."],
+  constraints: ["Preserve existing behavior outside the requested outcome."],
+  boundaries: ["Limit changes to the current workspace and files required by the outcome."],
+  iterationPolicy:
+    "Work in evidence-backed increments. Record disproven approaches as lessons and do not repeat them without relevant new evidence.",
+  blockedCondition: "Pause and report the exact blocker when no evidence-backed path remains.",
+  tokenBudget: 1_000_000_000,
+} as const
+
+const isGoalReplaceConflict = (error: unknown) => {
+  if (!(error instanceof Error)) return false
+  const cause = (error as { cause?: unknown }).cause
+  if (typeof cause !== "object" || cause === null) return false
+  const body = (cause as { body?: unknown }).body
+  if (typeof body !== "object" || body === null) return false
+  return (body as { _tag?: string })._tag === "SessionGoalReplaceConflict"
+}
+
 const collectDescendantSessionIDs = (rootID: string, sessions: Session[]) => {
   const byParent = new Map<string, string[]>()
   for (const session of sessions) {
@@ -468,10 +488,65 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
+    const goalCommand = text === "/goal" || text.startsWith(GOAL_PREFIX)
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+      if (goalCommand) {
+        showToast({
+          title: language.t("goal.toast.queueBlocked.title"),
+          description: language.t("goal.toast.queueBlocked.description"),
+        })
+        return
+      }
       input.onQueue?.(draft)
       clearContext(submission.target())
       clearInput()
+      return
+    }
+
+    if (goalCommand) {
+      const objective = text === "/goal" ? "" : text.slice(GOAL_PREFIX.length).trim()
+      if (!objective) {
+        showToast({
+          title: language.t("goal.toast.objectiveRequired.title"),
+          description: language.t("goal.toast.objectiveRequired.description"),
+        })
+        return
+      }
+
+      clearInput()
+      void client.goal
+        .create({
+          sessionID: session.id,
+          outcome: objective,
+          ...GOAL_DEFAULT_CONTRACT,
+          agent,
+          providerID: model.providerID,
+          modelID: model.modelID,
+          variant,
+        })
+        .then(() => {
+          showToast({
+            title: language.t("goal.toast.createSuccess.title"),
+            description: language.t("goal.toast.createSuccess.description"),
+            variant: "success",
+          })
+        })
+        .catch((error) => {
+          restoreInput()
+          if (isGoalReplaceConflict(error)) {
+            showToast({
+              title: language.t("goal.toast.conflict.title"),
+              description: language.t("goal.toast.conflict.description"),
+              variant: "error",
+            })
+            return
+          }
+          showToast({
+            title: language.t("goal.toast.createFailed.title"),
+            description: formatServerError(error, language.t, language.t("common.requestFailed")),
+            variant: "error",
+          })
+        })
       return
     }
 

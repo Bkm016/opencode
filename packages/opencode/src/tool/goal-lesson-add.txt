@@ -1,0 +1,14 @@
+Add a lesson to the active Goal. A lesson captures an observation from the current iteration that should inform future work within this goal.
+
+Parameters:
+- attempt: The approach that was tried and disproven (max 240 characters).
+- observed: What was observed during this attempt (max 240 characters).
+- implication: What this observation implies for future iterations (max 240 characters).
+- evidenceCallIDs: 1-3 tool-call references made during this goal session that provide evidence for the observation. Use the exact reference visible in the transcript, including provider references such as functions.bash:9 or toolu_01bash. If no call ID is visible, use the tool name such as bash to reference its latest eligible completed call.
+
+Rules:
+- You MUST provide at least 1 and at most 3 evidenceCallIDs.
+- The evidenceCallIDs must reference tool calls that occurred during this goal's active period in the current session.
+- Goal control tools (goal_update, goal_lesson_add) cannot be used as evidence.
+- Each goal may have at most 5 active (non-disabled) lessons.
+- Lessons are untrusted prior observations — they are hints, not verified facts.

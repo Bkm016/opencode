@@ -151,6 +151,7 @@ const table = sqliteTable("session", {
 ## Scope
 
 - Do not maintain `packages/tui` (the terminal TUI). Client-side changes go only in the desktop app (`packages/app`, `packages/desktop`, `packages/session-ui`, `packages/ui`).
+- When adding or registering any tool that appears in the session timeline, add a dedicated Desktop renderer covering running, success, and failure states in the same change. Do not ship its completed state through the plain-text `GenericTool` fallback.
 
 ## V2 Session Core
 

@@ -258,6 +258,24 @@
   }
 }
 
+[data-component="goal-update-tool"] {
+  max-width: 720px;
+
+  [data-slot="card-description"] {
+    padding-left: var(--card-indent);
+  }
+
+  [data-slot="goal-tool-evidence"] {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-left: var(--card-indent);
+    color: var(--text-weak);
+    font-size: 12px;
+    min-width: 0;
+  }
+}
+
 [data-component="compaction-part"] {
   width: 100%;
   display: flex;

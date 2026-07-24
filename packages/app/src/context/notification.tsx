@@ -238,6 +238,8 @@ function createServerNotificationState(input: {
   const [index, setIndex] = createStore<NotificationIndex>(buildNotificationIndex(store.list))
 
   const meta = { pruned: false, disposed: false }
+  const completedGoals = new Set<string>()
+  const completedGoalSessions = new Set<string>()
 
   const updateUnseen = (scope: "session" | "project", key: string, unseen: Notification[]) => {
     setIndex(scope, "unseen", key, unseen)
@@ -338,6 +340,7 @@ function createServerNotificationState(input: {
 
   const handleSessionIdle = (directory: string, event: { properties: { sessionID?: string } }, time: number) => {
     const sessionID = event.properties.sessionID
+    if (sessionID && completedGoalSessions.delete(sessionID)) return
     void lookup(directory, sessionID).then((session) => {
       if (meta.disposed) return
       if (!session) return
@@ -358,6 +361,39 @@ function createServerNotificationState(input: {
       const href = `/${base64Encode(directory)}/session/${sessionID}`
       if (settings.notifications.agent()) {
         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
+      }
+    })
+  }
+
+  const handleGoalComplete = (
+    directory: string,
+    event: { properties: { sessionID: string; goal: { goalID: string; outcome: string; status: string } } },
+    time: number,
+  ) => {
+    if (event.properties.goal.status !== "complete") return
+    if (completedGoals.has(event.properties.goal.goalID)) return
+    completedGoals.add(event.properties.goal.goalID)
+    completedGoalSessions.add(event.properties.sessionID)
+    void lookup(directory, event.properties.sessionID).then((session) => {
+      if (meta.disposed) return
+      if (!session || session.parentID) return
+
+      if (settings.sounds.agentEnabled()) {
+        void playSoundById(settings.sounds.agent())
+      }
+
+      append({
+        directory,
+        time,
+        viewed: viewedInCurrentSession(directory, event.properties.sessionID),
+        type: "turn-complete",
+        session: event.properties.sessionID,
+        metadata: { goalID: event.properties.goal.goalID },
+      })
+
+      const href = `/${base64Encode(directory)}/session/${event.properties.sessionID}`
+      if (settings.notifications.agent()) {
+        void platform.notify(language.t("notification.goal.complete.title"), event.properties.goal.outcome, href)
       }
     })
   }
@@ -397,10 +433,14 @@ function createServerNotificationState(input: {
 
   const unsub = serverSDK().event.listen((e) => {
     const event = e.details
-    if (event.type !== "session.idle" && event.type !== "session.error") return
+    if (event.type !== "session.idle" && event.type !== "session.error" && event.type !== "session.goal.updated") return
 
     const directory = e.name
     const time = Date.now()
+    if (event.type === "session.goal.updated") {
+      handleGoalComplete(directory, event, time)
+      return
+    }
     if (event.type === "session.idle") {
       handleSessionIdle(directory, event, time)
       return

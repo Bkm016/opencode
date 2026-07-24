@@ -14,6 +14,7 @@ import { Timestamps } from "../database/schema.sql"
 import type { SystemContext } from "../system-context/index"
 import { AgentV2 } from "../agent"
 import type { Revert } from "@opencode-ai/schema/revert"
+import type { SessionGoal } from "@opencode-ai/schema/session-goal"
 
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
 type V1MessageData = Omit<SessionV1.Info, "id" | "sessionID">
@@ -174,3 +175,78 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   snapshot: text({ mode: "json" }).notNull().$type<SystemContext.Snapshot>(),
   baseline_seq: integer().notNull(),
 })
+
+export const GoalTable = sqliteTable(
+  "session_goal",
+  {
+    goal_id: text().$type<SessionGoal.GoalID>().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    outcome: text().notNull(),
+    verification: text({ mode: "json" }).notNull().$type<string[]>(),
+    constraints: text({ mode: "json" }).notNull().$type<string[]>(),
+    boundaries: text({ mode: "json" }).notNull().$type<string[]>(),
+    iteration_policy: text().notNull().$type<SessionGoal.IterationPolicy>(),
+    blocked_condition: text(),
+    token_budget: integer(),
+    tokens_used: integer().notNull().default(0),
+    time_used_seconds: integer().notNull().default(0),
+    status: text().$type<SessionGoal.Status>().notNull(),
+    evidence: text({ mode: "json" }).notNull().$type<SessionGoal.EvidenceSnapshot[]>().default([]),
+    time_created: integer().notNull(),
+    time_updated: integer().notNull(),
+  },
+  (table) => [
+    uniqueIndex("session_goal_session_unique").on(table.session_id),
+  ],
+)
+
+export const LessonTable = sqliteTable(
+  "session_goal_lesson",
+  {
+    id: text().$type<SessionGoal.LessonID>().primaryKey(),
+    goal_id: text()
+      .$type<SessionGoal.GoalID>()
+      .notNull()
+      .references(() => GoalTable.goal_id, { onDelete: "cascade" }),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    attempt: text().notNull(),
+    observed: text().notNull(),
+    implication: text().notNull(),
+    evidence: text({ mode: "json" }).notNull().$type<SessionGoal.EvidenceSnapshot[]>(),
+    time_created: integer().notNull(),
+    time_disabled: integer(),
+  },
+  (table) => [
+    index("session_goal_lesson_goal_idx").on(table.goal_id),
+    index("session_goal_lesson_session_idx").on(table.session_id),
+  ],
+)
+
+export const GoalSettlementTable = sqliteTable(
+  "session_goal_settlement",
+  {
+    goal_id: text()
+      .$type<SessionGoal.GoalID>()
+      .notNull()
+      .references(() => GoalTable.goal_id, { onDelete: "cascade" }),
+    assistant_message_id: text()
+      .$type<string>()
+      .notNull(),
+    tokens_input: integer().notNull(),
+    tokens_output: integer().notNull(),
+    tokens_reasoning: integer().notNull().default(0),
+    tokens_cache_read: integer().notNull().default(0),
+    tokens_cache_write: integer().notNull().default(0),
+    time_seconds: integer().notNull(),
+    time_created: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.goal_id, table.assistant_message_id] }),
+  ],
+)

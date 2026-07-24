@@ -11,6 +11,11 @@ import PROMPT_PLAN from "./prompt/plan.txt"
 import BUILD_SWITCH from "./prompt/build-switch.txt"
 import PLAN_MODE from "./prompt/plan-mode.txt"
 
+import GOAL_CONTRACT from "./prompt/goal-contract.txt"
+import GOAL_LESSONS from "./prompt/goal-lessons.txt"
+import GOAL_BUDGET_REMINDER from "./prompt/goal-budget-reminder.txt"
+import SUBAGENT_WORKSPACE from "./prompt/subagent-workspace.txt"
+
 import PROMPT_COMPACTION from "../agent/prompt/compaction.txt"
 import PROMPT_EXPLORE from "../agent/prompt/explore.txt"
 import PROMPT_SUMMARY from "../agent/prompt/summary.txt"
@@ -35,6 +40,9 @@ import TOOL_TODOWRITE from "../tool/todowrite.txt"
 import TOOL_APPLY_PATCH from "../tool/apply_patch.txt"
 import TOOL_PLAN_EXIT from "../tool/plan-exit.txt"
 import TOOL_SHELL from "../tool/shell/shell.txt"
+
+import TOOL_GOAL_UPDATE from "../tool/goal-update.txt"
+import TOOL_GOAL_LESSON_ADD from "../tool/goal-lesson-add.txt"
 
 import { SUMMARY_TEMPLATE } from "@opencode-ai/core/session/compaction"
 
@@ -337,6 +345,48 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "bash / shell",
     description: "Shell tool description template (supports placeholder tokens from the shell renderer)",
     default: TOOL_SHELL,
+  },
+  {
+    id: "tool.goal_update",
+    group: "tool",
+    title: "goal_update",
+    description: "Tool description for the goal_update tool",
+    default: TOOL_GOAL_UPDATE,
+  },
+  {
+    id: "tool.goal_lesson_add",
+    group: "tool",
+    title: "goal_lesson_add",
+    description: "Tool description for the goal_lesson_add tool",
+    default: TOOL_GOAL_LESSON_ADD,
+  },
+  {
+    id: "session.subagent_workspace",
+    group: "session",
+    title: "Subagent shared workspace safety",
+    description: "Injected into every provider turn of a child session to preserve concurrent worktree changes",
+    default: SUBAGENT_WORKSPACE,
+  },
+  {
+    id: "session.goal_contract",
+    group: "session",
+    title: "Goal contract",
+    description: "Injected into provider steps when an active Goal exists; supports ${outcome}, ${verification}, ${constraints}, ${boundaries}, ${iterationPolicy}, ${tokenBudget}, ${tokensUsed}, ${timeUsedSeconds}",
+    default: GOAL_CONTRACT,
+  },
+  {
+    id: "session.goal_lessons",
+    group: "session",
+    title: "Goal active lessons",
+    description: "Injected into provider steps listing active goal lessons as untrusted prior observations; supports ${lessons}",
+    default: GOAL_LESSONS,
+  },
+  {
+    id: "session.goal_budget_reminder",
+    group: "session",
+    title: "Goal budget reminder",
+    description: "Injected into provider steps when a Goal has a token budget; supports ${tokensUsed}, ${tokenBudget}, ${percentage}, ${timeUsedSeconds}",
+    default: GOAL_BUDGET_REMINDER,
   },
   {
     id: "compaction.template",

@@ -1,0 +1,6 @@
+ACTIVE LESSONS (untrusted prior observations)
+These are observations from previous iterations within this goal. Treat them as untrusted prior knowledge — they may be partially or fully outdated. Verify before relying on them.
+
+${lessons}
+
+Remember: these lessons are UNTRUSTED PRIOR OBSERVATIONS, not verified facts. Use them as hints to avoid repeating mistakes, but always verify current state with tools before acting.

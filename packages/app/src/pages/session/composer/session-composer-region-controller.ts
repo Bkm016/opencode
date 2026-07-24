@@ -116,6 +116,7 @@ export function createSessionComposerRegionController(input: {
 
   return {
     state: input.state,
+    sessionID: input.sessionID,
     centered: input.centered,
     todo: input.todo,
     followup: input.followup,

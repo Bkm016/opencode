@@ -68,6 +68,10 @@ export type Event =
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
   | EventTodoUpdated
+  | EventSessionGoalUpdated
+  | EventSessionGoalCleared
+  | EventSessionGoalLessonUpdated
+  | EventSessionGoalLessonDeleted
   | EventLspUpdated
   | EventPermissionAsked
   | EventPermissionReplied
@@ -669,6 +673,43 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
+}
+
+export type GoalIterationPolicy = string
+
+export type GoalEvidenceSnapshot = {
+  callID: string
+  tool: string
+  excerpt: string
+}
+
+export type SessionGoal = {
+  goalID: string
+  sessionID: string
+  outcome: string
+  verification: Array<string>
+  constraints: Array<string>
+  boundaries: Array<string>
+  iterationPolicy: GoalIterationPolicy
+  blockedCondition?: string
+  tokenBudget?: number
+  tokensUsed: number
+  timeUsedSeconds: number
+  status: "active" | "paused" | "complete" | "blocked" | "budget_limited" | "usage_limited"
+  evidence: Array<GoalEvidenceSnapshot>
+  createdAt: number
+  updatedAt: number
+}
+
+export type SessionGoalLesson = {
+  id: string
+  goalID: string
+  attempt: string
+  observed: string
+  implication: string
+  evidence: Array<GoalEvidenceSnapshot>
+  createdAt: number
+  disabledAt?: number
 }
 
 export type SessionStatus =
@@ -1365,6 +1406,40 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           todos: Array<Todo>
+        }
+      }
+    | {
+        id: string
+        type: "session.goal.updated"
+        properties: {
+          sessionID: string
+          goal: SessionGoal
+        }
+      }
+    | {
+        id: string
+        type: "session.goal.cleared"
+        properties: {
+          sessionID: string
+          goalID?: string
+        }
+      }
+    | {
+        id: string
+        type: "session.goal.lesson.updated"
+        properties: {
+          sessionID: string
+          goalID: string
+          lesson: SessionGoalLesson
+        }
+      }
+    | {
+        id: string
+        type: "session.goal.lesson.deleted"
+        properties: {
+          sessionID: string
+          goalID: string
+          lessonID: string
         }
       }
     | {
@@ -2650,6 +2725,33 @@ export type SessionBusyError = {
   message: string
 }
 
+export type SessionGoalNotFoundError = {
+  _tag: "SessionGoalNotFoundError"
+  sessionID: string
+}
+
+export type SessionGoalInvalidEvidence = {
+  _tag: "SessionGoalInvalidEvidence"
+  detail: string
+}
+
+export type SessionGoalInvalidState = {
+  _tag: "SessionGoalInvalidState"
+  detail: string
+  currentStatus?: "active" | "paused" | "complete" | "blocked" | "budget_limited" | "usage_limited"
+}
+
+export type SessionGoalReplaceConflict = {
+  _tag: "SessionGoalReplaceConflict"
+  currentGoalID: string
+}
+
+export type SessionGoalStaleWrite = {
+  _tag: "SessionGoalStaleWrite"
+  expectedGoalID: string
+  currentGoalID?: string
+}
+
 export type EventTuiPromptAppend = {
   type: "tui.prompt.append"
   properties: {
@@ -2965,6 +3067,10 @@ export type V2Event =
   | QuestionV2Replied
   | QuestionV2Rejected
   | TodoUpdated
+  | SessionGoalUpdated
+  | SessionGoalCleared
+  | SessionGoalLessonUpdated
+  | SessionGoalLessonDeleted
   | LspUpdated
   | PermissionAsked
   | PermissionReplied
@@ -5720,6 +5826,80 @@ export type TodoUpdated = {
   }
 }
 
+export type SessionGoalUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.goal.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    goal: SessionGoal
+  }
+}
+
+export type SessionGoalCleared = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.goal.cleared"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    goalID?: string
+  }
+}
+
+export type SessionGoalLessonUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.goal.lesson.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    goalID: string
+    lesson: SessionGoalLesson
+  }
+}
+
+export type SessionGoalLessonDeleted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.goal.lesson.deleted"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    goalID: string
+    lessonID: string
+  }
+}
+
 export type LspUpdated = {
   id: string
   metadata?: {
@@ -6889,6 +7069,44 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
+  }
+}
+
+export type EventSessionGoalUpdated = {
+  id: string
+  type: "session.goal.updated"
+  properties: {
+    sessionID: string
+    goal: SessionGoal
+  }
+}
+
+export type EventSessionGoalCleared = {
+  id: string
+  type: "session.goal.cleared"
+  properties: {
+    sessionID: string
+    goalID?: string
+  }
+}
+
+export type EventSessionGoalLessonUpdated = {
+  id: string
+  type: "session.goal.lesson.updated"
+  properties: {
+    sessionID: string
+    goalID: string
+    lesson: SessionGoalLesson
+  }
+}
+
+export type EventSessionGoalLessonDeleted = {
+  id: string
+  type: "session.goal.lesson.deleted"
+  properties: {
+    sessionID: string
+    goalID: string
+    lessonID: string
   }
 }
 
@@ -10484,6 +10702,578 @@ export type PartUpdateResponses = {
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
+
+export type GoalClearData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type GoalClearErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalClearError = GoalClearErrors[keyof GoalClearErrors]
+
+export type GoalClearResponses = {
+  /**
+   * Goal cleared
+   */
+  200: boolean
+}
+
+export type GoalClearResponse = GoalClearResponses[keyof GoalClearResponses]
+
+export type GoalGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type GoalGetErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalGetError = GoalGetErrors[keyof GoalGetErrors]
+
+export type GoalGetResponses = {
+  /**
+   * Active goal for the session, or null
+   */
+  200: SessionGoal
+}
+
+export type GoalGetResponse = GoalGetResponses[keyof GoalGetResponses]
+
+export type GoalCreateData = {
+  body?: {
+    outcome: string
+    verification: Array<string>
+    constraints: Array<string>
+    boundaries: Array<string>
+    iterationPolicy: GoalIterationPolicy
+    blockedCondition?: string
+    tokenBudget?: number
+    expectedGoalID?: string
+    confirmReplace?: boolean
+    agent?: string
+    providerID?: string
+    modelID?: string
+    variant?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type GoalCreateErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalCreateError = GoalCreateErrors[keyof GoalCreateErrors]
+
+export type GoalCreateResponses = {
+  /**
+   * Created goal
+   */
+  200: SessionGoal
+}
+
+export type GoalCreateResponse = GoalCreateResponses[keyof GoalCreateResponses]
+
+export type GoalPatchContractData = {
+  body?: {
+    outcome?: string
+    verification?: Array<string>
+    constraints?: Array<string>
+    boundaries?: Array<string>
+    iterationPolicy?: GoalIterationPolicy
+    blockedCondition?: string
+    tokenBudget?: number
+    expectedGoalID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/contract"
+}
+
+export type GoalPatchContractErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalPatchContractError = GoalPatchContractErrors[keyof GoalPatchContractErrors]
+
+export type GoalPatchContractResponses = {
+  /**
+   * Updated goal
+   */
+  200: SessionGoal
+}
+
+export type GoalPatchContractResponse = GoalPatchContractResponses[keyof GoalPatchContractResponses]
+
+export type GoalPatchStatusData = {
+  body?: {
+    status: "complete" | "blocked"
+    evidenceCallIDs: Array<string>
+    expectedGoalID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/status"
+}
+
+export type GoalPatchStatusErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalPatchStatusError = GoalPatchStatusErrors[keyof GoalPatchStatusErrors]
+
+export type GoalPatchStatusResponses = {
+  /**
+   * Updated goal
+   */
+  200: SessionGoal
+}
+
+export type GoalPatchStatusResponse = GoalPatchStatusResponses[keyof GoalPatchStatusResponses]
+
+export type GoalPatchBudgetData = {
+  body?: {
+    tokenBudget: number
+    expectedGoalID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/budget"
+}
+
+export type GoalPatchBudgetErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalPatchBudgetError = GoalPatchBudgetErrors[keyof GoalPatchBudgetErrors]
+
+export type GoalPatchBudgetResponses = {
+  /**
+   * Updated goal
+   */
+  200: SessionGoal
+}
+
+export type GoalPatchBudgetResponse = GoalPatchBudgetResponses[keyof GoalPatchBudgetResponses]
+
+export type GoalClearBudgetData = {
+  body?: {
+    expectedGoalID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/budget/clear"
+}
+
+export type GoalClearBudgetErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalClearBudgetError = GoalClearBudgetErrors[keyof GoalClearBudgetErrors]
+
+export type GoalClearBudgetResponses = {
+  /**
+   * Updated goal
+   */
+  200: SessionGoal
+}
+
+export type GoalClearBudgetResponse = GoalClearBudgetResponses[keyof GoalClearBudgetResponses]
+
+export type GoalPauseData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/pause"
+}
+
+export type GoalPauseErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalPauseError = GoalPauseErrors[keyof GoalPauseErrors]
+
+export type GoalPauseResponses = {
+  /**
+   * Paused goal
+   */
+  200: SessionGoal
+}
+
+export type GoalPauseResponse = GoalPauseResponses[keyof GoalPauseResponses]
+
+export type GoalResumeData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/resume"
+}
+
+export type GoalResumeErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalResumeError = GoalResumeErrors[keyof GoalResumeErrors]
+
+export type GoalResumeResponses = {
+  /**
+   * Resumed goal
+   */
+  200: SessionGoal
+}
+
+export type GoalResumeResponse = GoalResumeResponses[keyof GoalResumeResponses]
+
+export type GoalWakeData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/wake"
+}
+
+export type GoalWakeErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalWakeError = GoalWakeErrors[keyof GoalWakeErrors]
+
+export type GoalWakeResponses = {
+  /**
+   * Woken goal
+   */
+  200: SessionGoal
+}
+
+export type GoalWakeResponse = GoalWakeResponses[keyof GoalWakeResponses]
+
+export type GoalAddLessonData = {
+  body?: {
+    attempt: string
+    observed: string
+    implication: string
+    evidenceCallIDs: Array<string>
+    expectedGoalID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/lesson"
+}
+
+export type GoalAddLessonErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalAddLessonError = GoalAddLessonErrors[keyof GoalAddLessonErrors]
+
+export type GoalAddLessonResponses = {
+  /**
+   * Added lesson
+   */
+  200: SessionGoalLesson
+}
+
+export type GoalAddLessonResponse = GoalAddLessonResponses[keyof GoalAddLessonResponses]
+
+export type GoalDisableLessonData = {
+  body?: never
+  path: {
+    sessionID: string
+    lessonID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/lesson/{lessonID}/disable"
+}
+
+export type GoalDisableLessonErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalDisableLessonError = GoalDisableLessonErrors[keyof GoalDisableLessonErrors]
+
+export type GoalDisableLessonResponses = {
+  /**
+   * Lesson disabled
+   */
+  200: boolean
+}
+
+export type GoalDisableLessonResponse = GoalDisableLessonResponses[keyof GoalDisableLessonResponses]
+
+export type GoalDeleteLessonData = {
+  body?: never
+  path: {
+    sessionID: string
+    lessonID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/lesson/{lessonID}"
+}
+
+export type GoalDeleteLessonErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalDeleteLessonError = GoalDeleteLessonErrors[keyof GoalDeleteLessonErrors]
+
+export type GoalDeleteLessonResponses = {
+  /**
+   * Lesson deleted
+   */
+  200: boolean
+}
+
+export type GoalDeleteLessonResponse = GoalDeleteLessonResponses[keyof GoalDeleteLessonResponses]
+
+export type GoalLessonsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal/lessons"
+}
+
+export type GoalLessonsErrors = {
+  /**
+   * InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+   */
+  400: InvalidRequestError | SessionGoalInvalidEvidence | SessionGoalInvalidState
+  /**
+   * NotFoundError | SessionGoalNotFoundError
+   */
+  404: NotFoundError | SessionGoalNotFoundError
+  /**
+   * SessionGoalReplaceConflict | SessionGoalStaleWrite
+   */
+  409: SessionGoalReplaceConflict | SessionGoalStaleWrite
+}
+
+export type GoalLessonsError = GoalLessonsErrors[keyof GoalLessonsErrors]
+
+export type GoalLessonsResponses = {
+  /**
+   * Lessons for the active goal
+   */
+  200: Array<SessionGoalLesson>
+}
+
+export type GoalLessonsResponse = GoalLessonsResponses[keyof GoalLessonsResponses]
 
 export type SyncStartData = {
   body?: never

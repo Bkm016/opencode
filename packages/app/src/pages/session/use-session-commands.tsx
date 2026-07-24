@@ -351,6 +351,18 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       },
     }),
     sessionCommand({
+      id: "session.goal",
+      title: language.t("command.session.goal"),
+      description: language.t("command.session.goal.description"),
+      slash: "goal",
+      disabled: !params.id,
+      onSelect: () => {
+        const text = "/goal "
+        prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+        focusInput()
+      },
+    }),
+    sessionCommand({
       id: "session.undo",
       title: language.t("command.session.undo"),
       description: language.t("command.session.undo.description"),

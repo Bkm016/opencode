@@ -55,6 +55,8 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { Goal } from "./goal"
+import { SessionGoal } from "@opencode-ai/schema/session-goal"
 import { LLMEvent } from "@opencode-ai/llm"
 
 // @ts-ignore
@@ -96,6 +98,12 @@ export interface Interface {
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
+  readonly wakeGoal: (sessionID: SessionID, options?: {
+    agent?: string
+    providerID?: ProviderV2.ID
+    modelID?: ModelV2.ID
+    variant?: string
+  }) => Effect.Effect<Goal.Info, Goal.NotFoundError | Goal.InvalidState>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
@@ -130,6 +138,7 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const goalSvc = yield* Goal.Service
     const { db } = database
     // 每次请求覆盖 Desktop 当前开放项目，避免沿用上一轮状态扩大跨项目授权。
     const openProjectDirs = new Map<SessionID, readonly string[]>()
@@ -143,6 +152,8 @@ const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
+      // cancel 先 pause active Goal，防止安全边界自动复活
+      yield* goalSvc.pause(sessionID).pipe(Effect.ignore)
       yield* state.cancel(sessionID)
     })
 
@@ -1048,7 +1059,8 @@ const layer = Layer.effect(
     ) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
+      // admission 临界区：createUserMessage 与 synthetic claim 共用，防止并发竞态
+      const message = yield* state.admit(input.sessionID, createUserMessage(input))
       yield* sessions.touch(input.sessionID)
 
       const permissions: PermissionV1.Rule[] = []
@@ -1100,10 +1112,116 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    // Goal reminder 构建
+    const buildGoalSystemPrompt = (goal: Goal.Info, overrides?: Record<string, string | undefined> | null) => {
+      const template = PromptCatalog.resolve("session.goal_contract", overrides)
+      return template
+        .replace("${outcome}", () => goal.outcome)
+        .replace("${verification}", () => goal.verification.join("\n"))
+        .replace("${constraints}", () => goal.constraints.join("\n"))
+        .replace("${boundaries}", () => goal.boundaries.join("\n"))
+        .replace(
+          "${iterationPolicy}",
+          () => goal.iterationPolicy,
+        )
+        .replace("${blockedCondition}", () => goal.blockedCondition ?? "None specified")
+        .replace("${tokenBudget}", () => goal.tokenBudget?.toString() ?? "unlimited")
+        .replace("${tokensUsed}", () => goal.tokensUsed.toString())
+        .replace("${timeUsedSeconds}", () => goal.timeUsedSeconds.toString())
+    }
+
+    const buildLessonsPrompt = (
+      lessons: Goal.Lesson[],
+      overrides?: Record<string, string | undefined> | null,
+    ) => {
+      if (lessons.length === 0) return ""
+      const template = PromptCatalog.resolve("session.goal_lessons", overrides)
+      const body = lessons
+        .map(
+          (l, i) =>
+            `### Lesson ${i + 1}\n- Attempt: ${l.attempt}\n- Observed: ${l.observed}\n- Implication: ${l.implication}`,
+        )
+        .join("\n\n")
+      return template.replace("${lessons}", () => body)
+    }
+
+    const buildBudgetReminder = (
+      goal: Goal.Info,
+      overrides?: Record<string, string | undefined> | null,
+    ) => {
+      if (goal.tokenBudget === undefined || goal.tokenBudget === 0) return ""
+      const template = PromptCatalog.resolve("session.goal_budget_reminder", overrides)
+      const percentage = Math.round((goal.tokensUsed / goal.tokenBudget) * 100)
+      return template
+        .replace("${tokensUsed}", () => goal.tokensUsed.toString())
+        .replace("${tokenBudget}", () => goal.tokenBudget!.toString())
+        .replace("${percentage}", () => percentage.toString())
+        .replace("${timeUsedSeconds}", () => goal.timeUsedSeconds.toString())
+    }
+
+    const createGoalContinuation = Effect.fn("SessionPrompt.createGoalContinuation")(function* (
+      sessionID: SessionID,
+      goal: Goal.Info,
+      options?: { agent?: string; providerID?: ProviderV2.ID; modelID?: ModelV2.ID; variant?: string },
+    ) {
+      const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && lastMsg.info.role === "user") return
+
+      const defaultAgent = yield* agents.defaultInfo()
+      const current = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const latestUser = msgs.findLast((message) => message.info.role === "user")?.info
+      let agentName =
+        options?.agent ??
+        (latestUser?.role === "user" ? latestUser.agent : undefined) ??
+        current.agent ??
+        defaultAgent.name
+      let model: { providerID: ProviderV2.ID; modelID: ModelV2.ID; variant?: string }
+      if (options?.providerID && options?.modelID) {
+        model = {
+          providerID: options.providerID,
+          modelID: options.modelID,
+          ...(options.variant && options.variant !== "default" ? { variant: options.variant } : {}),
+        }
+      } else if (latestUser?.role === "user") {
+        model = latestUser.model
+      } else if (current.model) {
+        model = {
+          providerID: ProviderV2.ID.make(current.model.providerID),
+          modelID: ModelV2.ID.make(current.model.id),
+          ...(current.model.variant && current.model.variant !== "default"
+            ? { variant: current.model.variant }
+            : {}),
+        }
+      } else {
+        const resolved = yield* provider.defaultModel().pipe(Effect.orDie)
+        model = { providerID: resolved.providerID, modelID: resolved.modelID }
+      }
+      const userMsg: SessionV1.User = {
+        id: MessageID.ascending(),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: agentName,
+        model,
+      }
+      yield* sessions.updateMessage(userMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: userMsg.id,
+        sessionID,
+        type: "text",
+        text: `Continue working toward the active Goal: ${goal.outcome}. Review the current state, check verification criteria, and proceed with the next step.`,
+        synthetic: true,
+        metadata: { [Goal.GOAL_SYNTHETIC_TAG]: goal.goalID },
+      } satisfies SessionV1.TextPart)
+    })
+
     const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
+        let finalizingGoalID: SessionGoal.GoalID | undefined
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
@@ -1121,20 +1239,43 @@ const layer = Layer.effect(
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
           )
-          // Some providers return "stop" even when the assistant message contains
-          // tool calls. Keep the loop running so tool results can be sent back to
-          // the model, but ignore cleanup-marked interrupted orphans.
           const hasToolCalls =
             lastAssistantMsg?.parts.some(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
 
-          if (
+          // 安全边界：last assistant 普通完成且无待处理 tool calls
+          const assistantNormallyFinished =
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
             lastUser.id < lastAssistant.id
-          ) {
+
+          if (assistantNormallyFinished) {
+            // 检查是否有 pending 真实用户消息（非 synthetic）
+            const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+            const hasPendingRealUser =
+              lastUserMsg &&
+              lastUserMsg.parts.some((p) => p.type === "text" && !("synthetic" in p && p.synthetic)) &&
+              lastUserMsg.info.id > lastAssistant.id
+
+            if (!hasPendingRealUser) {
+              const goalForContinuation = yield* state.admit(sessionID, Effect.gen(function* () {
+                const g = yield* goalSvc.get(sessionID)
+                if (!g || g.status !== "active") return undefined
+                yield* createGoalContinuation(sessionID, g)
+                return g
+              }))
+              if (goalForContinuation) {
+                // 持久化 synthetic 后重新读取，确认 goalID 仍匹配且 active
+                const recheck = yield* goalSvc.get(sessionID)
+                if (recheck && recheck.goalID === goalForContinuation.goalID && recheck.status === "active") {
+                  step = 0
+                  continue
+                }
+              }
+            }
+
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is SessionV1.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
             )
@@ -1151,6 +1292,34 @@ const layer = Layer.effect(
           }
 
           step++
+
+          // 若 last user 是 Goal synthetic，在 provider 调用前重新读取 Goal，
+          // 要求 goalID 匹配且 status active，否则退出不调用 provider。
+          // 该检查覆盖 wakeGoal 首轮和普通 continuation。
+          const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+          if (lastUserMsg) {
+            const syntheticPart = lastUserMsg.parts.find(
+              (p): p is SessionV1.TextPart =>
+                p.type === "text" &&
+                "synthetic" in p && p.synthetic === true &&
+                p.metadata !== undefined && p.metadata !== null &&
+                typeof p.metadata === "object" &&
+                Goal.GOAL_SYNTHETIC_TAG in p.metadata,
+            )
+            if (syntheticPart) {
+              const goalCheck = yield* goalSvc.get(sessionID)
+              const syntheticGoalID = syntheticPart.metadata?.[Goal.GOAL_SYNTHETIC_TAG]
+              if (
+                !goalCheck ||
+                goalCheck.status !== "active" ||
+                (typeof syntheticGoalID === "string" && syntheticGoalID !== goalCheck.goalID)
+              ) {
+                yield* Effect.logInfo("synthetic user does not match active goal, exiting loop", { "session.id": sessionID })
+                break
+              }
+            }
+          }
+
           if (step === 1)
             yield* title({
               session,
@@ -1204,6 +1373,24 @@ const layer = Layer.effect(
             Effect.provideService(Session.Service, sessions),
           )
 
+          // provider step 开始时捕获 active goalID
+          const capturedGoal = yield* goalSvc.get(sessionID)
+          const goalIsActive = capturedGoal && capturedGoal.status === "active"
+
+          // 注入 Goal Contract + lessons + budget reminder
+          const goalReminderParts: string[] = []
+          if (goalIsActive) {
+            const cfg = yield* config.get()
+            goalReminderParts.push(buildGoalSystemPrompt(capturedGoal!, cfg.prompts))
+            const activeLessons = yield* goalSvc.lessons(capturedGoal!.goalID)
+            const lessonsPrompt = buildLessonsPrompt(activeLessons, cfg.prompts)
+            if (lessonsPrompt) goalReminderParts.push(lessonsPrompt)
+            if (capturedGoal!.tokenBudget !== undefined && capturedGoal!.tokenBudget > 0) {
+              const budgetPrompt = buildBudgetReminder(capturedGoal!, cfg.prompts)
+              if (budgetPrompt) goalReminderParts.push(budgetPrompt)
+            }
+          }
+
           const msg: SessionV1.Assistant = {
             id: MessageID.ascending(),
             parentID: lastUser.id,
@@ -1243,27 +1430,33 @@ const layer = Layer.effect(
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
+            const isFinalizing = finalizingGoalID !== undefined
 
-            const tools = yield* SessionTools.resolve({
-              agent,
-              session,
-              model,
-              processor: handle,
-              bypassAgentCheck,
-              messages: msgs,
-              promptOps,
-              openProjectDirectories: openProjectDirs.get(sessionID),
-            }).pipe(
-              Effect.provideService(Plugin.Service, plugin),
-              Effect.provideService(Permission.Service, permission),
-              Effect.provideService(ToolRegistry.Service, registry),
-              Effect.provideService(MCP.Service, mcp),
-              Effect.provideService(Truncate.Service, truncate),
-              Effect.provideService(RuntimeFlags.Service, flags),
-            )
+            // final turn：禁用全部工具
+            let tools: Record<string, AITool> = {}
+            if (!isFinalizing) {
+              tools = yield* SessionTools.resolve({
+                agent,
+                session,
+                model,
+                processor: handle,
+                bypassAgentCheck,
+                messages: msgs,
+                promptOps,
+                openProjectDirectories: openProjectDirs.get(sessionID),
+              }).pipe(
+                Effect.provideService(Plugin.Service, plugin),
+                Effect.provideService(Permission.Service, permission),
+                Effect.provideService(ToolRegistry.Service, registry),
+                Effect.provideService(MCP.Service, mcp),
+                Effect.provideService(Truncate.Service, truncate),
+                Effect.provideService(RuntimeFlags.Service, flags),
+                Effect.provideService(Goal.Service, goalSvc),
+              )
+            }
 
             const cfg = yield* config.get()
-            if (lastUser.format?.type === "json_schema") {
+            if (!isFinalizing && lastUser.format?.type === "json_schema") {
               tools["StructuredOutput"] = createStructuredOutputTool({
                 schema: lastUser.format.schema,
                 description: PromptCatalog.resolve("runtime.structured_output_tool", cfg.prompts),
@@ -1290,6 +1483,8 @@ const layer = Layer.effect(
               ...instructions,
               ...(mcpInstructions ? [mcpInstructions] : []),
               ...(skills ? [skills] : []),
+              ...(session.parentID ? [PromptCatalog.resolve("session.subagent_workspace", cfg.prompts)] : []),
+              ...goalReminderParts,
             ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") {
@@ -1315,22 +1510,76 @@ const layer = Layer.effect(
               ],
               tools,
               model,
-              toolChoice: format.type === "json_schema" ? "required" : undefined,
+              // final turn 强制无工具
+              toolChoice: isFinalizing ? "none" : format.type === "json_schema" ? "required" : undefined,
             })
+
+            // final turn：结算已发生 usage 后 break，不再 continuation
+            if (isFinalizing && finalizingGoalID) {
+              const stepTime = handle.message.time.completed
+                ? Math.max(0, Math.round((handle.message.time.completed - msg.time.created) / 1000))
+                : 0
+              yield* goalSvc
+                .settleUsage({
+                  sessionID,
+                  goalID: finalizingGoalID,
+                  expectedGoalID: finalizingGoalID,
+                  messageID: msg.id,
+                  tokensInput: handle.message.tokens.input,
+                  tokensOutput: handle.message.tokens.output,
+                  tokensReasoning: handle.message.tokens.reasoning,
+                  tokensCacheRead: handle.message.tokens.cache.read,
+                  tokensCacheWrite: handle.message.tokens.cache.write,
+                  timeSeconds: stepTime,
+                })
+                .pipe(Effect.ignore)
+              finalizingGoalID = undefined
+              return "break" as const
+            }
 
             if (structured !== undefined) {
               handle.message.structured = structured
               handle.message.finish = handle.message.finish ?? "stop"
               yield* sessions.updateMessage(handle.message)
+              // 消费并清空 structured，限定单 provider turn
+              structured = undefined
+              // 结构化输出成功也走 settlement + continuation 决策
+              if (capturedGoal && goalIsActive) {
+                const stepTime = handle.message.time.completed
+                  ? Math.max(0, Math.round((handle.message.time.completed - msg.time.created) / 1000))
+                  : 0
+                yield* goalSvc
+                  .settleUsage({
+                    sessionID,
+                    goalID: capturedGoal.goalID,
+                    expectedGoalID: capturedGoal.goalID,
+                    messageID: msg.id,
+                    tokensInput: handle.message.tokens.input,
+                    tokensOutput: handle.message.tokens.output,
+                    tokensReasoning: handle.message.tokens.reasoning,
+                    tokensCacheRead: handle.message.tokens.cache.read,
+                    tokensCacheWrite: handle.message.tokens.cache.write,
+                    timeSeconds: stepTime,
+                  })
+                  .pipe(Effect.ignore)
+                const postGoal = yield* goalSvc.get(sessionID)
+                if (
+                  postGoal &&
+                  (postGoal.status === "budget_limited" ||
+                    postGoal.status === "paused" ||
+                    postGoal.status === "complete" ||
+                    postGoal.status === "blocked")
+                ) {
+                  return "break" as const
+                }
+                // active 且预算未限：continue，安全边界会创建 synthetic continuation
+                return "continue" as const
+              }
               return "break" as const
             }
 
             const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
             if (finished && !handle.message.error) {
-              // Surface any content-filter finish (e.g. Anthropic stop_reason:
-              // refusal) as an error. These turns may have produced no visible
-              // output at all — previously the session went idle silently — or
-              // partial text that was cut off by the provider's filter.
               if (handle.message.finish === "content-filter") {
                 handle.message.error = new SessionV1.ContentFilterError({
                   message: "The response was blocked by the provider's content filter",
@@ -1345,6 +1594,43 @@ const layer = Layer.effect(
                   retries: 0,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
+                return "break" as const
+              }
+            }
+
+            // Goal accounting：仅 active goalID 做权威结算
+            if (capturedGoal && goalIsActive) {
+              const stepTime = handle.message.time.completed
+                ? Math.max(0, Math.round((handle.message.time.completed - msg.time.created) / 1000))
+                : 0
+              yield* goalSvc
+                .settleUsage({
+                  sessionID,
+                  goalID: capturedGoal.goalID,
+                  expectedGoalID: capturedGoal.goalID,
+                  messageID: msg.id,
+                  tokensInput: handle.message.tokens.input,
+                  tokensOutput: handle.message.tokens.output,
+                  tokensReasoning: handle.message.tokens.reasoning,
+                  tokensCacheRead: handle.message.tokens.cache.read,
+                  tokensCacheWrite: handle.message.tokens.cache.write,
+                  timeSeconds: stepTime,
+                })
+                .pipe(Effect.ignore)
+              const postGoal = yield* goalSvc.get(sessionID)
+              if (
+                postGoal &&
+                (postGoal.status === "budget_limited" ||
+                  postGoal.status === "paused")
+              ) {
+                return "break" as const
+              }
+              // complete/blocked：允许一次 final turn 消费 tool result
+              if (postGoal && (postGoal.status === "complete" || postGoal.status === "blocked")) {
+                if (result === "continue") {
+                  finalizingGoalID = postGoal.goalID
+                  return "continue" as const
+                }
                 return "break" as const
               }
             }
@@ -1379,6 +1665,28 @@ const layer = Layer.effect(
         Effect.ensuring(Effect.sync(() => openProjectDirs.delete(input.sessionID))),
       )
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), run)
+    })
+
+    // 唤醒 active Goal：空 session 或最后已完成 assistant 且无 pending user 时插入 synthetic。
+    // admission 锁仅覆盖"检查 active + 若需则插入 synthetic"，释放锁后再 fork loop。
+    const wakeGoal = Effect.fn("SessionPrompt.wakeGoal")(function* (
+      sessionID: SessionID,
+      options?: { agent?: string; providerID?: ProviderV2.ID; modelID?: ModelV2.ID; variant?: string },
+    ) {
+      const goal = yield* state.admit(sessionID, Effect.gen(function* () {
+        const g = yield* goalSvc.get(sessionID)
+        if (!g) return yield* Effect.fail(new Goal.NotFoundError({ sessionID }))
+        if (g.status !== "active") return yield* Effect.fail(new Goal.InvalidState({ detail: "goal not active", currentStatus: g.status }))
+        const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+        const lastMsg = msgs[msgs.length - 1]
+        const hasPendingUser = !!lastMsg && lastMsg.info.role === "user"
+        if (!hasPendingUser) {
+          yield* createGoalContinuation(sessionID, g, options)
+        }
+        return g
+      }))
+      yield* loop({ sessionID }).pipe(Effect.forkIn(scope))
+      return goal
     })
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
@@ -1523,6 +1831,7 @@ const layer = Layer.effect(
       shell,
       command,
       resolvePromptParts,
+      wakeGoal,
     })
   }),
 )
@@ -1663,6 +1972,7 @@ export const node = LayerNode.make({
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
+    Goal.node,
     Database.node,
   ],
 })

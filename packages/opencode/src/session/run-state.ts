@@ -3,7 +3,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
-import { Deferred, Effect, Latch, Layer, Scope, Context, SynchronizedRef } from "effect"
+import { Deferred, Effect, Latch, Layer, Scope, Context, SynchronizedRef, Semaphore } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
@@ -50,6 +50,8 @@ export interface Interface {
     work: Effect.Effect<SessionV1.WithParts>,
     ready?: Latch.Latch,
   ) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
+  // 每会话 admission 临界区：createUserMessage 与 synthetic claim 共用，防止并发竞态
+  readonly admit: <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRunState") {}
@@ -73,6 +75,8 @@ const layer = Layer.effect(
         >()
         // SynchronizedRef：register / release / unregister 在无交叉 yield 的临界区内完成。
         const waits = yield* SynchronizedRef.make(new Map<SessionID, SessionWaits>())
+        // 每会话 admission 信号量：createUserMessage 与 synthetic claim 共用，防止并发竞态
+        const admissionSemaphores = new Map<SessionID, Semaphore.Semaphore>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (entry) => entry.runner.cancel, {
@@ -80,6 +84,7 @@ const layer = Layer.effect(
               discard: true,
             })
             runners.clear()
+            admissionSemaphores.clear()
             const snapshot = yield* SynchronizedRef.get(waits)
             for (const session of snapshot.values()) {
               for (const entry of session.waiters.values()) {
@@ -89,7 +94,7 @@ const layer = Layer.effect(
             yield* SynchronizedRef.set(waits, new Map())
           }),
         )
-        return { runners, waits, scope }
+        return { runners, waits, scope, admissionSemaphores }
       }),
     )
 
@@ -275,6 +280,19 @@ const layer = Layer.effect(
       )
     })
 
+    // 每会话 admission 临界区：createUserMessage 与 synthetic claim 共用
+    const admit = function <A, E, R>(sessionID: SessionID, work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+      return Effect.gen(function* () {
+        const data = yield* InstanceState.get(state)
+        let sem = data.admissionSemaphores.get(sessionID)
+        if (!sem) {
+          sem = Semaphore.makeUnsafe(1)
+          data.admissionSemaphores.set(sessionID, sem)
+        }
+        return yield* sem.withPermit(work)
+      })
+    }
+
     return Service.of({
       assertNotBusy,
       onUserPrompt,
@@ -283,6 +301,7 @@ const layer = Layer.effect(
       cancel,
       ensureRunning,
       startShell,
+      admit,
     })
   }),
 )

@@ -40,6 +40,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionRetry } from "@/session/retry"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import { Goal } from "@/session/goal"
 import { SessionShare } from "@/share/session"
 import { ShareNext } from "@/share/share-next"
 import { Skill } from "@/skill"
@@ -97,6 +98,7 @@ import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
+import { goalHandlers } from "./handlers/session-goal"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@opencode-ai/server/handlers"
@@ -164,6 +166,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     permissionHandlers,
     providerHandlers,
     sessionHandlers,
+    goalHandlers,
     syncHandlers,
     tuiHandlers,
     workspaceHandlers,
@@ -231,6 +234,7 @@ const app = LayerNode.group([
   Permission.node,
   PermissionSaved.node,
   Todo.node,
+  Goal.node,
   Session.node,
   SessionProjector.node,
   SessionStatus.node,

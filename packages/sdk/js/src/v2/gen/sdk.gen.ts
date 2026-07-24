@@ -84,6 +84,35 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  GoalAddLessonErrors,
+  GoalAddLessonResponses,
+  GoalClearBudgetErrors,
+  GoalClearBudgetResponses,
+  GoalClearErrors,
+  GoalClearResponses,
+  GoalCreateErrors,
+  GoalCreateResponses,
+  GoalDeleteLessonErrors,
+  GoalDeleteLessonResponses,
+  GoalDisableLessonErrors,
+  GoalDisableLessonResponses,
+  GoalGetErrors,
+  GoalGetResponses,
+  GoalIterationPolicy,
+  GoalLessonsErrors,
+  GoalLessonsResponses,
+  GoalPatchBudgetErrors,
+  GoalPatchBudgetResponses,
+  GoalPatchContractErrors,
+  GoalPatchContractResponses,
+  GoalPatchStatusErrors,
+  GoalPatchStatusResponses,
+  GoalPauseErrors,
+  GoalPauseResponses,
+  GoalResumeErrors,
+  GoalResumeResponses,
+  GoalWakeErrors,
+  GoalWakeResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   InstanceReloadErrors,
@@ -4375,6 +4404,554 @@ export class Part extends HeyApiClient {
   }
 }
 
+export class Goal extends HeyApiClient {
+  /**
+   * Clear goal
+   *
+   * Clear the active goal for a session.
+   */
+  public clear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<GoalClearResponses, GoalClearErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get active goal
+   *
+   * Get the active goal for a session, or null if none exists.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GoalGetResponses, GoalGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create or replace goal
+   *
+   * Create a new goal for the session. If an active goal exists, a confirmReplace flag or expectedGoalID is required to replace it. Completed or blocked goals are replaced unconditionally. After creation, triggers goal continuation with optional agent/provider/model overrides.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      outcome?: string
+      verification?: Array<string>
+      constraints?: Array<string>
+      boundaries?: Array<string>
+      iterationPolicy?: GoalIterationPolicy
+      blockedCondition?: string
+      tokenBudget?: number
+      expectedGoalID?: string
+      confirmReplace?: boolean
+      agent?: string
+      providerID?: string
+      modelID?: string
+      variant?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "outcome" },
+            { in: "body", key: "verification" },
+            { in: "body", key: "constraints" },
+            { in: "body", key: "boundaries" },
+            { in: "body", key: "iterationPolicy" },
+            { in: "body", key: "blockedCondition" },
+            { in: "body", key: "tokenBudget" },
+            { in: "body", key: "expectedGoalID" },
+            { in: "body", key: "confirmReplace" },
+            { in: "body", key: "agent" },
+            { in: "body", key: "providerID" },
+            { in: "body", key: "modelID" },
+            { in: "body", key: "variant" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalCreateResponses, GoalCreateErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Patch goal contract
+   *
+   * Patch the outcome, verification, constraints, boundaries, or iteration policy of the active goal.
+   */
+  public patchContract<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      outcome?: string
+      verification?: Array<string>
+      constraints?: Array<string>
+      boundaries?: Array<string>
+      iterationPolicy?: GoalIterationPolicy
+      blockedCondition?: string
+      tokenBudget?: number
+      expectedGoalID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "outcome" },
+            { in: "body", key: "verification" },
+            { in: "body", key: "constraints" },
+            { in: "body", key: "boundaries" },
+            { in: "body", key: "iterationPolicy" },
+            { in: "body", key: "blockedCondition" },
+            { in: "body", key: "tokenBudget" },
+            { in: "body", key: "expectedGoalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<GoalPatchContractResponses, GoalPatchContractErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/contract",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Patch goal status
+   *
+   * Mark the active goal as complete or blocked with evidence from tool calls.
+   */
+  public patchStatus<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      status?: "complete" | "blocked"
+      evidenceCallIDs?: Array<string>
+      expectedGoalID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "status" },
+            { in: "body", key: "evidenceCallIDs" },
+            { in: "body", key: "expectedGoalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<GoalPatchStatusResponses, GoalPatchStatusErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/status",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Patch goal budget
+   *
+   * Set or clear the token budget for the goal. Pass null to clear the budget. A positive integer sets the budget. Only goals in active or budget_limited status are affected.
+   */
+  public patchBudget<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      tokenBudget?: number
+      expectedGoalID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "tokenBudget" },
+            { in: "body", key: "expectedGoalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<GoalPatchBudgetResponses, GoalPatchBudgetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/budget",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Clear goal budget
+   *
+   * Remove the token budget from an active or budget-limited goal.
+   */
+  public clearBudget<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      expectedGoalID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "expectedGoalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalClearBudgetResponses, GoalClearBudgetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/budget/clear",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Pause goal
+   *
+   * Pause the active goal, preventing auto-continuation. Returns 404 if no goal exists.
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalPauseResponses, GoalPauseErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resume goal
+   *
+   * Resume a paused/blocked/usage_limited goal to active. budget_limited requires raising/clearing the budget first.
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalResumeResponses, GoalResumeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Wake goal
+   *
+   * Trigger continuation for an active goal. Does not resume paused goals.
+   */
+  public wake<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalWakeResponses, GoalWakeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/wake",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Add lesson to goal
+   *
+   * Add a lesson learned during the active goal, with evidence from tool calls.
+   */
+  public addLesson<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      attempt?: string
+      observed?: string
+      implication?: string
+      evidenceCallIDs?: Array<string>
+      expectedGoalID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "attempt" },
+            { in: "body", key: "observed" },
+            { in: "body", key: "implication" },
+            { in: "body", key: "evidenceCallIDs" },
+            { in: "body", key: "expectedGoalID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalAddLessonResponses, GoalAddLessonErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/lesson",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Disable lesson
+   *
+   * Disable a lesson so it is no longer injected into goal continuations.
+   */
+  public disableLesson<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      lessonID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "lessonID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<GoalDisableLessonResponses, GoalDisableLessonErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/lesson/{lessonID}/disable",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Delete lesson
+   *
+   * Delete a lesson from the active goal.
+   */
+  public deleteLesson<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      lessonID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "lessonID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<GoalDeleteLessonResponses, GoalDeleteLessonErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/lesson/{lessonID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List lessons
+   *
+   * List all lessons for the active goal.
+   */
+  public lessons<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<GoalLessonsResponses, GoalLessonsErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/lessons",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class History extends HeyApiClient {
   /**
    * List sync events
@@ -7062,6 +7639,11 @@ export class OpencodeClient extends HeyApiClient {
   private _part?: Part
   get part(): Part {
     return (this._part ??= new Part({ client: this.client }))
+  }
+
+  private _goal?: Goal
+  get goal(): Goal {
+    return (this._goal ??= new Goal({ client: this.client }))
   }
 
   private _sync?: Sync

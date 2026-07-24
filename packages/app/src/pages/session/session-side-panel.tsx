@@ -18,12 +18,18 @@ export function SessionSidePanel(props: {
   sessionWidthMin: number
   sessionWidthMax: () => number
   onSessionResize: (width: number) => void
+  onSessionResizeEnd?: (width: number) => void
   availableWidth: () => number | undefined
 }) {
   const layout = useLayout()
   const language = useLanguage()
   const { view } = useSessionLayout()
   const open = createMemo(() => view().reviewPanel.opened())
+  const desktopResize = createMemo(() => {
+    if (!open()) return false
+    if (!layout.isDesktop()) return false
+    return props.availableWidth() !== undefined
+  })
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
     if (!layout.isDesktop()) return "100%"
@@ -31,24 +37,25 @@ export function SessionSidePanel(props: {
     if (available === undefined) return "auto"
     return `${Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidth())}px`
   })
-  const sideResize = createMemo(() => {
-    if (!open()) return
-    if (!layout.isDesktop()) return
+  // 保持 handle 挂载，仅响应尺寸边界变化，避免拖拽时重复重建属性对象。
+  const sideSize = createMemo(() => {
     const available = props.availableWidth()
-    if (available === undefined) return
-    const session = props.sessionWidth()
+    if (available === undefined) return SIDE_PANEL_WIDTH_MIN
+    return Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidth())
+  })
+  const sideMin = SIDE_PANEL_WIDTH_MIN
+  const sideMax = createMemo(() => {
+    const available = props.availableWidth()
+    if (available === undefined) return SIDE_PANEL_WIDTH_MIN
+    return Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidthMin)
+  })
+  const sessionFromSide = (sideWidth: number) => {
+    const available = props.availableWidth()
+    if (available === undefined) return props.sessionWidth()
     const sessionMin = props.sessionWidthMin
     const sessionMax = props.sessionWidthMax()
-    return {
-      size: Math.max(SIDE_PANEL_WIDTH_MIN, available - session),
-      min: SIDE_PANEL_WIDTH_MIN,
-      max: Math.max(SIDE_PANEL_WIDTH_MIN, available - sessionMin),
-      onResize: (sideWidth: number) => {
-        props.size.touch()
-        props.onSessionResize(Math.min(sessionMax, Math.max(sessionMin, available - sideWidth)))
-      },
-    }
-  })
+    return Math.min(sessionMax, Math.max(sessionMin, available - sideWidth))
+  }
 
   return (
     <Show when={open()}>
@@ -67,38 +74,40 @@ export function SessionSidePanel(props: {
         }}
         style={{ width: panelWidth() }}
       >
-        <Show when={sideResize()}>
-          {(handle) => (
-            <div class="absolute inset-y-0 left-0 z-30 w-0" onPointerDown={() => props.size.start()}>
-              <ResizeHandle
-                direction="horizontal"
-                edge="start"
-                size={handle().size}
-                min={handle().min}
-                max={handle().max}
-                onResize={handle().onResize}
-              />
-            </div>
-          )}
+        <Show when={desktopResize()}>
+          <div class="absolute inset-y-0 left-0 z-30 w-0" onPointerDown={() => props.size.start()}>
+            <ResizeHandle
+              direction="horizontal"
+              edge="start"
+              size={sideSize()}
+              min={sideMin}
+              max={sideMax()}
+              onResize={(sideWidth) => props.onSessionResize(sessionFromSide(sideWidth))}
+              onResizeEnd={(sideWidth) => props.onSessionResizeEnd?.(sessionFromSide(sideWidth))}
+            />
+          </div>
         </Show>
         <Show when={open()}>
           <div
-            class="size-full flex border-l border-border-weaker-base"
+            class="size-full min-w-0 flex border-l border-border-weaker-base"
             ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}
           >
             <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden bg-background-base">
-              <div class="h-10 shrink-0 flex items-center justify-between px-3 border-b border-border-weaker-base">
-                <div class="text-14-medium text-text-strong">{language.t("session.tab.context")}</div>
+              <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 border-b border-border-weaker-base min-w-0">
+                <div class="text-14-medium text-text-strong truncate min-w-0">
+                  {language.t("session.tab.context")}
+                </div>
                 <IconButton
                   icon="close-small"
                   variant="ghost"
+                  class="shrink-0"
                   aria-label={language.t("common.closeTab")}
                   onClick={() => {
                     view().reviewPanel.close()
                   }}
                 />
               </div>
-              <div class="flex-1 min-h-0 overflow-hidden">
+              <div class="flex-1 min-h-0 min-w-0 overflow-hidden">
                 <SessionContextTab />
               </div>
             </div>

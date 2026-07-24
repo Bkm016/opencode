@@ -187,7 +187,7 @@ function ShareDetailDialog(props: {
               {props.t("context.breakdown.share.count", { count: props.number(props.row.count ?? 0) })}
             </div>
           </Show>
-          <div class="w-24 h-1.5 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
+          <div class="w-12 @[20rem]:w-24 h-1.5 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
             <div
               class="h-full rounded-full"
               style={{
@@ -244,13 +244,13 @@ function ShareList(props: {
   }
 
   return (
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-2 min-w-0">
       <div class="text-12-regular text-text-weak">{props.title}</div>
       <Show
         when={props.rows.length > 0}
         fallback={<div class="text-11-regular text-text-weaker">{props.empty}</div>}
       >
-        <div class="border border-border-base rounded-md bg-background-base divide-y divide-border-weak-base overflow-hidden">
+        <div class="border border-border-base rounded-md bg-background-base divide-y divide-border-weak-base overflow-hidden min-w-0">
           <For each={props.rows}>
             {(row) => {
               const label = shareLabel(row, props.t)
@@ -258,7 +258,7 @@ function ShareList(props: {
                 <div
                   role="button"
                   tabIndex={0}
-                  class="flex items-center gap-2 min-w-0 px-3 py-2 cursor-pointer hover:bg-surface-raised-base focus-visible:outline-none focus-visible:bg-surface-raised-base"
+                  class="flex items-center gap-1.5 @[20rem]:gap-2 min-w-0 px-2 @[20rem]:px-3 py-2 cursor-pointer hover:bg-surface-raised-base focus-visible:outline-none focus-visible:bg-surface-raised-base"
                   onClick={() => openRow(row)}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return
@@ -269,14 +269,15 @@ function ShareList(props: {
                   <div class="size-2 shrink-0 rounded-sm" style={{ "background-color": SHARE_COLOR[row.kind] }} />
                   <div class="min-w-0 flex-1 text-12-regular text-text-strong truncate">{label}</div>
                   <Show when={row.count !== undefined}>
-                    <div class="text-11-regular text-text-weaker tabular-nums shrink-0">
+                    <div class="hidden @[18rem]:block text-11-regular text-text-weaker tabular-nums shrink-0">
                       {props.t("context.breakdown.share.count", { count: props.number(row.count ?? 0) })}
                     </div>
                   </Show>
-                  <div class="text-11-regular text-text-weak tabular-nums shrink-0">
-                    {props.number(row.tokens)} · {row.percent.toLocaleString(props.intl)}%
+                  <div class="text-11-regular text-text-weak tabular-nums shrink-0 whitespace-nowrap">
+                    {props.number(row.tokens)}
+                    <span class="hidden @[16rem]:inline"> · {row.percent.toLocaleString(props.intl)}%</span>
                   </div>
-                  <div class="w-16 h-1 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
+                  <div class="hidden @[18rem]:block w-10 @[24rem]:w-16 h-1 rounded-full bg-surface-raised-base overflow-hidden shrink-0">
                     <div
                       class="h-full rounded-full"
                       style={{
@@ -297,9 +298,9 @@ function ShareList(props: {
 
 function Stat(props: { label: string; value: JSX.Element }) {
   return (
-    <div class="flex flex-col gap-1">
-      <div class="text-12-regular text-text-weak">{props.label}</div>
-      <div class="text-12-medium text-text-strong">{props.value}</div>
+    <div class="flex flex-col gap-1 min-w-0">
+      <div class="text-12-regular text-text-weak truncate">{props.label}</div>
+      <div class="text-12-medium text-text-strong break-words min-w-0">{props.value}</div>
     </div>
   )
 }
@@ -397,9 +398,13 @@ function RawMessageContent(props: {
           {copied() ? props.copiedLabel : props.copyLabel}
         </Button>
       </div>
-      <pre class="text-11-regular font-mono text-text-strong whitespace-pre-wrap break-words select-text max-h-96 overflow-auto rounded-md border border-border-weak-base bg-background-base px-3 py-2">
-        {json()}
-      </pre>
+      <ScrollView class="max-h-96">
+        <Markdown
+          text={`\`\`\`json\n${json()}\n\`\`\``}
+          cacheKey={`context-raw-message:${props.message.id}`}
+          class="text-11-regular select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_[data-slot=markdown-copy-button]]:hidden"
+        />
+      </ScrollView>
     </div>
   )
 }
@@ -423,7 +428,7 @@ function RawMessage(props: {
       <StickyAccordionHeader>
         <Accordion.Trigger>
           <div class="flex items-center justify-between gap-2 w-full min-w-0">
-            <div class="flex items-center gap-2 min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 @[20rem]:gap-2 min-w-0 flex-1">
               <span
                 class="shrink-0 rounded px-1.5 py-px text-11-medium"
                 style={{
@@ -433,11 +438,15 @@ function RawMessage(props: {
               >
                 {props.roleLabel}
               </span>
-              <span class="shrink-0 text-11-regular font-mono text-text-weak">{shortMessageId(props.message.id)}</span>
+              <span class="hidden @[18rem]:inline shrink-0 text-11-regular font-mono text-text-weak">
+                {shortMessageId(props.message.id)}
+              </span>
               <span class="min-w-0 truncate text-12-regular text-text-weak">{preview()}</span>
             </div>
-            <div class="flex items-center gap-3 shrink-0">
-              <div class="text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
+            <div class="flex items-center gap-2 @[20rem]:gap-3 shrink-0">
+              <div class="hidden @[22rem]:block text-12-regular text-text-weak">
+                {props.time(props.message.time.created)}
+              </div>
               <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
             </div>
           </div>
@@ -757,8 +766,8 @@ export function SessionContextTab() {
       }}
       onScroll={handleScroll}
     >
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
-        <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
+      <div class="px-4 @[24rem]:px-6 pt-4 pb-10 flex flex-col gap-6 min-w-0">
+        <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4 min-w-0">
           <For each={stats}>
             {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
           </For>
@@ -810,7 +819,7 @@ export function SessionContextTab() {
               </div>
             </div>
 
-            <div class="grid grid-cols-1 @[40rem]:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 @[40rem]:grid-cols-2 gap-4 min-w-0">
               <ShareList
                 title={language.t("context.breakdown.prompts.title")}
                 empty={language.t("context.breakdown.prompts.empty")}

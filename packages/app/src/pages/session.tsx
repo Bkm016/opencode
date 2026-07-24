@@ -391,11 +391,13 @@ export default function Page() {
     if (available === undefined) return 1000
     return sessionPanelWidthMax({ available, split: false })
   })
+  // 拖拽中的宽度只保存在本地，避免 pointermove 每帧写入持久化布局。
+  const [sessionDragWidth, setSessionDragWidth] = createSignal<number>()
   // Clamp at render time so window or sidebar resizes squeeze the chat panel
   // instead of the side pane, without overwriting the persisted width.
   const sessionPanelResizedWidth = createMemo(() =>
     clampSessionPanelWidth({
-      width: layout.session.width(),
+      width: sessionDragWidth() ?? layout.session.width(),
       available: sessionPanelAvailable(),
       split: false,
     }),
@@ -1586,7 +1588,11 @@ export default function Page() {
             sessionWidthMin={SESSION_PANEL_WIDTH_MIN}
             sessionWidthMax={sessionPanelMax}
             availableWidth={sessionPanelAvailable}
-            onSessionResize={(width) => layout.session.resize(width)}
+            onSessionResize={(width) => setSessionDragWidth(width)}
+            onSessionResizeEnd={(width) => {
+              layout.session.resize(width)
+              setSessionDragWidth(undefined)
+            }}
           />
         </Show>
       </div>

@@ -7,6 +7,8 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
   min: number
   max: number
   onResize: (size: number) => void
+  /** 拖拽结束时以最终约束后的尺寸调用一次。 */
+  onResizeEnd?: (size: number) => void
   onCollapse?: () => void
   /** Called while dragging when size crosses `collapseThreshold`. */
   onCollapseChange?: (collapsed: boolean) => void
@@ -21,6 +23,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
     "min",
     "max",
     "onResize",
+    "onResizeEnd",
     "onCollapse",
     "onCollapseChange",
     "collapseThreshold",
@@ -38,6 +41,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
     const max = local.max
     const threshold = local.collapseThreshold ?? 0
     const onResize = local.onResize
+    const onResizeEnd = local.onResizeEnd
     const onCollapse = local.onCollapse
     const onCollapseChange = local.onCollapseChange
     let current = startSize
@@ -50,13 +54,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
     let pendingMoveEvent: MouseEvent | null = null
     let frameId: number | null = null
 
-    const flush = () => {
-      frameId = null
-      const moveEvent = pendingMoveEvent
-      pendingMoveEvent = null
-      if (!moveEvent) return
-
-      const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
+    const apply = (pos: number) => {
       const delta =
         local.direction === "vertical"
           ? edge === "end"
@@ -71,7 +69,17 @@ export function ResizeHandle(props: ResizeHandleProps) {
         collapsed = nextCollapsed
         onCollapseChange?.(collapsed)
       }
-      onResize(Math.min(max, Math.max(min, current)))
+      return Math.min(max, Math.max(min, current))
+    }
+
+    const flush = () => {
+      frameId = null
+      const moveEvent = pendingMoveEvent
+      pendingMoveEvent = null
+      if (!moveEvent) return
+
+      const pos = local.direction === "horizontal" ? moveEvent.clientX : moveEvent.clientY
+      onResize(apply(pos))
     }
 
     const onMouseMove = (moveEvent: MouseEvent) => {
@@ -81,12 +89,15 @@ export function ResizeHandle(props: ResizeHandleProps) {
       }
     }
 
-    const onMouseUp = () => {
+    const onMouseUp = (upEvent: MouseEvent) => {
       if (frameId !== null) {
         cancelAnimationFrame(frameId)
         frameId = null
       }
-      flush()
+      pendingMoveEvent = null
+      const pos = local.direction === "horizontal" ? upEvent.clientX : upEvent.clientY
+      const next = apply(pos)
+      onResize(next)
 
       document.body.style.userSelect = ""
       document.body.style.overflow = ""
@@ -98,6 +109,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
         return
       }
       onCollapseChange?.(false)
+      onResizeEnd?.(next)
     }
 
     document.addEventListener("mousemove", onMouseMove)

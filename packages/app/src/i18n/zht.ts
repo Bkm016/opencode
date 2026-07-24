@@ -517,6 +517,9 @@ export const dict = {
   "context.stats.totalCost": "總成本",
   "context.stats.sessionCreated": "建立時間",
   "context.stats.lastActivity": "最後活動",
+  "context.stats.group.usage": "上下文",
+  "context.stats.group.tokens": "Token 明細",
+  "context.stats.group.session": "工作階段",
 
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用量",

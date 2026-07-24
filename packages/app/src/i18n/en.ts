@@ -558,6 +558,9 @@ export const dict = {
   "context.stats.totalCost": "Total Cost",
   "context.stats.sessionCreated": "Session Created",
   "context.stats.lastActivity": "Last Activity",
+  "context.stats.group.usage": "Context",
+  "context.stats.group.tokens": "Token Details",
+  "context.stats.group.session": "Session",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",

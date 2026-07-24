@@ -296,11 +296,20 @@ function ShareList(props: {
   )
 }
 
-function Stat(props: { label: string; value: JSX.Element }) {
+function StatRow(props: { label: string; value: JSX.Element }) {
   return (
-    <div class="flex flex-col gap-1 min-w-0">
-      <div class="text-12-regular text-text-weak truncate">{props.label}</div>
-      <div class="text-12-medium text-text-strong break-words min-w-0">{props.value}</div>
+    <div class="flex items-baseline justify-between gap-3 min-w-0">
+      <div class="shrink-0 text-11-regular text-text-weaker">{props.label}</div>
+      <div class="min-w-0 truncate text-12-medium text-text-strong text-right">{props.value}</div>
+    </div>
+  )
+}
+
+function StatSection(props: { title: string; children: JSX.Element }) {
+  return (
+    <div class="flex flex-col gap-1.5 min-w-0">
+      <div class="text-11-medium text-text-weak">{props.title}</div>
+      <div class="flex flex-col gap-1 min-w-0">{props.children}</div>
     </div>
   )
 }
@@ -719,29 +728,53 @@ export function SessionContextTab() {
   const translate = (key: string, vars?: Record<string, string>) =>
     language.t(key as Parameters<typeof language.t>[0], vars)
 
-  const stats = [
-    { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
-    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
-    { label: "context.stats.provider", value: providerLabel },
-    { label: "context.stats.model", value: modelLabel },
-    { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
-    { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total) },
-    { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage) },
-    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input) },
-    { label: "context.stats.requestBody", value: () => formatter().bytes(requestBodyBytes()) },
-    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.message.tokens.output) },
-    { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.message.tokens.reasoning) },
-    {
-      label: "context.stats.cacheTokens",
-      value: () =>
-        `${formatter().number(ctx()?.message.tokens.cache.read)} / ${formatter().number(ctx()?.message.tokens.cache.write)}`,
-    },
-    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()) },
-    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
-    { label: "context.stats.totalCost", value: cost },
-    { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
-  ] satisfies { label: string; value: () => JSX.Element }[]
+  const t = (key: string) => language.t(key as Parameters<typeof language.t>[0])
+
+  const statGroups = () =>
+    [
+      {
+        title: t("context.stats.group.usage"),
+        rows: [
+          { label: t("context.stats.usage"), value: () => formatter().percent(ctx()?.usage) },
+          { label: t("context.stats.totalTokens"), value: () => formatter().number(ctx()?.total) },
+          { label: t("context.stats.limit"), value: () => formatter().number(ctx()?.limit) },
+        ],
+      },
+      {
+        title: t("context.stats.group.tokens"),
+        rows: [
+          { label: t("context.stats.inputTokens"), value: () => formatter().number(ctx()?.input) },
+          { label: t("context.stats.outputTokens"), value: () => formatter().number(ctx()?.message.tokens.output) },
+          {
+            label: t("context.stats.reasoningTokens"),
+            value: () => formatter().number(ctx()?.message.tokens.reasoning),
+          },
+          {
+            label: t("context.stats.cacheTokens"),
+            value: () =>
+              `${formatter().number(ctx()?.message.tokens.cache.read)} / ${formatter().number(ctx()?.message.tokens.cache.write)}`,
+          },
+          { label: t("context.stats.requestBody"), value: () => formatter().bytes(requestBodyBytes()) },
+        ],
+      },
+      {
+        title: t("context.stats.group.session"),
+        rows: [
+          { label: t("context.stats.session"), value: () => info()?.title ?? params.id ?? "—" },
+          { label: t("context.stats.provider"), value: providerLabel },
+          { label: t("context.stats.model"), value: modelLabel },
+          { label: t("context.stats.messages"), value: () => counts().all.toLocaleString(language.intl()) },
+          { label: t("context.stats.userMessages"), value: () => counts().user.toLocaleString(language.intl()) },
+          {
+            label: t("context.stats.assistantMessages"),
+            value: () => counts().assistant.toLocaleString(language.intl()),
+          },
+          { label: t("context.stats.totalCost"), value: cost },
+          { label: t("context.stats.sessionCreated"), value: () => formatter().time(info()?.time.created) },
+          { label: t("context.stats.lastActivity"), value: () => formatter().time(ctx()?.message.time.created) },
+        ],
+      },
+    ] satisfies { title: string; rows: { label: string; value: () => JSX.Element }[] }[]
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -819,9 +852,13 @@ export function SessionContextTab() {
       onScroll={handleScroll}
     >
       <div class="px-4 @[24rem]:px-6 pt-4 pb-10 flex flex-col gap-6 min-w-0">
-        <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4 min-w-0">
-          <For each={stats}>
-            {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
+        <div class="flex flex-col gap-4 min-w-0">
+          <For each={statGroups()}>
+            {(group) => (
+              <StatSection title={group.title}>
+                <For each={group.rows}>{(row) => <StatRow label={row.label} value={row.value()} />}</For>
+              </StatSection>
+            )}
           </For>
         </div>
 

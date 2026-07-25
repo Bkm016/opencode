@@ -355,7 +355,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.goal"),
       description: language.t("command.session.goal.description"),
       slash: "goal",
-      disabled: !params.id,
       onSelect: () => {
         const text = "/goal "
         prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)

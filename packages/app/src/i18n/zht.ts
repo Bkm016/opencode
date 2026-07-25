@@ -436,8 +436,6 @@ export const dict = {
   "dialog.project.edit.icon.alt": "專案圖示",
   "dialog.project.edit.icon.hint": "點擊或拖曳圖片",
   "dialog.project.edit.icon.recommended": "建議：128x128px",
-  "dialog.project.edit.color": "顏色",
-  "dialog.project.edit.color.select": "選擇{{color}}顏色",
 
   "dialog.project.edit.worktree.startup": "工作樹啟動腳本",
   "dialog.project.edit.worktree.startup.description": "在建立新的工作樹 (worktree) 後執行。",

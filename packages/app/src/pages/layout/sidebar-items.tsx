@@ -10,7 +10,7 @@ import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
+import { type LocalProject, useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { isSessionPinned, toggleSessionPin } from "@/utils/session-pin"
@@ -44,8 +44,9 @@ export const ProjectIcon = (props: {
         <Avatar
           fallback={name()}
           src={getProjectAvatarSource(props.project.id, props.project.icon)}
-          {...getAvatarColors(props.project.icon?.color)}
-          class="size-full rounded"
+          background="var(--surface-raised-base-active)"
+          foreground="var(--text-strong)"
+          class="size-full rounded border-0"
           classList={{ "badge-mask": notify() }}
         />
       </div>

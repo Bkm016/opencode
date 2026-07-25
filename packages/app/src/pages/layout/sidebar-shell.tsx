@@ -1,4 +1,5 @@
-import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import gsap from "gsap"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -11,11 +12,13 @@ import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { type LocalProject } from "@/context/layout"
+import { prefersReducedMotion } from "@/utils/gsap-motion"
 
 export const SidebarContent = (props: {
   mobile?: boolean
   opened: Accessor<boolean>
   projects: Accessor<LocalProject[]>
+  currentProject: Accessor<LocalProject | undefined>
   renderProject: (project: LocalProject) => JSX.Element
   handleDragStart: (event: unknown) => void
   handleDragEnd: () => void
@@ -31,6 +34,54 @@ export const SidebarContent = (props: {
 }): JSX.Element => {
   const expanded = createMemo(() => !!props.mobile || props.opened())
   const placement = () => (props.mobile ? "bottom" : "right")
+  let rail: HTMLDivElement | undefined
+  let selection: HTMLDivElement | undefined
+  let frame: number | undefined
+
+  const moveSelection = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      if (!rail || !selection) return
+
+      const target = rail.querySelector<HTMLElement>('[data-action="project-switch"][data-selected="true"]')
+      if (!target) {
+        gsap.to(selection, { opacity: 0, duration: 0.16, overwrite: "auto" })
+        return
+      }
+
+      const railRect = rail.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const values = {
+        left: targetRect.left - railRect.left,
+        top: targetRect.top - railRect.top,
+        width: targetRect.width,
+        height: targetRect.height,
+        opacity: 1,
+      }
+      if (prefersReducedMotion()) {
+        gsap.set(selection, values)
+        return
+      }
+      gsap.to(selection, {
+        ...values,
+        duration: 0.26,
+        ease: "power3.out",
+        overwrite: "auto",
+      })
+    })
+  }
+
+  createEffect(() => {
+    props.currentProject()?.worktree
+    props.projects()
+    moveSelection()
+  })
+
+  onCleanup(() => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    if (selection) gsap.killTweensOf(selection)
+  })
 
   return (
     <div class="flex h-full w-full min-w-0 overflow-hidden">
@@ -47,7 +98,20 @@ export const SidebarContent = (props: {
           >
             <DragDropSensors />
             <ConstrainDragXAxis />
-            <div class="h-full w-full flex flex-col items-center gap-3 px-3 py-3 overflow-y-auto no-scrollbar">
+            <div
+              ref={(element) => {
+                rail = element
+              }}
+              class="relative h-full w-full flex flex-col items-center gap-3 px-3 py-3 overflow-y-auto no-scrollbar"
+              onScroll={moveSelection}
+            >
+              <div
+                ref={(element) => {
+                  selection = element
+                }}
+                aria-hidden="true"
+                class="pointer-events-none absolute left-0 top-0 z-20 rounded-lg border-2 border-icon-strong-base opacity-0"
+              />
               <SortableProvider ids={props.projects().map((p) => p.worktree)}>
                 <For each={props.projects()}>{(project) => props.renderProject(project)}</For>
               </SortableProvider>

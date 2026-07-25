@@ -2,15 +2,13 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Icon } from "@opencode-ai/ui/icon"
-import { For, Show } from "solid-js"
-import { type LocalProject, getAvatarColors } from "@/context/layout"
+import { Show } from "solid-js"
+import { type LocalProject } from "@/context/layout"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { useLanguage } from "@/context/language"
 import { getProjectAvatarSource } from "@/pages/layout/helpers"
 import { ServerConnection } from "@/context/server"
 import { createEditProjectModel } from "./edit-project"
-
-const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 
 export function DialogEditProject(props: { project: LocalProject; server: ServerConnection.Any }) {
   const language = useLanguage()
@@ -59,7 +57,6 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
                       <div class="size-full flex items-center justify-center">
                         <Avatar
                           fallback={model.store.name || model.defaultName()}
-                          {...getAvatarColors(model.store.color)}
                           class="size-full text-[32px]"
                         />
                       </div>
@@ -109,40 +106,6 @@ export function DialogEditProject(props: { project: LocalProject; server: Server
               </div>
             </div>
           </div>
-
-          <Show when={!model.store.iconOverride}>
-            <div class="flex flex-col gap-2">
-              <label class="text-12-medium text-text-weak">{language.t("dialog.project.edit.color")}</label>
-              <div class="flex gap-1.5">
-                <For each={AVATAR_COLOR_KEYS}>
-                  {(color) => (
-                    <button
-                      type="button"
-                      aria-label={language.t("dialog.project.edit.color.select", { color })}
-                      aria-pressed={model.store.color === color}
-                      classList={{
-                        "flex items-center justify-center size-10 p-0.5 rounded-lg overflow-hidden transition-colors cursor-default": true,
-                        "bg-transparent border-2 border-icon-strong-base hover:bg-surface-base-hover":
-                          model.store.color === color,
-                        "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
-                          model.store.color !== color,
-                      }}
-                      onClick={() => {
-                        if (model.store.color === color && !props.project.icon?.url) return
-                        model.setStore("color", model.store.color === color ? undefined : color)
-                      }}
-                    >
-                      <Avatar
-                        fallback={model.store.name || model.defaultName()}
-                        {...getAvatarColors(color)}
-                        class="size-full rounded"
-                      />
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
 
           <TextField
             multiline

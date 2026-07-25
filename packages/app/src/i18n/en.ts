@@ -473,8 +473,6 @@ export const dict = {
   "dialog.project.edit.icon.alt": "Project icon",
   "dialog.project.edit.icon.hint": "Click or drag an image",
   "dialog.project.edit.icon.recommended": "Recommended: 128x128px",
-  "dialog.project.edit.color": "Color",
-  "dialog.project.edit.color.select": "Select {{color}} color",
   "dialog.project.edit.worktree.startup": "Workspace startup script",
   "dialog.project.edit.worktree.startup.description": "Runs after creating a new workspace (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",

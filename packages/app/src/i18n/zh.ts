@@ -477,8 +477,6 @@ export const dict = {
   "dialog.project.edit.icon.alt": "项目图标",
   "dialog.project.edit.icon.hint": "点击或拖拽图片",
   "dialog.project.edit.icon.recommended": "建议：128x128px",
-  "dialog.project.edit.color": "颜色",
-  "dialog.project.edit.color.select": "选择{{color}}颜色",
   "dialog.project.edit.worktree.startup": "工作树启动脚本",
   "dialog.project.edit.worktree.startup.description": "在创建新的工作树 (worktree) 后运行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",

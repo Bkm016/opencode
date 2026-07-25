@@ -1,4 +1,5 @@
-import { createMemo, Show, type Accessor, type JSX } from "solid-js"
+import gsap from "gsap"
+import { createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
@@ -6,6 +7,7 @@ import { createSortable } from "@thisbeyond/solid-dnd"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { prefersReducedMotion } from "@/utils/gsap-motion"
 import { ProjectIcon } from "./sidebar-items"
 import { displayName } from "./helpers"
 
@@ -50,6 +52,23 @@ const ProjectTile = (props: {
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
   const layout = useLayout()
+  let icon: HTMLDivElement | undefined
+
+  const animateHover = (active: boolean) => {
+    if (!icon || prefersReducedMotion()) return
+    gsap.to(icon, {
+      scale: active ? 1.05 : 1,
+      y: active ? -1 : 0,
+      filter: active ? "brightness(1.12)" : "brightness(1)",
+      duration: active ? 0.28 : 0.36,
+      ease: active ? "power3.out" : "power3.inOut",
+      overwrite: "auto",
+    })
+  }
+
+  onCleanup(() => {
+    if (icon) gsap.killTweensOf(icon)
+  })
 
   return (
     <ContextMenu
@@ -64,12 +83,10 @@ const ProjectTile = (props: {
         aria-label={displayName(props.project)}
         data-action="project-switch"
         data-project={base64Encode(props.project.worktree)}
+        data-selected={props.selected() ? "true" : undefined}
         classList={{
-          "flex items-center justify-center size-10 p-1 rounded-lg overflow-hidden transition-colors cursor-default": true,
-          "bg-transparent border-2 border-icon-strong-base hover:bg-surface-base-hover": props.selected(),
-          "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
-            !props.selected() && !props.active(),
-          "bg-surface-base-hover border border-border-weak-base": !props.selected() && props.active(),
+          "flex items-center justify-center size-10 p-1 rounded-lg overflow-hidden transition-colors cursor-default focus:outline-none": true,
+          "bg-surface-base-hover": !props.selected() && props.active(),
         }}
         onClick={() => {
           if (props.selected()) {
@@ -78,8 +95,25 @@ const ProjectTile = (props: {
           }
           props.navigateToProject(props.project.worktree)
         }}
+        onMouseEnter={() => animateHover(true)}
+        onMouseLeave={() => animateHover(false)}
+        onFocus={() => animateHover(true)}
+        onBlur={() => animateHover(false)}
       >
-        <ProjectIcon project={props.project} notify working={props.isWorking()} />
+        <div
+          ref={(element) => {
+            icon = element
+            gsap.set(element, {
+              scale: 1,
+              y: 0,
+              filter: "brightness(1)",
+              transformOrigin: "center center",
+            })
+          }}
+          class="flex size-full items-center justify-center will-change-transform"
+        >
+          <ProjectIcon project={props.project} notify working={props.isWorking()} />
+        </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>

@@ -66,6 +66,18 @@ export function applyOnly(db: Database, input: Migration[]) {
       }
     }
 
+    // Heal stale journals: empty DBs once applied a schema.gen that lacked
+    // session_goal tables but still marked 20260624000000_session_goal complete.
+    if (completed.has("20260624000000_session_goal")) {
+      const table = yield* db.get(
+        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"session_goal"}`,
+      )
+      if (!table) {
+        yield* db.run(sql`DELETE FROM ${sql.identifier("migration")} WHERE id = ${"20260624000000_session_goal"}`)
+        completed.delete("20260624000000_session_goal")
+      }
+    }
+
     for (const migration of input) {
       if (completed.has(migration.id)) continue
       yield* db.transaction((tx) =>

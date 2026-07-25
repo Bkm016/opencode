@@ -23,6 +23,9 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const osFilter = process.argv.find((arg) => arg.startsWith("--os="))?.slice("--os=".length)
+const archFilter = process.argv.find((arg) => arg.startsWith("--arch="))?.slice("--arch=".length)
+const abiFilter = process.argv.find((arg) => arg.startsWith("--abi="))?.slice("--abi=".length)
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -113,26 +116,43 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+const targets = allTargets.filter((item) => {
+  if (singleFlag) {
+    if (item.os !== process.platform || item.arch !== process.arch) {
+      return false
+    }
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
+    // When building for the current platform, prefer a single native binary by default.
+    // Baseline binaries require additional Bun artifacts and can be flaky to download.
+    if (item.avx2 === false) {
+      return baselineFlag
+    }
 
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
+    // also skip abi-specific builds for the same reason
+    if (item.abi !== undefined) {
+      return false
+    }
 
-      return true
-    })
-  : allTargets
+    return true
+  }
+
+  if (osFilter && item.os !== osFilter) return false
+  if (archFilter && item.arch !== archFilter) return false
+  if (abiFilter === "musl") {
+    if (item.abi !== "musl") return false
+  } else if (abiFilter === "glibc" || osFilter || archFilter) {
+    // Default filtered builds to the common glibc binary (skip baseline/musl variants).
+    if (item.abi !== undefined || item.avx2 === false) return false
+  }
+
+  return true
+})
+
+if (targets.length === 0) {
+  throw new Error(
+    `No build targets matched (single=${singleFlag}, os=${osFilter ?? "*"}, arch=${archFilter ?? "*"}, abi=${abiFilter ?? "*"})`,
+  )
+}
 
 await $`rm -rf dist`
 

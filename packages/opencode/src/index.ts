@@ -65,6 +65,15 @@ const cli = yargs(args)
   })
   .middleware(async (opts) => {
     if (opts.printLogs) process.env.OPENCODE_PRINT_LOGS = "1"
+    // Headless server modes have no TUI to protect; stream structured logs to stderr
+    // by default. Must run before AppRuntime loads Observability (Logging.loggers()).
+    // Opt out with OPENCODE_PRINT_LOGS=0.
+    if (process.env.OPENCODE_PRINT_LOGS === undefined) {
+      const command = Array.isArray(opts._) ? String(opts._[0] ?? "") : ""
+      if (command === "serve" || command === "web") {
+        process.env.OPENCODE_PRINT_LOGS = "1"
+      }
+    }
     if (opts.logLevel) process.env.OPENCODE_LOG_LEVEL = opts.logLevel
     if (opts.pure) {
       process.env.OPENCODE_PURE = "1"

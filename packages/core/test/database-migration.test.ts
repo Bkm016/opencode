@@ -15,6 +15,7 @@ import eventSourcedSessionInputMigration from "@opencode-ai/core/database/migrat
 import contextEpochAgentMigration from "@opencode-ai/core/database/migration/20260605042240_add_context_epoch_agent"
 import simplifyIntegrationCredentialsMigration from "@opencode-ai/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@opencode-ai/core/database/migration/20260622202450_simplify_session_input"
+import sessionGoalMigration from "@opencode-ai/core/database/migration/20260624000000_session_goal"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -75,6 +76,17 @@ describe("DatabaseMigration", () => {
         expect(
           yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_context_epoch'`),
         ).toEqual({ name: "session_context_epoch" })
+        expect(yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_goal'`)).toEqual(
+          {
+            name: "session_goal",
+          },
+        )
+        expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_goal_lesson'`),
+        ).toEqual({ name: "session_goal_lesson" })
+        expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_goal_settlement'`),
+        ).toEqual({ name: "session_goal_settlement" })
         expect(
           yield* db.get(
             sql`SELECT name FROM pragma_table_info('session_context_epoch') WHERE name IN ('agent', 'replacement_seq', 'revision')`,
@@ -638,6 +650,28 @@ describe("DatabaseMigration", () => {
         yield* DatabaseMigration.applyOnly(db, [])
 
         expect(yield* db.all(sql`SELECT id FROM migration ORDER BY id`)).toEqual([{ id: "existing" }])
+      }),
+    )
+  })
+
+  test("heals stale session_goal journal entries missing tables", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY)`)
+        yield* db.run(sql`CREATE TABLE migration (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)`)
+        yield* db.run(sql`INSERT INTO migration (id, time_completed) VALUES ('20260624000000_session_goal', 1)`)
+
+        yield* DatabaseMigration.applyOnly(db, [sessionGoalMigration])
+
+        expect(yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_goal'`)).toEqual(
+          {
+            name: "session_goal",
+          },
+        )
+        expect(yield* db.get(sql`SELECT id FROM migration WHERE id = '20260624000000_session_goal'`)).toEqual({
+          id: "20260624000000_session_goal",
+        })
       }),
     )
   })

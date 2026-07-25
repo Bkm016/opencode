@@ -461,6 +461,50 @@ noLLMServer.instance(
   { config: cfg },
 )
 
+it.instance("chunk compaction seals an empty result and accepts the next prompt", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const compaction = yield* SessionCompaction.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* seed(chat.id)
+    yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "continue after empty compaction" }],
+    })
+    yield* llm.text("continued")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const compacted = yield* sessions.messages({ sessionID: chat.id })
+    const holder = compacted.find((message) => message.parts.some((part) => part.type === "compaction"))
+    const compactPart = holder?.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+    const summaryMessage = compacted.find(
+      (message) => message.info.role === "assistant" && message.info.summary && message.info.parentID === holder?.info.id,
+    )
+    expect(compactPart?.chunks).toEqual([])
+    expect(compactPart?.tail_start_id).toBeDefined()
+    expect(summaryMessage?.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: expect.stringContaining('<conversation-checkpoint strategy="chunk">') }),
+      ]),
+    )
+    expect(result.parts).toEqual(expect.arrayContaining([expect.objectContaining({ type: "text", text: "continued" })]))
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(1)
+    const requestMessages = hits[0]?.body.messages
+    expect(Array.isArray(requestMessages)).toBe(true)
+    if (!Array.isArray(requestMessages)) throw new Error("Expected provider request messages")
+    expect(JSON.stringify(requestMessages.at(-1))).toContain("continue after empty compaction")
+  }),
+)
+
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

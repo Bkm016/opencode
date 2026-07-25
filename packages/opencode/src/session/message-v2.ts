@@ -563,9 +563,12 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
     : -1
   const tailIndex = part?.tail_start_id ? result.findIndex((msg) => msg.info.id === part.tail_start_id) : -1
   if (tailIndex >= 0 && tailIndex < compactionIndex && summaryIndex > compactionIndex) {
+    // 压缩执行期间排队的 user 可能夹在 holder 与 summary 之间，必须移到 retained tail 之后。
     return [
-      ...result.slice(compactionIndex, summaryIndex + 1),
+      ...result.slice(compactionIndex, compactionIndex + 1),
+      ...result.slice(summaryIndex, summaryIndex + 1),
       ...result.slice(tailIndex, compactionIndex),
+      ...result.slice(compactionIndex + 1, summaryIndex),
       ...result.slice(summaryIndex + 1),
     ]
   }

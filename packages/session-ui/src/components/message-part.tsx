@@ -1861,7 +1861,7 @@ function previewText(value: string, max = 120) {
   return one.slice(0, max - 1) + "…"
 }
 
-function ChunkSummaryDisplay(props: { text: string; parsed: ParsedChunkSummary; partID: string }) {
+function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string }) {
   const i18n = useI18n()
   const [open, setOpen] = createSignal(false)
   const [expanded, setExpanded] = createSignal<string[]>([])
@@ -1900,14 +1900,7 @@ function ChunkSummaryDisplay(props: { text: string; parsed: ParsedChunkSummary; 
       <Show when={open()}>
         <div data-slot="chunk-summary-body">
           <div data-slot="chunk-summary-note">{i18n.t("ui.chunkSummary.note")}</div>
-          <Show
-            when={count() > 0}
-            fallback={
-              <div data-slot="chunk-summary-empty">
-                <Markdown text={props.text} cacheKey={props.partID} streaming={false} />
-              </div>
-            }
-          >
+          <Show when={count() > 0}>
             <div data-slot="chunk-summary-list">
               <For each={props.parsed.chunks}>
                 {(chunk) => {
@@ -2091,7 +2084,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           </div>
         }
       >
-        {(parsed) => <ChunkSummaryDisplay text={text()} parsed={parsed()} partID={part().id} />}
+        {(parsed) => <ChunkSummaryDisplay parsed={parsed()} partID={part().id} />}
       </Show>
     </Show>
   )

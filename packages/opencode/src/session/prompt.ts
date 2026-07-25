@@ -1300,14 +1300,15 @@ const layer = Layer.effect(
       const added = allChunks.length - existing.length
       // 无新边界且非 /compact 命令：无需落库。有 /compact 命令时仍要写回，
       // 否则命令消息永远无 chunks，UI 会多出一条空的「Context compacted」。
-      if (added === 0 && !compactCmdMsg) return
-      if (allChunks.length === 0) return
+      // 强制压缩即使没有边界也要密封，否则会话会一直停留在未完成的压缩任务上。
+      if (added === 0 && !compactCmdMsg && !options?.force) return
       if (!compactionMsgWithChunks && !options?.force && !compactCmdMsg) return
 
-      const lastChunk = allChunks.at(-1)!
+      const lastChunk = allChunks.at(-1)
       // tail 从 raw 全量里找最后一个 chunk end 之后的下一条真实消息（含新 /compact 之后的用户输入）
-      const endInRaw = raw.findIndex((msg) => msg.info.id === lastChunk.end_message_id)
-      const afterEnd = endInRaw >= 0 ? raw.slice(endInRaw + 1) : []
+      // 没有关出 chunk 时保留全部真实历史，只密封本次压缩任务。
+      const endInRaw = lastChunk ? raw.findIndex((msg) => msg.info.id === lastChunk.end_message_id) : -1
+      const afterEnd = lastChunk ? (endInRaw >= 0 ? raw.slice(endInRaw + 1) : []) : raw
       const tailStart = afterEnd.find(
         (msg) =>
           !(msg.info.role === "assistant" && msg.info.summary) &&
@@ -1320,7 +1321,7 @@ const layer = Layer.effect(
         (msg): msg is SessionV1.WithParts & { info: SessionV1.User } =>
           msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction"),
       )
-      const modelRef = lastUser?.info.model ?? (yield* provider.defaultModel())
+      const modelRef = lastUser?.info.model ?? compactCmdMsg?.info.model ?? (yield* provider.defaultModel())
 
       // /compact 命令消息始终作为本次 holder 写回 chunks，避免二次压缩时
       // 再新建 holder 留下无 chunks 的孤儿命令（UI 双重「Context compacted」）。
@@ -1334,7 +1335,7 @@ const layer = Layer.effect(
           chunks: allChunks,
           tail_start_id: tailStart,
         })
-      } else if (added > 0) {
+      } else if (added > 0 || options?.force) {
         const holder = yield* sessions.updateMessage({
           id: MessageID.ascending(),
           role: "user",
@@ -1418,12 +1419,16 @@ const layer = Layer.effect(
             lastAssistantMsg?.parts.some(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
+          // 悬空压缩恢复时，summary 会晚于已经排队的真实 user，不能把它当成该 user 的回复。
+          const compactionSummaryPrecedesLastUser =
+            lastAssistant?.summary === true && lastAssistant.parentID < lastUser.id
 
           // 安全边界：last assistant 普通完成且无待处理 tool calls
           const assistantNormallyFinished =
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
+            !compactionSummaryPrecedesLastUser &&
             lastUser.id < lastAssistant.id
 
           if (assistantNormallyFinished) {
@@ -1517,11 +1522,14 @@ const layer = Layer.effect(
             // 避免同一 compaction task 被 latest() 反复拾取造成空转。
             const cfg = yield* config.get()
             if (cfg.compaction?.strategy === "chunk") {
+              // holder 之后已有真实 user 时，密封完成后继续本轮处理该消息。
+              const hasQueuedPrompt = lastUser.id > task.messageID
               yield* persistChunkBoundary(sessionID, { force: true }).pipe(
                 Effect.catchDefect((defect: unknown) =>
                   Effect.logWarning("chunk boundary persist failed", { error: String(defect) }),
                 ),
               )
+              if (hasQueuedPrompt) continue
               break
             }
             const result = yield* compaction.process({

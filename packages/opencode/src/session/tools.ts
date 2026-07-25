@@ -136,7 +136,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return { success: true as const, value: next as never }
         },
       }),
-      execute(args, options) {
+      execute(args: any, options: any) {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)

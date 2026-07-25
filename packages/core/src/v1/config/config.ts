@@ -169,6 +169,23 @@ export const Info = Schema.Struct({
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
       }),
+      strategy: Schema.optional(Schema.Literals(["model", "chunk"])).annotate({
+        description:
+          "History compaction strategy. 'model' summarizes history with a model (default). 'chunk' folds completed work into chunks of original user messages and final responses.",
+      }),
+      chunk: Schema.optional(
+        Schema.Struct({
+          target_tokens: Schema.optional(NonNegativeInt).annotate({
+            description: "Target token budget for projected chunk history (default: 20000)",
+          }),
+          hard_tokens: Schema.optional(NonNegativeInt).annotate({
+            description: "Hard token limit for projected chunk history (default: 24000)",
+          }),
+          fallback: Schema.optional(Schema.Literal("model")).annotate({
+            description: "Fallback strategy when a single chunk cannot fit the hard budget (default: 'model')",
+          }),
+        }),
+      ),
     }),
   ),
   experimental: Schema.optional(

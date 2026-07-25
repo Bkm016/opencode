@@ -1135,6 +1135,11 @@ export const dict = {
   "settings.general.row.language.description": "Change the display language for OpenCode",
   "settings.general.row.shell.title": "Terminal shell",
   "settings.general.row.shell.description": "Shell used by the terminal and agent tools",
+  "settings.general.row.compactionStrategy.title": "History compaction",
+  "settings.general.row.compactionStrategy.description":
+    "How older conversation history is compacted when context fills up",
+  "settings.general.row.compactionStrategy.model": "Model summary",
+  "settings.general.row.compactionStrategy.chunk": "Chunk folding",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.appearance.title": "Appearance",

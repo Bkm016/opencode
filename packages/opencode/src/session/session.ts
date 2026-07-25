@@ -728,6 +728,14 @@ const layer: Layer.Layer<
           if (p.type === "compaction" && p.tail_start_id) {
             p.tail_start_id = idMap.get(p.tail_start_id)
           }
+          // Fork 复制 chunk 映射，内部消息 ID 重新映射，display ID 保留
+          if (p.type === "compaction" && p.chunks) {
+            p.chunks = p.chunks.map((chunk) => ({
+              ...chunk,
+              start_message_id: idMap.get(chunk.start_message_id) ?? chunk.start_message_id,
+              end_message_id: idMap.get(chunk.end_message_id) ?? chunk.end_message_id,
+            }))
+          }
           yield* updatePart(p)
         }
       }

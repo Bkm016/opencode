@@ -8,6 +8,7 @@ export {
   AgentPart,
   AgentPartInput,
   Assistant,
+  ChunkMeta,
   CompactionPart,
   Event,
   FilePart,

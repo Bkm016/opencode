@@ -53,6 +53,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
+import { SessionChunk } from "./chunk"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { Goal } from "./goal"
@@ -1136,67 +1137,66 @@ const layer = Layer.effect(
         )
         .replace("${blockedCondition}", () => goal.blockedCondition ?? "None specified")
         .replace("${tokenBudget}", () => goal.tokenBudget?.toString() ?? "unlimited")
-        .replace("${tokensUsed}", () => goal.tokensUsed.toString())
-        .replace("${timeUsedSeconds}", () => goal.timeUsedSeconds.toString())
     }
 
-    const buildLessonsPrompt = (
-      lessons: Goal.Lesson[],
-      overrides?: Record<string, string | undefined> | null,
-    ) => {
-      if (lessons.length === 0) return ""
-      const template = PromptCatalog.resolve("session.goal_lessons", overrides)
-      const body = lessons
-        .map(
-          (l, i) =>
-            `### Lesson ${i + 1}\n- Attempt: ${l.attempt}\n- Observed: ${l.observed}\n- Implication: ${l.implication}`,
-        )
-        .join("\n\n")
-      return template.replace("${lessons}", () => body)
-    }
-
-    const buildBudgetReminder = (
-      goal: Goal.Info,
-      overrides?: Record<string, string | undefined> | null,
-    ) => {
-      if (goal.tokenBudget === undefined || goal.tokenBudget === 0) return ""
-      const template = PromptCatalog.resolve("session.goal_budget_reminder", overrides)
-      const percentage = Math.round((goal.tokensUsed / goal.tokenBudget) * 100)
-      return template
-        .replace("${tokensUsed}", () => goal.tokensUsed.toString())
-        .replace("${tokenBudget}", () => goal.tokenBudget!.toString())
-        .replace("${percentage}", () => percentage.toString())
-        .replace("${timeUsedSeconds}", () => goal.timeUsedSeconds.toString())
-    }
+    // chunk 策略的 checkpoint 系统上下文：控制说明与用户原文分离注入，
+    // 模型不应把 checkpoint 当用户指令。无 chunk 边界时不注入。
+    const chunkCheckpointSystem = Effect.fn("SessionPrompt.chunkCheckpointSystem")(function* (
+      sessionID: SessionID,
+    ) {
+      const cfg = yield* config.get()
+      if (cfg.compaction?.strategy !== "chunk") return undefined
+      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const compactionMsg = raw.findLast((msg) =>
+        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined),
+      )
+      const compactionPart = compactionMsg?.parts.find(
+        (part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined,
+      )
+      const chunks = compactionPart?.chunks ?? []
+      if (chunks.length === 0) return undefined
+      const selection = SessionChunk.selectVisible({
+        messages: raw,
+        chunks,
+        targetTokens: cfg.compaction?.chunk?.target_tokens ?? 20_000,
+        hardTokens: cfg.compaction?.chunk?.hard_tokens ?? 24_000,
+      })
+      return SessionChunk.checkpointText({
+        chunks,
+        selection,
+        targetTokens: cfg.compaction?.chunk?.target_tokens ?? 20_000,
+        hardTokens: cfg.compaction?.chunk?.hard_tokens ?? 24_000,
+      })
+    })
 
     // 模型执行与 preview 共用可动态重建的 provider turn system 块。
     const providerTurnSystem = Effect.fn("SessionPrompt.providerTurnSystem")(function* (input: {
       agent: Agent.Info
       session: Session.Info
-      format?: SessionV1.Format
+      format?: Schema.Schema.Type<typeof SessionV1.Format>
       goal?: Goal.Info
     }) {
       const cfg = yield* config.get()
-      const [skills, env, instructions, mcpInstructions] = yield* Effect.all([
+      const [skills, env, instructions, mcpInstructions, chunkCheckpoint] = yield* Effect.all([
         sys.skills(input.agent),
         sys.environment(),
         instruction.system(),
         sys.mcp(input.agent, input.session.permission),
+        chunkCheckpointSystem(input.session.id),
       ])
       const system = [
         ...env,
         ...instructions,
         ...(mcpInstructions ? [mcpInstructions] : []),
         ...(skills ? [skills] : []),
+        ...(chunkCheckpoint ? [chunkCheckpoint] : []),
         ...(input.session.parentID ? [PromptCatalog.resolve("session.subagent_workspace", cfg.prompts)] : []),
       ]
       if (input.goal) {
-        // 注入 Goal Contract + lessons + budget reminder
+        // 注入静态 Goal Contract（outcome/verification/constraints/boundaries/budget 上限）。
+        // 动态数据（tokensUsed、timeUsedSeconds、lessons）一律不进 system prompt，
+        // 避免每个 provider turn 前缀变化破坏 provider 缓存。
         system.push(buildGoalSystemPrompt(input.goal, cfg.prompts))
-        const lessons = buildLessonsPrompt(yield* goalSvc.lessons(input.goal.goalID), cfg.prompts)
-        if (lessons) system.push(lessons)
-        const budget = buildBudgetReminder(input.goal, cfg.prompts)
-        if (budget) system.push(budget)
       }
       if (input.format?.type === "json_schema") {
         system.push(PromptCatalog.resolve("runtime.structured_output_system", cfg.prompts))
@@ -1206,7 +1206,12 @@ const layer = Layer.effect(
 
     const systemPrompt = Effect.fn("SessionPrompt.systemPrompt")(function* (sessionID: SessionID) {
       const session = yield* sessions.get(sessionID)
-      const msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+      const cfgForProjection = yield* config.get()
+      const msgs = yield* MessageV2.projectHistory({
+        sessionID,
+        strategy: cfgForProjection.compaction?.strategy,
+        chunk: cfgForProjection.compaction?.chunk,
+      }).pipe(
         Effect.provideService(Database.Service, database),
       )
       const lastUser = MessageV2.latest(msgs).user
@@ -1296,6 +1301,53 @@ const layer = Layer.effect(
       } satisfies SessionV1.TextPart)
     })
 
+    // 在实际压缩事件（手动 /compact 或 overflow）发生时持久化 chunk 边界：
+    // 读取完整原始消息与最新 chunk checkpoint，识别新终止区间并追加元数据。
+    // 没有已有 checkpoint 且 force=false 时不创建——正常 loop 退出不折叠，
+    // 避免每轮对话结束都出现“会话已压缩”分割线。
+    const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
+      sessionID: SessionID,
+      options?: { force?: boolean },
+    ) {
+      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const compactionMsg = raw.findLast((msg) =>
+        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction"),
+      )
+      const compactionPart = compactionMsg?.parts.find(
+        (part): part is SessionV1.CompactionPart => part.type === "compaction",
+      )
+      const existing = compactionPart?.chunks ?? []
+      // 已有 checkpoint 但当前区间未终止（tool-calls 未闭合等）时也要更新，
+      // 否则历史工具看不到活跃区间；仍不关闭无法证明结束的区间。
+      const next = SessionChunk.closeChunk({ messages: raw, chunks: existing })
+      if (!next) return
+      if (compactionMsg && compactionPart) {
+        yield* sessions.updatePart({ ...compactionPart, chunks: [...existing, next] })
+        return
+      }
+      if (!options?.force) return
+      // 首次压缩事件：创建独立 checkpoint 消息承载 chunk 元数据。
+      // 该消息不进入模型投影，UI 继续读取完整原始消息。
+      const lastUser = raw.findLast((msg): msg is SessionV1.WithParts & { info: SessionV1.User } => msg.info.role === "user")
+      const model = lastUser?.info.model ?? (yield* provider.defaultModel())
+      const holder = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID,
+        agent: "compaction",
+        model,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: holder.id,
+        sessionID,
+        type: "compaction",
+        auto: true,
+        chunks: [next],
+      })
+    })
+
     const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
@@ -1307,7 +1359,12 @@ const layer = Layer.effect(
           yield* status.set(sessionID, { type: "busy" })
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+          const cfgForProjection = yield* config.get()
+          let msgs = yield* MessageV2.projectHistory({
+            sessionID,
+            strategy: cfgForProjection.compaction?.strategy,
+            chunk: cfgForProjection.compaction?.chunk,
+          }).pipe(
             Effect.provideService(Database.Service, database),
           )
 
@@ -1416,6 +1473,18 @@ const layer = Layer.effect(
           }
 
           if (task?.type === "compaction") {
+            // chunk 策略下 compaction 不跑模型摘要：边界由 loop 退出时的
+            // persistChunkBoundary 持久化。这里持久化边界后直接退出 loop，
+            // 避免同一 compaction task 被 latest() 反复拾取造成空转。
+            const cfg = yield* config.get()
+            if (cfg.compaction?.strategy === "chunk") {
+              yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                Effect.catchDefect((defect: unknown) =>
+                  Effect.logWarning("chunk boundary persist failed", { error: String(defect) }),
+                ),
+              )
+              break
+            }
             const result = yield* compaction.process({
               messages: msgs,
               parentID: lastUser.id,
@@ -1430,6 +1499,7 @@ const layer = Layer.effect(
           if (
             lastFinished &&
             lastFinished.summary !== true &&
+            cfgForProjection.compaction?.strategy !== "chunk" &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
@@ -1693,6 +1763,18 @@ const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
+              // chunk 策略：provider 整包溢出时不做模型摘要，先持久化边界，
+              // 投影在下一轮重新按 24K 预算裁剪后重试；仍超限时由 oversize
+              // 检测回退 model compaction。
+              const cfg = yield* config.get()
+              if (cfg.compaction?.strategy === "chunk") {
+                yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                  Effect.catchDefect((defect: unknown) =>
+                    Effect.logWarning("chunk boundary persist failed", { error: String(defect) }),
+                  ),
+                )
+                return "continue" as const
+              }
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,

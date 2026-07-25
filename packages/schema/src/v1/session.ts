@@ -192,12 +192,26 @@ export const AgentPart = Schema.Struct({
 }).annotate({ identifier: "AgentPart" })
 export type AgentPart = Types.DeepMutable<Schema.Schema.Type<typeof AgentPart>>
 
+export const ChunkMeta = Schema.Struct({
+  // 内部完整主键，模型不可见
+  chunk_key: Schema.String,
+  // 模型可见的 8 位短 ID，工具调用用它定位 chunk
+  display_id: Schema.String,
+  sequence: NonNegativeInt,
+  start_message_id: MessageID,
+  end_message_id: MessageID,
+  status: Schema.Literals(["completed", "failed", "interrupted"]),
+}).annotate({ identifier: "ChunkMeta" })
+export type ChunkMeta = Types.DeepMutable<Schema.Schema.Type<typeof ChunkMeta>>
+
 export const CompactionPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("compaction"),
   auto: Schema.Boolean,
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
+  // chunk 策略下已关闭的 chunk 元数据；仅追加，不重排
+  chunks: Schema.optional(Schema.Array(ChunkMeta)),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 

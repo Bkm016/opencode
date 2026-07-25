@@ -28,6 +28,7 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import { GoalUpdateTool } from "./goal-update"
 import { GoalLessonAddTool } from "./goal-lesson-add"
+import { HistoryGrepTool, HistoryListTool } from "./history"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
@@ -133,6 +134,8 @@ const layer = Layer.effect(
     const skilltool = yield* SkillTool
     const goalUpdate = yield* GoalUpdateTool
     const goalLessonAdd = yield* GoalLessonAddTool
+    const historyGrep = yield* HistoryGrepTool
+    const historyList = yield* HistoryListTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -251,6 +254,8 @@ const layer = Layer.effect(
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          history_grep: Tool.init(historyGrep),
+          history_list: Tool.init(historyList),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
@@ -282,6 +287,8 @@ const layer = Layer.effect(
             tool.patch,
             tool.goalUpdate,
             tool.goalLessonAdd,
+            tool.history_grep,
+            tool.history_list,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),

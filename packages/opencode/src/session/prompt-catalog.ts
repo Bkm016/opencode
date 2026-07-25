@@ -12,8 +12,6 @@ import BUILD_SWITCH from "./prompt/build-switch.txt"
 import PLAN_MODE from "./prompt/plan-mode.txt"
 
 import GOAL_CONTRACT from "./prompt/goal-contract.txt"
-import GOAL_LESSONS from "./prompt/goal-lessons.txt"
-import GOAL_BUDGET_REMINDER from "./prompt/goal-budget-reminder.txt"
 import SUBAGENT_WORKSPACE from "./prompt/subagent-workspace.txt"
 
 import PROMPT_COMPACTION from "../agent/prompt/compaction.txt"
@@ -371,22 +369,8 @@ export const ENTRIES: readonly PromptEntry[] = [
     id: "session.goal_contract",
     group: "session",
     title: "Goal contract",
-    description: "Injected into provider steps when an active Goal exists; supports ${outcome}, ${verification}, ${constraints}, ${boundaries}, ${iterationPolicy}, ${tokenBudget}, ${tokensUsed}, ${timeUsedSeconds}",
+    description: "Injected into provider steps when an active Goal exists; supports ${outcome}, ${verification}, ${constraints}, ${boundaries}, ${iterationPolicy}, ${tokenBudget}",
     default: GOAL_CONTRACT,
-  },
-  {
-    id: "session.goal_lessons",
-    group: "session",
-    title: "Goal active lessons",
-    description: "Injected into provider steps listing active goal lessons as untrusted prior observations; supports ${lessons}",
-    default: GOAL_LESSONS,
-  },
-  {
-    id: "session.goal_budget_reminder",
-    group: "session",
-    title: "Goal budget reminder",
-    description: "Injected into provider steps when a Goal has a token budget; supports ${tokensUsed}, ${tokenBudget}, ${percentage}, ${timeUsedSeconds}",
-    default: GOAL_BUDGET_REMINDER,
   },
   {
     id: "compaction.template",

@@ -148,6 +148,16 @@ export const SettingsGeneral: Component = () => {
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
 
+  const compactionStrategyOptions = createMemo(() =>
+    (["model", "chunk"] as const).map((value) => ({
+      value,
+      label: language.t(`settings.general.row.compactionStrategy.${value}`),
+    })),
+  )
+  const currentCompactionStrategy = createMemo(
+    () => serverSync().data.config.compaction?.strategy ?? "model",
+  )
+
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
     const list = shells.latest
     const current = serverSync().data.config.shell
@@ -286,6 +296,34 @@ export const SettingsGeneral: Component = () => {
               if (!option) return
               if (option.value === currentShell()) return
               serverSync().updateConfig({ shell: option.value })
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.compactionStrategy.title")}
+          description={language.t("settings.general.row.compactionStrategy.description")}
+        >
+          <Select
+            data-action="settings-compaction-strategy"
+            options={compactionStrategyOptions()}
+            current={compactionStrategyOptions().find((o) => o.value === currentCompactionStrategy())}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentCompactionStrategy()) return
+              // 写入 strategy 边界；旧策略产物保留在数据库，不重复进入模型上下文
+              serverSync().updateConfig({
+                compaction: {
+                  ...serverSync().data.config.compaction,
+                  strategy: option.value,
+                },
+              } as never)
             }}
             variant="secondary"
             size="small"

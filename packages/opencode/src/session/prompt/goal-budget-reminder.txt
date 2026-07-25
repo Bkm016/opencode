@@ -1,3 +1,0 @@
-GOAL BUDGET REMINDER
-Token usage: ${tokensUsed} / ${tokenBudget} (${percentage}% used). Time used: ${timeUsedSeconds}s.
-Conserve tokens when possible. If you are close to the budget, prioritize completing the goal's core outcome over peripheral work.

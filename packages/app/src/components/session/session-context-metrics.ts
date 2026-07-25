@@ -28,6 +28,9 @@ type Context = {
    * 完整输入上下文 = input + cache.read + cache.write，用作上下文拆分的总量。
    */
   contextInput: number
+  /** 缓存命中率：cache.read 占完整输入上下文的比例（0-100），无输入时为 null。 */
+  cacheHitRate: number | null
+  cache: { read: number; write: number }
 }
 
 const tokenTotal = (msg: AssistantMessage) => {
@@ -55,6 +58,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
   const total = tokenTotal(message)
+  const contextInput = contextInputOf(message)
 
   return {
     message,
@@ -66,7 +70,9 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
     input: message.tokens.input,
     total,
     usage: limit ? Math.round((total / limit) * 100) : null,
-    contextInput: contextInputOf(message),
+    contextInput,
+    cacheHitRate: contextInput > 0 ? Math.round((message.tokens.cache.read / contextInput) * 100) : null,
+    cache: message.tokens.cache,
   }
 }
 

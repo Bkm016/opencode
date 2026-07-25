@@ -108,4 +108,24 @@ describe("getSessionContext", () => {
     expect(ctx?.contextInput).toBe(700)
     expect(ctx?.input).toBe(600)
   })
+
+  test("cacheHitRate is cache.read over the inclusive prompt size", () => {
+    const messages = [assistant("a1", { input: 200, output: 100, reasoning: 0, read: 600, write: 200 }, 0.5)]
+    const providers = [{ id: "openai", models: {} }]
+
+    const ctx = getSessionContext(messages, providers)
+
+    // 命中率 = 600 / (200 + 600 + 200) = 60%
+    expect(ctx?.cacheHitRate).toBe(60)
+    expect(ctx?.cache).toEqual({ read: 600, write: 200 })
+  })
+
+  test("cacheHitRate is null when there is no prompt input", () => {
+    const messages = [assistant("a1", { input: 0, output: 100, reasoning: 0, read: 0, write: 0 }, 0.5)]
+    const providers = [{ id: "openai", models: {} }]
+
+    const ctx = getSessionContext(messages, providers)
+
+    expect(ctx?.cacheHitRate).toBeNull()
+  })
 })

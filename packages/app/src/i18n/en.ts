@@ -565,6 +565,8 @@ export const dict = {
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",
   "context.usage.cost": "Cost",
+  "context.usage.cacheHitRate": "Cache Hit",
+  "context.usage.cacheTokens": "Cache Tokens (r/w)",
   "context.usage.clickToView": "Click to view context",
   "context.usage.view": "View context usage",
 

@@ -524,6 +524,8 @@ export const dict = {
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用量",
   "context.usage.cost": "成本",
+  "context.usage.cacheHitRate": "快取命中率",
+  "context.usage.cacheTokens": "快取 token（讀/寫）",
   "context.usage.clickToView": "點擊查看上下文",
   "context.usage.view": "檢視上下文用量",
 

@@ -560,6 +560,8 @@ export const dict = {
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用率",
   "context.usage.cost": "成本",
+  "context.usage.cacheHitRate": "缓存命中率",
+  "context.usage.cacheTokens": "缓存 token（读/写）",
   "context.usage.clickToView": "点击查看上下文",
   "context.usage.view": "查看上下文用量",
 

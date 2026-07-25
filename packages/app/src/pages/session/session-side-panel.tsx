@@ -89,11 +89,11 @@ export function SessionSidePanel(props: {
         </Show>
         <Show when={open()}>
           <div
-            class="size-full min-w-0 flex border-l border-border-weaker-base"
+            class="size-full min-w-0 flex"
             ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}
           >
             <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden bg-background-base">
-              <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 border-b border-border-weaker-base min-w-0">
+              <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 min-w-0">
                 <div class="text-14-medium text-text-strong truncate min-w-0">
                   {language.t("session.tab.context")}
                 </div>

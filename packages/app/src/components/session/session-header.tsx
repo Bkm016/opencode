@@ -276,7 +276,7 @@ export function SessionHeader() {
                       }
                     >
                       <div class="flex items-center">
-                        <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
+                        <div class="flex h-[24px] box-border items-center rounded-md bg-surface-panel overflow-hidden">
                           <Button
                             variant="ghost"
                             class="rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default"

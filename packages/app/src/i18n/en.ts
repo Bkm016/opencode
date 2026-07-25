@@ -825,7 +825,6 @@ export const dict = {
   "goal.dock.lesson.delete": "Delete",
   "goal.dock.lesson.observed": "Observed",
   "goal.dock.lesson.implication": "Implication",
-  "goal.dock.lesson.evidence": "Evidence",
   "goal.budget.title": "Goal budget",
   "goal.budget.description": "Set the maximum tokens this goal may consume.",
   "goal.budget.placeholder": "1000000000",

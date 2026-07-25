@@ -765,7 +765,6 @@ export const dict = {
   "goal.dock.lesson.delete": "刪除",
   "goal.dock.lesson.observed": "觀察",
   "goal.dock.lesson.implication": "結論",
-  "goal.dock.lesson.evidence": "證據",
   "goal.budget.title": "目標預算",
   "goal.budget.description": "設定該目標最多可消耗的 token 數量。",
   "goal.budget.placeholder": "1000000000",

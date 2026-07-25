@@ -11079,7 +11079,6 @@ export type GoalPatchContractResponse = GoalPatchContractResponses[keyof GoalPat
 export type GoalPatchStatusData = {
   body?: {
     status: "complete" | "blocked"
-    evidenceCallIDs: Array<string>
     expectedGoalID?: string
   }
   path: {
@@ -11318,7 +11317,6 @@ export type GoalAddLessonData = {
     attempt: string
     observed: string
     implication: string
-    evidenceCallIDs: Array<string>
     expectedGoalID?: string
   }
   path: {

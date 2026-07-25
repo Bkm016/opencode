@@ -147,10 +147,8 @@ export const dict = {
   "ui.goalTool.update.blocked": "目標已阻塞",
   "ui.goalTool.update.complete": "目標已完成",
   "ui.goalTool.update.failedDescription": "無法更新目標狀態。",
-  "ui.goalTool.update.invalidEvidence": "無法識別驗證引用，自動執行將繼續並使用有效證據重試。",
-  "ui.goalTool.update.blockedDescription": "已確認阻塞條件，自動執行已停止。",
-  "ui.goalTool.update.completeDescription": "請求結果已驗證，自動執行已完成。",
-  "ui.goalTool.evidence": "已關聯 {{count}} 次工具驗證",
+  "ui.goalTool.update.blockedDescription": "目標已標記為阻塞，自動執行已停止。",
+  "ui.goalTool.update.completeDescription": "目標已標記完成，自動執行已結束。",
 
   "ui.common.file.one": "個檔案",
   "ui.common.file.other": "個檔案",

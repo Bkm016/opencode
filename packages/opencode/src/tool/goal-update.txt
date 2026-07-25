@@ -1,11 +1,8 @@
-Update the active Goal status. Use this tool when the model determines the goal is complete or blocked.
+Update the active Goal status when the model determines the goal is complete or blocked.
 
 Parameters:
 - status: Must be "complete" or "blocked". Use "complete" when the outcome has been achieved and verified. Use "blocked" when an external condition prevents further progress.
-- evidenceCallIDs: 1-3 tool-call references made during this goal session that serve as evidence of completion or the blocking condition. Use the exact reference visible in the transcript, including provider references such as functions.bash:9 or toolu_01bash. If no call ID is visible, use the tool name such as bash to reference its latest eligible completed call.
 
 Rules:
-- You MUST provide at least 1 and at most 3 evidenceCallIDs.
-- The evidenceCallIDs must reference tool calls that occurred during this goal's active period in the current session.
-- Goal control tools (goal_update, goal_lesson_add) cannot be used as evidence.
+- Only call this tool when the current System Context contains an active GOAL CONTRACT. If no GOAL CONTRACT is present, never call this tool.
 - Only call this tool when you are confident the goal is complete or genuinely blocked.

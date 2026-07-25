@@ -392,19 +392,6 @@ function GoalLessons(props: {
                 <span class="text-text-subtle">{language.t("goal.dock.lesson.implication")}: </span>
                 {lesson.implication}
               </span>
-              <Show when={lesson.evidence.length > 0}>
-                <span class="text-12-regular text-text-weak">
-                  <span class="text-text-subtle">{language.t("goal.dock.lesson.evidence")}: </span>
-                  <For each={lesson.evidence}>
-                    {(evidence, index) => (
-                      <>
-                        <Show when={index() > 0}>, </Show>
-                        {evidence.tool}/{evidence.callID}
-                      </>
-                    )}
-                  </For>
-                </span>
-              </Show>
             </div>
           )}
         </For>

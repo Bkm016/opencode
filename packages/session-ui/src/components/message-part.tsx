@@ -2145,17 +2145,9 @@ ToolRegistry.register({
       return i18n.t("ui.goalTool.update.complete")
     })
     const description = createMemo(() => {
-      if (failed() && props.output?.includes("evidence callIDs invalid")) {
-        return i18n.t("ui.goalTool.update.invalidEvidence")
-      }
       if (failed()) return props.output ?? i18n.t("ui.goalTool.update.failedDescription")
       if (blocked()) return i18n.t("ui.goalTool.update.blockedDescription")
       if (!pending()) return i18n.t("ui.goalTool.update.completeDescription")
-    })
-    const evidence = createMemo(() => {
-      const value = props.input.evidenceCallIDs
-      if (!Array.isArray(value)) return []
-      return value.filter((item): item is string => typeof item === "string")
     })
 
     return (
@@ -2168,11 +2160,6 @@ ToolRegistry.register({
         </CardTitle>
         <Show when={description()}>
           <CardDescription>{description()}</CardDescription>
-        </Show>
-        <Show when={!failed() && evidence().length > 0}>
-          <div data-slot="goal-tool-evidence">
-            <span>{i18n.t("ui.goalTool.evidence", { count: evidence().length })}</span>
-          </div>
         </Show>
       </Card>
     )

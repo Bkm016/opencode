@@ -126,7 +126,7 @@ export const GoalApi = HttpApi.make("goal")
           OpenApi.annotations({
             identifier: "goal.patchStatus",
             summary: "Patch goal status",
-            description: "Mark the active goal as complete or blocked with evidence from tool calls.",
+            description: "Mark the active goal as complete or blocked.",
           }),
         ),
       )
@@ -213,7 +213,7 @@ export const GoalApi = HttpApi.make("goal")
           OpenApi.annotations({
             identifier: "goal.addLesson",
             summary: "Add lesson to goal",
-            description: "Add a lesson learned during the active goal, with evidence from tool calls.",
+            description: "Add a lesson learned during the active goal.",
           }),
         ),
       )

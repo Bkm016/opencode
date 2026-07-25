@@ -5,13 +5,11 @@ import { Goal } from "../session/goal"
 
 export const GoalUpdateParameters = Schema.Struct({
   status: Schema.Literals(["complete", "blocked"]),
-  evidenceCallIDs: Schema.Array(Schema.String),
-}).annotate({ description: "Update the active Goal status to complete or blocked with evidence" })
+}).annotate({ description: "Update the active Goal status to complete or blocked" })
 
 type Metadata = {
   goalID: string
   status: string
-  evidenceCallIDs: readonly string[]
 }
 
 export const GoalUpdateTool = Tool.define<typeof GoalUpdateParameters, Metadata, Goal.Service>(
@@ -29,7 +27,6 @@ export const GoalUpdateTool = Tool.define<typeof GoalUpdateParameters, Metadata,
               sessionID: ctx.sessionID,
               patch: {
                 status: params.status,
-                evidenceCallIDs: [...params.evidenceCallIDs],
               },
             })
             .pipe(
@@ -37,7 +34,13 @@ export const GoalUpdateTool = Tool.define<typeof GoalUpdateParameters, Metadata,
               Effect.catch((error) =>
                 Effect.succeed({
                   _tag: "error" as const,
-                  message: `Failed to update goal status: ${"detail" in error ? error.detail : "unknown error"}`,
+                  message: `Failed to update goal status: ${
+                    "detail" in error
+                      ? error.detail
+                      : error._tag === "SessionGoalNotFoundError"
+                        ? "no active Goal exists for this session"
+                        : "the active Goal changed before the update"
+                  }`,
                 }),
               ),
             )
@@ -47,7 +50,7 @@ export const GoalUpdateTool = Tool.define<typeof GoalUpdateParameters, Metadata,
             return {
               title: "Goal update failed",
               output: result.message,
-              metadata: { goalID: "", status: params.status, evidenceCallIDs: params.evidenceCallIDs },
+              metadata: { goalID: "", status: params.status },
             }
           }
 
@@ -55,11 +58,10 @@ export const GoalUpdateTool = Tool.define<typeof GoalUpdateParameters, Metadata,
           const info = result as Goal.Info
           return {
             title: `Goal ${params.status}`,
-            output: `Goal marked as ${params.status}. Evidence: ${params.evidenceCallIDs.join(", ")}`,
+            output: `Goal marked as ${params.status}.`,
             metadata: {
               goalID: info.goalID,
               status: params.status,
-              evidenceCallIDs: params.evidenceCallIDs,
             },
           }
         }),

@@ -182,10 +182,8 @@ export const dict: Record<string, string> = {
   "ui.goalTool.update.blocked": "Goal blocked",
   "ui.goalTool.update.complete": "Goal complete",
   "ui.goalTool.update.failedDescription": "The goal status could not be updated.",
-  "ui.goalTool.update.invalidEvidence": "The verification reference was not recognized. Autonomous work will continue and retry with valid evidence.",
-  "ui.goalTool.update.blockedDescription": "Autonomous work stopped at a verified blocker.",
-  "ui.goalTool.update.completeDescription": "The requested outcome was verified and autonomous work is complete.",
-  "ui.goalTool.evidence": "Verified by {{count}} tool calls",
+  "ui.goalTool.update.blockedDescription": "The goal was marked blocked and autonomous work has stopped.",
+  "ui.goalTool.update.completeDescription": "The goal was marked complete and autonomous work has ended.",
 
   "ui.basicTool.called": "Called `{{tool}}`",
   "ui.toolErrorCard.failed": "Failed",

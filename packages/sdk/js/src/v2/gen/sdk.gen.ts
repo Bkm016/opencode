@@ -4747,7 +4747,7 @@ export class Goal extends HeyApiClient {
   /**
    * Patch goal status
    *
-   * Mark the active goal as complete or blocked with evidence from tool calls.
+   * Mark the active goal as complete or blocked.
    */
   public patchStatus<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4755,7 +4755,6 @@ export class Goal extends HeyApiClient {
       directory?: string
       workspace?: string
       status?: "complete" | "blocked"
-      evidenceCallIDs?: Array<string>
       expectedGoalID?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -4769,7 +4768,6 @@ export class Goal extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "status" },
-            { in: "body", key: "evidenceCallIDs" },
             { in: "body", key: "expectedGoalID" },
           ],
         },
@@ -4966,7 +4964,7 @@ export class Goal extends HeyApiClient {
   /**
    * Add lesson to goal
    *
-   * Add a lesson learned during the active goal, with evidence from tool calls.
+   * Add a lesson learned during the active goal.
    */
   public addLesson<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4976,7 +4974,6 @@ export class Goal extends HeyApiClient {
       attempt?: string
       observed?: string
       implication?: string
-      evidenceCallIDs?: Array<string>
       expectedGoalID?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -4992,7 +4989,6 @@ export class Goal extends HeyApiClient {
             { in: "body", key: "attempt" },
             { in: "body", key: "observed" },
             { in: "body", key: "implication" },
-            { in: "body", key: "evidenceCallIDs" },
             { in: "body", key: "expectedGoalID" },
           ],
         },

@@ -7,8 +7,7 @@ export const GoalLessonAddParameters = Schema.Struct({
   attempt: Schema.String,
   observed: Schema.String,
   implication: Schema.String,
-  evidenceCallIDs: Schema.Array(Schema.String),
-}).annotate({ description: "Add a lesson to the active Goal with evidence from tool calls" })
+}).annotate({ description: "Add a lesson to the active Goal" })
 
 type Metadata = {
   goalID: string
@@ -33,7 +32,6 @@ export const GoalLessonAddTool = Tool.define<typeof GoalLessonAddParameters, Met
                 attempt: params.attempt,
                 observed: params.observed,
                 implication: params.implication,
-                evidenceCallIDs: [...params.evidenceCallIDs],
               },
             })
             .pipe(
@@ -41,7 +39,13 @@ export const GoalLessonAddTool = Tool.define<typeof GoalLessonAddParameters, Met
               Effect.catch((error) =>
                 Effect.succeed({
                   _tag: "error" as const,
-                  message: `Failed to add lesson: ${"detail" in error ? error.detail : "unknown error"}`,
+                  message: `Failed to add lesson: ${
+                    "detail" in error
+                      ? error.detail
+                      : error._tag === "SessionGoalNotFoundError"
+                        ? "no active Goal exists for this session"
+                        : "the active Goal changed before the lesson was added"
+                  }`,
                 }),
               ),
             )

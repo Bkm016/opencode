@@ -7,8 +7,6 @@ import { asc } from "drizzle-orm"
 import { GoalTable, LessonTable, GoalSettlementTable } from "@opencode-ai/core/session/sql"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionGoal } from "@opencode-ai/schema/session-goal"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Session } from "./session"
 import { ulid } from "ulid"
 
 export const Info = SessionGoal.GoalInfo
@@ -42,11 +40,6 @@ export type InvalidState = SessionGoal.InvalidState
 
 const MAX_TEXT = 240
 const MAX_LESSONS = 5
-const MAX_EVIDENCE = 3
-const MIN_EVIDENCE = 1
-const EXCERPT_MAX = 500
-
-const GOAL_CONTROL_TOOLS = new Set(["goal_update", "goal_lesson_add"])
 
 /** synthetic Goal continuation 消息的可靠标识 */
 export const GOAL_SYNTHETIC_TAG = "goal_continuation"
@@ -76,7 +69,6 @@ export type PatchContractInput = Schema.Schema.Type<typeof PatchContractInput>
 
 export const PatchStatusInput = Schema.Struct({
   status: Schema.Literals(["complete", "blocked"]),
-  evidenceCallIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "SessionGoalPatchStatus" })
 export type PatchStatusInput = Schema.Schema.Type<typeof PatchStatusInput>
 
@@ -84,15 +76,8 @@ export const AddLessonInput = Schema.Struct({
   attempt: Schema.String,
   observed: Schema.String,
   implication: Schema.String,
-  evidenceCallIDs: Schema.Array(Schema.String),
 }).annotate({ identifier: "SessionGoalAddLesson" })
 export type AddLessonInput = Schema.Schema.Type<typeof AddLessonInput>
-
-interface ValidatedEvidence {
-  callID: string
-  tool: string
-  excerpt: string
-}
 
 export interface Interface {
   readonly get: (sessionID: SessionID) => Effect.Effect<Info | undefined>
@@ -114,7 +99,7 @@ export interface Interface {
     sessionID: SessionID
     patch: PatchStatusInput
     expectedGoalID?: SessionGoal.GoalID
-  }) => Effect.Effect<Info, StaleWrite | NotFoundError | InvalidEvidence | InvalidState>
+  }) => Effect.Effect<Info, StaleWrite | NotFoundError | InvalidState>
   readonly patchBudget: (input: {
     sessionID: SessionID
     tokenBudget: number | null
@@ -154,7 +139,6 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
-    const sessionsSvc = yield* Session.Service
 
     const rowToInfo = (row: typeof GoalTable.$inferSelect): Info => ({
       goalID: SessionGoal.GoalID.make(row.goal_id),
@@ -225,64 +209,6 @@ const layer = Layer.effect(
 
     const publishUpdated = (info: Info) =>
       events.publish(Event.Updated, { sessionID: info.sessionID, goal: info })
-
-    // 证据验证：completed、唯一 callID、非 goal 控制工具、metadata.goalID 匹配、在 Goal 创建后发生
-    const validateEvidence = Effect.fn("SessionGoal.validateEvidence")(function* (
-      sessionID: SessionID,
-      goal: Info,
-      callIDs: readonly string[],
-    ) {
-      const msgs = yield* sessionsSvc.messages({ sessionID }).pipe(Effect.orDie)
-      const seen = new Set<string>()
-      const evidenceToPart = new Map<string, SessionV1.ToolPart>()
-      const eligibleParts: SessionV1.ToolPart[] = []
-      const toolOccurrences = new Map<string, number>()
-      let toolOrdinal = 0
-      for (const msg of msgs) {
-        for (const part of msg.parts) {
-          if (part.type !== "tool") continue
-          const modelReference = `functions.${part.tool}:${toolOrdinal++}`
-          const occurrence = (toolOccurrences.get(part.tool) ?? 0) + 1
-          toolOccurrences.set(part.tool, occurrence)
-          const providerReference = `toolu_${occurrence.toString().padStart(2, "0")}${part.tool}`
-          if (part.state.status !== "completed") continue
-          if (GOAL_CONTROL_TOOLS.has(part.tool)) continue
-          if (!part.callID) continue
-          const partTime = part.state.time
-          if ("start" in partTime && partTime.start < goal.createdAt) continue
-          // 强制 state.metadata.goalID 匹配
-          const partGoalID = part.state.metadata?.goalID
-          if (partGoalID !== goal.goalID) continue
-          eligibleParts.push(part)
-          evidenceToPart.set(part.callID, part)
-          // Provider 向模型暴露不同引用格式，在证据边界统一解析为持久化 callID。
-          evidenceToPart.set(modelReference, part)
-          evidenceToPart.set(providerReference, part)
-          // 裸工具名绑定最近一次有效调用，避免模型无法读取 provider callID 时无效重试。
-          evidenceToPart.set(part.tool, part)
-        }
-      }
-      const result: ValidatedEvidence[] = []
-      for (const reference of callIDs) {
-        let part = evidenceToPart.get(reference)
-        if (!part) {
-          const normalized = reference.toLowerCase()
-          const matchingTools = [...new Set(eligibleParts.map((candidate) => candidate.tool))].filter((tool) =>
-            normalized.includes(tool.toLowerCase()),
-          )
-          if (matchingTools.length === 1) {
-            part = eligibleParts.findLast((candidate) => candidate.tool === matchingTools[0])
-          }
-        }
-        // 单证据引用格式完全未知时，仍绑定最近一次真实有效调用，不让 provider ID 方言阻断完成。
-        if (!part && callIDs.length === 1) part = eligibleParts.at(-1)
-        if (!part) return undefined
-        if (seen.has(part.callID)) return undefined
-        seen.add(part.callID)
-        result.push({ callID: part.callID, tool: part.tool, excerpt: extractExcerpt(part) })
-      }
-      return result
-    })
 
     const createOrReplace = Effect.fn("SessionGoal.createOrReplace")(function* (input: CreateInput & {
       expectedGoalID?: SessionGoal.GoalID
@@ -461,7 +387,7 @@ const layer = Layer.effect(
       patch: PatchStatusInput
       expectedGoalID?: SessionGoal.GoalID
     }) {
-      // 整个验证+状态更新在同一事务
+      // 状态检查和更新在同一事务，模型提交 complete 或 blocked 后立即结算。
       return yield* db.transaction((tx) =>
         Effect.gen(function* () {
           const row = yield* tx
@@ -482,19 +408,10 @@ const layer = Layer.effect(
               new InvalidState({ detail: "goal not active", currentStatus: existing.status }),
             )
           }
-          const callIDs = input.patch.evidenceCallIDs
-          if (callIDs.length < MIN_EVIDENCE || callIDs.length > MAX_EVIDENCE) {
-            return yield* Effect.fail(new InvalidEvidence({ detail: "evidence count must be 1-3" }))
-          }
-          // 证据验证需要读消息——在事务外用 sessionsSvc
-          const evidence = yield* validateEvidence(input.sessionID, existing, callIDs)
-          if (!evidence) {
-            return yield* Effect.fail(new InvalidEvidence({ detail: "evidence callIDs invalid" }))
-          }
           const now = Date.now()
           yield* tx
             .update(GoalTable)
-            .set({ status: input.patch.status, evidence, time_updated: now })
+            .set({ status: input.patch.status, evidence: [], time_updated: now })
             .where(eq(GoalTable.goal_id, existing.goalID))
             .run()
             .pipe(Effect.orDie)
@@ -715,10 +632,6 @@ const layer = Layer.effect(
           ) {
             return yield* Effect.fail(new InvalidEvidence({ detail: "text exceeds 240 chars" }))
           }
-          const callIDs = input.input.evidenceCallIDs
-          if (callIDs.length < MIN_EVIDENCE || callIDs.length > MAX_EVIDENCE) {
-            return yield* Effect.fail(new InvalidEvidence({ detail: "evidence count must be 1-3" }))
-          }
           const activeRows = yield* tx
             .select()
             .from(LessonTable)
@@ -727,10 +640,6 @@ const layer = Layer.effect(
             .pipe(Effect.orDie)
           if (activeRows.length >= MAX_LESSONS) {
             return yield* Effect.fail(new InvalidEvidence({ detail: "max 5 active lessons" }))
-          }
-          const evidence = yield* validateEvidence(input.sessionID, existing, callIDs)
-          if (!evidence) {
-            return yield* Effect.fail(new InvalidEvidence({ detail: "evidence callIDs invalid" }))
           }
           const now = Date.now()
           const lessonID = SessionGoal.LessonID.make("lsn_" + ulid())
@@ -743,7 +652,7 @@ const layer = Layer.effect(
               attempt: input.input.attempt,
               observed: input.input.observed,
               implication: input.input.implication,
-              evidence: evidence.map((e) => ({ callID: e.callID, tool: e.tool, excerpt: e.excerpt })),
+              evidence: [],
               time_created: now,
               time_disabled: null,
             })
@@ -755,7 +664,7 @@ const layer = Layer.effect(
             attempt: input.input.attempt,
             observed: input.input.observed,
             implication: input.input.implication,
-            evidence: evidence.map((e) => ({ callID: e.callID, tool: e.tool, excerpt: e.excerpt })),
+            evidence: [],
             createdAt: now,
           }
           yield* events.publish(Event.LessonUpdated, {
@@ -844,16 +753,10 @@ const layer = Layer.effect(
   }),
 )
 
-function extractExcerpt(part: SessionV1.ToolPart): string {
-  if (part.state.status !== "completed") return ""
-  const output = part.state.output ?? ""
-  return output.length > EXCERPT_MAX ? output.slice(0, EXCERPT_MAX) + "..." : output
-}
-
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [EventV2Bridge.node, Database.node, Session.node],
+  deps: [EventV2Bridge.node, Database.node],
 })
 
 export * as Goal from "./goal"

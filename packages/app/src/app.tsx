@@ -39,7 +39,6 @@ import {
 import { Dynamic } from "solid-js/web"
 import { CommandProvider, useCommand, type CommandOption } from "@/context/command"
 import { GlobalProvider, useGlobal } from "@/context/global"
-import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
@@ -211,7 +210,7 @@ function SharedProviders(props: ParentProps) {
       <NavigationDiagnostics />
       <CommandProvider>
         <DesktopCommands />
-        <HighlightsProvider>{props.children}</HighlightsProvider>
+        {props.children}
       </CommandProvider>
     </>
   )

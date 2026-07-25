@@ -479,10 +479,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Runs after creating a new workspace (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",
 
-  "dialog.releaseNotes.action.getStarted": "Get started",
-  "dialog.releaseNotes.action.next": "Next",
-  "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
-  "dialog.releaseNotes.media.alt": "Release preview",
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
@@ -1131,7 +1127,6 @@ export const dict = {
 
   "settings.general.section.appearance": "Appearance",
   "settings.general.section.notifications": "System notifications",
-  "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
@@ -1184,8 +1179,6 @@ export const dict = {
   "settings.general.row.wayland.tooltip":
     "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
-  "settings.general.row.releaseNotes.title": "Release notes",
-  "settings.general.row.releaseNotes.description": "Show What's New popups after updates",
 
   "settings.updates.row.startup.title": "Check for updates on startup",
   "settings.updates.row.startup.description": "Automatically check for updates when OpenCode launches",

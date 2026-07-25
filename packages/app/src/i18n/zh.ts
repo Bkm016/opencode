@@ -1023,7 +1023,6 @@ export const dict = {
 
   "settings.general.section.appearance": "外观",
   "settings.general.section.notifications": "系统通知",
-  "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",
   "settings.general.section.feed": "动态",
   "settings.general.section.display": "显示",
@@ -1068,8 +1067,6 @@ export const dict = {
   "settings.general.row.wayland.title": "使用原生 Wayland",
   "settings.general.row.wayland.description": "在 Wayland 上禁用 X11 回退。需要重启。",
   "settings.general.row.wayland.tooltip": "在混合刷新率显示器的 Linux 系统上，原生 Wayland 可能更稳定。",
-  "settings.general.row.releaseNotes.title": "发行说明",
-  "settings.general.row.releaseNotes.description": "更新后显示“新功能”弹窗",
 
   "settings.updates.row.startup.title": "启动时检查更新",
   "settings.updates.row.startup.description": "在 OpenCode 启动时自动检查更新",
@@ -1248,10 +1245,6 @@ export const dict = {
   "workspace.reset.archived.many": "将归档 {{count}} 个会话。",
   "workspace.reset.note": "这将把工作树重置为与默认分支一致。",
   "common.open": "打开",
-  "dialog.releaseNotes.action.getStarted": "开始",
-  "dialog.releaseNotes.action.next": "下一步",
-  "dialog.releaseNotes.action.hideFuture": "不再显示",
-  "dialog.releaseNotes.media.alt": "发布预览",
   "toast.project.reloadFailed.title": "无法重新加载 {{project}}",
   "toast.project.reload.success.title": "配置已重新加载",
   "toast.project.reload.success.description": "已为 {{project}} 重新加载配置、skills 和 plugins",

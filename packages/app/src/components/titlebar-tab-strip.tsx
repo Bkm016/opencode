@@ -15,6 +15,7 @@ import { useCommand } from "@/context/command"
 import { useTabs } from "@/context/tabs"
 import { createTabPromptState } from "@/context/prompt"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { isDefaultSessionTitle } from "@/utils/session-title"
 import { canStartTabDrag, isTabCloseTarget } from "./titlebar-tab-gesture"
 
 function SessionTabSlot(props: {
@@ -69,6 +70,27 @@ function SessionTabSlot(props: {
   const session = cachedSession
   const missingSession = createMemo(() => !!props.serverCtx() && !loading() && !session())
   let prefetched = false
+
+  // 默认标题可能在标签页首次加载后由后台异步生成；事件丢失时用低频刷新兜底。
+  createEffect(
+    on(
+      () => {
+        const value = session()
+        if (!value || !isDefaultSessionTitle(value.title)) return
+        const ctx = props.serverCtx()
+        if (!ctx) return
+        return { ctx, id: value.id }
+      },
+      (target) => {
+        if (!target) return
+        const timer = setInterval(() => {
+          void target.ctx.sync.session.resolve(target.id, { force: true }).catch(() => undefined)
+        }, 5000)
+        onCleanup(() => clearInterval(timer))
+      },
+      { defer: true },
+    ),
+  )
 
   createEffect(() => {
     const ctx = props.serverCtx()

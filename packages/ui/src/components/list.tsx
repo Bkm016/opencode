@@ -341,7 +341,11 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                             data-key={props.key(item)}
                             data-active={props.key(item) === active()}
                             data-selected={item === props.current}
-                            onClick={() => handleSelect(item, i())}
+                            onClick={() => {
+                              setStore("mouseActive", true)
+                              setActive(props.key(item))
+                              handleSelect(item, i())
+                            }}
                             onKeyDown={handleKey}
                             type="button"
                             onMouseMove={(event) => {

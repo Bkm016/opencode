@@ -4,8 +4,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
-import { createMediaQuery } from "@solid-primitives/media"
-import { createEffect, createMemo, createResource, Show, type Accessor } from "solid-js"
+import { createMemo, createResource, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
@@ -21,7 +20,7 @@ export function DialogSkills(props: { directory: string }) {
   const serverSDK = useServerSDK()
   const [store, setStore] = createStore({
     tab: "project",
-    selected: undefined as SkillV2Info | undefined,
+    selected: undefined as string | undefined,
   })
   const [skills, { refetch }] = createResource(
     () => props.directory,
@@ -33,14 +32,10 @@ export function DialogSkills(props: { directory: string }) {
   )
   const projectSkills = createMemo(() => (skills() ?? []).filter((skill) => isProjectSkill(skill, props.directory)))
   const globalSkills = createMemo(() => (skills() ?? []).filter((skill) => !isProjectSkill(skill, props.directory)))
-  const desktop = createMediaQuery("(min-width: 640px)")
-
-  createEffect(() => {
-    if (!desktop()) return
+  const selected = createMemo(() => {
+    if (!store.selected) return
     const items = store.tab === "project" ? projectSkills() : globalSkills()
-    if (store.selected && items.includes(store.selected)) return
-    // 桌面列表会默认激活首项，详情状态同步首项以保持左右两栏一致。
-    setStore("selected", items[0])
+    return items.find((skill) => skill.location === store.selected)
   })
 
   const list = (items: Accessor<SkillV2Info[]>, emptyMessage: string) => (
@@ -54,8 +49,7 @@ export function DialogSkills(props: { directory: string }) {
       key={(skill) => skill.location}
       items={items}
       filterKeys={["name", "description", "location"]}
-      current={store.selected}
-      onSelect={(skill) => setStore("selected", skill)}
+      onSelect={(skill) => setStore("selected", skill?.location)}
     >
       {(skill) => (
         <div class="flex flex-col gap-0.5 min-w-0 w-full py-1 text-left">
@@ -126,7 +120,8 @@ export function DialogSkills(props: { directory: string }) {
                 </Tabs.Content>
               </div>
               <Show
-                when={store.selected}
+                when={selected()}
+                keyed
                 fallback={
                   <div class="hidden sm:flex flex-1 items-center justify-center px-8 text-center">
                     <span class="text-14-regular text-text-weak">{language.t("dialog.skills.select")}</span>
@@ -140,8 +135,8 @@ export function DialogSkills(props: { directory: string }) {
                         {language.t("dialog.skills.back")}
                       </Button>
                       <div class="flex min-w-0 flex-1 flex-col gap-1">
-                        <span class="text-16-medium text-text-strong">{skill().name}</span>
-                        <Show when={skill().description}>
+                        <span class="text-16-medium text-text-strong">{skill.name}</span>
+                        <Show when={skill.description}>
                           {(description) => <span class="text-13-regular text-text-base">{description()}</span>}
                         </Show>
                       </div>
@@ -149,12 +144,12 @@ export function DialogSkills(props: { directory: string }) {
                     <div class="flex flex-col gap-5 px-5 py-4">
                       <div class="flex flex-col gap-1.5">
                         <span class="text-12-medium text-text-weak">{language.t("dialog.skills.source")}</span>
-                        <span class="break-all text-12-regular text-text-base select-text">{skill().location}</span>
+                        <span class="break-all text-12-regular text-text-base select-text">{skill.location}</span>
                       </div>
                       <div class="flex flex-col gap-2">
                         <span class="text-12-medium text-text-weak">{language.t("dialog.skills.instructions")}</span>
                         <div class="rounded-md border border-border-base bg-surface-base px-4 py-3 select-text">
-                          <Markdown text={skill().content} class="text-13-regular" />
+                          <Markdown text={skill.content} cacheKey={skill.location} class="text-13-regular" />
                         </div>
                       </div>
                     </div>

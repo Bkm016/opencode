@@ -131,14 +131,15 @@
 
   &[data-size="x-large"] [data-slot="dialog-container"] {
     width: min(calc(100vw - 32px), 980px);
-    height: 600px;
-    min-height: 600px;
-    max-height: 600px;
+    height: min(calc(100vh - 32px), 600px);
+    min-height: 0;
+    max-height: min(calc(100vh - 32px), 600px);
 
     [data-slot="dialog-content"] {
-      min-height: 600px;
-      max-height: 600px;
-      height: 600px;
+      /* 超大弹窗随视口收缩，避免头部和首项超出可点击区域。 */
+      min-height: 0;
+      max-height: 100%;
+      height: 100%;
     }
   }
 }

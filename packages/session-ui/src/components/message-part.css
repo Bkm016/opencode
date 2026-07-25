@@ -303,6 +303,163 @@
   }
 }
 
+[data-component="chunk-summary"] {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  [data-slot="chunk-summary-trigger"] {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 0;
+    border: 0;
+    background: transparent;
+    color: var(--v2-text-text-weak);
+    cursor: pointer;
+  }
+
+  [data-slot="chunk-summary-line"] {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--v2-border-border-base);
+  }
+
+  [data-slot="chunk-summary-label"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-weak);
+    white-space: nowrap;
+  }
+
+  [data-slot="chunk-summary-body"] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 0 8px;
+  }
+
+  [data-slot="chunk-summary-note"] {
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="chunk-summary-list"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  [data-slot="chunk-card"] {
+    border: 0.5px solid var(--v2-border-border-base);
+    border-radius: 8px;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  [data-slot="chunk-card-trigger"] {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  [data-slot="chunk-card-id"] {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    color: var(--v2-text-text-strong);
+  }
+
+  [data-slot="chunk-card-meta"] {
+    font-family: var(--font-family-sans);
+    font-size: 11px;
+    color: var(--v2-text-text-faint);
+    white-space: nowrap;
+  }
+
+  [data-slot="chunk-card-preview"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    color: var(--v2-text-text-muted);
+  }
+
+  [data-slot="chunk-card-body"] {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 12px 12px;
+    border-top: 0.5px solid var(--v2-border-border-base);
+  }
+
+  [data-slot="chunk-section"] {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+  }
+
+  [data-slot="chunk-section-label"] {
+    font-family: var(--font-family-sans);
+    font-size: 11px;
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="chunk-section-list"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  [data-slot="chunk-user"],
+  [data-slot="chunk-assistant"] {
+    font-family: var(--font-family-sans);
+    font-size: 13px;
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-base);
+  }
+
+  [data-slot="chunk-user"] {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--v2-text-text-accent) 8%, transparent);
+  }
+
+  [data-slot="chunk-section-empty"] {
+    font-size: 12px;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="chunk-summary-empty"] {
+    max-height: 240px;
+    overflow: auto;
+  }
+}
+
 [data-component="reasoning-part"] {
   width: 100%;
   color: var(--v2-text-text-muted);
@@ -428,6 +585,147 @@
     line-height: var(--line-height-large);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+}
+
+[data-component="history-output"] {
+  width: 100%;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 6px;
+  background: transparent;
+  position: relative;
+  overflow: hidden;
+
+  [data-slot="history-copy"] {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover [data-slot="history-copy"],
+  &:focus-within [data-slot="history-copy"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  [data-slot="history-scroll"] {
+    width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 280px;
+    padding: 10px 12px;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  [data-slot="history-hits"] {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  [data-slot="history-hit"] {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  [data-slot="history-hit-header"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  [data-slot="history-chunk"] {
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    font-weight: var(--font-weight-medium);
+    color: var(--v2-text-text-strong);
+  }
+
+  [data-slot="history-meta"] {
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="history-context"],
+  [data-slot="history-transcript"] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  [data-slot="history-line"] {
+    display: grid;
+    grid-template-columns: 36px max-content minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    font-family: var(--font-family-mono);
+    font-size: 12px;
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-muted);
+
+    &[data-hit="true"] {
+      color: var(--v2-text-text-strong);
+      background: color-mix(in srgb, var(--v2-text-text-accent) 10%, transparent);
+      border-radius: 4px;
+      margin: 0 -4px;
+      padding: 0 4px;
+    }
+
+    &[data-source="user"] [data-slot="history-source"] {
+      color: var(--v2-text-text-accent);
+    }
+
+    &[data-source="assistant"] [data-slot="history-source"] {
+      color: var(--v2-text-text-base);
+    }
+
+    &[data-source="assistant_tool"] [data-slot="history-source"],
+    &[data-source="tool_output"] [data-slot="history-source"],
+    &[data-source="tool_error"] [data-slot="history-source"],
+    &[data-source="shell"] [data-slot="history-source"] {
+      color: var(--v2-text-text-faint);
+    }
+  }
+
+  [data-slot="history-line-no"] {
+    color: var(--v2-text-text-faint);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="history-source"] {
+    font-family: var(--font-family-sans);
+    font-size: 11px;
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  [data-slot="history-text"] {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="history-empty"] {
+    font-family: var(--font-family-sans);
+    font-size: 13px;
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-muted);
+    white-space: pre-wrap;
   }
 }
 
@@ -718,6 +1016,7 @@
 [data-component="reasoning-part"],
 [data-component="tool-output"],
 [data-component="bash-output"],
+[data-component="history-output"],
 [data-component="edit-content"],
 [data-component="write-content"],
 [data-component="todos"],
@@ -1392,8 +1691,40 @@
   }
 }
 
-[data-component="bash-output"] {
+[data-component="bash-output"],
+[data-component="history-output"],
+[data-component="chunk-summary"] [data-slot="chunk-card"] {
   border: 1px solid var(--border-weak-base);
+}
+
+[data-component="chunk-summary"] {
+  [data-slot="chunk-summary-line"] {
+    background: var(--border-weak-base);
+  }
+
+  [data-slot="chunk-summary-label"],
+  [data-slot="chunk-summary-note"],
+  [data-slot="chunk-card-meta"],
+  [data-slot="chunk-section-label"],
+  [data-slot="chunk-section-empty"] {
+    color: var(--text-weak);
+  }
+
+  [data-slot="chunk-card-id"] {
+    color: var(--text-strong);
+  }
+
+  [data-slot="chunk-card-preview"] {
+    color: var(--text-base);
+  }
+
+  [data-slot="chunk-user"] {
+    background: color-mix(in srgb, var(--text-interactive-base) 8%, transparent);
+  }
+
+  [data-slot="chunk-card-body"] {
+    border-top: 1px solid var(--border-weaker-base);
+  }
 }
 
 [data-component="edit-trigger"],

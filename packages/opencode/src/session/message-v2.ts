@@ -28,7 +28,6 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
-import { SessionChunk } from "./chunk"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessageWithCause } from "@/util/error"
@@ -577,39 +576,16 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
   return filterCompacted(yield* stream(sessionID))
 })
 
-const DEFAULT_CHUNK_TARGET_TOKENS = 20_000
-const DEFAULT_CHUNK_HARD_TOKENS = 24_000
-
 /**
- * 唯一历史投影入口。所有 Desktop 主模型请求必须经过这里，禁止在其他调用点
- * 重复实现 chunk 选择。`model` 策略保持 filterCompacted 行为；`chunk` 策略
- * 生成 user 原文、final response 与 active tail。
+ * 唯一历史投影入口。chunk / model 策略都走 filterCompacted：
+ * chunk 在 persistChunkBoundary 时已写入 summary assistant + tail_start_id。
  */
 export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (input: {
   sessionID: SessionID
   strategy?: "model" | "chunk"
   chunk?: { target_tokens?: number; hard_tokens?: number }
 }) {
-  const messages = yield* stream(input.sessionID)
-  if (input.strategy !== "chunk") return filterCompacted(messages)
-  const compaction = messages.findLast((msg) =>
-    msg.parts.some((part): part is CompactionPart => part.type === "compaction" && part.chunks !== undefined),
-  )
-  const part = compaction?.parts.find(
-    (item): item is CompactionPart => item.type === "compaction" && item.chunks !== undefined,
-  )
-  const chunks = part?.chunks ?? []
-  if (chunks.length === 0) return messages
-  const selection = SessionChunk.selectVisible({
-    messages,
-    chunks,
-    targetTokens: input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS,
-    hardTokens: input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS,
-  })
-  // 单个 chunk 的 user 原文超硬上限：不做半折叠投影，回退到完整历史由上层
-  // 走 model fallback 或报错，避免静默截断用户原文。
-  if (selection.oversize) return messages
-  return SessionChunk.project({ messages, selection })
+  return filterCompacted(yield* stream(input.sessionID))
 })
 
 // filterCompacted reorders messages for model consumption

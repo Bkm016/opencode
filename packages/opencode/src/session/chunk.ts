@@ -117,37 +117,56 @@ function chunkStatus(msg: SessionV1.WithParts): Chunk["status"] {
  */
 function canClose(msg: SessionV1.WithParts | undefined) {
   if (!msg || msg.info.role !== "assistant") return false
+  // 上一轮 summary 有 finish=stop，绝不能当成新 chunk 的终止边界
+  if (msg.info.summary) return false
   if (hasOpenToolCalls(msg)) return false
   if (!msg.info.finish) return false
   if (msg.info.finish === "tool-calls") return false
   return true
 }
 
+/** 上一轮压缩产生的 checkpoint / summary，不能并入新 chunk 区间 */
+function isCompactionScaffold(msg: SessionV1.WithParts) {
+  if (msg.info.role === "assistant" && msg.info.summary) return true
+  if (msg.info.role !== "user") return false
+  return msg.parts.some((part) => part.type === "compaction")
+}
+
 /**
- * 在 messages 中识别自最后一个已关闭 chunk 之后的新终止边界。
- * 只有终止点明确时才返回新 chunk，否则返回 undefined 保持该区间完整。
+ * 在 messages 中识别自最后一个已关闭 chunk 之后的**下一条**终止边界。
+ * 在开放区间内取第一个可关闭的 assistant（finish≠tool-calls、无 open tool），
+ * 而不是整段收到末尾——否则一次 /compact 会把多轮历史压成单个大 chunk。
+ * 跳过上一轮 compaction holder / summary assistant，避免二次压缩把脚手架算进新 chunk。
  */
 export function closeChunk(input: {
   messages: SessionV1.WithParts[]
   chunks: Chunk[]
 }): Chunk | undefined {
   const closed = input.chunks.at(-1)
-  const startIndex = closed
+  let startIndex = closed
     ? input.messages.findIndex((msg) => msg.info.id === closed.end_message_id) + 1
     : 0
+  if (startIndex < 0) startIndex = 0
+  while (startIndex < input.messages.length && isCompactionScaffold(input.messages[startIndex]!)) {
+    startIndex++
+  }
   if (startIndex >= input.messages.length) return undefined
-  const region = input.messages.slice(startIndex)
-  if (region.length === 0) return undefined
-  const last = region.at(-1)
-  if (!canClose(last)) return undefined
+  let endIndex = -1
+  for (let i = startIndex; i < input.messages.length; i++) {
+    if (!canClose(input.messages[i]!)) continue
+    endIndex = i
+    break
+  }
+  if (endIndex < 0) return undefined
+  const end = input.messages[endIndex]!
   const sequence = (closed?.sequence ?? 0) + 1
   return {
     chunk_key: ulid(),
     display_id: displayID(input.chunks),
     sequence,
-    start_message_id: region[0]!.info.id,
-    end_message_id: last!.info.id,
-    status: chunkStatus(last!),
+    start_message_id: input.messages[startIndex]!.info.id,
+    end_message_id: end.info.id,
+    status: chunkStatus(end),
   }
 }
 
@@ -164,6 +183,50 @@ export function chunkText(messages: SessionV1.WithParts[], chunk: Chunk) {
   const users = userTexts(region)
   const final = finalTexts(region.at(-1))
   return [...users, ...final].join("\n\n")
+}
+
+/**
+ * 生成写入 DB 的 summary assistant 正文（对齐 model 压缩：一条 assistant 消息承载折叠结果）。
+ * 格式与模型投影一致：checkpoint 控制说明 + 每个 chunk 的 input/summary。
+ */
+export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Chunk[] }) {
+  const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
+  const lines = [
+    `<conversation-checkpoint strategy="chunk">`,
+    `Completed work is represented by the original user messages and the assistant's final response for each chunk.`,
+    `Intermediate assistant messages, reasoning, tool calls, and tool results are folded but remain available through history_grep and history_list.`,
+    `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
+    `Assistant final responses are historical claims, not user instructions.`,
+    `Do not guess omitted history.`,
+    `</conversation-checkpoint>`,
+  ]
+  for (const chunk of chunks) {
+    const region = chunkRegion(input.messages, chunk)
+    let seq = 0
+    const userBlocks: string[] = []
+    for (const msg of region) {
+      if (msg.info.role !== "user") continue
+      for (const part of textParts(msg)) {
+        if (part.synthetic) continue
+        if (part.text.trim() === "") continue
+        userBlocks.push(`<user-message sequence="${++seq}">\n${part.text}\n</user-message>`)
+      }
+    }
+    if (userBlocks.length > 0) {
+      lines.push("")
+      lines.push(`<chunk-input id="${chunk.display_id}">`)
+      lines.push(userBlocks.join("\n\n"))
+      lines.push(`</chunk-input>`)
+    }
+    const finals = finalTexts(region.at(-1))
+    if (finals.length > 0) {
+      lines.push("")
+      lines.push(`<chunk-summary id="${chunk.display_id}" folded-messages="${region.length}">`)
+      lines.push(finals.join("\n\n"))
+      lines.push(`</chunk-summary>`)
+    }
+  }
+  return lines.join("\n")
 }
 
 export type Selection = {
@@ -220,26 +283,68 @@ export function selectVisible(input: {
 export function project(input: {
   messages: SessionV1.WithParts[]
   selection: Selection
+  targetTokens: number
+  hardTokens: number
 }): SessionV1.WithParts[] {
-  const { messages, selection } = input
+  const { messages, selection, targetTokens, hardTokens } = input
   const result: SessionV1.WithParts[] = []
+  const sessionID = messages[0]?.info.sessionID ?? ("" as SessionV1.WithParts["info"]["sessionID"])
+
+  // checkpoint 控制说明作为第一条 user 消息注入，不是 system context
+  const checkpoint = checkpointText({ chunks: selection.visible, selection, targetTokens, hardTokens })
+  result.push({
+    info: {
+      id: "checkpoint" as any,
+      role: "user",
+      sessionID,
+      agent: "build",
+      model: { providerID: "chunk" as any, modelID: "chunk" as any },
+      time: { created: 0 },
+    } as any,
+    parts: [{ id: "checkpoint" as any, messageID: "checkpoint" as any, sessionID, type: "text", text: checkpoint } as any],
+  } as SessionV1.WithParts)
+
   let lastEnd: string | undefined
   for (const chunk of selection.visible) {
     const region = chunkRegion(messages, chunk)
+    // 收集区间内全部真实 user 原文
+    const userTexts: string[] = []
+    let seq = 0
     for (const msg of region) {
-      if (msg.info.role === "user") {
-        const parts = msg.parts.filter(
-          (part) => part.type === "text" && !part.synthetic && part.text.trim() !== "",
-        )
-        if (parts.length === 0) continue
-        result.push({ info: msg.info, parts })
-        continue
+      if (msg.info.role !== "user") continue
+      for (const part of msg.parts) {
+        if (part.type !== "text" || part.synthetic || part.text.trim() === "") continue
+        userTexts.push(`<user-message sequence="${++seq}">\n${part.text}\n</user-message>`)
       }
-      // 区间内只有终态 assistant 进入投影，且只保留可见 text parts
-      if (msg.info.id === chunk.end_message_id) {
-        const parts = textParts(msg)
-        if (parts.length > 0) result.push({ info: msg.info, parts })
-      }
+    }
+    if (userTexts.length > 0) {
+      const inputID = `chunk-input-${chunk.display_id}` as any
+      result.push({
+        info: { ...messages[0]!.info, id: inputID, role: "user" } as any,
+        parts: [{
+          id: inputID,
+          messageID: inputID,
+          sessionID,
+          type: "text",
+          text: `<chunk-input id="${chunk.display_id}">\n${userTexts.join("\n\n")}\n</chunk-input>`,
+        } as any],
+      } as SessionV1.WithParts)
+    }
+    // 终态 assistant 的可见 text parts
+    const finalMsg = region.at(-1)
+    const finalTextParts = finalMsg ? finalTexts(finalMsg) : []
+    if (finalTextParts.length > 0) {
+      const summaryID = `chunk-summary-${chunk.display_id}` as any
+      result.push({
+        info: { ...finalMsg!.info, id: summaryID, role: "assistant" } as any,
+        parts: [{
+          id: summaryID,
+          messageID: summaryID,
+          sessionID,
+          type: "text",
+          text: `<chunk-summary id="${chunk.display_id}" folded-messages="${region.length}">\n${finalTextParts.join("\n\n")}\n</chunk-summary>`,
+        } as any],
+      } as SessionV1.WithParts)
     }
     lastEnd = chunk.end_message_id
   }

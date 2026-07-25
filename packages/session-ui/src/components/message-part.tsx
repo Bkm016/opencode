@@ -501,6 +501,18 @@ export function getToolInfo(
         title: i18n.t("ui.tool.grep"),
         subtitle: input.pattern,
       }
+    case "history_grep":
+      return {
+        icon: "archive",
+        title: i18n.t("ui.tool.historyGrep"),
+        subtitle: input.pattern,
+      }
+    case "history_list":
+      return {
+        icon: "archive",
+        title: i18n.t("ui.tool.historyList"),
+        subtitle: input.chunk_id,
+      }
     case "webfetch":
       return {
         icon: "window-cursor",
@@ -990,6 +1002,25 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
       return {
         title: i18n.t("ui.tool.grep"),
         subtitle: getDirectory(path),
+        args,
+      }
+    }
+    case "history_grep": {
+      const args: string[] = []
+      if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
+      return {
+        title: i18n.t("ui.tool.historyGrep"),
+        subtitle: typeof input.pattern === "string" ? input.pattern : "",
+        args,
+      }
+    }
+    case "history_list": {
+      const args: string[] = []
+      if (typeof input.offset === "number") args.push("offset=" + input.offset)
+      if (typeof input.limit === "number") args.push("limit=" + input.limit)
+      return {
+        title: i18n.t("ui.tool.historyList"),
+        subtitle: typeof input.chunk_id === "string" ? input.chunk_id : "",
         args,
       }
     }
@@ -1762,6 +1793,179 @@ PART_MAPPING["compaction"] = function CompactionPartDisplay() {
   return <MessageDivider label={i18n.t("ui.messagePart.compaction")} />
 }
 
+type ChunkSummaryBlock = {
+  id: string
+  inputs: string[]
+  summary: string
+  folded?: number
+}
+
+type ParsedChunkSummary = {
+  strategy?: string
+  chunks: ChunkSummaryBlock[]
+}
+
+function extractTagged(text: string, tag: string) {
+  const re = new RegExp(`<${tag}(\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "g")
+  const items: { attrs: string; body: string }[] = []
+  for (const match of text.matchAll(re)) {
+    items.push({ attrs: match[1] ?? "", body: (match[2] ?? "").trim() })
+  }
+  return items
+}
+
+function attrValue(attrs: string, name: string) {
+  const match = attrs.match(new RegExp(`${name}="([^"]*)"`))
+  return match?.[1]
+}
+
+function parseUserMessages(body: string) {
+  const tagged = extractTagged(body, "user-message")
+  if (tagged.length > 0) return tagged.map((item) => item.body).filter(Boolean)
+  return body.trim() ? [body.trim()] : []
+}
+
+function parseChunkSummaryText(text: string): ParsedChunkSummary | undefined {
+  if (!text.includes("<conversation-checkpoint") && !text.includes("<chunk-input") && !text.includes("<chunk-summary")) {
+    return
+  }
+  const checkpoint = extractTagged(text, "conversation-checkpoint")[0]
+  const strategy = checkpoint ? attrValue(checkpoint.attrs, "strategy") : undefined
+  const inputs = extractTagged(text, "chunk-input")
+  const summaries = extractTagged(text, "chunk-summary")
+  const byID = new Map<string, ChunkSummaryBlock>()
+  for (const item of inputs) {
+    const id = attrValue(item.attrs, "id") ?? "unknown"
+    const current = byID.get(id) ?? { id, inputs: [], summary: "" }
+    current.inputs.push(...parseUserMessages(item.body))
+    byID.set(id, current)
+  }
+  for (const item of summaries) {
+    const id = attrValue(item.attrs, "id") ?? "unknown"
+    const current = byID.get(id) ?? { id, inputs: [], summary: "" }
+    current.summary = item.body
+    const folded = attrValue(item.attrs, "folded-messages")
+    if (folded) current.folded = Number(folded)
+    byID.set(id, current)
+  }
+  const chunks = [...byID.values()]
+  if (chunks.length === 0 && !checkpoint) return
+  return { strategy, chunks }
+}
+
+function previewText(value: string, max = 120) {
+  const one = value.replace(/\s+/g, " ").trim()
+  if (one.length <= max) return one
+  return one.slice(0, max - 1) + "…"
+}
+
+function ChunkSummaryDisplay(props: { text: string; parsed: ParsedChunkSummary; partID: string }) {
+  const i18n = useI18n()
+  const [open, setOpen] = createSignal(false)
+  const [expanded, setExpanded] = createSignal<string[]>([])
+  const count = createMemo(() => props.parsed.chunks.length)
+  const label = createMemo(() => {
+    if (count() === 0) return i18n.t("ui.messagePart.compaction")
+    return i18n.t(count() === 1 ? "ui.chunkSummary.title.one" : "ui.chunkSummary.title.other", {
+      count: String(count()),
+    })
+  })
+  const toggleChunk = (id: string) => {
+    setExpanded((list) => (list.includes(id) ? list.filter((item) => item !== id) : [...list, id]))
+  }
+
+  return (
+    <div data-component="chunk-summary" data-timeline-part-id={props.partID}>
+      <button
+        type="button"
+        data-slot="chunk-summary-trigger"
+        aria-expanded={open()}
+        onClick={() => setOpen(!open())}
+      >
+        <span data-slot="chunk-summary-line" />
+        <span data-slot="chunk-summary-label">
+          <Icon name="archive" size="small" />
+          <span>{label()}</span>
+          <Icon name={open() ? "chevron-down" : "chevron-right"} size="small" />
+        </span>
+        <span data-slot="chunk-summary-line" />
+      </button>
+      <Show when={open()}>
+        <div data-slot="chunk-summary-body">
+          <div data-slot="chunk-summary-note">{i18n.t("ui.chunkSummary.note")}</div>
+          <Show
+            when={count() > 0}
+            fallback={
+              <div data-slot="chunk-summary-empty">
+                <Markdown text={props.text} cacheKey={props.partID} streaming={false} />
+              </div>
+            }
+          >
+            <div data-slot="chunk-summary-list">
+              <For each={props.parsed.chunks}>
+                {(chunk) => {
+                  const isOpen = () => expanded().includes(chunk.id)
+                  const inputPreview = () => previewText(chunk.inputs.join(" · ") || i18n.t("ui.chunkSummary.noInput"))
+                  const summaryPreview = () =>
+                    previewText(chunk.summary || i18n.t("ui.chunkSummary.noSummary"))
+                  return (
+                    <div data-slot="chunk-card" data-open={isOpen() ? "true" : undefined}>
+                      <button
+                        type="button"
+                        data-slot="chunk-card-trigger"
+                        aria-expanded={isOpen()}
+                        onClick={() => toggleChunk(chunk.id)}
+                      >
+                        <span data-slot="chunk-card-id">{chunk.id}</span>
+                        <Show when={chunk.folded != null}>
+                          <span data-slot="chunk-card-meta">
+                            {i18n.t("ui.chunkSummary.folded", { count: String(chunk.folded!) })}
+                          </span>
+                        </Show>
+                        <span data-slot="chunk-card-preview">{inputPreview()}</span>
+                        <Icon name={isOpen() ? "chevron-down" : "chevron-right"} size="small" />
+                      </button>
+                      <Show when={isOpen()}>
+                        <div data-slot="chunk-card-body">
+                          <Show when={chunk.inputs.length > 0}>
+                            <div data-slot="chunk-section">
+                              <div data-slot="chunk-section-label">{i18n.t("ui.chunkSummary.user")}</div>
+                              <div data-slot="chunk-section-list">
+                                <For each={chunk.inputs}>
+                                  {(input) => (
+                                    <div data-slot="chunk-user">
+                                      <Markdown text={input} streaming={false} />
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+                          <Show when={chunk.summary}>
+                            <div data-slot="chunk-section">
+                              <div data-slot="chunk-section-label">{i18n.t("ui.chunkSummary.assistant")}</div>
+                              <div data-slot="chunk-assistant">
+                                <Markdown text={chunk.summary} streaming={false} />
+                              </div>
+                            </div>
+                          </Show>
+                          <Show when={!chunk.summary}>
+                            <div data-slot="chunk-section-empty">{summaryPreview()}</div>
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
+                  )
+                }}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 PART_MAPPING["text"] = function TextPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
@@ -1803,9 +2007,10 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const meta = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message as AssistantMessage
-    const agent = message.agent
     const items = [
-      agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
+      message.agent && message.agent !== "compaction"
+        ? message.agent[0]?.toUpperCase() + message.agent.slice(1)
+        : "",
       model(),
       message.variant ?? "",
       duration(),
@@ -1815,6 +2020,12 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
 
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  const chunkSummary = createMemo(() => {
+    if (props.message.role !== "assistant") return
+    const message = props.message as AssistantMessage
+    if (!(message.summary === true || message.mode === "compaction" || message.agent === "compaction")) return
+    return parseChunkSummaryText(text())
+  })
   const isLastTextPart = createMemo(() =>
     isLastTextualPart(data.store.part?.[props.message.id] ?? [], part().id, "text"),
   )
@@ -1826,6 +2037,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       part().time?.end === undefined,
   )
   const showCopy = createMemo(() => {
+    if (chunkSummary()) return false
     if (props.message.role !== "assistant") return isLastTextPart()
     if (props.showAssistantCopyPartID === null) return false
     if (typeof props.showAssistantCopyPartID === "string") return props.showAssistantCopyPartID === part().id
@@ -1844,29 +2056,36 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
-      <div data-component="text-part" data-timeline-part-id={part().id}>
-        <div data-slot="text-part-body">
-          <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-            <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-          </Show>
-        </div>
-        <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
-            <MessageActionButton
-              icon={copied() ? "check" : "copy"}
-              label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={handleCopy}
-              aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
-            />
-            <Show when={meta()}>
-              <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
-                {meta()}
-              </span>
+      <Show
+        when={chunkSummary()}
+        fallback={
+          <div data-component="text-part" data-timeline-part-id={part().id}>
+            <div data-slot="text-part-body">
+              <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+                <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+              </Show>
+            </div>
+            <Show when={showCopy()}>
+              <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+                <MessageActionButton
+                  icon={copied() ? "check" : "copy"}
+                  label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={handleCopy}
+                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                />
+                <Show when={meta()}>
+                  <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
+                    {meta()}
+                  </span>
+                </Show>
+              </div>
             </Show>
           </div>
-        </Show>
-      </div>
+        }
+      >
+        {(parsed) => <ChunkSummaryDisplay text={text()} parsed={parsed()} partID={part().id} />}
+      </Show>
     </Show>
   )
 }
@@ -2079,6 +2298,315 @@ ToolRegistry.register({
           >
             <Markdown text={props.output!} />
           </div>
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+const HISTORY_SOURCE_RE =
+  /^(USER|ASSISTANT|ASSISTANT_TOOL|TOOL_OUTPUT|TOOL_ERROR|SHELL)$/
+
+type HistorySource = "USER" | "ASSISTANT" | "ASSISTANT_TOOL" | "TOOL_OUTPUT" | "TOOL_ERROR" | "SHELL"
+
+type HistoryLine = {
+  line?: number
+  source?: HistorySource
+  text: string
+  hit?: boolean
+}
+
+type HistoryGrepHit = {
+  chunk: string
+  sequence?: number
+  source?: HistorySource
+  line?: number
+  text: string
+  context: HistoryLine[]
+}
+
+function historySourceLabel(source: HistorySource | undefined, i18n: ReturnType<typeof useI18n>) {
+  if (!source) return ""
+  if (source === "USER") return i18n.t("ui.historyTool.source.user")
+  if (source === "ASSISTANT") return i18n.t("ui.historyTool.source.assistant")
+  if (source === "ASSISTANT_TOOL") return i18n.t("ui.historyTool.source.tool")
+  if (source === "TOOL_OUTPUT") return i18n.t("ui.historyTool.source.output")
+  if (source === "TOOL_ERROR") return i18n.t("ui.historyTool.source.error")
+  return i18n.t("ui.historyTool.source.shell")
+}
+
+function parseHistoryLine(raw: string): HistoryLine {
+  const trimmed = raw.replace(/^\s+/, "")
+  const match = trimmed.match(/^(\d+)\s+([A-Z_]+):\s?(.*)$/)
+  if (!match) return { text: trimmed }
+  const source = match[2]!
+  if (!HISTORY_SOURCE_RE.test(source)) return { text: trimmed }
+  return {
+    line: Number(match[1]),
+    source: source as HistorySource,
+    text: match[3] ?? "",
+  }
+}
+
+function parseHistoryListOutput(output: string | undefined): HistoryLine[] | undefined {
+  if (!output) return
+  const lines = output.split("\n").flatMap((row) => {
+    const parsed = parseHistoryLine(row)
+    if (!parsed.source && parsed.text.trim() === "") return []
+    return [parsed]
+  })
+  return lines.length > 0 ? lines : undefined
+}
+
+function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | undefined {
+  if (!output) return
+  const blocks = output.split(/\n\n+/).map((block) => block.trim()).filter(Boolean)
+  const hits: HistoryGrepHit[] = []
+  for (const block of blocks) {
+    const rows = block.split("\n")
+    const header = rows[0]?.match(/^chunk\s+(\S+)(?:\s+\(sequence\s+(\d+)\))?\s+([A-Z_]+)?\s+line\s+(\d+):?$/)
+    if (!header) continue
+    const source = header[3] && HISTORY_SOURCE_RE.test(header[3]) ? (header[3] as HistorySource) : undefined
+    const hitText = (rows[1] ?? "").replace(/^\s+/, "")
+    const contextStart = rows.findIndex((row) => row.trim() === "context:")
+    const context =
+      contextStart >= 0
+        ? rows.slice(contextStart + 1).map((row) => parseHistoryLine(row))
+        : []
+    hits.push({
+      chunk: header[1]!,
+      sequence: header[2] ? Number(header[2]) : undefined,
+      source,
+      line: header[4] ? Number(header[4]) : undefined,
+      text: hitText,
+      context,
+    })
+  }
+  return hits.length > 0 ? hits : undefined
+}
+
+function HistoryTranscriptLine(props: { entry: HistoryLine; i18n: ReturnType<typeof useI18n> }) {
+  return (
+    <div
+      data-slot="history-line"
+      data-source={props.entry.source?.toLowerCase()}
+      data-hit={props.entry.hit ? "true" : undefined}
+    >
+      <span data-slot="history-line-no">{props.entry.line ?? ""}</span>
+      <span data-slot="history-source">{historySourceLabel(props.entry.source, props.i18n)}</span>
+      <span data-slot="history-text">{props.entry.text}</span>
+    </div>
+  )
+}
+
+function HistoryToolOutput(props: {
+  text: string
+  ariaLabel: string
+  children: JSX.Element
+}) {
+  const i18n = useI18n()
+  const [copied, setCopied] = createSignal(false)
+  const handleCopy = async () => {
+    if (!props.text) return
+    if (await writeClipboard(props.text)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  return (
+    <div data-component="history-output">
+      <div data-slot="history-copy">
+        <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+          <IconButtonV2
+            icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+            size="normal"
+            variant="ghost-muted"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleCopy}
+            aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+          />
+        </TooltipV2>
+      </div>
+      <div data-slot="history-scroll" data-scrollable tabIndex={0} role="region" aria-label={props.ariaLabel}>
+        {props.children}
+      </div>
+    </div>
+  )
+}
+
+ToolRegistry.register({
+  name: "history_grep",
+  render(props) {
+    const i18n = useI18n()
+    const pending = createMemo(() => props.status === "pending" || props.status === "running")
+    const matches = createMemo(() => {
+      const value = props.metadata.matches
+      return typeof value === "number" ? value : undefined
+    })
+    const hits = createMemo(() => parseHistoryGrepOutput(props.output))
+    const args = createMemo(() => {
+      const list: string[] = []
+      if (props.input.chunk_id) list.push("chunk=" + props.input.chunk_id)
+      if (props.input.case_sensitive) list.push("case=true")
+      if (props.input.head_limit != null) list.push("limit=" + props.input.head_limit)
+      if (!pending() && matches() != null) list.push(i18n.t("ui.historyTool.matches", { count: matches()! }))
+      return list
+    })
+    const pattern = createMemo(() => (typeof props.input.pattern === "string" ? props.input.pattern : ""))
+    const empty = createMemo(() => !pending() && !!props.output && !hits())
+
+    return (
+      <BasicTool
+        {...props}
+        icon="archive"
+        trigger={
+          <div data-slot="basic-tool-tool-info-structured">
+            <div data-slot="basic-tool-tool-info-main">
+              <span data-slot="basic-tool-tool-title">
+                <ToolStatusTitle
+                  active={pending()}
+                  activeText={i18n.t("ui.historyTool.grep.running")}
+                  doneText={i18n.t("ui.historyTool.grep.done")}
+                  split={false}
+                />
+              </span>
+              <Show when={!pending() && pattern()}>
+                <span data-slot="basic-tool-tool-subtitle">{pattern()}</span>
+              </Show>
+              <Show when={!pending() && args().length}>
+                <For each={args()}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
+              </Show>
+            </div>
+          </div>
+        }
+      >
+        <Show when={hits()}>
+          {(parsed) => (
+            <HistoryToolOutput text={props.output!} ariaLabel={i18n.t("ui.scrollView.ariaLabel")}>
+              <div data-slot="history-hits">
+                <For each={parsed()}>
+                  {(hit) => (
+                    <div data-slot="history-hit">
+                      <div data-slot="history-hit-header">
+                        <span data-slot="history-chunk">{hit.chunk}</span>
+                        <Show when={hit.sequence != null}>
+                          <span data-slot="history-meta">
+                            {i18n.t("ui.historyTool.sequence", { sequence: hit.sequence! })}
+                          </span>
+                        </Show>
+                        <Show when={hit.line != null}>
+                          <span data-slot="history-meta">
+                            {i18n.t("ui.historyTool.line", { line: hit.line! })}
+                          </span>
+                        </Show>
+                        <Show when={hit.source}>
+                          <span data-slot="history-source">{historySourceLabel(hit.source, i18n)}</span>
+                        </Show>
+                      </div>
+                      <Show
+                        when={hit.context.length > 0}
+                        fallback={
+                          <HistoryTranscriptLine
+                            entry={{ text: hit.text, source: hit.source, line: hit.line, hit: true }}
+                            i18n={i18n}
+                          />
+                        }
+                      >
+                        <div data-slot="history-context">
+                          <For each={hit.context}>
+                            {(entry) => (
+                              <HistoryTranscriptLine
+                                entry={{ ...entry, hit: entry.line === hit.line }}
+                                i18n={i18n}
+                              />
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </HistoryToolOutput>
+          )}
+        </Show>
+        <Show when={empty()}>
+          <HistoryToolOutput text={props.output!} ariaLabel={i18n.t("ui.scrollView.ariaLabel")}>
+            <div data-slot="history-empty">{props.output}</div>
+          </HistoryToolOutput>
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "history_list",
+  render(props) {
+    const i18n = useI18n()
+    const pending = createMemo(() => props.status === "pending" || props.status === "running")
+    const lines = createMemo(() => {
+      const value = props.metadata.lines
+      return typeof value === "number" ? value : undefined
+    })
+    const total = createMemo(() => {
+      const value = props.metadata.total
+      return typeof value === "number" ? value : undefined
+    })
+    const entries = createMemo(() => parseHistoryListOutput(props.output))
+    const args = createMemo(() => {
+      const list: string[] = []
+      if (props.input.offset != null) list.push("offset=" + props.input.offset)
+      if (props.input.limit != null) list.push("limit=" + props.input.limit)
+      if (!pending() && lines() != null && total() != null) {
+        list.push(i18n.t("ui.historyTool.range", { lines: lines()!, total: total()! }))
+      } else if (!pending() && lines() != null) {
+        list.push(i18n.t("ui.historyTool.lines", { count: lines()! }))
+      }
+      return list
+    })
+    const chunk = createMemo(() => (typeof props.input.chunk_id === "string" ? props.input.chunk_id : ""))
+    const empty = createMemo(() => !pending() && !!props.output && !entries())
+
+    return (
+      <BasicTool
+        {...props}
+        icon="archive"
+        trigger={
+          <div data-slot="basic-tool-tool-info-structured">
+            <div data-slot="basic-tool-tool-info-main">
+              <span data-slot="basic-tool-tool-title">
+                <ToolStatusTitle
+                  active={pending()}
+                  activeText={i18n.t("ui.historyTool.list.running")}
+                  doneText={i18n.t("ui.historyTool.list.done")}
+                  split={false}
+                />
+              </span>
+              <Show when={!pending() && chunk()}>
+                <span data-slot="basic-tool-tool-subtitle">{chunk()}</span>
+              </Show>
+              <Show when={!pending() && args().length}>
+                <For each={args()}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
+              </Show>
+            </div>
+          </div>
+        }
+      >
+        <Show when={entries()}>
+          {(parsed) => (
+            <HistoryToolOutput text={props.output!} ariaLabel={i18n.t("ui.scrollView.ariaLabel")}>
+              <div data-slot="history-transcript">
+                <For each={parsed()}>{(entry) => <HistoryTranscriptLine entry={entry} i18n={i18n} />}</For>
+              </div>
+            </HistoryToolOutput>
+          )}
+        </Show>
+        <Show when={empty()}>
+          <HistoryToolOutput text={props.output!} ariaLabel={i18n.t("ui.scrollView.ariaLabel")}>
+            <div data-slot="history-empty">{props.output}</div>
+          </HistoryToolOutput>
         </Show>
       </BasicTool>
     )

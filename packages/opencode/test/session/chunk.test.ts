@@ -201,6 +201,139 @@ describe("closeChunk", () => {
     const u2 = user("more work")
     expect(SessionChunk.closeChunk({ messages: [u1, a1, u2], chunks: [first] })).toBeUndefined()
   })
+
+  test("closes first stop boundary, not entire multi-turn region", () => {
+    const u1 = user("a")
+    const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
+    const u2 = user("b")
+    const a2 = assistant(u2.info.id, "b2", { finish: "stop" })
+    const u3 = user("c")
+    const a3 = assistant(u3.info.id, "c3", { finish: "stop" })
+    const messages = [u1, a1, u2, a2, u3, a3]
+    const first = SessionChunk.closeChunk({ messages, chunks: [] })!
+    expect(first.start_message_id).toBe(u1.info.id)
+    expect(first.end_message_id).toBe(a1.info.id)
+    const second = SessionChunk.closeChunk({ messages, chunks: [first] })!
+    expect(second.start_message_id).toBe(u2.info.id)
+    expect(second.end_message_id).toBe(a2.info.id)
+    const third = SessionChunk.closeChunk({ messages, chunks: [first, second] })!
+    expect(third.start_message_id).toBe(u3.info.id)
+    expect(third.end_message_id).toBe(a3.info.id)
+    expect(SessionChunk.closeChunk({ messages, chunks: [first, second, third] })).toBeUndefined()
+  })
+
+  test("tool-call intermediate assistant stays inside one chunk until stop", () => {
+    const u1 = user("read file")
+    const a1 = assistant(u1.info.id, "", { finish: "tool-calls", tool: true })
+    const a2 = assistant(u1.info.id, "done", { finish: "stop" })
+    const messages = [u1, a1, a2]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    expect(chunk.start_message_id).toBe(u1.info.id)
+    expect(chunk.end_message_id).toBe(a2.info.id)
+  })
+
+  test("re-compaction closes second-round turns after prior scaffold", () => {
+    const u1 = user("round1")
+    const a1 = assistant(u1.info.id, "done1", { finish: "stop" })
+    const first = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!
+    // 上一轮 compaction holder + summary（finish=stop 但不可关进新 chunk）
+    const holderID = mid()
+    const holder: SessionV1.WithParts = {
+      info: {
+        id: holderID,
+        role: "user",
+        sessionID,
+        agent: "compaction",
+        model: ref,
+        time: { created: Date.now() + seq++ },
+      },
+      parts: [
+        {
+          id: PartID.ascending(),
+          messageID: holderID,
+          sessionID,
+          type: "compaction",
+          auto: false,
+          chunks: [first],
+          tail_start_id: undefined,
+        } as SessionV1.CompactionPart,
+      ],
+    }
+    const summaryID = mid()
+    const summary: SessionV1.WithParts = {
+      info: {
+        id: summaryID,
+        role: "assistant",
+        sessionID,
+        parentID: holderID,
+        mode: "compaction",
+        agent: "compaction",
+        summary: true,
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() + seq++, completed: Date.now() + seq },
+        finish: "stop",
+      } as SessionV1.Assistant,
+      parts: [
+        {
+          id: PartID.ascending(),
+          messageID: summaryID,
+          sessionID,
+          type: "text",
+          text: "folded",
+        },
+      ],
+    }
+    const u2 = user("round2 question")
+    const a2 = assistant(u2.info.id, "round2 answer", { finish: "stop" })
+    const u3 = user("round2 more")
+    const a3 = assistant(u3.info.id, "round2 final", { finish: "stop" })
+    const messages = [u1, a1, holder, summary, u2, a2, u3, a3]
+    const second = SessionChunk.closeChunk({ messages, chunks: [first] })!
+    expect(second.start_message_id).toBe(u2.info.id)
+    expect(second.end_message_id).toBe(a2.info.id)
+    const third = SessionChunk.closeChunk({ messages, chunks: [first, second] })!
+    expect(third.start_message_id).toBe(u3.info.id)
+    expect(third.end_message_id).toBe(a3.info.id)
+    // summary 脚手架本身不能被关成 chunk
+    expect(SessionChunk.closeChunk({ messages: [u1, a1, holder, summary], chunks: [first] })).toBeUndefined()
+  })
+
+  test("trailing /compact command does not swallow prior stop boundary", () => {
+    const u1 = user("hello")
+    const a1 = assistant(u1.info.id, "world", { finish: "stop" })
+    // /compact 命令消息（user + compaction part，无 chunks）
+    const compactCmdId = mid()
+    const compactCmd: SessionV1.WithParts = {
+      info: {
+        id: compactCmdId,
+        role: "user",
+        sessionID,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() + seq++ },
+      },
+      parts: [
+        {
+          id: PartID.ascending(),
+          messageID: compactCmdId,
+          sessionID,
+          type: "compaction",
+          auto: false,
+        } as SessionV1.CompactionPart,
+      ],
+    }
+    // 开放区间取第一个 stop，尾部 /compact 用户消息不并入该 chunk
+    const chunk = SessionChunk.closeChunk({ messages: [u1, a1, compactCmd], chunks: [] })
+    expect(chunk).toBeDefined()
+    expect(chunk!.start_message_id).toBe(u1.info.id)
+    expect(chunk!.end_message_id).toBe(a1.info.id)
+    // 之后只剩 /compact 脚手架，无可关闭边界
+    expect(SessionChunk.closeChunk({ messages: [u1, a1, compactCmd], chunks: [chunk!] })).toBeUndefined()
+  })
 })
 
 describe("selectVisible", () => {
@@ -292,14 +425,20 @@ describe("project", () => {
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
-    const projected = SessionChunk.project({ messages, selection })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
 
+    // checkpoint + chunk-input + chunk-summary = 3
     expect(projected).toHaveLength(3)
-    expect(projected[0]!.info.id).toBe(u1.info.id)
-    expect(projected[1]!.info.id).toBe(u2.info.id)
-    expect(projected[2]!.info.id).toBe(a2.info.id)
-    // 终态 assistant 只保留 text parts
-    expect(projected[2]!.parts.every((p) => p.type === "text")).toBe(true)
+    expect(projected[0]!.info.role).toBe("user")
+    expect(projected[1]!.info.role).toBe("user")
+    expect(projected[2]!.info.role).toBe("assistant")
+    // chunk-input 包含两条 user 原文
+    const inputText = (projected[1]!.parts[0] as any).text as string
+    expect(inputText).toContain("first question")
+    expect(inputText).toContain("steering")
+    // chunk-summary 包含 final answer
+    const summaryText = (projected[2]!.parts[0] as any).text as string
+    expect(summaryText).toContain("final answer")
     // 中间 assistant 被折叠
     expect(projected.some((m) => m.info.id === mid1.info.id)).toBe(false)
   })
@@ -317,11 +456,12 @@ describe("project", () => {
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
-    const projected = SessionChunk.project({ messages, selection })
-    // tail 包含 u2 和中间 assistant（含 tool part）
-    const tailIds = projected.map((m) => m.info.id)
-    expect(tailIds).toEqual([u1.info.id, a1.info.id, u2.info.id, mid.info.id])
-    expect(projected.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    // checkpoint + chunk-input + chunk-summary + tail(u2 + mid) = 5
+    const tailPart = projected.slice(3)
+    expect(tailPart.some((m) => m.info.id === u2.info.id)).toBe(true)
+    expect(tailPart.some((m) => m.info.id === mid.info.id)).toBe(true)
+    expect(tailPart.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
   })
 })
 

@@ -1139,36 +1139,6 @@ const layer = Layer.effect(
         .replace("${tokenBudget}", () => goal.tokenBudget?.toString() ?? "unlimited")
     }
 
-    // chunk 策略的 checkpoint 系统上下文：控制说明与用户原文分离注入，
-    // 模型不应把 checkpoint 当用户指令。无 chunk 边界时不注入。
-    const chunkCheckpointSystem = Effect.fn("SessionPrompt.chunkCheckpointSystem")(function* (
-      sessionID: SessionID,
-    ) {
-      const cfg = yield* config.get()
-      if (cfg.compaction?.strategy !== "chunk") return undefined
-      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
-      const compactionMsg = raw.findLast((msg) =>
-        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined),
-      )
-      const compactionPart = compactionMsg?.parts.find(
-        (part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined,
-      )
-      const chunks = compactionPart?.chunks ?? []
-      if (chunks.length === 0) return undefined
-      const selection = SessionChunk.selectVisible({
-        messages: raw,
-        chunks,
-        targetTokens: cfg.compaction?.chunk?.target_tokens ?? 20_000,
-        hardTokens: cfg.compaction?.chunk?.hard_tokens ?? 24_000,
-      })
-      return SessionChunk.checkpointText({
-        chunks,
-        selection,
-        targetTokens: cfg.compaction?.chunk?.target_tokens ?? 20_000,
-        hardTokens: cfg.compaction?.chunk?.hard_tokens ?? 24_000,
-      })
-    })
-
     // 模型执行与 preview 共用可动态重建的 provider turn system 块。
     const providerTurnSystem = Effect.fn("SessionPrompt.providerTurnSystem")(function* (input: {
       agent: Agent.Info
@@ -1177,19 +1147,17 @@ const layer = Layer.effect(
       goal?: Goal.Info
     }) {
       const cfg = yield* config.get()
-      const [skills, env, instructions, mcpInstructions, chunkCheckpoint] = yield* Effect.all([
+      const [skills, env, instructions, mcpInstructions] = yield* Effect.all([
         sys.skills(input.agent),
         sys.environment(),
         instruction.system(),
         sys.mcp(input.agent, input.session.permission),
-        chunkCheckpointSystem(input.session.id),
       ])
       const system = [
         ...env,
         ...instructions,
         ...(mcpInstructions ? [mcpInstructions] : []),
         ...(skills ? [skills] : []),
-        ...(chunkCheckpoint ? [chunkCheckpoint] : []),
         ...(input.session.parentID ? [PromptCatalog.resolve("session.subagent_workspace", cfg.prompts)] : []),
       ]
       if (input.goal) {
@@ -1301,50 +1269,121 @@ const layer = Layer.effect(
       } satisfies SessionV1.TextPart)
     })
 
-    // 在实际压缩事件（手动 /compact 或 overflow）发生时持久化 chunk 边界：
-    // 读取完整原始消息与最新 chunk checkpoint，识别新终止区间并追加元数据。
-    // 没有已有 checkpoint 且 force=false 时不创建——正常 loop 退出不折叠，
-    // 避免每轮对话结束都出现“会话已压缩”分割线。
+    // chunk 压缩对齐 model 压缩：关闭边界后立刻写 summary assistant + 设
+    // tail_start_id。投影走 filterCompacted，模型从持久化的 assistant 消息读到折叠内容。
     const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
       sessionID: SessionID,
       options?: { force?: boolean },
     ) {
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
-      const compactionMsg = raw.findLast((msg) =>
-        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction"),
+      const compactionMsgWithChunks = raw.findLast((msg) =>
+        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined),
       )
-      const compactionPart = compactionMsg?.parts.find(
-        (part): part is SessionV1.CompactionPart => part.type === "compaction",
+      const compactionPartWithChunks = compactionMsgWithChunks?.parts.find(
+        (part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined,
       )
-      const existing = compactionPart?.chunks ?? []
-      // 已有 checkpoint 但当前区间未终止（tool-calls 未闭合等）时也要更新，
-      // 否则历史工具看不到活跃区间；仍不关闭无法证明结束的区间。
-      const next = SessionChunk.closeChunk({ messages: raw, chunks: existing })
-      if (!next) return
-      if (compactionMsg && compactionPart) {
-        yield* sessions.updatePart({ ...compactionPart, chunks: [...existing, next] })
+      const existing = compactionPartWithChunks?.chunks ?? []
+      // closeChunk 每次只关开放区间内的下一条终止边界；排除尚未写入 chunks 的 /compact 命令消息。
+      const compactCmdMsg = raw.findLast((msg) =>
+        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks === undefined),
+      )
+      const region = compactCmdMsg
+        ? raw.filter((msg) => msg.info.id !== compactCmdMsg.info.id)
+        : raw
+      // 循环关闭所有可终止边界，避免长历史一次 compact 压成单个大 chunk。
+      const allChunks = [...existing]
+      while (true) {
+        const next = SessionChunk.closeChunk({ messages: region, chunks: allChunks })
+        if (!next) break
+        allChunks.push(next)
+      }
+      const added = allChunks.length - existing.length
+      // 无新边界且非 /compact 命令：无需落库。有 /compact 命令时仍要写回，
+      // 否则命令消息永远无 chunks，UI 会多出一条空的「Context compacted」。
+      if (added === 0 && !compactCmdMsg) return
+      if (allChunks.length === 0) return
+      if (!compactionMsgWithChunks && !options?.force && !compactCmdMsg) return
+
+      const lastChunk = allChunks.at(-1)!
+      // tail 从 raw 全量里找最后一个 chunk end 之后的下一条真实消息（含新 /compact 之后的用户输入）
+      const endInRaw = raw.findIndex((msg) => msg.info.id === lastChunk.end_message_id)
+      const afterEnd = endInRaw >= 0 ? raw.slice(endInRaw + 1) : []
+      const tailStart = afterEnd.find(
+        (msg) =>
+          !(msg.info.role === "assistant" && msg.info.summary) &&
+          !(msg.info.role === "user" && msg.parts.some((p) => p.type === "compaction")),
+      )?.info.id
+      const compactCmdPart = compactCmdMsg?.parts.find(
+        (part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks === undefined,
+      )
+      const lastUser = raw.findLast(
+        (msg): msg is SessionV1.WithParts & { info: SessionV1.User } =>
+          msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction"),
+      )
+      const modelRef = lastUser?.info.model ?? (yield* provider.defaultModel())
+
+      // /compact 命令消息始终作为本次 holder 写回 chunks，避免二次压缩时
+      // 再新建 holder 留下无 chunks 的孤儿命令（UI 双重「Context compacted」）。
+      // overflow 无命令消息时才新建 holder。filterCompacted 只认最新 completed summary。
+      // allChunks 累积历史 chunks，history 工具与 summary 都能看到全部。
+      let holderID: MessageID
+      if (compactCmdMsg && compactCmdPart) {
+        holderID = compactCmdMsg.info.id
+        yield* sessions.updatePart({
+          ...compactCmdPart,
+          chunks: allChunks,
+          tail_start_id: tailStart,
+        })
+      } else if (added > 0) {
+        const holder = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          role: "user",
+          sessionID,
+          agent: "compaction",
+          model: modelRef,
+          time: { created: Date.now() },
+        })
+        holderID = holder.id
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: holder.id,
+          sessionID,
+          type: "compaction",
+          auto: true,
+          chunks: allChunks,
+          tail_start_id: tailStart,
+        })
+      } else {
         return
       }
-      if (!options?.force) return
-      // 首次压缩事件：创建独立 checkpoint 消息承载 chunk 元数据。
-      // 该消息不进入模型投影，UI 继续读取完整原始消息。
-      const lastUser = raw.findLast((msg): msg is SessionV1.WithParts & { info: SessionV1.User } => msg.info.role === "user")
-      const model = lastUser?.info.model ?? (yield* provider.defaultModel())
-      const holder = yield* sessions.updateMessage({
+
+      // 立刻持久化 summary assistant（含无新边界的密封场景），使 filterCompacted
+      // 与 latest() 把本次 /compact 标为已完成，避免空转再拾取 compaction task。
+      const summaryText = SessionChunk.summaryText({ messages: raw, chunks: allChunks })
+      const ctx = yield* InstanceState.context
+      const assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
-        role: "user",
+        role: "assistant",
+        parentID: holderID,
         sessionID,
+        mode: "compaction",
         agent: "compaction",
-        model,
-        time: { created: Date.now() },
+        summary: true,
+        path: { cwd: ctx.directory, root: ctx.worktree },
+        cost: 0,
+        tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: modelRef.modelID,
+        providerID: modelRef.providerID,
+        time: { created: Date.now(), completed: Date.now() },
+        finish: "stop",
       })
       yield* sessions.updatePart({
         id: PartID.ascending(),
-        messageID: holder.id,
+        messageID: assistant.id,
         sessionID,
-        type: "compaction",
-        auto: true,
-        chunks: [next],
+        type: "text",
+        text: summaryText,
+        time: { start: Date.now(), end: Date.now() },
       })
     })
 
@@ -1773,7 +1812,9 @@ const layer = Layer.effect(
                     Effect.logWarning("chunk boundary persist failed", { error: String(defect) }),
                   ),
                 )
-                return "continue" as const
+                // 持久化边界后 break：下一轮需要新 user 消息驱动，
+                // 否则同一条 user 消息反复触发 overflow → persist → continue 死循环。
+                return "break" as const
               }
               yield* compaction.create({
                 sessionID,

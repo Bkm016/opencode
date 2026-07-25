@@ -10,6 +10,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Format } from "../format"
 import { LSP } from "@/lsp/lsp"
 import * as Bom from "@/util/bom"
+import { resolveInputPath } from "@/util/filesystem"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { replace, trimDiff } from "./edit"
 import { InputAlias } from "./input-aliases"
@@ -141,9 +142,7 @@ export const MultiEditTool = Tool.define(
           >()
 
           for (const [index, entry] of edits.entries()) {
-            const filePath = path.isAbsolute(entry.filePath)
-              ? entry.filePath
-              : path.join(instance.directory, entry.filePath)
+             const filePath = resolveInputPath(instance.directory, entry.filePath)
             yield* assertExternalDirectoryEffect(ctx, filePath)
 
             let state = byFile.get(filePath)

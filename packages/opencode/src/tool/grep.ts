@@ -7,6 +7,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./grep.txt"
 import { InputAlias } from "./input-aliases"
 import * as Tool from "./tool"
+import { resolveInputPath } from "@/util/filesystem"
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The regex pattern to search for in file contents" }),
@@ -52,9 +53,7 @@ export const GrepTool = Tool.define(
           })
 
           const ins = yield* InstanceState.context
-          const requested = path.isAbsolute(params.path ?? ins.directory)
-            ? (params.path ?? ins.directory)
-            : path.join(ins.directory, params.path ?? ".")
+           const requested = resolveInputPath(ins.directory, params.path ?? ins.directory)
           const requestedInfo = yield* fs.stat(requested).pipe(Effect.catch(() => Effect.succeed(undefined)))
           yield* assertExternalDirectoryEffect(ctx, requested, {
             bypass: false,

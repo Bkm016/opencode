@@ -34,6 +34,7 @@ export const SidebarContent = (props: {
 }): JSX.Element => {
   const expanded = createMemo(() => !!props.mobile || props.opened())
   const placement = () => (props.mobile ? "bottom" : "right")
+  let stage: HTMLDivElement | undefined
   let rail: HTMLDivElement | undefined
   let selection: HTMLDivElement | undefined
   let frame: number | undefined
@@ -42,7 +43,7 @@ export const SidebarContent = (props: {
     if (frame !== undefined) cancelAnimationFrame(frame)
     frame = requestAnimationFrame(() => {
       frame = undefined
-      if (!rail || !selection) return
+      if (!stage || !rail || !selection) return
 
       const target = rail.querySelector<HTMLElement>('[data-action="project-switch"][data-selected="true"]')
       if (!target) {
@@ -50,13 +51,13 @@ export const SidebarContent = (props: {
         return
       }
 
-      const railRect = rail.getBoundingClientRect()
+      const stageRect = stage.getBoundingClientRect()
       const targetRect = target.getBoundingClientRect()
       const values = {
-        left: targetRect.left - railRect.left,
-        top: targetRect.top - railRect.top,
-        width: targetRect.width,
-        height: targetRect.height,
+        left: targetRect.left - stageRect.left,
+        top: targetRect.top - stageRect.top,
+        width: target.offsetWidth,
+        height: target.offsetHeight,
         opacity: 1,
       }
       if (prefersReducedMotion()) {
@@ -100,40 +101,47 @@ export const SidebarContent = (props: {
             <ConstrainDragXAxis />
             <div
               ref={(element) => {
-                rail = element
+                stage = element
               }}
-              class="relative h-full w-full flex flex-col items-center gap-3 px-3 py-3 overflow-y-auto no-scrollbar"
-              onScroll={moveSelection}
+              class="relative h-full w-full"
             >
+              <div
+                ref={(element) => {
+                  rail = element
+                }}
+                class="h-full w-full flex flex-col items-center gap-3 px-3 py-3 overflow-y-auto no-scrollbar"
+                onScroll={moveSelection}
+              >
+                <SortableProvider ids={props.projects().map((p) => p.worktree)}>
+                  <For each={props.projects()}>{(project) => props.renderProject(project)}</For>
+                </SortableProvider>
+                <Tooltip
+                  placement={placement()}
+                  value={
+                    <div class="flex items-center gap-2">
+                      <span>{props.openProjectLabel}</span>
+                      <Show when={!props.mobile && !!props.openProjectKeybind()}>
+                        <span class="text-icon-base text-12-medium">{props.openProjectKeybind()}</span>
+                      </Show>
+                    </div>
+                  }
+                >
+                  <IconButton
+                    icon="plus"
+                    variant="ghost"
+                    size="large"
+                    onClick={props.onOpenProject}
+                    aria-label={typeof props.openProjectLabel === "string" ? props.openProjectLabel : undefined}
+                  />
+                </Tooltip>
+              </div>
               <div
                 ref={(element) => {
                   selection = element
                 }}
                 aria-hidden="true"
-                class="pointer-events-none absolute left-0 top-0 z-20 rounded-lg border-2 border-icon-strong-base opacity-0"
+                class="pointer-events-none absolute left-0 top-0 z-0 rounded-lg border-2 border-icon-strong-base opacity-0"
               />
-              <SortableProvider ids={props.projects().map((p) => p.worktree)}>
-                <For each={props.projects()}>{(project) => props.renderProject(project)}</For>
-              </SortableProvider>
-              <Tooltip
-                placement={placement()}
-                value={
-                  <div class="flex items-center gap-2">
-                    <span>{props.openProjectLabel}</span>
-                    <Show when={!props.mobile && !!props.openProjectKeybind()}>
-                      <span class="text-icon-base text-12-medium">{props.openProjectKeybind()}</span>
-                    </Show>
-                  </div>
-                }
-              >
-                <IconButton
-                  icon="plus"
-                  variant="ghost"
-                  size="large"
-                  onClick={props.onOpenProject}
-                  aria-label={typeof props.openProjectLabel === "string" ? props.openProjectLabel : undefined}
-                />
-              </Tooltip>
             </div>
             <DragOverlay>{props.renderProjectOverlay()}</DragOverlay>
           </DragDropProvider>

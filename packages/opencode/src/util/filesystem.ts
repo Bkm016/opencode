@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, isAbsolute, join, resolve as pathResolve, win32 } from "path"
+import { basename, dirname, isAbsolute, join, resolve as pathResolve, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@opencode-ai/core/util/glob"
@@ -148,6 +148,27 @@ export function resolveFilePath(root: string, file: string): string {
   const raw = file.startsWith("file://") ? fileURLToPath(file) : file
   if (isAbsolute(raw)) return raw
   return pathResolve(root, raw)
+}
+
+/**
+ * 统一解析工具收到的文件路径，并在 Windows 路径根目录丢失时沿工作区父目录回退查找同名文件。
+ */
+export function resolveInputPath(root: string, input: string): string {
+  const raw = input.startsWith("file://") ? fileURLToPath(input) : input
+  const normalized = windowsPath(raw)
+  const resolved = isAbsolute(normalized) ? pathResolve(normalized) : pathResolve(root, normalized)
+  const canonical = normalizePath(resolved)
+  if (process.platform !== "win32" || existsSync(canonical)) return canonical
+
+  const name = basename(canonical)
+  let ancestor = pathResolve(windowsPath(root))
+  while (true) {
+    const candidate = join(ancestor, name)
+    if (existsSync(candidate)) return normalizePath(candidate)
+    const parent = dirname(ancestor)
+    if (parent === ancestor) return canonical
+    ancestor = parent
+  }
 }
 
 export function windowsPath(p: string): string {

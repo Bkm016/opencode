@@ -85,7 +85,7 @@ const ProjectTile = (props: {
         data-project={base64Encode(props.project.worktree)}
         data-selected={props.selected() ? "true" : undefined}
         classList={{
-          "flex items-center justify-center size-10 p-1 rounded-lg overflow-hidden transition-colors cursor-default focus:outline-none": true,
+          "relative z-10 flex items-center justify-center size-10 p-1 rounded-lg overflow-hidden transition-colors cursor-default focus:outline-none": true,
           "bg-surface-base-hover": !props.selected() && props.active(),
         }}
         onClick={() => {

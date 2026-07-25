@@ -7,6 +7,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./list-dir.txt"
 import { InputAlias } from "./input-aliases"
 import * as Tool from "./tool"
+import { resolveInputPath } from "@/util/filesystem"
 
 const DEFAULT_LIMIT = 2000
 
@@ -59,9 +60,7 @@ export const ListDirTool = Tool.define(
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const ins = yield* InstanceState.context
-          let filepath = params.path?.trim() ? params.path : ins.directory
-          if (!path.isAbsolute(filepath)) filepath = path.resolve(ins.directory, filepath)
-          if (process.platform === "win32") filepath = FSUtil.normalizePath(filepath)
+           const filepath = resolveInputPath(ins.directory, params.path?.trim() ? params.path : ins.directory)
 
           const stat = yield* fs.stat(filepath).pipe(
             Effect.catchIf(

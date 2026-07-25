@@ -14,6 +14,7 @@ import DESCRIPTION from "./apply_patch.txt"
 import { FileSystem } from "@opencode-ai/core/filesystem"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
+import { resolveInputPath } from "@/util/filesystem"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -70,7 +71,7 @@ export const ApplyPatchTool = Tool.define(
       let totalDiff = ""
 
       for (const hunk of hunks) {
-        const filePath = path.resolve(instance.directory, hunk.path)
+         const filePath = resolveInputPath(instance.directory, hunk.path)
         yield* assertExternalDirectoryEffect(ctx, filePath)
 
         switch (hunk.type) {
@@ -139,7 +140,7 @@ export const ApplyPatchTool = Tool.define(
               if (change.removed) deletions += change.count || 0
             }
 
-            const movePath = hunk.move_path ? path.resolve(instance.directory, hunk.move_path) : undefined
+             const movePath = hunk.move_path ? resolveInputPath(instance.directory, hunk.move_path) : undefined
             yield* assertExternalDirectoryEffect(ctx, movePath)
 
             fileChanges.push({

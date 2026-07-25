@@ -19,6 +19,7 @@ import pkg from "../package.json"
 
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
+const cleanFlag = process.argv.includes("--clean")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
@@ -142,7 +143,7 @@ const targets = allTargets.filter((item) => {
     if (item.abi !== "musl") return false
   } else if (abiFilter === "glibc" || osFilter || archFilter) {
     // Default filtered builds to the common glibc binary (skip baseline/musl variants).
-    if (item.abi !== undefined || item.avx2 === false) return false
+    if (item.abi !== undefined || (item.avx2 === false) !== baselineFlag) return false
   }
 
   return true
@@ -154,7 +155,8 @@ if (targets.length === 0) {
   )
 }
 
-await $`rm -rf dist`
+// 本地增量构建保留已有平台产物，只有显式 --clean 才清理整个 dist。
+if (cleanFlag) await $`rm -rf dist`
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {

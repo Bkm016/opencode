@@ -29,7 +29,6 @@ export interface Settings {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
-    showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     shouldDisplayTabsToast?: boolean
     /** Desktop: true when this machine already had app state before first-launch onboarding. */
@@ -139,7 +138,6 @@ const defaultSettings: Settings = {
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
-    showCustomAgents: false,
     mobileTitlebarPosition: "top",
   },
   appearance: {
@@ -185,11 +183,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       classified: false,
       previous: undefined as string | undefined,
     })
-    const showCustomAgents = withFallback(
-      () => store.general?.showCustomAgents,
-      defaultSettings.general.showCustomAgents,
-    )
-
     createEffect(() => {
       if (!launchReady() || launchState.classified) return
       setLaunchState({
@@ -278,10 +271,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setEditToolPartsExpanded(value: boolean) {
           setStore("general", "editToolPartsExpanded", value)
         },
-        showCustomAgents,
-        setShowCustomAgents(value: boolean) {
-          setStore("general", "showCustomAgents", value)
-        },
         mobileTitlebarPosition: withFallback(
           () => store.general?.mobileTitlebarPosition,
           defaultSettings.general.mobileTitlebarPosition,
@@ -297,9 +286,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setOldLayoutEligible(value: boolean) {
           setStore("general", "oldLayoutEligible", value)
         },
-      },
-      visibility: {
-        customAgents: showCustomAgents,
       },
       appearance: {
         fontSize: withFallback(() => store.appearance?.fontSize, defaultSettings.appearance.fontSize),

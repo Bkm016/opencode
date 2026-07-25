@@ -893,8 +893,6 @@ export const dict = {
   "settings.general.row.showTerminal.description": "在桌面標題列中顯示終端機按鈕",
   "settings.general.row.mobileTitlebarBottom.title": "底部導覽",
   "settings.general.row.mobileTitlebarBottom.description": "在行動裝置上將標題列和工作階段分頁置於畫面底部",
-  "settings.general.row.showCustomAgents.title": "自訂代理程式",
-  "settings.general.row.showCustomAgents.description": "在輸入區顯示代理程式選擇器",
   "settings.general.row.reasoningSummaries.title": "顯示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在時間軸中顯示模型推理摘要",
 

@@ -1,15 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { hasCustomAgent, resolveAgent } from "./local-agent"
-
-describe("hasCustomAgent", () => {
-  test("detects explicitly custom agents", () => {
-    expect(hasCustomAgent([{ native: true }, { native: false }])).toBe(true)
-  })
-
-  test("ignores built-in and unclassified agents", () => {
-    expect(hasCustomAgent([{ native: true }, {}])).toBe(false)
-  })
-})
+import { resolveAgent } from "./local-agent"
 
 describe("resolveAgent", () => {
   const agents = [{ name: "plan" }, { name: "build" }, { name: "custom" }]

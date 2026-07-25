@@ -1565,12 +1565,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         options={props.controls.agents.options}
                         current={props.controls.agents.current}
                         onSelect={(value) => {
-                          // Plan stays discoverable in the selector even when agent switching is disabled, so explain why it cannot be selected.
-                          if (value === "plan" && !props.controls.agents.visible) {
-                            showToast({ title: language.t("prompt.agent.customAgentsDisabled") })
-                            restoreFocus()
-                            return
-                          }
                           props.controls.agents.select(value)
                           restoreFocus()
                         }}

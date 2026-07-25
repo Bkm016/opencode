@@ -97,7 +97,6 @@ export const dict = {
   "command.agent.cycle.description": "切换到下一个智能体",
   "command.agent.cycle.reverse": "反向切换智能体",
   "command.agent.cycle.reverse.description": "切换到上一个智能体",
-  "prompt.agent.customAgentsDisabled": "自定义智能体未开启",
 
   "command.model.variant.cycle": "切换思考强度",
   "command.model.variant.cycle.description": "切换到下一个强度等级",
@@ -1061,8 +1060,6 @@ export const dict = {
   "settings.general.row.showTerminal.description": "在桌面版标题栏中显示终端按钮",
   "settings.general.row.mobileTitlebarBottom.title": "底部导航",
   "settings.general.row.mobileTitlebarBottom.description": "在移动设备上将标题栏和会话标签页置于屏幕底部",
-  "settings.general.row.showCustomAgents.title": "自定义智能体",
-  "settings.general.row.showCustomAgents.description": "在输入框中显示智能体选择器",
   "settings.general.row.reasoningSummaries.title": "显示推理摘要",
   "settings.general.row.reasoningSummaries.description": "在时间线中显示模型推理摘要",
   "settings.general.row.shellToolPartsExpanded.title": "展开 shell 工具部分",

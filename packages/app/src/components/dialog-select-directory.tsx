@@ -1,9 +1,11 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { List } from "@opencode-ai/ui/list"
+import { Icon } from "@opencode-ai/ui/icon"
+import { Button } from "@opencode-ai/ui/button"
+import { List, type ListRef } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { createMemo, createResource } from "solid-js"
+import { createMemo, createResource, createSignal, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { useGlobal } from "@/context/global"
@@ -87,6 +89,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       .map((project, index) => ({ project, at: byProject.get(project.worktree) ?? 0, index }))
       .sort((a, b) => b.at - a.at || a.index - b.index)
       .slice(0, 5)
+      .filter(({ project }) => {
+        const wt = project.worktree.replace(/[/\\]+$/, "")
+        return wt && wt !== "/" && wt.length > 1
+      })
       .map(({ project }) => {
         const row = toRow(project.worktree, home())
         const name = project.name || getFilename(project.worktree)
@@ -97,31 +103,119 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       })
   })
 
-  const items = createMemo(() => uniqueRows(recentProjects()))
+  const [browsing, setBrowsing] = createSignal(false)
+  const [current, setCurrent] = createSignal("")
+  const [failed, setFailed] = createSignal(false)
+  const [filterValue, setFilterValue] = createSignal("")
+  let listRef: ListRef | undefined
+
+  const [listing] = createResource(
+    () => (browsing() ? current() : undefined),
+    async (target) => {
+      const result = await sdk.client.experimental.file.list({ path: target }).catch(() => undefined)
+      if (!result?.data) return { path: target, parent: undefined, entries: [], failed: true }
+      return { ...result.data, failed: false }
+    },
+  )
+
+  const browseRows = createMemo<Row[]>(() => {
+    const data = listing.latest
+    if (!data) return []
+    const rows: Row[] = []
+    if (data.parent) {
+      const row = toRow(data.parent, home())
+      rows.push({ ...row, search: `${row.search}\n${language.t("dialog.directory.parent")}` })
+    }
+    for (const entry of data.entries) {
+      if (entry.kind !== "directory") continue
+      rows.push(toRow(entry.path, home()))
+    }
+    return rows
+  })
+
+  // 进入浏览态后同步一次读取失败标记，避免加载期间闪出"无法读取"
+  createMemo(() => {
+    if (!browsing()) return
+    if (listing.state !== "ready") return
+    setFailed(listing()?.failed ?? true)
+  })
+
+  const items = createMemo(() => {
+    if (!browsing()) return uniqueRows(recentProjects())
+    return browseRows()
+  })
 
   function resolve(absolute: string) {
     props.onSelect(props.multiple ? [absolute] : absolute)
     dialog.close()
   }
 
+  function browse(target: string) {
+    setBrowsing(true)
+    setFailed(false)
+    setCurrent(target)
+    listRef?.setFilter("")
+  }
+
+  // 看起来是路径的输入直接打开：回车在最近项目视图里把搜索框内容当路径打开
+  function maybeOpenTypedPath(value: string) {
+    const v = value.trim()
+    if (!v) return false
+    if (v === "/" || v === "~" || v.startsWith("/") || v.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(v)) {
+      resolve(v)
+      return true
+    }
+    return false
+  }
+
   return (
     <Dialog title={props.title ?? language.t("command.project.open")}>
       <List
         class="px-3"
+        ref={(ref) => (listRef = ref)}
         search={{ placeholder: language.t("dialog.directory.search.placeholder"), autofocus: true }}
-        emptyMessage={language.t("dialog.directory.empty")}
+        emptyMessage={
+          browsing() && failed()
+            ? language.t("dialog.directory.readError")
+            : language.t("dialog.directory.empty")
+        }
         loadingMessage={language.t("common.loading")}
         items={items}
-        key={(x) => x.absolute}
+        key={(x) => (browsing() ? `browse\n${x.absolute}` : x.absolute)}
         filterKeys={["search"]}
+        onFilter={(value) => setFilterValue(value)}
         onSelect={(path) => {
           if (!path) return
+          if (browsing()) {
+            browse(path.absolute)
+            return
+          }
           resolve(path.absolute)
+        }}
+        onKeyEvent={(event, item) => {
+          if (event.key === "Escape") {
+            if (browsing()) {
+              event.preventDefault()
+              setBrowsing(false)
+              listRef?.setFilter("")
+            }
+            return
+          }
+          if (event.key === "Enter" && !item) {
+            // 浏览态：选中当前目录；最近项目态：搜索框是路径就直接打开
+            event.preventDefault()
+            if (browsing()) {
+              resolve(listing.latest?.path ?? current())
+            } else if (maybeOpenTypedPath(filterValue())) {
+              return
+            }
+          }
         }}
       >
         {(item) => {
           const path = displayPickerPath(item.absolute, "", home())
-          if (path === "~") {
+          const showBack = () => browsing() && listing.latest?.parent === item.absolute
+          if (path === "~" && !showBack()) {
             return (
               <div class="w-full flex items-center justify-between rounded-md">
                 <div class="flex items-center gap-x-3 grow min-w-0">
@@ -137,7 +231,12 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           return (
             <div class="w-full flex items-center justify-between rounded-md">
               <div class="flex items-center gap-x-3 grow min-w-0">
-                <FileIcon node={{ path: item.absolute, type: "directory" }} class="shrink-0 size-4" />
+                <Show
+                  when={showBack()}
+                  fallback={<FileIcon node={{ path: item.absolute, type: "directory" }} class="shrink-0 size-4" />}
+                >
+                  <Icon name="arrow-left" class="shrink-0 size-4 text-text-weak" />
+                </Show>
                 <div class="flex items-center text-14-regular min-w-0">
                   <span class="text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate min-w-0">
                     {getDirectory(path)}
@@ -150,6 +249,46 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           )
         }}
       </List>
+      <div class="px-3 pt-1.5 pb-2 flex items-center justify-between gap-x-3">
+        <Show
+          when={browsing()}
+          fallback={
+            <span class="text-12-regular text-text-weak truncate min-w-0">
+              {language.t("dialog.directory.recent")}
+            </span>
+          }
+        >
+          <span class="text-12-regular text-text-weak truncate min-w-0 text-left">
+            {displayPickerPath(listing.latest?.path ?? current(), "", home())}
+          </span>
+        </Show>
+        <div class="flex items-center gap-x-2 shrink-0">
+          <Show when={browsing()}>
+            <Button
+              variant="ghost"
+              size="small"
+              icon="arrow-left"
+              onClick={() => {
+                setBrowsing(false)
+                listRef?.setFilter("")
+              }}
+            >
+              {language.t("common.goBack")}
+            </Button>
+          </Show>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={browsing() ? "check-small" : "folder"}
+            onClick={() => {
+              if (browsing()) resolve(listing.latest?.path ?? current())
+              else browse(home() || "/")
+            }}
+          >
+            {browsing() ? language.t("dialog.directory.action.selectFolder") : language.t("dialog.directory.browse")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   )
 }

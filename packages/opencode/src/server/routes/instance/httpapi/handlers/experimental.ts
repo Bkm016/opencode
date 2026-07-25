@@ -158,6 +158,28 @@ async function removeExpiredFiles(root: string, input: { retentionDays: number; 
   return { removed, bytes }
 }
 
+// 支持 `~` / `~/...` 展开到服务端用户目录；空值回落到 home，供目录选择器逐级浏览
+function expandBrowsePath(input: string | undefined) {
+  if (!input || input === "~") return Global.Path.home
+  if (input.startsWith("~/")) return path.join(Global.Path.home, input.slice(2))
+  return input
+}
+
+async function listDirectoryEntries(target: string) {
+  const entries = await fs.readdir(target, { withFileTypes: true }).catch(() => undefined)
+  if (!entries) return undefined
+  const list = entries
+    .filter((entry) => entry.isDirectory() || entry.isFile())
+    .map((entry) => ({
+      name: entry.name,
+      path: path.join(target, entry.name),
+      kind: entry.isDirectory() ? ("directory" as const) : ("file" as const),
+    }))
+  return list.sort((a, b) =>
+    a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "directory" ? -1 : 1,
+  )
+}
+
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
   Effect.gen(function* () {
     const account = yield* Account.Service
@@ -314,7 +336,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     const session = Effect.fn("ExperimentalHttpApi.session")(function* (ctx: { query: typeof SessionListQuery.Type }) {
       const limit = ctx.query.limit ?? 100
-      const directory = ctx.query.directory ? yield* InstanceState.directory : undefined
+      const directory = ctx.query.directory
       const all = yield* sessions.listGlobal({
         directory,
         roots: ctx.query.roots,
@@ -380,6 +402,18 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
+    })
+
+    const file = Effect.fn("ExperimentalHttpApi.file")(function* (ctx: { query: { path?: string } }) {
+      const target = path.resolve(expandBrowsePath(ctx.query.path))
+      const entries = yield* Effect.promise(() => listDirectoryEntries(target))
+      if (!entries) return yield* new HttpApiError.BadRequest({})
+      const parent = path.dirname(target)
+      return {
+        path: target,
+        ...(parent !== target ? { parent } : {}),
+        entries,
+      }
     })
 
     const storageBudget = Effect.fn("ExperimentalHttpApi.storage")(function* (input?: {
@@ -602,6 +636,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("sessionProviderRequest", sessionProviderRequest)
       .handle("sessionProviderResponse", sessionProviderResponse)
       .handle("resource", resource)
+      .handle("file", file)
       .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)
   }),

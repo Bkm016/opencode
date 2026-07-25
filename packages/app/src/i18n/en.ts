@@ -360,6 +360,8 @@ export const dict = {
   "dialog.directory.root": "Root",
   "dialog.directory.parent": "Parent",
   "dialog.directory.readError": "Unable to read this folder",
+  "dialog.directory.browse": "Browse folders…",
+  "dialog.directory.recent": "Recent projects",
 
   "app.server.unreachable": "Could not reach {{server}}",
   "app.server.retrying": "Retrying automatically...",

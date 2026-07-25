@@ -374,6 +374,8 @@ export const dict = {
   "dialog.directory.root": "根目录",
   "dialog.directory.parent": "上级目录",
   "dialog.directory.readError": "无法读取此文件夹",
+  "dialog.directory.browse": "浏览文件夹…",
+  "dialog.directory.recent": "最近项目",
 
   "dialog.server.title": "服务器",
   "dialog.server.description": "切换此应用连接的 OpenCode 服务器。",

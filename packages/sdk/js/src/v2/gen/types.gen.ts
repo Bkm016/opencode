@@ -619,6 +619,15 @@ export type RetryPart = {
   }
 }
 
+export type ChunkMeta = {
+  chunk_key: string
+  display_id: string
+  sequence: number
+  start_message_id: string
+  end_message_id: string
+  status: "completed" | "failed" | "interrupted"
+}
+
 export type CompactionPart = {
   id: string
   sessionID: string
@@ -627,6 +636,7 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  chunks?: Array<ChunkMeta>
 }
 
 export type Part =
@@ -2095,6 +2105,12 @@ export type Config = {
     tail_turns?: number
     preserve_recent_tokens?: number
     reserved?: number
+    strategy?: "model" | "chunk"
+    chunk?: {
+      target_tokens?: number
+      hard_tokens?: number
+      fallback?: "model"
+    }
   }
   experimental?: {
     disable_paste_summary?: boolean
@@ -2227,13 +2243,7 @@ export type ToolListItem = {
   id: string
   description: string
   parameters: unknown
-  /**
-   * Runtime-only tool name aliases accepted at the execute boundary.
-   */
   nameAliases?: Array<string>
-  /**
-   * Runtime-only input key aliases mapped to canonical parameter names.
-   */
   inputAliases?: {
     [key: string]: string
   }
@@ -2343,31 +2353,38 @@ export type SystemPromptPreview = Array<string>
 
 export type ProviderRequestDump = {
   sessionID: string
-  at: number
+  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   model: string
   provider: string
   route: string
   protocol: string
   url?: string
   body: unknown
-  bodyBytes: number
+  bodyBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   runtime?: string
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
 }
 
 export type ProviderResponseDump = {
   sessionID: string
-  at: number
+  at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   model: string
   provider: string
   route: string
   protocol: string
   url?: string
-  status?: number
+  status?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   headers?: {
     [key: string]: string
   }
   body: unknown
-  bodyBytes: number
+  bodyBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   runtime?: string
   error?: boolean
 }
@@ -2378,6 +2395,18 @@ export type McpResource = {
   description?: string
   mimeType?: string
   client: string
+}
+
+export type DirectoryEntry = {
+  name: string
+  path: string
+  kind: "file" | "directory"
+}
+
+export type DirectoryList = {
+  path: string
+  parent?: string
+  entries: Array<DirectoryEntry>
 }
 
 export type StorageDatabaseStats = {
@@ -2704,13 +2733,6 @@ export type ProviderAuthError1 = {
     field?: string
     message?: string
     kind?: string
-  }
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
   }
 }
 
@@ -8365,6 +8387,35 @@ export type ExperimentalResourceListResponses = {
 
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
+
+export type ExperimentalFileListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    path?: string
+  }
+  url: "/experimental/file"
+}
+
+export type ExperimentalFileListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ExperimentalFileListError = ExperimentalFileListErrors[keyof ExperimentalFileListErrors]
+
+export type ExperimentalFileListResponses = {
+  /**
+   * Directory listing
+   */
+  200: DirectoryList
+}
+
+export type ExperimentalFileListResponse = ExperimentalFileListResponses[keyof ExperimentalFileListResponses]
 
 export type ExperimentalStorageGetData = {
   body?: never

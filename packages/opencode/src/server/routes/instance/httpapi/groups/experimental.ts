@@ -119,6 +119,21 @@ export const SessionListQuery = Schema.Struct({
   archived: Schema.optional(QueryBoolean),
 })
 
+const DirectoryListQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  path: Schema.optional(Schema.String),
+})
+const DirectoryEntry = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  kind: Schema.Literals(["file", "directory"]),
+}).annotate({ identifier: "DirectoryEntry" })
+const DirectoryList = Schema.Struct({
+  path: Schema.String,
+  parent: Schema.optionalKey(Schema.String),
+  entries: Schema.Array(DirectoryEntry),
+}).annotate({ identifier: "DirectoryList" })
+
 const StorageFileStats = Schema.Struct({
   path: Schema.String,
   bytes: Schema.Number,
@@ -213,6 +228,7 @@ export const ExperimentalPaths = {
   sessionProviderResponse: "/experimental/session/:sessionID/provider-response",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
+  file: "/experimental/file",
   storage: "/experimental/storage",
   storageCompact: "/experimental/storage/compact",
 } as const
@@ -408,6 +424,18 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.resource.list",
             summary: "Get MCP resources",
             description: "Get all available MCP resources from connected servers. Optionally filter by name.",
+          }),
+        ),
+        HttpApiEndpoint.get("file", ExperimentalPaths.file, {
+          query: DirectoryListQuery,
+          success: described(DirectoryList, "Directory listing"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.file.list",
+            summary: "List directory entries",
+            description:
+              "List immediate entries of a directory on the OpenCode server for directory browsing. Supports ~ expansion and defaults to the user home directory.",
           }),
         ),
         HttpApiEndpoint.get("storage", ExperimentalPaths.storage, {

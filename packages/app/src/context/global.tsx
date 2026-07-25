@@ -127,7 +127,18 @@ function createServerCtx(
     return base
   }
 
-  const projectsList = createMemo(() => projects.list().map(enrich))
+  const projectsList = createMemo(() => {
+    const serverProjects = sync.data.project
+    const localProjects = projects.list()
+    const localMap = new Map(localProjects.map((p) => [pathKey(p.worktree), p]))
+    const serverWorktrees = new Set(serverProjects.map((p) => pathKey(p.worktree)))
+    const merged = serverProjects.map((project) => {
+      const local = localMap.get(pathKey(project.worktree))
+      return enrich({ worktree: project.worktree, expanded: local?.expanded ?? false })
+    })
+    const localOnly = localProjects.filter((p) => !serverWorktrees.has(pathKey(p.worktree)))
+    return [...merged, ...localOnly.map((p) => enrich(p))]
+  })
   const recentlyClosedList = createMemo(() => {
     const known = new Set(sync.data.project.map((project) => pathKey(project.worktree)))
     return projects

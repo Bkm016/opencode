@@ -42,6 +42,8 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalControlPlaneMoveSessionErrors,
   ExperimentalControlPlaneMoveSessionResponses,
+  ExperimentalFileListErrors,
+  ExperimentalFileListResponses,
   ExperimentalProjectCopyGenerateNameErrors,
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
@@ -50,12 +52,12 @@ import type {
   ExperimentalSessionBackgroundResponses,
   ExperimentalSessionListErrors,
   ExperimentalSessionListResponses,
-  ExperimentalSessionSystemPromptErrors,
-  ExperimentalSessionSystemPromptResponses,
   ExperimentalSessionProviderRequestErrors,
   ExperimentalSessionProviderRequestResponses,
   ExperimentalSessionProviderResponseErrors,
   ExperimentalSessionProviderResponseResponses,
+  ExperimentalSessionSystemPromptErrors,
+  ExperimentalSessionSystemPromptResponses,
   ExperimentalStorageCompactErrors,
   ExperimentalStorageCompactResponses,
   ExperimentalStorageGetErrors,
@@ -952,7 +954,7 @@ export class Session extends HeyApiClient {
   /**
    * Dump last provider request
    *
-   * Return the most recent provider wire request body captured for this session in the current process.
+   * Return the most recent provider wire request body captured for this session in the current process. Used for debugging; not persisted to the database.
    */
   public providerRequest<ThrowOnError extends boolean = false>(
     parameters: {
@@ -988,7 +990,7 @@ export class Session extends HeyApiClient {
   /**
    * Dump last provider response
    *
-   * Return the most recent provider wire response body captured for this session in the current process.
+   * Return the most recent provider wire response body captured for this session in the current process. Used for debugging; not persisted to the database.
    */
   public providerResponse<ThrowOnError extends boolean = false>(
     parameters: {
@@ -1052,6 +1054,44 @@ export class Resource extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/resource",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class File extends HeyApiClient {
+  /**
+   * List directory entries
+   *
+   * List immediate entries of a directory on the OpenCode server for directory browsing. Supports ~ expansion and defaults to the user home directory.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalFileListResponses,
+      ExperimentalFileListErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/file",
       ...options,
       ...params,
     })
@@ -1479,6 +1519,11 @@ export class Experimental extends HeyApiClient {
   private _resource?: Resource
   get resource(): Resource {
     return (this._resource ??= new Resource({ client: this.client }))
+  }
+
+  private _file?: File
+  get file(): File {
+    return (this._file ??= new File({ client: this.client }))
   }
 
   private _storage?: Storage

@@ -1802,6 +1802,7 @@ type ChunkSummaryBlock = {
 
 type ParsedChunkSummary = {
   strategy?: string
+  checkpoint: string[]
   chunks: ChunkSummaryBlock[]
 }
 
@@ -1829,8 +1830,9 @@ function parseChunkSummaryText(text: string): ParsedChunkSummary | undefined {
   if (!text.includes("<conversation-checkpoint") && !text.includes("<chunk-input") && !text.includes("<chunk-summary")) {
     return
   }
-  const checkpoint = extractTagged(text, "conversation-checkpoint")[0]
-  const strategy = checkpoint ? attrValue(checkpoint.attrs, "strategy") : undefined
+  const checkpointBlock = extractTagged(text, "conversation-checkpoint")[0]
+  const strategy = checkpointBlock ? attrValue(checkpointBlock.attrs, "strategy") : undefined
+  const checkpoint = (checkpointBlock?.body.split("\n") ?? []).map((line) => line.trim()).filter(Boolean)
   const inputs = extractTagged(text, "chunk-input")
   const summaries = extractTagged(text, "chunk-summary")
   const byID = new Map<string, ChunkSummaryBlock>()
@@ -1849,8 +1851,8 @@ function parseChunkSummaryText(text: string): ParsedChunkSummary | undefined {
     byID.set(id, current)
   }
   const chunks = [...byID.values()]
-  if (chunks.length === 0 && !checkpoint) return
-  return { strategy, chunks }
+  if (chunks.length === 0 && !checkpointBlock) return
+  return { strategy, checkpoint, chunks }
 }
 
 function previewText(value: string, max = 120) {
@@ -1876,6 +1878,11 @@ function ChunkSummaryDisplay(props: { text: string; parsed: ParsedChunkSummary; 
 
   return (
     <div data-component="chunk-summary" data-timeline-part-id={props.partID}>
+      <Show when={props.parsed.checkpoint.length > 0}>
+        <ul data-slot="chunk-summary-rules">
+          <For each={props.parsed.checkpoint}>{(rule) => <li>{rule}</li>}</For>
+        </ul>
+      </Show>
       <button
         type="button"
         data-slot="chunk-summary-trigger"

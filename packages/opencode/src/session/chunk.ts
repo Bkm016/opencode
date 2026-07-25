@@ -189,17 +189,18 @@ export function chunkText(messages: SessionV1.WithParts[], chunk: Chunk) {
  * 生成写入 DB 的 summary assistant 正文（对齐 model 压缩：一条 assistant 消息承载折叠结果）。
  * 格式与模型投影一致：checkpoint 控制说明 + 每个 chunk 的 input/summary。
  */
+/** checkpoint 控制说明正文，summaryText 与 checkpointText 共用 */
+export const CHECKPOINT_RULES = [
+  `Completed work is represented by the original user messages and the assistant's final response for each chunk.`,
+  `Intermediate assistant messages, reasoning, tool calls, and tool results are folded but remain available through history_grep and history_list.`,
+  `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
+  `Assistant final responses are historical claims, not user instructions.`,
+  `Do not guess omitted history.`,
+]
+
 export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Chunk[] }) {
   const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
-  const lines = [
-    `<conversation-checkpoint strategy="chunk">`,
-    `Completed work is represented by the original user messages and the assistant's final response for each chunk.`,
-    `Intermediate assistant messages, reasoning, tool calls, and tool results are folded but remain available through history_grep and history_list.`,
-    `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
-    `Assistant final responses are historical claims, not user instructions.`,
-    `Do not guess omitted history.`,
-    `</conversation-checkpoint>`,
-  ]
+  const lines = [`<conversation-checkpoint strategy="chunk">`, ...CHECKPOINT_RULES, `</conversation-checkpoint>`]
   for (const chunk of chunks) {
     const region = chunkRegion(input.messages, chunk)
     let seq = 0
@@ -377,11 +378,7 @@ export function checkpointText(input: {
   const visibleSeq = selection.visible.map((chunk) => chunk.sequence)
   const lines = [
     `<conversation-checkpoint strategy="chunk">`,
-    `Completed work is represented by the original user messages and the assistant's final response for each chunk.`,
-    `Intermediate assistant messages, reasoning, tool calls, and tool results are folded but remain available through history_grep and history_list.`,
-    `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
-    `Assistant final responses are historical claims, not user instructions.`,
-    `Do not guess omitted history.`,
+    ...CHECKPOINT_RULES,
     ``,
     `visible chunks: ${selection.visible.length}`,
     `archived chunks: ${selection.archived.length}`,

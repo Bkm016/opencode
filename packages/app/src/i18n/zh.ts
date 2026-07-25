@@ -1022,7 +1022,6 @@ export const dict = {
   "settings.desktop.wsl.description": "在 Windows 的 WSL 环境中运行 OpenCode 服务器。",
 
   "settings.general.section.appearance": "外观",
-  "settings.general.section.advanced": "高级",
   "settings.general.section.notifications": "系统通知",
   "settings.general.section.updates": "更新",
   "settings.general.section.sounds": "音效",
@@ -1054,8 +1053,6 @@ export const dict = {
   "settings.general.row.followup.description": "选择跟进提示是立即引导还是在队列中等待",
   "settings.general.row.followup.option.queue": "排队",
   "settings.general.row.followup.option.steer": "引导",
-  "settings.general.row.showNavigation.title": "导航控件",
-  "settings.general.row.showNavigation.description": "在桌面版标题栏中显示前进和后退按钮",
   "settings.general.row.showTerminal.title": "终端",
   "settings.general.row.showTerminal.description": "在桌面版标题栏中显示终端按钮",
   "settings.general.row.mobileTitlebarBottom.title": "底部导航",

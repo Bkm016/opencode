@@ -1130,7 +1130,6 @@ export const dict = {
   "settings.desktop.wsl.description": "Run the OpenCode server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
-  "settings.general.section.advanced": "Advanced",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.updates": "Updates",
   "settings.general.section.sounds": "Sound effects",
@@ -1164,8 +1163,6 @@ export const dict = {
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",
   "settings.general.row.followup.option.steer": "Steer",
-  "settings.general.row.showNavigation.title": "Navigation controls",
-  "settings.general.row.showNavigation.description": "Show the back and forward buttons in the desktop title bar",
   "settings.general.row.showTerminal.title": "Terminal",
   "settings.general.row.showTerminal.description": "Show the terminal button in the desktop title bar",
   "settings.general.row.mobileTitlebarBottom.title": "Bottom navigation",

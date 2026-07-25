@@ -2354,6 +2354,24 @@ export type ProviderRequestDump = {
   runtime?: string
 }
 
+export type ProviderResponseDump = {
+  sessionID: string
+  at: number
+  model: string
+  provider: string
+  route: string
+  protocol: string
+  url?: string
+  status?: number
+  headers?: {
+    [key: string]: string
+  }
+  body: unknown
+  bodyBytes: number
+  runtime?: string
+  error?: boolean
+}
+
 export type McpResource = {
   name: string
   uri: string
@@ -8280,6 +8298,42 @@ export type ExperimentalSessionProviderRequestResponses = {
 
 export type ExperimentalSessionProviderRequestResponse =
   ExperimentalSessionProviderRequestResponses[keyof ExperimentalSessionProviderRequestResponses]
+
+export type ExperimentalSessionProviderResponseData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/provider-response"
+}
+
+export type ExperimentalSessionProviderResponseErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ExperimentalSessionProviderResponseError =
+  ExperimentalSessionProviderResponseErrors[keyof ExperimentalSessionProviderResponseErrors]
+
+export type ExperimentalSessionProviderResponseResponses = {
+  /**
+   * Last provider response dump
+   */
+  200: ProviderResponseDump
+}
+
+export type ExperimentalSessionProviderResponseResponse =
+  ExperimentalSessionProviderResponseResponses[keyof ExperimentalSessionProviderResponseResponses]
 
 export type ExperimentalResourceListData = {
   body?: never

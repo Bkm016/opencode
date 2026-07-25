@@ -54,6 +54,8 @@ import type {
   ExperimentalSessionSystemPromptResponses,
   ExperimentalSessionProviderRequestErrors,
   ExperimentalSessionProviderRequestResponses,
+  ExperimentalSessionProviderResponseErrors,
+  ExperimentalSessionProviderResponseResponses,
   ExperimentalStorageCompactErrors,
   ExperimentalStorageCompactResponses,
   ExperimentalStorageGetErrors,
@@ -978,6 +980,42 @@ export class Session extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/session/{sessionID}/provider-request",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Dump last provider response
+   *
+   * Return the most recent provider wire response body captured for this session in the current process.
+   */
+  public providerResponse<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalSessionProviderResponseResponses,
+      ExperimentalSessionProviderResponseErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/provider-response",
       ...options,
       ...params,
     })

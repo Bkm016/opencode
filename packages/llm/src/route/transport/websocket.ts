@@ -1,5 +1,6 @@
 import { Cause, Context, Effect, Layer, Queue, Stream } from "effect"
 import { Headers } from "effect/unstable/http"
+import { ProviderResponseDump } from "../../response-dump"
 import { LLMError, TransportReason } from "../../schema"
 import * as HttpTransport from "./http"
 import type { Transport } from "./index"
@@ -244,7 +245,7 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
         requestBodyBytes: new TextEncoder().encode(parts.bodyText).byteLength,
       }
     }),
-  frames: (prepared, _request, runtime) => {
+  frames: (prepared, request, runtime) => {
     const webSocket = runtime.webSocket
     if (!webSocket) {
       return Stream.fail(
@@ -262,7 +263,28 @@ export const json = <Body, Message>(input: JsonInput<Body, Message>): JsonTransp
           (connection) => connection.close,
         )
         yield* connection.sendText(prepared.message)
-        return connection.messages.pipe(Stream.map((message) => messageText(message, decoder)))
+        // 缓冲 WS 文本帧，流结束后写入 response dump。
+        const frames: string[] = []
+        return connection.messages.pipe(
+          Stream.map((message) => {
+            const text = messageText(message, decoder)
+            frames.push(text)
+            return text
+          }),
+          Stream.ensuring(
+            Effect.sync(() => {
+              if (frames.length === 0) return
+              const body = frames.join("\n")
+              ProviderResponseDump.record({
+                request,
+                body,
+                url: prepared.url,
+                bodyBytes: new TextEncoder().encode(body).byteLength,
+                runtime: "native",
+              })
+            }),
+          ),
+        )
       }),
     )
   },

@@ -71,6 +71,21 @@ const ProviderRequestDump = Schema.Struct({
   bodyBytes: Schema.Number,
   runtime: Schema.optional(Schema.String),
 }).annotate({ identifier: "ProviderRequestDump" })
+const ProviderResponseDump = Schema.Struct({
+  sessionID: Schema.String,
+  at: Schema.Number,
+  model: Schema.String,
+  provider: Schema.String,
+  route: Schema.String,
+  protocol: Schema.String,
+  url: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.Number),
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  body: Schema.Unknown,
+  bodyBytes: Schema.Number,
+  runtime: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "ProviderResponseDump" })
 export const ToolListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   provider: ProviderV2.ID,
@@ -195,6 +210,7 @@ export const ExperimentalPaths = {
   session: "/experimental/session",
   sessionSystemPrompt: "/experimental/session/:sessionID/system-prompt",
   sessionProviderRequest: "/experimental/session/:sessionID/provider-request",
+  sessionProviderResponse: "/experimental/session/:sessionID/provider-response",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
   storage: "/experimental/storage",
@@ -369,6 +385,19 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "Dump last provider request",
             description:
               "Return the most recent provider wire request body captured for this session in the current process. Used for debugging; not persisted to the database.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionProviderResponse", ExperimentalPaths.sessionProviderResponse, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(ProviderResponseDump, "Last provider response dump"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.providerResponse",
+            summary: "Dump last provider response",
+            description:
+              "Return the most recent provider wire response body captured for this session in the current process. Used for debugging; not persisted to the database.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

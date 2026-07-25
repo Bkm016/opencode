@@ -5,6 +5,7 @@ import { render as renderEndpoint } from "../endpoint"
 import { Framing, type Framing as FramingDef } from "../framing"
 import type { Transport, TransportPrepareInput } from "./index"
 import * as ProviderShared from "../../protocols/shared"
+import { ProviderResponseDump } from "../../response-dump"
 import { mergeJsonRecords, type LLMRequest } from "../../schema"
 
 export type JsonRequestInput<Body> = TransportPrepareInput<Body>
@@ -142,19 +143,41 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
       runtime.http
         .execute(prepared.request)
         .pipe(
-          Effect.map((response) =>
-            prepared.framing.frame(
-              response.stream.pipe(
-                Stream.mapError((error) =>
-                  ProviderShared.eventError(
-                    `${request.model.provider}/${request.model.route.id}`,
-                    `Failed to read ${request.model.provider}/${request.model.route.id} stream`,
-                    ProviderShared.errorText(error),
-                  ),
+          Effect.map((response) => {
+            // tee 原始字节：一边 framing，一边缓冲完整 wire 响应供 dump。
+            const chunks: Uint8Array[] = []
+            const bytes = response.stream.pipe(
+              Stream.tap((chunk) =>
+                Effect.sync(() => {
+                  chunks.push(chunk)
+                }),
+              ),
+              Stream.mapError((error) =>
+                ProviderShared.eventError(
+                  `${request.model.provider}/${request.model.route.id}`,
+                  `Failed to read ${request.model.provider}/${request.model.route.id} stream`,
+                  ProviderShared.errorText(error),
                 ),
               ),
-            ),
-          ),
+              Stream.ensuring(
+                Effect.sync(() => {
+                  const body = ProviderResponseDump.decodeChunks(chunks)
+                  if (!body && response.status < 400) return
+                  ProviderResponseDump.record({
+                    request,
+                    body,
+                    url: prepared.url,
+                    status: response.status,
+                    headers: Object.fromEntries(Object.entries(response.headers)),
+                    bodyBytes: new TextEncoder().encode(body).byteLength,
+                    runtime: "native",
+                    error: response.status >= 400,
+                  })
+                }),
+              ),
+            )
+            return prepared.framing.frame(bytes)
+          }),
         ),
     ),
 })

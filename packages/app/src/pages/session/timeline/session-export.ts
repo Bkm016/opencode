@@ -14,6 +14,9 @@ type SDK = {
         providerRequest: (input: {
           sessionID: string
         }) => Promise<{ data?: ProviderRequestDump; error?: unknown }>
+        providerResponse: (input: {
+          sessionID: string
+        }) => Promise<{ data?: ProviderResponseDump; error?: unknown }>
       }
     }
   }
@@ -30,6 +33,22 @@ type ProviderRequestDump = {
   body: unknown
   bodyBytes: number
   runtime?: string
+}
+
+type ProviderResponseDump = {
+  sessionID: string
+  at: number
+  model: string
+  provider: string
+  route: string
+  protocol: string
+  url?: string
+  status?: number
+  headers?: Record<string, string>
+  body: unknown
+  bodyBytes: number
+  runtime?: string
+  error?: boolean
 }
 
 function isTextPart(part: Part): part is Extract<Part, { type: "text" }> {
@@ -165,4 +184,14 @@ export async function exportLastRequest(sdk: SDK, sessionID: string): Promise<vo
   const ts = new Date(snap.at).toISOString().replace(/[:.]/g, "-").slice(0, 19)
   const model = snap.model.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
   download(`${ts}_${snap.route}_${model}.json`, JSON.stringify(snap.body, null, 2), "application/json")
+}
+
+// 导出进程内最近一次真实收到的 provider wire response body
+export async function exportLastResponse(sdk: SDK, sessionID: string): Promise<void> {
+  const res = await sdk.client.experimental.session.providerResponse({ sessionID })
+  if (res.error || !res.data) throw new Error("No provider response captured for this session")
+  const snap = res.data
+  const ts = new Date(snap.at).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+  const model = snap.model.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+  download(`${ts}_${snap.route}_${model}_response.json`, JSON.stringify(snap.body, null, 2), "application/json")
 }

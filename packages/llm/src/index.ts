@@ -5,6 +5,8 @@ export { isContextOverflow, isContextOverflowFailure } from "./provider-error"
 export { redactSensitiveBodyFields } from "./redact"
 export { ProviderRequestDump } from "./request-dump"
 export type { ProviderRequestSnapshot } from "./request-dump"
+export { ProviderResponseDump } from "./response-dump"
+export type { ProviderResponseSnapshot } from "./response-dump"
 export type {
   RouteModelInput,
   RouteRoutedModelInput,

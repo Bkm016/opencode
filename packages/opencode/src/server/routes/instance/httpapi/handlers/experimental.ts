@@ -18,7 +18,7 @@ import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 
-import { ProviderRequestDump } from "@opencode-ai/llm"
+import { ProviderRequestDump, ProviderResponseDump } from "@opencode-ai/llm"
 import { inArray, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
@@ -367,6 +367,17 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return HttpServerResponse.jsonUnsafe(snapshot)
     })
 
+    const sessionProviderResponse = Effect.fn("ExperimentalHttpApi.sessionProviderResponse")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      const snapshot = ProviderResponseDump.get(ctx.params.sessionID)
+      if (!snapshot) {
+        return yield* notFound(`No provider response captured for session: ${ctx.params.sessionID}`)
+      }
+      // body 是完整 wire 响应（SSE 文本或 stream parts），跳过 Schema 编解码。
+      return HttpServerResponse.jsonUnsafe(snapshot)
+    })
+
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
@@ -589,6 +600,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("sessionBackground", sessionBackground)
       .handle("sessionSystemPrompt", sessionSystemPrompt)
       .handle("sessionProviderRequest", sessionProviderRequest)
+      .handle("sessionProviderResponse", sessionProviderResponse)
       .handle("resource", resource)
       .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)

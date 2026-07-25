@@ -7,7 +7,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
-import { LLMEvent, ProviderRequestDump } from "@opencode-ai/llm"
+import { LLMEvent, ProviderRequestDump, ProviderResponseDump } from "@opencode-ai/llm"
 import { LLMClient } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -374,7 +374,46 @@ const live: Layer.Layer<
                       runtime: "ai-sdk",
                     })
                   }
-                  return result
+                  // AI SDK 不暴露原始 HTTP body；缓冲 stream parts 作为可调试响应快照。
+                  const parts: unknown[] = []
+                  const reader = result.stream.getReader()
+                  const stream = new ReadableStream({
+                    async pull(controller) {
+                      const next = await reader.read()
+                      if (next.done) {
+                        ProviderResponseDump.record({
+                          sessionID: input.sessionID,
+                          model: input.model.id,
+                          provider: input.model.providerID,
+                          route: "ai-sdk",
+                          protocol: "ai-sdk",
+                          headers: result.response?.headers,
+                          body: parts,
+                          runtime: "ai-sdk",
+                        })
+                        controller.close()
+                        return
+                      }
+                      parts.push(next.value)
+                      controller.enqueue(next.value)
+                    },
+                    cancel(reason) {
+                      if (parts.length > 0) {
+                        ProviderResponseDump.record({
+                          sessionID: input.sessionID,
+                          model: input.model.id,
+                          provider: input.model.providerID,
+                          route: "ai-sdk",
+                          protocol: "ai-sdk",
+                          headers: result.response?.headers,
+                          body: parts,
+                          runtime: "ai-sdk",
+                        })
+                      }
+                      return reader.cancel(reason)
+                    },
+                  })
+                  return { ...result, stream }
                 },
               },
             ],

@@ -836,10 +836,13 @@ export const dict = {
   "session.export.action.summary": "摘要导出",
   "session.export.action.full": "完整导出",
   "session.export.action.request": "导出最近请求",
+  "session.export.action.response": "导出最近响应",
   "session.export.toast.success.title": "会话已导出",
   "session.export.toast.failed.title": "导出会话失败",
   "session.export.toast.request.success.title": "请求已导出",
   "session.export.toast.request.failed.title": "导出请求失败",
+  "session.export.toast.response.success.title": "响应已导出",
+  "session.export.toast.response.failed.title": "导出响应失败",
 
   "lsp.tooltip.none": "没有 LSP 服务器",
   "lsp.label.connected": "{{count}} LSP",

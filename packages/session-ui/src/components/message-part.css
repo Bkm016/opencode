@@ -349,8 +349,9 @@
 
   ul[data-slot="chunk-summary-rules"] {
     margin: 0;
-    padding-left: 16px;
+    padding-left: 0;
     min-width: 0;
+    list-style: none;
     font-family: var(--font-family-sans);
     font-size: 12px;
     line-height: var(--line-height-large);

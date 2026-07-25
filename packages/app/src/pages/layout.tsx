@@ -11,6 +11,7 @@ import {
   untrack,
   type Accessor,
 } from "solid-js"
+import gsap from "gsap"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
@@ -46,6 +47,7 @@ import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
+import { prefersReducedMotion } from "@/utils/gsap-motion"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
@@ -178,6 +180,8 @@ export default function LegacyLayout(props: ParentProps) {
     })
   }
   let sizet: number | undefined
+  let desktopSidebar: HTMLElement | undefined
+  let desktopSidebarReady = false
   let sortNowInterval: ReturnType<typeof setInterval> | undefined
   const sortNowTimeout = setTimeout(
     () => {
@@ -193,6 +197,7 @@ export default function LegacyLayout(props: ParentProps) {
     clearTimeout(sortNowTimeout)
     if (sortNowInterval) clearInterval(sortNowInterval)
     if (sizet !== undefined) clearTimeout(sizet)
+    if (desktopSidebar) gsap.killTweensOf(desktopSidebar)
   })
 
   onMount(() => {
@@ -200,6 +205,30 @@ export default function LegacyLayout(props: ParentProps) {
     makeEventListener(window, "pointerup", stop)
     makeEventListener(window, "pointercancel", stop)
     makeEventListener(window, "blur", stop)
+  })
+
+  createEffect(() => {
+    const desktop = isDesktop()
+    const opened = layout.sidebar.opened()
+    const collapsedWidth = 64
+    const width = opened ? Math.max(layout.sidebar.width(), 244) : collapsedWidth
+    const sizing = state.sizing
+    if (!desktop || !desktopSidebar) return
+
+    gsap.killTweensOf(desktopSidebar)
+
+    if (!desktopSidebarReady || sizing || prefersReducedMotion()) {
+      gsap.set(desktopSidebar, { width })
+      desktopSidebarReady = true
+      return
+    }
+
+    gsap.to(desktopSidebar, {
+      width,
+      duration: 0.22,
+      ease: "power3.out",
+      overwrite: "auto",
+    })
   })
 
   // Desktop closed rail is icons-only; expanded only when sidebar is opened.
@@ -1873,9 +1902,8 @@ export default function LegacyLayout(props: ParentProps) {
     return (
       <div
         classList={{
-          "flex flex-col min-h-0 min-w-0 box-border rounded-tl-[12px] px-3": true,
-          "border border-b-0 border-border-weak-base": !merged(),
-          "border-l border-t border-border-weaker-base": merged(),
+          "flex flex-col min-h-0 min-w-0 box-border px-3": true,
+          "shrink-0": !panelProps.mobile,
           "bg-background-base": merged(),
           "bg-background-stronger": !merged(),
           "flex-1 min-w-0": panelProps.mobile,
@@ -2188,13 +2216,15 @@ export default function LegacyLayout(props: ParentProps) {
               <nav
                 aria-label={language.t("sidebar.nav.projectsAndSessions")}
                 data-component="sidebar-nav-desktop"
+                ref={(element) => {
+                  desktopSidebar = element
+                }}
                 classList={{
-                  "absolute inset-y-0 left-0": true,
+                  "absolute inset-y-0 left-0 w-16": true,
                   // Above main (z-20): otherwise the content pane can steal clicks on the rail/session list.
                   "z-30": true,
                   "overflow-hidden": true,
                 }}
-                style={{ width: layout.sidebar.opened() ? `${side()}px` : "4rem" }}
               >
                 <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
               </nav>
@@ -2220,10 +2250,6 @@ export default function LegacyLayout(props: ParentProps) {
                 </div>
               </Show>
 
-              <div
-                class="pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
-                style={{ left: "calc(4rem + 12px)" }}
-              />
             </Show>
 
             <Show when={!isDesktop()}>
@@ -2269,8 +2295,7 @@ export default function LegacyLayout(props: ParentProps) {
             >
               <main
                 classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base": true,
-                  "border-l rounded-tl-[12px]": isDesktop(),
+                  "size-full overflow-x-hidden flex flex-col items-start contain-strict rounded-tl-[12px] bg-background-base": true,
                 }}
               >
                 <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>

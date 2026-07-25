@@ -1,5 +1,5 @@
 diff --git a/dist/dev.cjs b/dist/dev.cjs
-index 7104749..779413a 100644
+index 7104749..d85d3de 100644
 --- a/dist/dev.cjs
 +++ b/dist/dev.cjs
 @@ -544,10 +544,39 @@ function runWithOwner(o, fn) {
@@ -72,65 +72,33 @@ index 7104749..779413a 100644
        Transition.sources.add(node);
        node.tValue = nextValue;
      } else node.value = nextValue;
-@@ -969,35 +1006,49 @@ function markDownstream(node) {
-   }
- }
- function cleanNode(node) {
-+  if (!node) return;
-   let i;
-   if (node.sources) {
-     while (node.sources.length) {
-       const source = node.sources.pop(),
-         index = node.sourceSlots.pop(),
--        obs = source.observers;
-+        obs = source && source.observers;
-       if (obs && obs.length) {
-         const n = obs.pop(),
--          s = source.observerSlots.pop();
--        if (index < obs.length) {
-+          s = source.observerSlots && source.observerSlots.pop();
-+        if (n && n.sourceSlots && index < obs.length) {
-           n.sourceSlots[s] = index;
-           obs[index] = n;
--          source.observerSlots[index] = s;
-+          if (source.observerSlots) source.observerSlots[index] = s;
-         }
-       }
+@@ -987,18 +1024,21 @@ function cleanNode(node) {
      }
    }
    if (node.tOwned) {
 -    for (i = node.tOwned.length - 1; i >= 0; i--) cleanNode(node.tOwned[i]);
-+    for (i = node.tOwned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.tOwned[i]);
-+      } catch {}
-+    }
++    const owned = node.tOwned;
      delete node.tOwned;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (Transition && Transition.running && node.pure) {
      reset(node, true);
    } else if (node.owned) {
 -    for (i = node.owned.length - 1; i >= 0; i--) cleanNode(node.owned[i]);
-+    for (i = node.owned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.owned[i]);
-+      } catch {}
-+    }
++    const owned = node.owned;
      node.owned = null;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (node.cleanups) {
 -    for (i = node.cleanups.length - 1; i >= 0; i--) node.cleanups[i]();
-+    for (i = node.cleanups.length - 1; i >= 0; i--) {
-+      try {
-+        const cleanup = node.cleanups[i];
-+        if (typeof cleanup === "function") cleanup();
-+      } catch {}
-+    }
++    const cleanups = node.cleanups;
      node.cleanups = null;
++    for (i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
    }
    if (Transition && Transition.running) node.tState = 0;else node.state = 0;
+   delete node.sourceMap;
 diff --git a/dist/dev.js b/dist/dev.js
-index ea5e4bc..05df69e 100644
+index ea5e4bc..e480d65 100644
 --- a/dist/dev.js
 +++ b/dist/dev.js
 @@ -542,10 +542,39 @@ function runWithOwner(o, fn) {
@@ -203,65 +171,33 @@ index ea5e4bc..05df69e 100644
        Transition.sources.add(node);
        node.tValue = nextValue;
      } else node.value = nextValue;
-@@ -967,35 +1004,49 @@ function markDownstream(node) {
-   }
- }
- function cleanNode(node) {
-+  if (!node) return;
-   let i;
-   if (node.sources) {
-     while (node.sources.length) {
-       const source = node.sources.pop(),
-         index = node.sourceSlots.pop(),
--        obs = source.observers;
-+        obs = source && source.observers;
-       if (obs && obs.length) {
-         const n = obs.pop(),
--          s = source.observerSlots.pop();
--        if (index < obs.length) {
-+          s = source.observerSlots && source.observerSlots.pop();
-+        if (n && n.sourceSlots && index < obs.length) {
-           n.sourceSlots[s] = index;
-           obs[index] = n;
--          source.observerSlots[index] = s;
-+          if (source.observerSlots) source.observerSlots[index] = s;
-         }
-       }
+@@ -985,18 +1022,21 @@ function cleanNode(node) {
      }
    }
    if (node.tOwned) {
 -    for (i = node.tOwned.length - 1; i >= 0; i--) cleanNode(node.tOwned[i]);
-+    for (i = node.tOwned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.tOwned[i]);
-+      } catch {}
-+    }
++    const owned = node.tOwned;
      delete node.tOwned;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (Transition && Transition.running && node.pure) {
      reset(node, true);
    } else if (node.owned) {
 -    for (i = node.owned.length - 1; i >= 0; i--) cleanNode(node.owned[i]);
-+    for (i = node.owned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.owned[i]);
-+      } catch {}
-+    }
++    const owned = node.owned;
      node.owned = null;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (node.cleanups) {
 -    for (i = node.cleanups.length - 1; i >= 0; i--) node.cleanups[i]();
-+    for (i = node.cleanups.length - 1; i >= 0; i--) {
-+      try {
-+        const cleanup = node.cleanups[i];
-+        if (typeof cleanup === "function") cleanup();
-+      } catch {}
-+    }
++    const cleanups = node.cleanups;
      node.cleanups = null;
++    for (i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
    }
    if (Transition && Transition.running) node.tState = 0;else node.state = 0;
+   delete node.sourceMap;
 diff --git a/dist/solid.cjs b/dist/solid.cjs
-index 7c133a2..7c16ef5 100644
+index 7c133a2..e1f5dd3 100644
 --- a/dist/solid.cjs
 +++ b/dist/solid.cjs
 @@ -521,10 +521,39 @@ function runWithOwner(o, fn) {
@@ -334,65 +270,33 @@ index 7c133a2..7c16ef5 100644
        Transition.sources.add(node);
        node.tValue = nextValue;
      } else node.value = nextValue;
-@@ -920,35 +957,49 @@ function markDownstream(node) {
-   }
- }
- function cleanNode(node) {
-+  if (!node) return;
-   let i;
-   if (node.sources) {
-     while (node.sources.length) {
-       const source = node.sources.pop(),
-         index = node.sourceSlots.pop(),
--        obs = source.observers;
-+        obs = source && source.observers;
-       if (obs && obs.length) {
-         const n = obs.pop(),
--          s = source.observerSlots.pop();
--        if (index < obs.length) {
-+          s = source.observerSlots && source.observerSlots.pop();
-+        if (n && n.sourceSlots && index < obs.length) {
-           n.sourceSlots[s] = index;
-           obs[index] = n;
--          source.observerSlots[index] = s;
-+          if (source.observerSlots) source.observerSlots[index] = s;
-         }
-       }
+@@ -938,18 +975,21 @@ function cleanNode(node) {
      }
    }
    if (node.tOwned) {
 -    for (i = node.tOwned.length - 1; i >= 0; i--) cleanNode(node.tOwned[i]);
-+    for (i = node.tOwned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.tOwned[i]);
-+      } catch {}
-+    }
++    const owned = node.tOwned;
      delete node.tOwned;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (Transition && Transition.running && node.pure) {
      reset(node, true);
    } else if (node.owned) {
 -    for (i = node.owned.length - 1; i >= 0; i--) cleanNode(node.owned[i]);
-+    for (i = node.owned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.owned[i]);
-+      } catch {}
-+    }
++    const owned = node.owned;
      node.owned = null;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (node.cleanups) {
 -    for (i = node.cleanups.length - 1; i >= 0; i--) node.cleanups[i]();
-+    for (i = node.cleanups.length - 1; i >= 0; i--) {
-+      try {
-+        const cleanup = node.cleanups[i];
-+        if (typeof cleanup === "function") cleanup();
-+      } catch {}
-+    }
++    const cleanups = node.cleanups;
      node.cleanups = null;
++    for (i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
    }
    if (Transition && Transition.running) node.tState = 0;else node.state = 0;
+ }
 diff --git a/dist/solid.js b/dist/solid.js
-index 656fd26..ff86fd9 100644
+index 656fd26..808d9dc 100644
 --- a/dist/solid.js
 +++ b/dist/solid.js
 @@ -519,10 +519,39 @@ function runWithOwner(o, fn) {
@@ -465,60 +369,28 @@ index 656fd26..ff86fd9 100644
        Transition.sources.add(node);
        node.tValue = nextValue;
      } else node.value = nextValue;
-@@ -918,35 +955,49 @@ function markDownstream(node) {
-   }
- }
- function cleanNode(node) {
-+  if (!node) return;
-   let i;
-   if (node.sources) {
-     while (node.sources.length) {
-       const source = node.sources.pop(),
-         index = node.sourceSlots.pop(),
--        obs = source.observers;
-+        obs = source && source.observers;
-       if (obs && obs.length) {
-         const n = obs.pop(),
--          s = source.observerSlots.pop();
--        if (index < obs.length) {
-+          s = source.observerSlots && source.observerSlots.pop();
-+        if (n && n.sourceSlots && index < obs.length) {
-           n.sourceSlots[s] = index;
-           obs[index] = n;
--          source.observerSlots[index] = s;
-+          if (source.observerSlots) source.observerSlots[index] = s;
-         }
-       }
+@@ -936,18 +973,21 @@ function cleanNode(node) {
      }
    }
    if (node.tOwned) {
 -    for (i = node.tOwned.length - 1; i >= 0; i--) cleanNode(node.tOwned[i]);
-+    for (i = node.tOwned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.tOwned[i]);
-+      } catch {}
-+    }
++    const owned = node.tOwned;
      delete node.tOwned;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (Transition && Transition.running && node.pure) {
      reset(node, true);
    } else if (node.owned) {
 -    for (i = node.owned.length - 1; i >= 0; i--) cleanNode(node.owned[i]);
-+    for (i = node.owned.length - 1; i >= 0; i--) {
-+      try {
-+        cleanNode(node.owned[i]);
-+      } catch {}
-+    }
++    const owned = node.owned;
      node.owned = null;
++    for (i = owned.length - 1; i >= 0; i--) cleanNode(owned[i]);
    }
    if (node.cleanups) {
 -    for (i = node.cleanups.length - 1; i >= 0; i--) node.cleanups[i]();
-+    for (i = node.cleanups.length - 1; i >= 0; i--) {
-+      try {
-+        const cleanup = node.cleanups[i];
-+        if (typeof cleanup === "function") cleanup();
-+      } catch {}
-+    }
++    const cleanups = node.cleanups;
      node.cleanups = null;
++    for (i = cleanups.length - 1; i >= 0; i--) cleanups[i]();
    }
    if (Transition && Transition.running) node.tState = 0;else node.state = 0;
+ }

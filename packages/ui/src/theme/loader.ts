@@ -36,7 +36,7 @@ function buildThemeCss(
   darkV2: ResolvedV2Theme,
   themeId: string,
 ): string {
-  const isDefaultTheme = themeId === "opencode"
+  const isDefaultTheme = themeId === "cursor"
   const lightCss = `${themeToCss(light)}\n  ${themeV2ToCss(lightV2)}`
   const darkCss = `${themeToCss(dark)}\n  ${themeV2ToCss(darkV2)}`
 

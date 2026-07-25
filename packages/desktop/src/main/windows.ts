@@ -1,7 +1,7 @@
 import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import type { DesktopTheme } from "@opencode-ai/ui/theme/types"
-import opencodeThemeJson from "../../../ui/src/theme/themes/opencode.json"
+import cursorThemeJson from "../../../ui/src/theme/themes/cursor.json"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
@@ -22,10 +22,10 @@ const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
-const opencodeTheme = opencodeThemeJson as DesktopTheme
-const opencodeBackground = {
-  light: resolveThemeVariant(opencodeTheme.light, false)["background-base"],
-  dark: resolveThemeVariant(opencodeTheme.dark, true)["background-base"],
+const cursorTheme = cursorThemeJson as DesktopTheme
+const cursorBackground = {
+  light: resolveThemeVariant(cursorTheme.light, false)["background-base"],
+  dark: resolveThemeVariant(cursorTheme.dark, true)["background-base"],
 }
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
@@ -97,7 +97,7 @@ function tone() {
 }
 
 function defaultBackgroundColor() {
-  return opencodeBackground[tone()]
+  return cursorBackground[tone()]
 }
 
 function overlay(theme: Partial<TitlebarTheme> = {}, zoom = 1) {

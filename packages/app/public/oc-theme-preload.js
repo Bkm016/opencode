@@ -1,5 +1,5 @@
 ;(function () {
-  var DEFAULT_THEME_ID = "opencode"
+  var DEFAULT_THEME_ID = "cursor"
   var BUILT_IN_THEMES = { amoled: true, cursor: true, opencode: true, orng: true, vercel: true, vesper: true }
   var key = "opencode-theme-id"
   var themeId = localStorage.getItem(key) || DEFAULT_THEME_ID

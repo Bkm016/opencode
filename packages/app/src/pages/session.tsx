@@ -79,6 +79,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError, isLocalSessionNotFoundError, isSessionNotFoundError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
+import { notifySessionNotFound } from "@/components/titlebar-session-events"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
@@ -175,42 +176,26 @@ function errorMessage(error: unknown) {
   return "Something went wrong"
 }
 
+function LeaveMissingSession(props: { sessionID: string; serverKey?: ServerConnection.Key }) {
+  onMount(() => {
+    notifySessionNotFound({
+      server: props.serverKey,
+      sessionID: props.sessionID,
+    })
+  })
+  return null
+}
+
 function SessionErrorFallback(props: {
   error: unknown
   sessionID?: string
   serverKey?: ServerConnection.Key
   onDismiss?: () => void
 }) {
-  if (isCurrentSessionNotFoundError(props.error, props.sessionID)) {
-    return (
-      <div class="flex-1 min-h-0 overflow-hidden">
-        <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-4">
-          <div class="flex flex-col items-center gap-2">
-            <div class="text-16-medium text-text max-w-md">This session cannot be found</div>
-            <div class="text-13-regular text-text-weak max-w-md">
-              This tab points to a session that no longer exists on this server.
-            </div>
-          </div>
-          <Show when={props.serverKey}>
-            {(serverKey) => <div class="max-w-full text-11-regular text-text-faint break-all">{serverKey()}</div>}
-          </Show>
-          <Show when={props.sessionID}>
-            {(sessionID) => (
-              <code class="max-w-full rounded-[4px] px-1 py-0.5 font-mono text-xs font-medium leading-4 text-text-base break-all bg-[color-mix(in_oklch,var(--v2-text-text-base)_8%,transparent)]">
-                {sessionID()}
-              </code>
-            )}
-          </Show>
-          <Show when={props.onDismiss}>
-            {(dismiss) => (
-              <Button size="large" onClick={() => dismiss()()}>
-                Dismiss
-              </Button>
-            )}
-          </Show>
-        </div>
-      </div>
-    )
+  // Missing sessions leave immediately: no full-pane blocker. Context-free
+  // fallback notifies TabsProvider via event (HMR-safe; no useTabs here).
+  if (isCurrentSessionNotFoundError(props.error, props.sessionID) && props.sessionID) {
+    return <LeaveMissingSession sessionID={props.sessionID} serverKey={props.serverKey} />
   }
   return (
     <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 p-6 text-center">

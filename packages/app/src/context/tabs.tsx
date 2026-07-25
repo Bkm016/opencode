@@ -4,11 +4,18 @@ import { createStore, produce } from "solid-js/store"
 import { Persist, persisted, removePersisted, draftPersistedKeys } from "@/utils/persist"
 import { ServerConnection, useServer } from "./server"
 import { createEffect, getOwner, onCleanup, startTransition } from "solid-js"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { usePlatform } from "./platform"
 import { uuid } from "@/utils/uuid"
-import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
-import { sessionHref } from "@/utils/session-route"
+import {
+  readSessionNotFoundDetail,
+  readSessionTabsRemovedDetail,
+  SESSION_NOT_FOUND_EVENT,
+  SESSION_TABS_REMOVED_EVENT,
+  type SessionTabsRemovedDetail,
+} from "@/components/titlebar-session-events"
+import { requireServerKey, sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
 import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
 import { createDraftPromptSession, type PromptModel } from "./prompt-state"
@@ -154,6 +161,21 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       navigate(href)
     }
 
+    // Viewing a session is active when either the target-server route or the
+    // legacy directory route is on that session id (params.dir only exists on
+    // the latter).
+    const isViewingSession = (sessionId: string, targetServer: ServerConnection.Key) => {
+      if (params.id !== sessionId) return false
+      if (params.serverKey) {
+        try {
+          return requireServerKey(params.serverKey) === targetServer
+        } catch {
+          return false
+        }
+      }
+      return targetServer === server.key
+    }
+
     const removeTab = (index: number) => {
       const tab = store[index]
       if (!tab) return
@@ -286,6 +308,29 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         )
         if (index !== -1) removeTab(index)
       },
+      // Missing sessions must not occupy the main pane. Drop the tab when one
+      // exists; if the URL still points at a gone child/deep-link session with no
+      // matching tab, jump to another open tab (or home) instead of a blocker.
+      leaveMissingSession(input: Omit<SessionTab, "type">) {
+        updateClosed((stack) => removeClosedTabs(stack, input.server, [input.sessionId]))
+        const index = store.findIndex(
+          (tab) => tab.type === "session" && tab.server === input.server && tab.sessionId === input.sessionId,
+        )
+        if (index !== -1) {
+          removeTab(index)
+          return
+        }
+        if (!isViewingSession(input.sessionId, input.server)) return
+        const next =
+          store.find((tab) => tab.type === "session" && tab.server === input.server) ??
+          store.find((tab) => tab.type === "session")
+        if (next) {
+          navigateTab(next)
+          return
+        }
+        setRecentKey(undefined)
+        navigate("/")
+      },
       removeServer(key: ServerConnection.Key) {
         updateClosed((stack) => stack.filter((entry) => entry.tab.server !== key))
         const drafts = store.flatMap((tab) => (tab.type === "draft" && tab.server === key ? [tab.draftID] : []))
@@ -300,34 +345,19 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       removeSessions: (input: SessionTabsRemovedDetail) => {
         const targetServer = input.server ?? server.key
         updateClosed((stack) => removeClosedTabs(stack, targetServer, input.sessionIDs))
+        const sessionIDs = new Set(input.sessionIDs)
         const removed = store
-          .filter(
-            (tab) => tab.type === "session" && tab.server === targetServer && input.sessionIDs.includes(tab.sessionId),
-          )
+          .filter((tab) => tab.type === "session" && tab.server === targetServer && sessionIDs.has(tab.sessionId))
           .map(tabKey)
+        const viewingMissing = params.id && sessionIDs.has(params.id) && isViewingSession(params.id, targetServer)
+        const currentIndex = viewingMissing
+          ? store.findIndex(
+              (tab) => tab.type === "session" && tab.server === targetServer && tab.sessionId === params.id,
+            )
+          : -1
         void startTransition(() => {
           setStore(
             produce((tabs) => {
-              const sessionIDs = new Set(input.sessionIDs)
-              const currentHref =
-                targetServer === server.key && params.dir && params.id
-                  ? tabHref({
-                      type: "session",
-                      server: targetServer,
-                      sessionId: params.id,
-                    })
-                  : undefined
-              const currentIndex = currentHref
-                ? tabs.findIndex(
-                    (tab) => tab.type === "session" && tab.server === targetServer && tabHref(tab) === currentHref,
-                  )
-                : -1
-              const currentTab = tabs[currentIndex]
-              const removedCurrent =
-                currentTab?.type === "session" &&
-                currentTab.server === targetServer &&
-                sessionIDs.has(currentTab.sessionId)
-
               for (let i = tabs.length - 1; i >= 0; i--) {
                 const tab = tabs[i]
                 if (!tab || tab.type !== "session") continue
@@ -336,10 +366,15 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
                 tabs.splice(i, 1)
               }
 
-              if (!removedCurrent) return
+              if (!viewingMissing) return
               const nextTab =
-                tabs.slice(currentIndex).find((tab) => tab.type === "session") ??
-                tabs.slice(0, currentIndex).findLast((tab) => tab.type === "session")
+                (currentIndex >= 0
+                  ? tabs.slice(currentIndex).find((tab) => tab.type === "session")
+                  : undefined) ??
+                (currentIndex >= 0
+                  ? tabs.slice(0, currentIndex).findLast((tab) => tab.type === "session")
+                  : undefined) ??
+                tabs.find((tab) => tab.type === "session")
               if (nextTab) navigateTab(nextTab)
               else navigate("/")
             }),
@@ -381,6 +416,23 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         return memory.get<T>(tabKey(tab), name)
       },
     }
+
+    // Archive/delete and missing-session recovery notify via window events so
+    // callers outside TabsProvider (and context-free ErrorBoundary fallbacks)
+    // can drop tabs without importing this module's store.
+    makeEventListener(window, SESSION_TABS_REMOVED_EVENT, (event) => {
+      const detail = readSessionTabsRemovedDetail(event)
+      if (!detail) return
+      actions.removeSessions(detail)
+    })
+    makeEventListener(window, SESSION_NOT_FOUND_EVENT, (event) => {
+      const detail = readSessionNotFoundDetail(event)
+      if (!detail) return
+      actions.leaveMissingSession({
+        server: detail.server ?? server.key,
+        sessionId: detail.sessionID,
+      })
+    })
 
     return { ...actions, store, info, ready, recentReady }
   },

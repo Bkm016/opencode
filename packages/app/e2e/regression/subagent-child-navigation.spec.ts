@@ -27,7 +27,7 @@ test("navigates to a subagent child session missing from the session list", asyn
   await expect(titlebarRight.getByRole("button", { name: "Toggle review" })).toHaveCount(1)
 })
 
-test("shows the not found fallback when the viewed session is deleted", async ({ page }) => {
+test("leaves a deleted session without blocking the window", async ({ page }) => {
   const events: EventPayload[] = []
   await setup(page, () => events.splice(0, 1))
   await openChildFromParent(page)
@@ -38,9 +38,9 @@ test("shows the not found fallback when the viewed session is deleted", async ({
     payload: { type: "session.deleted", properties: { info: childSession() } },
   })
 
-  await expect(page.getByText("This session cannot be found")).toBeVisible()
-  await expect(page.getByRole("button", { name: "Close Tab" })).toBeVisible()
+  await expect(page.getByText("This session cannot be found")).toHaveCount(0)
   await expect(page.getByRole("heading", { name: taskDescription })).toHaveCount(0)
+  await expect(page).not.toHaveURL(new RegExp(`/session/${childID}$`))
 })
 
 async function setup(page: Page, events?: () => EventPayload[]) {

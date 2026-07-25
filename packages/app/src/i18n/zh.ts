@@ -39,6 +39,7 @@ export const dict = {
   "command.server.switch": "切换服务器",
 
   "command.settings.open": "打开设置",
+  "command.settings.openFile": "打开设置文件",
 
   "command.session.previous": "上一个会话",
   "command.session.next": "下一个会话",

@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process"
 import { stat } from "node:fs/promises"
-import { basename } from "node:path"
+import { homedir } from "node:os"
+import { basename, join } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
@@ -181,10 +182,15 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    const resolvedPath = path.startsWith("~/") || path.startsWith("~\\") ? join(homedir(), path.slice(2)) : path
+    if (!app) {
+      const error = await shell.openPath(resolvedPath)
+      if (error) throw new Error(error)
+      return
+    }
     await new Promise<void>((resolve, reject) => {
       if (process.platform === "darwin") {
-        execFile("open", ["-a", app, path], (err) => (err ? reject(err) : resolve()))
+        execFile("open", ["-a", app, resolvedPath], (err) => (err ? reject(err) : resolve()))
         return
       }
       // PowerShell 会把裸路径参数当命令；且 GUI 宿主下 detached spawn 带 DETACHED_PROCESS，
@@ -197,7 +203,7 @@ export function registerIpcHandlers(deps: Deps) {
         const child = spawn(
           process.env.COMSPEC || "cmd.exe",
           ["/d", "/c", "start", "", app, "-NoExit", "-NoLogo"],
-          { cwd: path, detached: true, stdio: "ignore", windowsHide: true },
+          { cwd: resolvedPath, detached: true, stdio: "ignore", windowsHide: true },
         )
         child.once("error", reject)
         child.once("spawn", () => {
@@ -206,7 +212,7 @@ export function registerIpcHandlers(deps: Deps) {
         })
         return
       }
-      execFile(app, [path], (err) => (err ? reject(err) : resolve()))
+      execFile(app, [resolvedPath], (err) => (err ? reject(err) : resolve()))
     })
   })
 

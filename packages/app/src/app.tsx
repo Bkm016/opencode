@@ -43,6 +43,7 @@ import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider } from "@/context/notification"
+import { showToast } from "@/utils/toast"
 import { PermissionProvider } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
@@ -220,6 +221,7 @@ function DesktopCommands() {
   const command = useCommand()
   const language = useLanguage()
   const platform = usePlatform()
+  const server = useServer()
 
   command.register("desktop", () => {
     const commands: CommandOption[] = []
@@ -231,6 +233,21 @@ function DesktopCommands() {
         onSelect: () => {
           void platform.exportDebugLogs?.()
         },
+      })
+    }
+    if (platform.platform === "desktop" && platform.openPath && server.isLocal()) {
+      commands.push({
+        id: "settings.openFile",
+        title: language.t("command.settings.openFile"),
+        category: language.t("command.category.settings"),
+        onSelect: () =>
+          platform.openPath!("~/.config/opencode/opencode.json").catch((err: unknown) =>
+            showToast({
+              variant: "error",
+              title: language.t("command.settings.openFile"),
+              description: err instanceof Error ? err.message : String(err),
+            }),
+          ),
       })
     }
     return commands

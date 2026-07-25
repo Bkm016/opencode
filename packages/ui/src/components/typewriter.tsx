@@ -2,6 +2,9 @@ import { createEffect, onCleanup, Show, type ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 
+const MAX_LATENCY = 80
+const MIN_SPEED = 0.02
+
 export const Typewriter = <T extends ValidComponent = "p">(props: { text?: string; class?: string; as?: T }) => {
   const [store, setStore] = createStore({
     typing: false,
@@ -9,40 +12,101 @@ export const Typewriter = <T extends ValidComponent = "p">(props: { text?: strin
     cursor: true,
   })
 
+  const state = {
+    target: "",
+    index: 0,
+    lastArrivalTime: 0,
+    rate: 0.03,
+    raf: 0,
+    settleTimer: 0,
+    lastFrame: 0,
+  }
+
   createEffect(() => {
-    const text = props.text
-    if (!text) return
+    const text = props.text ?? ""
+    const now = performance.now()
+    const previous = state.target
+    const previousLength = previous.length
+    state.target = text
 
-    let i = 0
-    const timeouts: ReturnType<typeof setTimeout>[] = []
-    setStore("typing", true)
-    setStore("displayed", "")
-    setStore("cursor", true)
-
-    const getTypingDelay = () => {
-      const random = Math.random()
-      if (random < 0.05) return 150 + Math.random() * 100
-      if (random < 0.15) return 80 + Math.random() * 60
-      return 30 + Math.random() * 50
+    if (!text) {
+      setStore({ typing: false, displayed: "", cursor: false })
+      state.index = 0
+      state.lastArrivalTime = 0
+      state.rate = 0.03
+      stop()
+      return
     }
 
-    const type = () => {
-      if (i < text.length) {
-        setStore("displayed", text.slice(0, i + 1))
-        i++
-        timeouts.push(setTimeout(type, getTypingDelay()))
-      } else {
-        setStore("typing", false)
-        timeouts.push(setTimeout(() => setStore("cursor", false), 2000))
+    if (!text.startsWith(previous)) {
+      state.index = 0
+      setStore("displayed", "")
+      state.rate = 0.03
+    } else if (text.length > previousLength && state.lastArrivalTime > 0) {
+      const delta = text.length - previousLength
+      const elapsed = now - state.lastArrivalTime
+      if (elapsed > 0) {
+        const measured = delta / elapsed
+        state.rate = state.rate * 0.6 + measured * 0.4
       }
     }
 
-    timeouts.push(setTimeout(type, 200))
+    state.lastArrivalTime = now
 
-    onCleanup(() => {
-      for (const timeout of timeouts) clearTimeout(timeout)
-    })
+    setStore("typing", true)
+    setStore("cursor", true)
+
+    if (!state.raf) {
+      state.raf = requestAnimationFrame(loop)
+    }
+
+    onCleanup(stop)
   })
+
+  function stop() {
+    if (state.raf) cancelAnimationFrame(state.raf)
+    if (state.settleTimer) clearTimeout(state.settleTimer)
+    state.raf = 0
+    state.settleTimer = 0
+  }
+
+  function loop(t: number) {
+    const target = state.target
+    if (!target) {
+      state.raf = 0
+      return
+    }
+
+    const previous = state.index
+    const behind = target.length - previous
+    if (behind <= 0) {
+      state.index = target.length
+      setStore("displayed", target)
+      setStore("typing", false)
+      if (!state.settleTimer) {
+        state.settleTimer = window.setTimeout(() => setStore("cursor", false), 2000)
+      }
+      state.raf = 0
+      return
+    }
+
+    if (state.lastFrame === 0) state.lastFrame = t
+    const dt = Math.min(t - state.lastFrame, 100)
+    state.lastFrame = t
+    if (dt <= 0) {
+      state.raf = requestAnimationFrame(loop)
+      return
+    }
+
+    const speed = Math.max(state.rate * 1.25, behind / MAX_LATENCY, MIN_SPEED)
+    const next = Math.min(target.length, previous + speed * dt)
+    state.index = next
+    if (Math.floor(next) !== Math.floor(previous)) {
+      setStore("displayed", target.slice(0, Math.floor(next)))
+    }
+
+    state.raf = requestAnimationFrame(loop)
+  }
 
   return (
     <Dynamic component={props.as || "p"} class={props.class}>

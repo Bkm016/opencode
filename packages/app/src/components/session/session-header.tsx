@@ -142,7 +142,6 @@ export function SessionHeader() {
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const os = createMemo(() => detectOS(platform))
-  const status = settings.visibility.status
 
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
     finder: true,
@@ -370,11 +369,9 @@ export function SessionHeader() {
                   </div>
                 </Show>
                 <div class="flex items-center gap-1">
-                  <Show when={status()}>
-                    <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                      <StatusPopover />
-                    </Tooltip>
-                  </Show>
+                  <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+                    <StatusPopover />
+                  </Tooltip>
                   <TooltipKeybind
                     title={language.t("command.terminal.toggle")}
                     keybind={command.keybind("terminal.toggle")}

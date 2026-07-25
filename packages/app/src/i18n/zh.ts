@@ -1059,8 +1059,6 @@ export const dict = {
   "settings.general.row.showNavigation.description": "在桌面版标题栏中显示前进和后退按钮",
   "settings.general.row.showTerminal.title": "终端",
   "settings.general.row.showTerminal.description": "在桌面版标题栏中显示终端按钮",
-  "settings.general.row.showStatus.title": "服务器状态",
-  "settings.general.row.showStatus.description": "在标题栏中显示服务器状态按钮",
   "settings.general.row.mobileTitlebarBottom.title": "底部导航",
   "settings.general.row.mobileTitlebarBottom.description": "在移动设备上将标题栏和会话标签页置于屏幕底部",
   "settings.general.row.showCustomAgents.title": "自定义智能体",

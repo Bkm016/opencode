@@ -25,7 +25,6 @@ export interface Settings {
     releaseNotes: boolean
     followup: "queue" | "steer"
     showNavigation: boolean
-    showStatus: boolean
     showTerminal: boolean
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
@@ -136,7 +135,6 @@ const defaultSettings: Settings = {
     releaseNotes: true,
     followup: "steer",
     showNavigation: false,
-    showStatus: false,
     showTerminal: false,
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
@@ -187,7 +185,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       classified: false,
       previous: undefined as string | undefined,
     })
-    const showStatus = withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus)
     const showCustomAgents = withFallback(
       () => store.general?.showCustomAgents,
       defaultSettings.general.showCustomAgents,
@@ -256,10 +253,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setShowNavigation(value: boolean) {
           setStore("general", "showNavigation", value)
         },
-        showStatus,
-        setShowStatus(value: boolean) {
-          setStore("general", "showStatus", value)
-        },
         showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
         setShowTerminal(value: boolean) {
           setStore("general", "showTerminal", value)
@@ -306,7 +299,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       visibility: {
-        status: showStatus,
         customAgents: showCustomAgents,
       },
       appearance: {

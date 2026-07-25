@@ -891,8 +891,6 @@ export const dict = {
   "settings.general.row.showNavigation.description": "在桌面標題列中顯示上一頁和下一頁按鈕",
   "settings.general.row.showTerminal.title": "終端機",
   "settings.general.row.showTerminal.description": "在桌面標題列中顯示終端機按鈕",
-  "settings.general.row.showStatus.title": "伺服器狀態",
-  "settings.general.row.showStatus.description": "在標題列中顯示伺服器狀態按鈕",
   "settings.general.row.mobileTitlebarBottom.title": "底部導覽",
   "settings.general.row.mobileTitlebarBottom.description": "在行動裝置上將標題列和工作階段分頁置於畫面底部",
   "settings.general.row.showCustomAgents.title": "自訂代理程式",

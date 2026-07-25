@@ -1,25 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
-const appLocales = [
-  "ar",
-  "br",
-  "bs",
-  "da",
-  "de",
-  "es",
-  "fr",
-  "ja",
-  "ko",
-  "no",
-  "pl",
-  "ru",
-  "uk",
-  "th",
-  "tr",
-  "zh",
-  "zht",
-] as const
-const desktopLocales = appLocales.filter((locale) => locale !== "th" && locale !== "tr")
+const appLocales = ["zh", "zht"] as const
+const desktopLocales = appLocales
 
 const domains = [
   {

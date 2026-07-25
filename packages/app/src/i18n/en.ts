@@ -708,7 +708,9 @@ export const dict = {
   "home.sessions.empty.description": "Create a session to get started",
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
-  "home.sessions.group.older": "Older",
+  "home.sessions.group.sevenDaysAgo": "7+ days ago",
+  "home.sessions.group.expandAll": "Expand all",
+  "home.sessions.group.collapseAll": "Collapse all",
   "home.providerTip": "Connect to 75+ providers to use other models, including Claude, GPT, Gemini, etc",
 
   "session.tab.session": "Session",

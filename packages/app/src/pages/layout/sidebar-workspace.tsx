@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router"
+import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
@@ -18,7 +18,7 @@ import { type LocalProject } from "@/context/layout"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
-import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
+import { SessionItem, SessionSkeleton } from "./sidebar-items"
 import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
@@ -33,6 +33,14 @@ type InlineEditorComponent = (props: {
   stopPropagation?: boolean
   openOnDblClick?: boolean
 }) => JSX.Element
+
+type SessionGroup = {
+  key: string
+  label?: string
+  sessions: Session[]
+  collapsible: boolean
+  defaultOpen: boolean
+}
 
 export type WorkspaceSidebarContext = {
   currentDir: Accessor<string>
@@ -54,6 +62,7 @@ export type WorkspaceSidebarContext = {
   showResetWorkspaceDialog: (root: string, directory: string) => void
   showDeleteWorkspaceDialog: (root: string, directory: string) => void
   setScrollContainerRef: (el: HTMLDivElement | undefined, mobile?: boolean) => void
+  sessionGroupsCommand: Accessor<{ open: boolean; revision: number } | undefined>
 }
 
 export const WorkspaceDragOverlay = (props: {
@@ -239,7 +248,6 @@ const WorkspaceSessionList = (props: {
   slug: Accessor<string>
   mobile?: boolean
   ctx: WorkspaceSidebarContext
-  showNew: Accessor<boolean>
   loading: Accessor<boolean>
   sessions: Accessor<Session[]>
 }): JSX.Element => {
@@ -247,36 +255,65 @@ const WorkspaceSessionList = (props: {
   const dateFormatter = createMemo(
     () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
   )
+  const [groupOpen, setGroupOpen] = createStore<Record<string, boolean>>({})
+  let groupCommandRevision = 0
+
+  const isGroupOpen = (group: SessionGroup) => groupOpen[group.key] ?? group.defaultOpen
+
+  const setGroupExpanded = (group: SessionGroup, open: boolean) => {
+    setGroupOpen(group.key, open)
+  }
+
   const groups = createMemo(() => {
     const sessions = props.sessions()
     // 置顶会话保持在日期分组之前，避免日期分组打乱现有置顶顺序。
     const pinned = sessions.filter((session) => isSessionPinned(session.directory, session.id))
-    const groups: Array<{ key: string; label?: string; sessions: Session[] }> = []
-    if (pinned.length > 0) groups.push({ key: "pinned", sessions: pinned })
+    const groups: SessionGroup[] = []
+    if (pinned.length > 0) {
+      groups.push({ key: "pinned", sessions: pinned, collapsible: false, defaultOpen: true })
+    }
 
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
+    const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime()
     sessions
       .filter((session) => !isSessionPinned(session.directory, session.id))
       .forEach((session) => {
         const date = new Date(session.time.updated ?? session.time.created)
         const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-        const key = String(day)
+        const older = day <= sevenDaysAgo
+        const key = older ? "older" : String(day)
         const label =
-          day === today
-            ? language.t("home.sessions.group.today")
-            : day === yesterday
-              ? language.t("home.sessions.group.yesterday")
-              : dateFormatter().format(date)
+          older
+            ? language.t("home.sessions.group.sevenDaysAgo")
+            : day === today
+              ? language.t("home.sessions.group.today")
+              : day === yesterday
+                ? language.t("home.sessions.group.yesterday")
+                : dateFormatter().format(date)
         const group = groups.at(-1)
         if (group?.key === key) {
           group.sessions.push(session)
           return
         }
-        groups.push({ key, label, sessions: [session] })
+        groups.push({
+          key,
+          label,
+          sessions: [session],
+          collapsible: true,
+          defaultOpen: !groups.some((item) => item.collapsible),
+        })
       })
     return groups
+  })
+  createEffect(() => {
+    const command = props.ctx.sessionGroupsCommand()
+    if (!command || command.revision === groupCommandRevision) return
+    groupCommandRevision = command.revision
+    for (const group of groups()) {
+      if (group.collapsible) setGroupOpen(group.key, command.open)
+    }
   })
   const item = (session: Session) => (
     <SessionItem
@@ -291,23 +328,76 @@ const WorkspaceSessionList = (props: {
       archiveSession={props.ctx.archiveSession}
     />
   )
+  const sessionItems = (sessions: Session[]) => (
+    <div class="flex flex-col gap-1">
+      <For each={sessions}>{item}</For>
+    </div>
+  )
 
   return (
-    <nav class="flex flex-col gap-1">
-      <Show when={props.showNew()}>
-        <NewSessionItem slug={props.slug()} mobile={props.mobile} sidebarExpanded={props.ctx.sidebarExpanded} />
-      </Show>
+    <nav class="flex flex-1 flex-col gap-1">
       <Show when={props.loading()}>
         <SessionSkeleton />
       </Show>
-      <Show when={!props.mobile} fallback={<For each={props.sessions()}>{item}</For>}>
+      <Show when={!props.loading() && props.sessions().length === 0}>
+        <div
+          data-component="sessions-empty"
+          class="relative flex min-h-48 flex-1 items-center justify-center px-6 text-center"
+        >
+          <svg
+            aria-hidden="true"
+            class="pointer-events-none absolute -top-1 right-[4rem] h-16 w-8 text-icon-weaker opacity-60"
+            viewBox="0 0 32 64"
+          >
+            <path
+              d="M16 58V7"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.25"
+              stroke-linecap="round"
+              vector-effect="non-scaling-stroke"
+            />
+            <path
+              d="M10 14L16 7L22 14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.25"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+          <div class="relative z-10 flex max-w-56 flex-col gap-1">
+            <div class="text-13-medium text-text-base">{language.t("home.sessions.empty")}</div>
+            <div class="text-12-regular text-text-weak">{language.t("home.sessions.empty.description")}</div>
+          </div>
+        </div>
+      </Show>
+      <Show when={!props.mobile} fallback={sessionItems(props.sessions())}>
         <For each={groups()}>
           {(group) => (
-            <div class="mt-2 flex flex-col gap-1 first:mt-0">
-              <Show when={group.label}>
-                {(label) => <div class="px-2 pt-2 pb-1 text-12-medium text-text-weak">{label()}</div>}
+            <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
+              <Show
+                when={group.collapsible}
+                fallback={sessionItems(group.sessions)}
+              >
+                <Collapsible
+                  variant="ghost"
+                  open={isGroupOpen(group)}
+                  onOpenChange={(open) => setGroupExpanded(group, open)}
+                >
+                  <Collapsible.Trigger class="h-7 justify-between px-2 text-text-weak hover:text-text-base">
+                    <span>{group.label}</span>
+                    <span class="flex items-center gap-1">
+                      <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
+                      <Collapsible.Arrow />
+                    </span>
+                  </Collapsible.Trigger>
+                  <Collapsible.Content>
+                    {sessionItems(group.sessions)}
+                  </Collapsible.Content>
+                </Collapsible>
               </Show>
-              <For each={group.sessions}>{item}</For>
             </div>
           )}
         </For>
@@ -324,7 +414,6 @@ export const SortableWorkspace = (props: {
   mobile?: boolean
 }): JSX.Element => {
   const navigate = useNavigate()
-  const params = useParams()
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
@@ -352,7 +441,6 @@ export const SortableWorkspace = (props: {
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
   const loading = () => fetching() > 0 && count() === 0
   const touch = createMediaQuery("(hover: none)")
-  const showNew = createMemo(() => !loading() && (touch() || count() === 0 || (active() && !params.id)))
 
   const workspaceEditActive = createMemo(() => props.ctx.editorOpen(`workspace:${props.directory}`))
   const header = () => (
@@ -449,7 +537,6 @@ export const SortableWorkspace = (props: {
             slug={slug}
             mobile={props.mobile}
             ctx={props.ctx}
-            showNew={showNew}
             loading={loading}
             sessions={sessions}
           />
@@ -482,13 +569,12 @@ export const LocalWorkspace = (props: {
   return (
     <div
       ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
-      class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+      class="size-full flex flex-col py-1 overflow-y-auto no-scrollbar [overflow-anchor:none]"
     >
       <WorkspaceSessionList
         slug={slug}
         mobile={props.mobile}
         ctx={props.ctx}
-        showNew={() => false}
         loading={loading}
         sessions={sessions}
       />

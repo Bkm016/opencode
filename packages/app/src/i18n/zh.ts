@@ -683,7 +683,9 @@ export const dict = {
   "home.sessions.empty.description": "创建一个会话以开始。",
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
-  "home.sessions.group.older": "更早",
+  "home.sessions.group.sevenDaysAgo": "七天前",
+  "home.sessions.group.expandAll": "全部展开",
+  "home.sessions.group.collapseAll": "全部折叠",
   "home.providerTip": "连接 75 个以上的提供商，使用 Claude、GPT、Gemini 等其他模型",
 
   "session.tab.session": "会话",

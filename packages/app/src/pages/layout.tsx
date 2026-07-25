@@ -20,7 +20,6 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -150,6 +149,7 @@ export default function LegacyLayout(props: ParentProps) {
   const [state, setState] = createStore({
     autoselect: !initialDirectory,
     busyWorkspaces: {} as Record<string, boolean>,
+    sessionGroupsCommand: undefined as { open: boolean; revision: number } | undefined,
     scrollSessionKey: undefined as string | undefined,
     sortNow: Date.now(),
     sizing: false,
@@ -171,6 +171,12 @@ export default function LegacyLayout(props: ParentProps) {
   }
   const isBusy = (directory: string) => !!state.busyWorkspaces[pathKey(directory)]
   const sortNow = () => state.sortNow
+  const setSessionGroupsExpanded = (open: boolean) => {
+    setState("sessionGroupsCommand", {
+      open,
+      revision: (state.sessionGroupsCommand?.revision ?? 0) + 1,
+    })
+  }
   let sizet: number | undefined
   let sortNowInterval: ReturnType<typeof setInterval> | undefined
   const sortNowTimeout = setTimeout(
@@ -1816,6 +1822,7 @@ export default function LegacyLayout(props: ParentProps) {
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },
+    sessionGroupsCommand: () => state.sessionGroupsCommand,
   }
 
   const projectSidebarCtx: ProjectSidebarContext = {
@@ -1863,8 +1870,6 @@ export default function LegacyLayout(props: ParentProps) {
       if (!item) return false
       return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
     })
-    const homedir = createMemo(() => serverSync().data.path.home)
-
     return (
       <div
         classList={{
@@ -1903,123 +1908,142 @@ export default function LegacyLayout(props: ParentProps) {
         >
           {(project) => (
             <>
-              <div class="shrink-0 pl-1 py-1">
-                <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
-                  <div class="flex flex-col min-w-0">
-                    <InlineEditor
-                      id={`project:${projectId()}`}
-                      value={projectName}
-                      onSave={(next) => {
-                        void renameProject(project, next)
-                      }}
-                      class="text-14-medium text-text-strong truncate"
-                      displayClass="text-14-medium text-text-strong truncate"
-                      stopPropagation
-                    />
+              <div class="shrink-0 py-0.5">
+                <div class="group/project flex items-center justify-between gap-2 pt-4 pb-1.5 pl-2 pr-0">
+                  <Tooltip placement="bottom" gutter={4} value={worktree()} class="min-w-0 flex-1 overflow-hidden">
+                    <div class="min-w-0 w-full overflow-hidden">
+                      <InlineEditor
+                        id={`project:${projectId()}`}
+                        value={projectName}
+                        onSave={(next) => {
+                          void renameProject(project, next)
+                        }}
+                        class="block w-full min-w-0 text-14-medium text-text-strong truncate"
+                        displayClass="block w-full min-w-0 text-14-medium text-text-strong truncate"
+                        stopPropagation
+                      />
+                    </div>
+                  </Tooltip>
 
-                    <Tooltip
-                      placement="bottom"
-                      gutter={2}
-                      value={worktree()}
-                      class="shrink-0"
-                      contentStyle={{
-                        "max-width": "640px",
-                        transform: "translate3d(52px, 0, 0)",
-                      }}
-                    >
-                      <span class="text-12-regular text-text-base truncate select-text">
-                        {worktree().replace(homedir(), "~")}
-                      </span>
+                  <div class="flex shrink-0 items-center gap-0.5">
+                    <Tooltip placement="bottom" value={language.t("command.session.new")}>
+                      <IconButton
+                        icon="plus"
+                        variant="ghost"
+                        size="small"
+                        data-action="new-session"
+                        aria-label={language.t("command.session.new")}
+                        onClick={() => navigateWithSidebarReset(`/${slug()}/session`)}
+                      />
                     </Tooltip>
+                    <Tooltip placement="bottom" value={language.t("home.sessions.group.expandAll")}>
+                      <IconButton
+                        icon="expand"
+                        variant="ghost"
+                        size="small"
+                        data-action="sessions-expand-all"
+                        aria-label={language.t("home.sessions.group.expandAll")}
+                        onClick={() => setSessionGroupsExpanded(true)}
+                      />
+                    </Tooltip>
+                    <Tooltip placement="bottom" value={language.t("home.sessions.group.collapseAll")}>
+                      <IconButton
+                        icon="collapse"
+                        variant="ghost"
+                        size="small"
+                        data-action="sessions-collapse-all"
+                        aria-label={language.t("home.sessions.group.collapseAll")}
+                        onClick={() => setSessionGroupsExpanded(false)}
+                      />
+                    </Tooltip>
+                    <DropdownMenu modal>
+                      <DropdownMenu.Trigger
+                        as={IconButton}
+                        icon="dot-grid"
+                        variant="ghost"
+                        data-action="project-menu"
+                        data-project={slug()}
+                        class="shrink-0 size-6 rounded-md opacity-100 data-[expanded]:bg-surface-base-active"
+                        aria-label={language.t("common.moreOptions")}
+                      />
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content class="mt-1">
+                          <DropdownMenu.Item
+                            onSelect={() => {
+                              showEditProjectDialog(server.current!, project)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-workspaces-toggle"
+                            data-project={slug()}
+                            disabled={!canToggle()}
+                            onSelect={() => {
+                              toggleProjectWorkspaces(project)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {workspacesEnabled()
+                                ? language.t("sidebar.workspaces.disable")
+                                : language.t("sidebar.workspaces.enable")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-skills"
+                            data-project={slug()}
+                            onSelect={() => {
+                              void import("@/components/dialog-skills").then((x) => {
+                                dialog.show(() => <x.DialogSkills directory={worktree()} />)
+                              })
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("sidebar.project.skills")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-instructions"
+                            data-project={slug()}
+                            onSelect={() => {
+                              void import("@/components/settings-instructions").then((x) => {
+                                dialog.show(() => <x.DialogInstructions directory={worktree()} />)
+                              })
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {language.t("settings.tab.instructions")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-archived-sessions"
+                            data-project={slug()}
+                            onSelect={() => {
+                              void import("@/components/dialog-archived-sessions").then((x) => {
+                                dialog.show(() => (
+                                  <x.DialogArchivedSessions directory={worktree()} project={project} />
+                                ))
+                              })
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {language.t("sidebar.project.archivedSessions")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Separator />
+                          <DropdownMenu.Item
+                            data-action="project-close-menu"
+                            data-project={slug()}
+                            onSelect={() => {
+                              const dir = worktree()
+                              if (!dir) return
+                              closeProject(dir)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu>
                   </div>
-
-                  <DropdownMenu modal>
-                    <DropdownMenu.Trigger
-                      as={IconButton}
-                      icon="dot-grid"
-                      variant="ghost"
-                      data-action="project-menu"
-                      data-project={slug()}
-                      class="shrink-0 size-6 rounded-md opacity-100 data-[expanded]:bg-surface-base-active"
-                      aria-label={language.t("common.moreOptions")}
-                    />
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content class="mt-1">
-                        <DropdownMenu.Item
-                          onSelect={() => {
-                            showEditProjectDialog(server.current!, project)
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          data-action="project-workspaces-toggle"
-                          data-project={slug()}
-                          disabled={!canToggle()}
-                          onSelect={() => {
-                            toggleProjectWorkspaces(project)
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>
-                            {workspacesEnabled()
-                              ? language.t("sidebar.workspaces.disable")
-                              : language.t("sidebar.workspaces.enable")}
-                          </DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          data-action="project-skills"
-                          data-project={slug()}
-                          onSelect={() => {
-                            void import("@/components/dialog-skills").then((x) => {
-                              dialog.show(() => <x.DialogSkills directory={worktree()} />)
-                            })
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>{language.t("sidebar.project.skills")}</DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          data-action="project-instructions"
-                          data-project={slug()}
-                          onSelect={() => {
-                            void import("@/components/settings-instructions").then((x) => {
-                              dialog.show(() => <x.DialogInstructions directory={worktree()} />)
-                            })
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>
-                            {language.t("settings.tab.instructions")}
-                          </DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Item
-                          data-action="project-archived-sessions"
-                          data-project={slug()}
-                          onSelect={() => {
-                            void import("@/components/dialog-archived-sessions").then((x) => {
-                              dialog.show(() => (
-                                <x.DialogArchivedSessions directory={worktree()} project={project} />
-                              ))
-                            })
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>
-                            {language.t("sidebar.project.archivedSessions")}
-                          </DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                        <DropdownMenu.Separator />
-                        <DropdownMenu.Item
-                          data-action="project-close-menu"
-                          data-project={slug()}
-                          onSelect={() => {
-                            const dir = worktree()
-                            if (!dir) return
-                            closeProject(dir)
-                          }}
-                        >
-                          <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
-                        </DropdownMenu.Item>
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu>
                 </div>
               </div>
 
@@ -2028,20 +2052,6 @@ export default function LegacyLayout(props: ParentProps) {
                   when={workspacesEnabled()}
                   fallback={
                     <>
-                      <div class="shrink-0 py-4">
-                        <Button
-                          size="large"
-                          class="w-full"
-                          onClick={() => {
-                            const dir = worktree()
-                            if (!dir) return
-                            navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
-                          }}
-                        >
-                          <IconV2 name="edit" size="small" />
-                          {language.t("command.session.new")}
-                        </Button>
-                      </div>
                       <div class="flex-1 min-h-0">
                         <LocalWorkspace
                           ctx={workspaceSidebarCtx}

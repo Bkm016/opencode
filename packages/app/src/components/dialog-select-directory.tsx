@@ -113,7 +113,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     () => (browsing() ? current() : undefined),
     async (target) => {
       const result = await sdk.client.experimental.file.list({ path: target }).catch(() => undefined)
-      if (!result?.data) return { path: target, parent: undefined, entries: [], failed: true }
+      // 旧服务端可能把未知路由回退成 200 页面，不能只依赖 SDK 的错误状态。
+      if (!result?.data || !Array.isArray(result.data.entries)) {
+        return { path: target, parent: undefined, entries: [], failed: true }
+      }
       return { ...result.data, failed: false }
     },
   )

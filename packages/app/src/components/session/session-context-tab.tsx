@@ -332,10 +332,9 @@ function rawMessagePreview(parts: Part[], empty: string, partsCount: (count: num
       const preview = collapsePreview(part.text)
       if (preview) return preview
     }
-    if (part.type === "reasoning") {
-      const preview = collapsePreview(part.text)
-      if (preview) return preview
-    }
+  }
+
+  for (const part of parts) {
     if (part.type === "subtask") {
       const preview = collapsePreview(part.description || part.prompt)
       if (preview) return preview

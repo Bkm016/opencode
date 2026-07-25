@@ -207,6 +207,7 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     fps: undefined as number | undefined,
     gap: undefined as number | undefined,
     focus: false,
+    collapsed: false,
     heap: {
       limit: undefined as number | undefined,
       used: undefined as number | undefined,
@@ -255,18 +256,23 @@ export function DebugBar(props: { inline?: boolean } = {}) {
 
   const startDrag = (event: PointerEvent) => {
     if (props.inline) return
-    // Only start a drag from the grab handle; ignore presses that originate
-    // from interactive descendants (the focus toggle button, tooltip cells).
+    // The whole floating panel is the drag surface so it can be repositioned
+    // without requiring a dedicated handle.
     if (event.button !== 0 && event.pointerType === "mouse") return
     const el = aside
     if (!el) return
     const origin = position() ?? resolveDefault()
     const startX = event.clientX
     const startY = event.clientY
-    setDragging(true)
-    el.setPointerCapture(event.pointerId)
+    let moved = false
 
     const move = (ev: PointerEvent) => {
+      if (!moved) {
+        // 点击与拖动共用一个入口，移动超过阈值后才取消点击语义。
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
+        moved = true
+        setDragging(true)
+      }
       const next = clampPosition(
         { x: origin.x + ev.clientX - startX, y: origin.y + ev.clientY - startY },
         el.offsetWidth,
@@ -274,21 +280,21 @@ export function DebugBar(props: { inline?: boolean } = {}) {
       )
       setPosition(next)
     }
-    const up = (ev: PointerEvent) => {
+    const up = () => {
       cleanup()
-      el.releasePointerCapture(ev.pointerId)
+      if (!moved) return
       setDragging(false)
       const final = position()
       if (final) writePosition(final)
     }
     const cleanup = () => {
-      el.removeEventListener("pointermove", move)
-      el.removeEventListener("pointerup", up)
-      el.removeEventListener("pointercancel", up)
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      window.removeEventListener("pointercancel", up)
     }
-    el.addEventListener("pointermove", move)
-    el.addEventListener("pointerup", up)
-    el.addEventListener("pointercancel", up)
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+    window.addEventListener("pointercancel", up)
   }
 
   const na = () => language.t("debugBar.na").toUpperCase()
@@ -582,31 +588,34 @@ export function DebugBar(props: { inline?: boolean } = {}) {
     <aside
       ref={aside}
       aria-label={language.t("debugBar.ariaLabel")}
+      onPointerDown={startDrag}
+      onDblClick={() => {
+        if (!props.inline) setState("collapsed", (value) => !value)
+      }}
       classList={{
         "pointer-events-auto hidden overflow-hidden text-text-strong md:block": true,
+        "cursor-grab touch-none select-none": !props.inline,
+        "cursor-grabbing": !props.inline && dragging(),
         "mt-[-6px] w-full shrink-0 px-3 py-1": !!props.inline,
         "fixed z-50 w-[308px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha p-0.5 shadow-[var(--shadow-lg-border-base)] sm:w-[324px]":
-          !props.inline,
+          !props.inline && !state.collapsed,
+        "fixed z-50 flex size-8 items-center justify-center rounded-lg border border-border-base bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg-border-base)]":
+          !props.inline && state.collapsed,
         "bottom-3 right-3 sm:bottom-4 sm:right-4": !props.inline && !position(),
       }}
-      style={
-        !props.inline && position()
-          ? { left: `${position()!.x}px`, top: `${position()!.y}px` }
-          : undefined
-      }
+      style={!props.inline && position() ? { left: `${position()!.x}px`, top: `${position()!.y}px` } : undefined}
     >
-      {!props.inline && (
-        <div
-          aria-label="Drag to move performance overlay"
-          role="button"
-          classList={{
-            "flex h-4 cursor-grab touch-none items-center justify-center rounded-t-[8px]": true,
-            "cursor-grabbing": dragging(),
-          }}
-          onPointerDown={startDrag}
+      {state.collapsed && !props.inline && (
+        <button
+          type="button"
+          aria-label={language.t("debugBar.ariaLabel")}
+          class="flex size-full flex-col items-center justify-center gap-0.5 text-text-strong outline-none hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus"
         >
-          <span class="h-1 w-8 rounded-full bg-border-base opacity-70" />
-        </div>
+          <span class="text-[8px] leading-none font-black tracking-[0.04em] opacity-70">FPS</span>
+          <span class="text-[11px] leading-none font-bold tabular-nums">
+            {state.fps === undefined ? na() : `${Math.round(state.fps)}`}
+          </span>
+        </button>
       )}
       <div
         classList={{
@@ -616,6 +625,7 @@ export function DebugBar(props: { inline?: boolean } = {}) {
           "flex w-full flex-nowrap items-center justify-start": !!props.inline,
           "grid-cols-5": !props.inline,
           grid: !props.inline,
+          hidden: !props.inline && state.collapsed,
         }}
       >
         <Cell

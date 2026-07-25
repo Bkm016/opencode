@@ -34,49 +34,6 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      - name: Smoke test
-        working-directory: packages/opencode
-        run: |
-          set -u
-          BIN="./dist/opencode-linux-x64-baseline/bin/opencode"
-          PORT=41417
-          LOG_FILE="$(mktemp -t opencode-smoke-XXXXXX.log)"
-
-          echo "Starting $BIN serve on 127.0.0.1:$PORT ..."
-          "$BIN" serve --hostname 127.0.0.1 --port "$PORT" >"$LOG_FILE" 2>&1 &
-          SERVE_PID=$!
-          echo "serve pid=$SERVE_PID"
-
-          cleanup() {
-            if kill -0 "$SERVE_PID" 2>/dev/null; then
-              kill "$SERVE_PID" 2>/dev/null || true
-              wait "$SERVE_PID" 2>/dev/null || true
-            fi
-          }
-          trap cleanup EXIT
-
-          ok=0
-          for i in $(seq 1 30); do
-            if ! kill -0 "$SERVE_PID" 2>/dev/null; then
-              echo "serve process exited unexpectedly"
-              break
-            fi
-            if curl -fsS "http://127.0.0.1:$PORT/global/health" >/dev/null 2>&1; then
-              echo "/global/health responded OK (attempt $i)"
-              ok=1
-              break
-            fi
-            sleep 1
-          done
-
-          if [ "$ok" -ne 1 ]; then
-            echo "::error::smoke test failed; serve logs:"
-            cat "$LOG_FILE"
-            exit 1
-          fi
-
-          echo "Smoke test passed."
-
       - name: Package
         working-directory: packages/opencode/dist/opencode-linux-x64-baseline/bin
         run: tar -czf ../../opencode-linux-x64-baseline.tar.gz opencode

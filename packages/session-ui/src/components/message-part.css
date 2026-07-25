@@ -1684,7 +1684,7 @@
 
   [data-slot="user-message-text"] {
     background: var(--surface-base);
-    border: 1px solid var(--border-weak-base);
+    border: none;
     border-radius: 6px;
   }
 

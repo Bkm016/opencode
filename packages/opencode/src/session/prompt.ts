@@ -65,6 +65,7 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
+const CHUNK_COMPACTION_REPLAY = "chunk_compaction_replay"
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -1521,7 +1522,8 @@ const layer = Layer.effect(
             // persistChunkBoundary 持久化。这里持久化边界后直接退出 loop，
             // 避免同一 compaction task 被 latest() 反复拾取造成空转。
             const cfg = yield* config.get()
-            if (cfg.compaction?.strategy === "chunk") {
+            // overflow task 是 chunk replay 再次超限后的 model fallback，必须执行模型摘要。
+            if (cfg.compaction?.strategy === "chunk" && task.overflow !== true) {
               // holder 之后已有真实 user 时，密封完成后继续本轮处理该消息。
               const hasQueuedPrompt = lastUser.id > task.messageID
               yield* persistChunkBoundary(sessionID, { force: true }).pipe(
@@ -1814,14 +1816,36 @@ const layer = Layer.effect(
               // 检测回退 model compaction。
               const cfg = yield* config.get()
               if (cfg.compaction?.strategy === "chunk") {
-                yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                const chunkReplay = lastUserMsg?.parts.some(
+                  (part) => part.type === "text" && part.metadata?.[CHUNK_COMPACTION_REPLAY] === true,
+                )
+                if (chunkReplay) {
+                  // chunk replay 仍溢出时转入 model fallback，不能再次 replay 同一请求形成死循环。
+                  yield* compaction.create({
+                    sessionID,
+                    agent: lastUser.agent,
+                    model: lastUser.model,
+                    auto: true,
+                    overflow: true,
+                  })
+                  return "continue" as const
+                }
+                const persisted = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                  Effect.map(() => true),
                   Effect.catchDefect((defect: unknown) =>
-                    Effect.logWarning("chunk boundary persist failed", { error: String(defect) }),
+                    Effect.gen(function* () {
+                      yield* Effect.logWarning("chunk boundary persist failed", { error: String(defect) })
+                      return false
+                    }),
                   ),
                 )
-                // 持久化边界后 break：下一轮需要新 user 消息驱动，
-                // 否则同一条 user 消息反复触发 overflow → persist → continue 死循环。
-                return "break" as const
+                if (!persisted || !lastUserMsg) return "break" as const
+                yield* compaction.replayUser({
+                  sessionID,
+                  message: { info: lastUser, parts: lastUserMsg.parts },
+                  metadata: { [CHUNK_COMPACTION_REPLAY]: true },
+                })
+                return "continue" as const
               }
               yield* compaction.create({
                 sessionID,

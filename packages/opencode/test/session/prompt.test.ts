@@ -58,6 +58,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { InstanceStore } from "@/project/instance-store"
+import { InstanceBootstrap } from "@/project/bootstrap-service"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -166,6 +167,7 @@ const blockingProcessor = Layer.succeed(
 )
 
 const runtimeFlags = RuntimeFlags.layer({ experimentalEventSystem: true })
+const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 
 const testLLMServerNode = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
@@ -215,6 +217,7 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -229,6 +232,7 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -502,6 +506,81 @@ it.instance("chunk compaction seals an empty result and accepts the next prompt"
     expect(Array.isArray(requestMessages)).toBe(true)
     if (!Array.isArray(requestMessages)) throw new Error("Expected provider request messages")
     expect(JSON.stringify(requestMessages.at(-1))).toContain("continue after empty compaction")
+  }),
+)
+
+it.instance("chunk compaction replays an overflowing prompt and continues", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.text("continued after chunk compaction")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "finish the original request" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const requests = messages.filter(
+      (message) =>
+        message.info.role === "user" &&
+        message.parts.some((part) => part.type === "text" && part.text === "finish the original request"),
+    )
+
+    expect(yield* llm.hits).toHaveLength(2)
+    expect(requests).toHaveLength(2)
+    expect(result.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "continued after chunk compaction" }),
+      ]),
+    )
+  }),
+)
+
+it.instance("chunk compaction falls back to model compaction when replay still overflows", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.text("model fallback summary")
+    yield* llm.text("continued after model fallback")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "finish after fallback" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const summaries = messages.filter((message) => message.info.role === "assistant" && message.info.summary)
+
+    expect(yield* llm.hits).toHaveLength(4)
+    expect(summaries).toHaveLength(2)
+    expect(summaries.at(-1)?.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "model fallback summary" }),
+      ]),
+    )
+    expect(result.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "continued after model fallback" }),
+      ]),
+    )
   }),
 )
 

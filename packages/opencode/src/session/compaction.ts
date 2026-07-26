@@ -141,6 +141,11 @@ export interface Interface {
     auto: boolean
     overflow?: boolean
   }) => Effect.Effect<"continue" | "stop">
+  readonly replayUser: (input: {
+    sessionID: SessionID
+    message: { info: SessionV1.User; parts: SessionV1.Part[] }
+    metadata?: Record<string, unknown>
+  }) => Effect.Effect<SessionV1.User>
   readonly create: (input: {
     sessionID: SessionID
     agent: string
@@ -176,6 +181,56 @@ const layer = Layer.effect(
         model: input.model,
         outputTokenMax: flags.outputTokenMax,
       })
+    })
+
+    const replayUser = Effect.fn("SessionCompaction.replayUser")(function* (input: {
+      sessionID: SessionID
+      message: { info: SessionV1.User; parts: SessionV1.Part[] }
+      metadata?: Record<string, unknown>
+    }) {
+      const original = input.message.info
+      const replay = yield* session.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: input.sessionID,
+        time: { created: Date.now() },
+        agent: original.agent,
+        model: original.model,
+        format: original.format,
+        tools: original.tools,
+        system: original.system,
+      })
+      const parts = input.message.parts
+        .filter((part) => part.type !== "compaction")
+        .map((part) =>
+          part.type === "file" && MessageV2.isMedia(part.mime)
+            ? { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
+            : part,
+        )
+      for (const part of parts) {
+        yield* session.updatePart({
+          ...part,
+          ...(part.type === "text" && input.metadata
+            ? { metadata: { ...part.metadata, ...input.metadata } }
+            : {}),
+          id: PartID.ascending(),
+          messageID: replay.id,
+          sessionID: input.sessionID,
+        })
+      }
+      if (input.metadata && !parts.some((part) => part.type === "text")) {
+        // 空文本只承载持久化 replay 标记，不改变模型看到的原请求内容。
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: replay.id,
+          sessionID: input.sessionID,
+          type: "text",
+          text: "",
+          synthetic: true,
+          metadata: input.metadata,
+        })
+      }
+      return replay
     })
 
     const estimate = Effect.fn("SessionCompaction.estimate")(function* (input: {
@@ -430,31 +485,7 @@ const layer = Layer.effect(
 
       if (result === "continue" && input.auto) {
         if (replay) {
-          const original = replay.info
-          const replayMsg = yield* session.updateMessage({
-            id: MessageID.ascending(),
-            role: "user",
-            sessionID: input.sessionID,
-            time: { created: Date.now() },
-            agent: original.agent,
-            model: original.model,
-            format: original.format,
-            tools: original.tools,
-            system: original.system,
-          })
-          for (const part of replay.parts) {
-            if (part.type === "compaction") continue
-            const replayPart =
-              part.type === "file" && MessageV2.isMedia(part.mime)
-                ? { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
-                : part
-            yield* session.updatePart({
-              ...replayPart,
-              id: PartID.ascending(),
-              messageID: replayMsg.id,
-              sessionID: input.sessionID,
-            })
-          }
+          yield* replayUser({ sessionID: input.sessionID, message: replay })
         }
 
         if (!replay) {
@@ -548,6 +579,7 @@ const layer = Layer.effect(
       isOverflow,
       prune,
       process: processCompaction,
+      replayUser,
       create,
     })
   }),

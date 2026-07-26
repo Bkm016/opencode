@@ -526,6 +526,16 @@ describe("transcript / grep", () => {
     entries.forEach((e, i) => expect(e.line).toBe(i))
   })
 
+  test("formats consecutive transcript sources once", () => {
+    const u1 = user("first line\nsecond line")
+    const a1 = assistant(u1.info.id, "done", { finish: "stop" })
+    const messages = [u1, a1]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    const entries = SessionChunk.transcript({ messages, chunks: [chunk] })
+
+    expect(SessionChunk.formatTranscript(entries)).toBe("0 USER: first line\n1: second line\n2 ASSISTANT: done")
+  })
+
   test("grep is case-insensitive fixed-string with head limit and chunk filter", () => {
     const u1 = user("Find STOP_DETAILS here")
     const a1 = assistant(u1.info.id, "done", { finish: "stop" })
@@ -542,6 +552,7 @@ describe("transcript / grep", () => {
     })
     expect(hits).toHaveLength(1)
     expect(hits[0]!.chunk.display_id).toBe(c1.display_id)
+    expect(hits[0]!.context.some((entry) => entry.line === hits[0]!.line)).toBe(false)
 
     const scoped = SessionChunk.grep({
       messages,

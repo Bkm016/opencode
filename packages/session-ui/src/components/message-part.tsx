@@ -2322,26 +2322,38 @@ function historySourceLabel(source: HistorySource | undefined, i18n: ReturnType<
   return i18n.t("ui.historyTool.source.shell")
 }
 
-function parseHistoryLine(raw: string): HistoryLine {
+function parseHistoryLine(raw: string, previousSource?: HistorySource): HistoryLine {
   const trimmed = raw.replace(/^\s+/, "")
   const match = trimmed.match(/^(\d+)\s+([A-Z_]+):\s?(.*)$/)
-  if (!match) return { text: trimmed }
-  const source = match[2]!
-  if (!HISTORY_SOURCE_RE.test(source)) return { text: trimmed }
-  return {
-    line: Number(match[1]),
-    source: source as HistorySource,
-    text: match[3] ?? "",
+  if (match) {
+    const source = match[2]!
+    if (!HISTORY_SOURCE_RE.test(source)) return { text: trimmed }
+    return {
+      line: Number(match[1]),
+      source: source as HistorySource,
+      text: match[3] ?? "",
+    }
   }
+  const compact = previousSource ? trimmed.match(/^(\d+):\s?(.*)$/) : undefined
+  if (compact) return { line: Number(compact[1]), source: previousSource, text: compact[2] ?? "" }
+  return { text: trimmed }
+}
+
+function parseHistoryLines(rows: string[]) {
+  const lines: HistoryLine[] = []
+  let source: HistorySource | undefined
+  for (const row of rows) {
+    const parsed = parseHistoryLine(row, source)
+    if (parsed.source) source = parsed.source
+    if (!parsed.source && parsed.text.trim() === "") continue
+    lines.push(parsed)
+  }
+  return lines
 }
 
 function parseHistoryListOutput(output: string | undefined): HistoryLine[] | undefined {
   if (!output) return
-  const lines = output.split("\n").flatMap((row) => {
-    const parsed = parseHistoryLine(row)
-    if (!parsed.source && parsed.text.trim() === "") return []
-    return [parsed]
-  })
+  const lines = parseHistoryLines(output.split("\n"))
   return lines.length > 0 ? lines : undefined
 }
 
@@ -2358,7 +2370,7 @@ function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | 
     const contextStart = rows.findIndex((row) => row.trim() === "context:")
     const context =
       contextStart >= 0
-        ? rows.slice(contextStart + 1).map((row) => parseHistoryLine(row))
+        ? parseHistoryLines(rows.slice(contextStart + 1))
         : []
     hits.push({
       chunk: header[1]!,
@@ -2393,6 +2405,7 @@ function HistoryToolOutput(props: {
 }) {
   const i18n = useI18n()
   const [copied, setCopied] = createSignal(false)
+  const [view, setView] = createSignal<"formatted" | "raw">("formatted")
   const handleCopy = async () => {
     if (!props.text) return
     if (await writeClipboard(props.text)) {
@@ -2403,20 +2416,50 @@ function HistoryToolOutput(props: {
 
   return (
     <div data-component="history-output">
-      <div data-slot="history-copy">
-        <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-          <IconButtonV2
-            icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-            size="normal"
-            variant="ghost-muted"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={handleCopy}
-            aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-          />
-        </TooltipV2>
+      <div data-slot="history-toolbar">
+        <div data-slot="history-view-switch" role="group" aria-label={i18n.t("ui.historyTool.view.ariaLabel")}>
+          <button
+            type="button"
+            data-active={view() === "formatted"}
+            aria-pressed={view() === "formatted"}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              setView("formatted")
+            }}
+          >
+            {i18n.t("ui.historyTool.view.formatted")}
+          </button>
+          <button
+            type="button"
+            data-active={view() === "raw"}
+            aria-pressed={view() === "raw"}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              setView("raw")
+            }}
+          >
+            {i18n.t("ui.historyTool.view.raw")}
+          </button>
+        </div>
+        <div data-slot="history-copy">
+          <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+            <IconButtonV2
+              icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+              size="normal"
+              variant="ghost-muted"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleCopy}
+              aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+            />
+          </TooltipV2>
+        </div>
       </div>
       <div data-slot="history-scroll" data-scrollable tabIndex={0} role="region" aria-label={props.ariaLabel}>
-        {props.children}
+        <Show when={view() === "formatted"} fallback={<pre data-slot="history-raw">{props.text}</pre>}>
+          {props.children}
+        </Show>
       </div>
     </div>
   )
@@ -2501,13 +2544,13 @@ ToolRegistry.register({
                         }
                       >
                         <div data-slot="history-context">
-                          <For each={hit.context}>
-                            {(entry) => (
-                              <HistoryTranscriptLine
-                                entry={{ ...entry, hit: entry.line === hit.line }}
-                                i18n={i18n}
-                              />
-                            )}
+                          <For
+                            each={[
+                              ...hit.context.filter((entry) => entry.line !== hit.line),
+                              { text: hit.text, source: hit.source, line: hit.line, hit: true },
+                            ].sort((a, b) => (a.line ?? 0) - (b.line ?? 0))}
+                          >
+                            {(entry) => <HistoryTranscriptLine entry={entry} i18n={i18n} />}
                           </For>
                         </div>
                       </Show>

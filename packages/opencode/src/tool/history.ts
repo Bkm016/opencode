@@ -17,13 +17,13 @@ const GrepParameters = Schema.Struct({
   chunk_id: Schema.optional(Schema.String).annotate({
     description: "8-character chunk display ID to scope the search",
   }),
-  head_limit: Schema.optional(Schema.Number).annotate({ description: "Max hits to return (default 20)" }),
+  head_limit: Schema.optional(Schema.Number).annotate({ description: "Hits to return (default 20, maximum 20)" }),
 })
 
 const ListParameters = Schema.Struct({
   chunk_id: Schema.String.annotate({ description: "8-character chunk display ID" }),
   offset: Schema.optional(Schema.Number).annotate({ description: "Transcript line offset (default 0)" }),
-  limit: Schema.optional(Schema.Number).annotate({ description: "Max lines to return (default 80)" }),
+  limit: Schema.optional(Schema.Number).annotate({ description: "Lines to return (default 80, maximum 80)" }),
 })
 
 interface GrepMeta {
@@ -66,10 +66,6 @@ function resolveChunk(ctx: ChunkCtx, displayID: string) {
   return ctx.chunks.find((chunk) => chunk.display_id === displayID)
 }
 
-function formatEntry(entry: SessionChunk.TranscriptEntry) {
-  return `${entry.line} ${entry.source}: ${entry.text}`
-}
-
 export const HistoryGrepTool = Tool.define(
   "history_grep",
   Effect.gen(function* () {
@@ -101,21 +97,18 @@ export const HistoryGrepTool = Tool.define(
               pattern: params.pattern,
               caseSensitive: params.case_sensitive,
               chunkID: params.chunk_id,
-              headLimit: params.head_limit ?? 20,
+              headLimit: Math.min(Math.max(Math.trunc(params.head_limit ?? 20), 1), 20),
             })
             if (hits.length === 0) {
               return Effect.succeed({ title: params.pattern, metadata: { matches: 0 }, output: "No matches in folded history." })
             }
             const output = hits
               .map((hit) => {
-                const context = hit.context
-                  .map((entry) => `  ${entry.line} ${entry.source}: ${entry.text}`)
-                  .join("\n")
+                const context = SessionChunk.formatTranscript(hit.context, "  ")
                 return [
                   `chunk ${hit.chunk.display_id} (sequence ${hit.chunk.sequence}) ${hit.source} line ${hit.line}:`,
                   `  ${hit.text}`,
-                  `  context:`,
-                  context,
+                  ...(context ? ["  context:", context] : []),
                 ].join("\n")
               })
               .join("\n\n")
@@ -160,8 +153,8 @@ export const HistoryListTool = Tool.define(
               messages: chunkCtx.messages,
               chunks: [chunk],
             })
-            const offset = params.offset ?? 0
-            const limit = params.limit ?? 80
+            const offset = Math.max(Math.trunc(params.offset ?? 0), 0)
+            const limit = Math.min(Math.max(Math.trunc(params.limit ?? 80), 1), 80)
             const slice = entries.slice(offset, offset + limit)
             if (slice.length === 0) {
               return Effect.succeed({
@@ -178,7 +171,7 @@ export const HistoryListTool = Tool.define(
                 offset,
                 transcript_version: SessionChunk.TRANSCRIPT_VERSION,
               },
-              output: slice.map(formatEntry).join("\n"),
+              output: SessionChunk.formatTranscript(slice),
             })
           }),
         ),

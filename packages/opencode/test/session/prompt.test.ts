@@ -447,6 +447,26 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   return { prompt, run, sessions, chat }
 })
 
+noLLMServer.instance(
+  "system prompt injects the persisted todo list",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, chat } = yield* boot()
+      const todo = yield* Todo.Service
+      yield* seed(chat.id)
+      const todos: Todo.Info[] = [
+        { content: "inspect history output", status: "completed", priority: "high" },
+        { content: "resume active work", status: "in_progress", priority: "high" },
+      ]
+      yield* todo.update({ sessionID: chat.id, todos })
+
+      const system = (yield* prompt.systemPrompt(chat.id)).join("\n")
+      expect(system).toContain("<todo-list>")
+      expect(system).toContain(JSON.stringify(todos))
+    }),
+  { config: cfg },
+)
+
 // Loop semantics
 
 noLLMServer.instance(

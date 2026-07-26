@@ -15,7 +15,7 @@ export * as SessionChunk from "./chunk"
 
 export type Chunk = SessionV1.ChunkMeta
 
-export const TRANSCRIPT_VERSION = 1
+export const TRANSCRIPT_VERSION = 2
 
 const DISPLAY_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789"
 
@@ -404,6 +404,17 @@ export type TranscriptEntry = {
   text: string
 }
 
+/** 连续同源行只标注一次来源，同时保留每行的稳定 transcript 偏移。 */
+export function formatTranscript(entries: TranscriptEntry[], indent = "") {
+  return entries
+    .map((entry, index) => {
+      const previous = entries[index - 1]
+      const prefix = !previous || previous.source !== entry.source ? `${entry.line} ${entry.source}:` : `${entry.line}:`
+      return `${indent}${prefix} ${entry.text}`
+    })
+    .join("\n")
+}
+
 function normalize(text: string) {
   return text
     .replace(/\r\n/g, "\n")
@@ -482,7 +493,7 @@ export function grep(input: {
     const haystack = input.caseSensitive ? entry.text : entry.text.toLowerCase()
     if (!haystack.includes(needle)) continue
     const start = Math.max(0, entry.line - 2)
-    const context = entries.slice(start, entry.line + 3)
+    const context = [...entries.slice(start, entry.line), ...entries.slice(entry.line + 1, entry.line + 3)]
     hits.push({ ...entry, context })
     if (hits.length >= (input.headLimit ?? 20)) break
   }

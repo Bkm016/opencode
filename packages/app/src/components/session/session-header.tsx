@@ -254,7 +254,7 @@ export function SessionHeader() {
       <Show when={rightMount()}>
         {(mount) => (
           <Portal mount={mount()}>
-              <div class="flex items-center gap-2">
+              <div data-titlebar-session-header="true" class="flex items-center gap-2">
                 <Show when={projectDirectory() && isDesktop()}>
                   <div class="flex items-center">
                     <Show

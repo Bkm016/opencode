@@ -49,7 +49,16 @@ export type TitlebarUpdate = {
 
 export function useTitlebarRightMount() {
   const [mount, setMount] = createSignal<HTMLElement | null>(null)
-  onMount(() => setMount(document.getElementById("opencode-titlebar-right")))
+  onMount(() => {
+    const element = document.getElementById("opencode-titlebar-right")
+    if (!element) return
+    setMount(element)
+    queueMicrotask(() => {
+      // Route transitions can briefly leave two SessionHeader instances alive; keep the latest owner in the shared portal.
+      const headers = [...element.querySelectorAll('[data-titlebar-session-header="true"]')]
+      headers.slice(0, -1).forEach((child) => child.remove())
+    })
+  })
   return mount
 }
 

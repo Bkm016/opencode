@@ -8,6 +8,7 @@ import {
   closestCenter,
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
@@ -38,6 +39,9 @@ export const SidebarContent = (props: {
   let rail: HTMLDivElement | undefined
   let selection: HTMLDivElement | undefined
   let frame: number | undefined
+  let restoreFrame: number | undefined
+  let scrollTop = 0
+  let pendingProjectScroll: { project: string; top: number } | undefined
 
   const moveSelection = () => {
     if (frame !== undefined) cancelAnimationFrame(frame)
@@ -74,13 +78,28 @@ export const SidebarContent = (props: {
   }
 
   createEffect(() => {
-    props.currentProject()?.worktree
+    const currentProject = props.currentProject()?.worktree
     props.projects()
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
+    const pending = pendingProjectScroll?.project === base64Encode(currentProject ?? "") ? pendingProjectScroll : undefined
+    const top = pending?.top ?? scrollTop
+    restoreFrame = requestAnimationFrame(() => {
+      if (!rail) return
+      // 路由更新会重置滚动容器，连续两帧恢复点击项目时的位置。
+      rail.scrollTop = top
+      restoreFrame = requestAnimationFrame(() => {
+        restoreFrame = undefined
+        if (!rail) return
+        rail.scrollTop = top
+        if (pending) pendingProjectScroll = undefined
+      })
+    })
     moveSelection()
   })
 
   onCleanup(() => {
     if (frame !== undefined) cancelAnimationFrame(frame)
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
     if (selection) gsap.killTweensOf(selection)
   })
 
@@ -110,7 +129,16 @@ export const SidebarContent = (props: {
                   rail = element
                 }}
                 class="h-full w-full flex flex-col items-center gap-3 px-3 py-3 overflow-y-auto no-scrollbar"
-                onScroll={moveSelection}
+                onPointerDown={(event) => {
+                  const target = event.target as HTMLElement
+                  const project = target.closest<HTMLElement>('[data-action="project-switch"]')?.dataset.project
+                  if (!project) return
+                  pendingProjectScroll = { project, top: event.currentTarget.scrollTop }
+                }}
+                onScroll={(event) => {
+                  scrollTop = event.currentTarget.scrollTop
+                  moveSelection()
+                }}
               >
                 <SortableProvider ids={props.projects().map((p) => p.worktree)}>
                   <For each={props.projects()}>{(project) => props.renderProject(project)}</For>

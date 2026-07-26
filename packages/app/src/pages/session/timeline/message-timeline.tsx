@@ -683,6 +683,7 @@ export function MessageTimeline(props: {
     editing: false,
     menuOpen: false,
     pendingRename: false,
+    simulatingOverflow: false,
   })
   let titleRef: HTMLInputElement | undefined
 
@@ -807,6 +808,31 @@ export function MessageTimeline(props: {
     }
   }
 
+  const simulateOverflow = async () => {
+    const id = sessionID()
+    if (!id || title.simulatingOverflow) return
+    setTitle("simulatingOverflow", true)
+    try {
+      const triggered = await sdk()
+        .client.session.simulateOverflow({ sessionID: id })
+        .then((result) => result.data)
+      showToast({
+        variant: triggered ? "success" : "error",
+        title: language.t(
+          triggered ? "session.overflowTest.toast.success.title" : "session.overflowTest.toast.inactive.title",
+        ),
+      })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: language.t("session.overflowTest.toast.failed.title"),
+        description: errorMessage(err),
+      })
+    } finally {
+      setTitle("simulatingOverflow", false)
+    }
+  }
+
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
       const data = (err as { data?: { message?: string } }).data
@@ -845,6 +871,7 @@ export function MessageTimeline(props: {
           editing: false,
           menuOpen: false,
           pendingRename: false,
+          simulatingOverflow: false,
         }),
       { defer: true },
     ),
@@ -1789,6 +1816,14 @@ export function MessageTimeline(props: {
                               </DropdownMenu.SubContent>
                             </DropdownMenu.Portal>
                           </DropdownMenu.Sub>
+                          <DropdownMenu.Item
+                            onSelect={() => void simulateOverflow()}
+                            disabled={title.simulatingOverflow}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {language.t("session.overflowTest.action")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
                           <Show when={!parentID()}>
                             <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
                               <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>

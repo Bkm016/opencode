@@ -903,6 +903,10 @@ export const dict = {
   "session.export.toast.request.failed.title": "Failed to export request",
   "session.export.toast.response.success.title": "Response exported",
   "session.export.toast.response.failed.title": "Failed to export response",
+  "session.overflowTest.action": "Simulate overflow",
+  "session.overflowTest.toast.success.title": "Overflow compaction triggered",
+  "session.overflowTest.toast.inactive.title": "No model turn is currently running",
+  "session.overflowTest.toast.failed.title": "Failed to simulate overflow",
 
   "lsp.tooltip.none": "No LSP servers",
   "lsp.label.connected": "{{count}} LSP",

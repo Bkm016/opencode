@@ -211,7 +211,7 @@ const layer = Layer.effect(
         yield* session.updatePart({
           ...part,
           ...(part.type === "text" && input.metadata
-            ? { metadata: { ...part.metadata, ...input.metadata } }
+            ? { metadata: { ...("metadata" in part ? part.metadata : undefined), ...input.metadata } }
             : {}),
           id: PartID.ascending(),
           messageID: replay.id,

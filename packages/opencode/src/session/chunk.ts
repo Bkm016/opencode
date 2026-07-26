@@ -305,7 +305,6 @@ export function project(input: {
     parts: [{ id: "checkpoint" as any, messageID: "checkpoint" as any, sessionID, type: "text", text: checkpoint } as any],
   } as SessionV1.WithParts)
 
-  let lastEnd: string | undefined
   for (const chunk of selection.visible) {
     const region = chunkRegion(messages, chunk)
     // 收集区间内全部真实 user 原文
@@ -347,13 +346,18 @@ export function project(input: {
         } as any],
       } as SessionV1.WithParts)
     }
-    lastEnd = chunk.end_message_id
   }
+  // active tail 永远从最后一个已关闭 chunk 之后开始；即使可见预算为 0，也不能
+  // 让 archived chunks 或持久化 summary 重新泄漏回 provider 上下文。
+  const lastEnd = [...selection.visible, ...selection.archived]
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1)?.end_message_id
   const tailIndex = lastEnd ? messages.findIndex((msg) => msg.info.id === lastEnd) + 1 : 0
   // tail 中跳过纯 compaction checkpoint 消息（带 chunks 元数据、无真实用户文本），
   // 但保留新 /compact 命令创建的 compaction 消息（无 chunks），
   // 否则 latest() 无法拾取 compaction task，/compact 分支永远不触发。
   const tail = messages.slice(tailIndex).filter((msg) => {
+    if (msg.info.role === "assistant" && msg.info.summary) return false
     if (msg.info.role !== "user") return true
     const compaction = msg.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
     if (!compaction) return true

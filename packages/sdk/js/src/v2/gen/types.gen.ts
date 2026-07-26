@@ -10379,6 +10379,36 @@ export type SessionAbortResponses = {
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
 
+export type SessionSimulateOverflowData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/simulate-overflow"
+}
+
+export type SessionSimulateOverflowErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type SessionSimulateOverflowError = SessionSimulateOverflowErrors[keyof SessionSimulateOverflowErrors]
+
+export type SessionSimulateOverflowResponses = {
+  /**
+   * Whether an active model turn was forced to overflow
+   */
+  200: boolean
+}
+
+export type SessionSimulateOverflowResponse = SessionSimulateOverflowResponses[keyof SessionSimulateOverflowResponses]
+
 export type SessionRetryData = {
   body?: never
   path: {

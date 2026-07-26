@@ -509,7 +509,7 @@ it.instance("chunk compaction seals an empty result and accepts the next prompt"
   }),
 )
 
-it.instance("chunk compaction replays an overflowing prompt and continues", () =>
+it.instance("chunk compaction retries an overflowing prompt in place", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -536,7 +536,7 @@ it.instance("chunk compaction replays an overflowing prompt and continues", () =
     )
 
     expect(yield* llm.hits).toHaveLength(2)
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(1)
     expect(result.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "text", text: "continued after chunk compaction" }),
@@ -545,7 +545,143 @@ it.instance("chunk compaction replays an overflowing prompt and continues", () =
   }),
 )
 
-it.instance("chunk compaction falls back to model compaction when replay still overflows", () =>
+it.instance("chunk compaction can be forced while the model is streaming", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.push(
+      reply().text("partial current work").hang().item(),
+      reply().text("continued after forced overflow").stop().item(),
+    )
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "keep working through overflow" }],
+    })
+    const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+
+    yield* llm.wait(1)
+    yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        return messages.some((message) =>
+          message.parts.some((part) => part.type === "text" && part.text === "partial current work"),
+        )
+          ? true
+          : undefined
+      }),
+      "timed out waiting for partial assistant output",
+    )
+    expect(yield* prompt.forceOverflow(chat.id)).toBe(true)
+
+    yield* Fiber.join(run)
+    const result = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        return messages.findLast(
+          (message) =>
+            message.info.role === "assistant" &&
+            message.parts.some((part) => part.type === "text" && part.text === "continued after forced overflow"),
+        )
+      }),
+      "timed out waiting for forced overflow continuation",
+    )
+    const hits = yield* llm.hits
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const continuation = messages.find(
+      (message) =>
+        message.info.role === "user" &&
+        message.parts.some(
+          (part) => part.type === "text" && part.metadata?.chunk_compaction_replay === true,
+        ),
+    )
+    const originalAssistant = messages.find(
+      (message) =>
+        message.info.role === "assistant" &&
+        message.parts.some((part) => part.type === "text" && part.text === "partial current work"),
+    )
+    expect(hits).toHaveLength(2)
+    const requestMessages = hits[1]?.body.messages
+    expect(Array.isArray(requestMessages)).toBe(true)
+    if (!Array.isArray(requestMessages)) throw new Error("Expected provider request messages")
+    expect(JSON.stringify(requestMessages)).toContain("partial current work")
+    expect(JSON.stringify(requestMessages.at(-1))).toContain("Continue the interrupted work")
+    expect(continuation).toBeDefined()
+    if (!continuation) throw new Error("Expected chunk continuation")
+    expect(continuation.info.id < result.info.id).toBe(true)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role !== "assistant") throw new Error("Expected assistant continuation")
+    expect(result.info.parentID).toBe(continuation.info.id)
+    expect(originalAssistant?.info.role).toBe("assistant")
+    if (originalAssistant?.info.role !== "assistant") throw new Error("Expected original assistant")
+    expect(originalAssistant.info.error).toBeUndefined()
+    expect(result.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "continued after forced overflow" }),
+      ]),
+    )
+    expect(yield* prompt.forceOverflow(chat.id)).toBe(false)
+  }),
+)
+
+it.instance("forced chunk overflow immediately aborts a running tool", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const registry = yield* ToolRegistry.Service
+    const { read } = yield* registry.named()
+    const { ready, aborted, restore } = yield* hangUntilAborted(read)
+    yield* restore
+
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* llm.push(
+      reply().tool("read", { filePath: "C:/forced-overflow.txt" }).item(),
+      reply().text("continued after tool overflow").stop().item(),
+    )
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "read a file" }],
+    })
+    const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+
+    yield* awaitWithTimeout(Deferred.await(ready), "timed out waiting for read tool to start", "10 seconds")
+    expect(yield* prompt.forceOverflow(chat.id)).toBe(true)
+    yield* awaitWithTimeout(Deferred.await(aborted), "timed out waiting for read tool abort", "10 seconds")
+
+    yield* Fiber.join(run)
+    const result = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        return messages.findLast(
+          (message) =>
+            message.info.role === "assistant" &&
+            message.parts.some((part) => part.type === "text" && part.text === "continued after tool overflow"),
+        )
+      }),
+      "timed out waiting for tool overflow continuation",
+    )
+    expect(yield* llm.hits).toHaveLength(2)
+    expect(result.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "continued after tool overflow" }),
+      ]),
+    )
+  }),
+)
+
+it.instance("chunk compaction preserves current work when the compacted retry still overflows", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -556,8 +692,6 @@ it.instance("chunk compaction falls back to model compaction when replay still o
     const chat = yield* sessions.create({ title: "Pinned" })
     yield* llm.error(413, { error: { message: "request entity too large" } })
     yield* llm.error(413, { error: { message: "request entity too large" } })
-    yield* llm.text("model fallback summary")
-    yield* llm.text("continued after model fallback")
     yield* prompt.prompt({
       sessionID: chat.id,
       agent: "build",
@@ -568,19 +702,18 @@ it.instance("chunk compaction falls back to model compaction when replay still o
     const result = yield* prompt.loop({ sessionID: chat.id })
     const messages = yield* sessions.messages({ sessionID: chat.id })
     const summaries = messages.filter((message) => message.info.role === "assistant" && message.info.summary)
+    const requests = messages.filter(
+      (message) =>
+        message.info.role === "user" &&
+        message.parts.some((part) => part.type === "text" && part.text === "finish after fallback"),
+    )
 
-    expect(yield* llm.hits).toHaveLength(4)
-    expect(summaries).toHaveLength(2)
-    expect(summaries.at(-1)?.parts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "text", text: "model fallback summary" }),
-      ]),
-    )
-    expect(result.parts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "text", text: "continued after model fallback" }),
-      ]),
-    )
+    expect(yield* llm.hits).toHaveLength(2)
+    expect(summaries).toHaveLength(1)
+    expect(requests).toHaveLength(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role !== "assistant") throw new Error("Expected assistant result")
+    expect(JSON.stringify(result.info.error)).toContain("当前工作已完整保留")
   }),
 )
 

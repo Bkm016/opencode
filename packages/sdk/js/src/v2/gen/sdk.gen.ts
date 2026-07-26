@@ -248,6 +248,8 @@ import type {
   SessionShareResponses,
   SessionShellErrors,
   SessionShellResponses,
+  SessionSimulateOverflowErrors,
+  SessionSimulateOverflowResponses,
   SessionStatusErrors,
   SessionStatusResponses,
   SessionSummarizeErrors,
@@ -4055,6 +4057,42 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionAbortResponses, SessionAbortErrors, ThrowOnError>({
       url: "/session/{sessionID}/abort",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Simulate session overflow
+   *
+   * Force the active model turn through the real context-overflow compaction path for testing.
+   */
+  public simulateOverflow<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionSimulateOverflowResponses,
+      SessionSimulateOverflowErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/simulate-overflow",
       ...options,
       ...params,
     })

@@ -890,7 +890,7 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
-  test("forwards partial bash output for aborted tool calls", async () => {
+  test("forwards partial bash output as an error for aborted tool calls", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"
     const output = [
@@ -958,11 +958,59 @@ describe("session.message-v2.toModelMessage", () => {
             type: "tool-result",
             toolCallId: "call-1",
             toolName: "bash",
-            output: { type: "text", value: output },
+            output: { type: "error-text", value: `${output}\n\nTool execution aborted` },
           },
         ],
       },
     ])
+  })
+
+  test("keeps aborted tool calls with empty output as errors", async () => {
+    const userID = "m-user"
+    const assistantID = "m-assistant"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1"),
+            type: "text",
+            text: "run tool",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-1",
+            tool: "bash",
+            state: {
+              status: "error",
+              input: { command: "Start-Sleep -Seconds 5" },
+              error: "Tool execution aborted",
+              metadata: { interrupted: true, output: "" },
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model)
+    expect(messages.at(-1)).toStrictEqual({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "bash",
+          output: { type: "error-text", value: "Tool execution aborted" },
+        },
+      ],
+    })
   })
 
   test("filters assistant messages with non-abort errors", async () => {

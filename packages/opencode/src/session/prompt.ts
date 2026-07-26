@@ -95,6 +95,7 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly forceOverflow: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly systemPrompt: (
@@ -1270,11 +1271,38 @@ const layer = Layer.effect(
       } satisfies SessionV1.TextPart)
     })
 
+    const createChunkContinuation = Effect.fn("SessionPrompt.createChunkContinuation")(function* (
+      sessionID: SessionID,
+      user: SessionV1.User,
+    ) {
+      const continuation = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID,
+        time: { created: Date.now() },
+        agent: user.agent,
+        model: user.model,
+        format: user.format,
+        tools: user.tools,
+        system: user.system,
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: continuation.id,
+        sessionID,
+        type: "text",
+        text: "Continue the interrupted work from the preserved active context.",
+        synthetic: true,
+        metadata: { [CHUNK_COMPACTION_REPLAY]: true },
+      })
+      return continuation
+    })
+
     // chunk 压缩对齐 model 压缩：关闭边界后立刻写 summary assistant + 设
     // tail_start_id。投影走 filterCompacted，模型从持久化的 assistant 消息读到折叠内容。
     const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
       sessionID: SessionID,
-      options?: { force?: boolean },
+      options?: { force?: boolean; endBefore?: MessageID },
     ) {
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const compactionMsgWithChunks = raw.findLast((msg) =>
@@ -1285,12 +1313,18 @@ const layer = Layer.effect(
       )
       const existing = compactionPartWithChunks?.chunks ?? []
       // closeChunk 每次只关开放区间内的下一条终止边界；排除尚未写入 chunks 的 /compact 命令消息。
-      const compactCmdMsg = raw.findLast((msg) =>
-        msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks === undefined),
+      const compactCmdMsg = raw.findLast(
+        (msg): msg is SessionV1.WithParts & { info: SessionV1.User } =>
+          msg.info.role === "user" &&
+          msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks === undefined),
       )
-      const region = compactCmdMsg
-        ? raw.filter((msg) => msg.info.id !== compactCmdMsg.info.id)
-        : raw
+      // overflow 当前 provider turn 必须留在 active tail；只允许关闭它之前已经
+      // 终止的工作，不能因本轮恰好写入 finish 就把正在恢复的现场折叠掉。
+      const region = raw.filter(
+        (msg) =>
+          msg.info.id !== compactCmdMsg?.info.id &&
+          (!options?.endBefore || msg.info.id < options.endBefore),
+      )
       // 循环关闭所有可终止边界，避免长历史一次 compact 压成单个大 chunk。
       const allChunks = [...existing]
       while (true) {
@@ -1421,8 +1455,10 @@ const layer = Layer.effect(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
           // 悬空压缩恢复时，summary 会晚于已经排队的真实 user，不能把它当成该 user 的回复。
+          const lastUserIndex = msgs.findIndex((message) => message.info.id === lastUser.id)
+          const lastAssistantIndex = msgs.findIndex((message) => message.info.id === lastAssistant?.id)
           const compactionSummaryPrecedesLastUser =
-            lastAssistant?.summary === true && lastAssistant.parentID < lastUser.id
+            lastAssistant?.summary === true && lastAssistantIndex >= 0 && lastAssistantIndex < lastUserIndex
 
           // 安全边界：last assistant 普通完成且无待处理 tool calls
           const assistantNormallyFinished =
@@ -1820,17 +1856,16 @@ const layer = Layer.effect(
                   (part) => part.type === "text" && part.metadata?.[CHUNK_COMPACTION_REPLAY] === true,
                 )
                 if (chunkReplay) {
-                  // chunk replay 仍溢出时转入 model fallback，不能再次 replay 同一请求形成死循环。
-                  yield* compaction.create({
-                    sessionID,
-                    agent: lastUser.agent,
-                    model: lastUser.model,
-                    auto: true,
-                    overflow: true,
-                  })
-                  return "continue" as const
+                  // active tail 自身仍超限时不能用 model compaction 丢弃当前 tool / assistant
+                  // 过程；保留现场并停止，等待用户缩短输入或切换更大上下文模型。
+                  handle.message.error = new SessionV1.ContextOverflowError({
+                    message: "Chunk 压缩后上下文仍超过模型限制；当前工作已完整保留，请缩短输入或切换更大上下文模型。",
+                  }).toObject()
+                  handle.message.finish = "error"
+                  yield* sessions.updateMessage(handle.message)
+                  return "break" as const
                 }
-                const persisted = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                const persisted = yield* persistChunkBoundary(sessionID, { force: true, endBefore: msg.id }).pipe(
                   Effect.map(() => true),
                   Effect.catchDefect((defect: unknown) =>
                     Effect.gen(function* () {
@@ -1840,11 +1875,11 @@ const layer = Layer.effect(
                   ),
                 )
                 if (!persisted || !lastUserMsg) return "break" as const
-                yield* compaction.replayUser({
-                  sessionID,
-                  message: { info: lastUser, parts: lastUserMsg.parts },
-                  metadata: { [CHUNK_COMPACTION_REPLAY]: true },
-                })
+                // 已完整输出的 final response 不需要重跑；本次只为后续请求释放历史预算。
+                if (handle.message.finish && handle.message.finish !== "tool-calls") return "break" as const
+                // 与 model 压缩一致：checkpoint 后创建隐藏 continuation turn，避免
+                // Timeline 把续跑 assistant 重新归到压缩前的原 user。
+                yield* createChunkContinuation(sessionID, lastUser)
                 return "continue" as const
               }
               yield* compaction.create({
@@ -1875,6 +1910,36 @@ const layer = Layer.effect(
         Effect.ensuring(Effect.sync(() => openProjectDirs.delete(input.sessionID))),
       )
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), run)
+    })
+
+    const forceOverflow = Effect.fn("SessionPrompt.forceOverflow")(function* (sessionID: SessionID) {
+      const busy = yield* state.assertNotBusy(sessionID).pipe(
+        Effect.as(false),
+        Effect.catchTag("SessionBusyError", () => Effect.succeed(true)),
+      )
+      if (!busy) return false
+
+      // 直接中断 Runner，复用正常取消的 transport / tool abort 与持久化 cleanup；
+      // 随后把已中断 assistant 留在 active tail，仅压缩它之前已完成的工作。
+      yield* state.cancel(sessionID)
+      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const currentAssistant = raw.findLast(
+        (message): message is SessionV1.WithParts & { info: SessionV1.Assistant } =>
+          message.info.role === "assistant" && message.info.summary !== true,
+      )
+      const currentUser = raw.findLast(
+        (message): message is SessionV1.WithParts & { info: SessionV1.User } =>
+          message.info.role === "user" && !message.parts.some((part) => part.type === "compaction"),
+      )
+      if (!currentAssistant || !currentUser) return false
+
+      if (currentAssistant.info.error && SessionV1.AbortedError.isInstance(currentAssistant.info.error)) {
+        yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined })
+      }
+      yield* persistChunkBoundary(sessionID, { force: true, endBefore: currentAssistant.info.id }).pipe(Effect.orDie)
+      yield* createChunkContinuation(sessionID, currentUser.info)
+      yield* loop({ sessionID }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+      return true
     })
 
     // 唤醒 active Goal：空 session 或最后已完成 assistant 且无 pending user 时插入 synthetic。
@@ -2036,6 +2101,7 @@ const layer = Layer.effect(
 
     return Service.of({
       cancel,
+      forceOverflow,
       prompt,
       loop,
       systemPrompt,

@@ -90,6 +90,7 @@ export const SessionPaths = {
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
+  simulateOverflow: `${root}/:sessionID/simulate-overflow`,
   retry: `${root}/:sessionID/retry`,
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
@@ -262,6 +263,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.abort",
             summary: "Abort session",
             description: "Abort an active session and stop any ongoing AI processing or command execution.",
+          }),
+        ),
+        HttpApiEndpoint.post("simulateOverflow", SessionPaths.simulateOverflow, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Whether an active model turn was forced to overflow"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.simulateOverflow",
+            summary: "Simulate session overflow",
+            description: "Force the active model turn through the real context-overflow compaction path for testing.",
           }),
         ),
         HttpApiEndpoint.post("retry", SessionPaths.retry, {

@@ -243,6 +243,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* retrySvc.wake(ctx.params.sessionID, statusSvc.set(ctx.params.sessionID, { type: "busy" }))
     })
 
+    const simulateOverflow = Effect.fn("SessionHttpApi.simulateOverflow")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      return yield* promptSvc.forceOverflow(ctx.params.sessionID)
+    })
+
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof InitPayload.Type
@@ -433,6 +439,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("simulateOverflow", simulateOverflow)
       .handle("retry", retry)
       .handle("init", init)
       .handle("share", share)

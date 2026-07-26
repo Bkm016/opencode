@@ -846,6 +846,10 @@ export const dict = {
   "session.export.toast.request.failed.title": "导出请求失败",
   "session.export.toast.response.success.title": "响应已导出",
   "session.export.toast.response.failed.title": "导出响应失败",
+  "session.overflowTest.action": "模拟 Overflow",
+  "session.overflowTest.toast.success.title": "已触发 Overflow 压缩",
+  "session.overflowTest.toast.inactive.title": "当前没有正在运行的模型",
+  "session.overflowTest.toast.failed.title": "触发 Overflow 失败",
 
   "lsp.tooltip.none": "没有 LSP 服务器",
   "lsp.label.connected": "{{count}} LSP",

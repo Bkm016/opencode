@@ -810,6 +810,10 @@ export const dict = {
   "session.share.action.view": "檢視",
   "session.share.copy.copied": "已複製",
   "session.share.copy.copyLink": "複製連結",
+  "session.overflowTest.action": "模擬 Overflow",
+  "session.overflowTest.toast.success.title": "已觸發 Overflow 壓縮",
+  "session.overflowTest.toast.inactive.title": "目前沒有正在執行的模型",
+  "session.overflowTest.toast.failed.title": "觸發 Overflow 失敗",
 
   "lsp.tooltip.none": "沒有 LSP 伺服器",
   "lsp.label.connected": "{{count}} LSP",

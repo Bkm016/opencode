@@ -733,11 +733,11 @@ const layer = Layer.effect(
       })
 
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
+        ctx.needsCompaction = false
         yield* Effect.logInfo("process", {
           "session.id": input.sessionID,
           messageID: input.assistantMessage.id,
         })
-        ctx.needsCompaction = false
         const cfg = yield* config.get()
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
         repetitionRetry = false

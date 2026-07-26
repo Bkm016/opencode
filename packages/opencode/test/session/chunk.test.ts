@@ -463,6 +463,51 @@ describe("project", () => {
     expect(tailPart.some((m) => m.info.id === mid.info.id)).toBe(true)
     expect(tailPart.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
   })
+
+  test("archived chunks and checkpoint summaries do not leak into an active tail", () => {
+    const u1 = user("old request")
+    const a1 = assistant(u1.info.id, "old answer", { finish: "stop" })
+    const chunk = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!
+    const holderID = mid()
+    const holder: SessionV1.WithParts = {
+      info: {
+        id: holderID,
+        role: "user",
+        sessionID,
+        agent: "compaction",
+        model: ref,
+        time: { created: Date.now() + seq++ },
+      },
+      parts: [
+        {
+          id: PartID.ascending(),
+          messageID: holderID,
+          sessionID,
+          type: "compaction",
+          auto: true,
+          chunks: [chunk],
+        },
+      ],
+    }
+    const summary = assistant(holderID, "oversized persisted checkpoint", { finish: "stop" })
+    if (summary.info.role !== "assistant") throw new Error("Expected assistant summary")
+    summary.info.summary = true
+    const u2 = user("current request")
+    const active = assistant(u2.info.id, "current work", { finish: "tool-calls", tool: true })
+    const messages = [u1, a1, holder, summary, u2, active]
+    const projected = SessionChunk.project({
+      messages,
+      selection: { visible: [], archived: [chunk], oversize: undefined, tokens: 0 },
+      targetTokens: 20_000,
+      hardTokens: 24_000,
+    })
+
+    expect(projected.some((message) => message.info.id === u1.info.id)).toBe(false)
+    expect(projected.some((message) => message.info.id === holder.info.id)).toBe(false)
+    expect(projected.some((message) => message.info.id === summary.info.id)).toBe(false)
+    expect(projected.some((message) => message.info.id === u2.info.id)).toBe(true)
+    expect(projected.some((message) => message.info.id === active.info.id)).toBe(true)
+  })
 })
 
 describe("transcript / grep", () => {

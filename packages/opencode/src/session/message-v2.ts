@@ -28,6 +28,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "@opencode-ai/core/session/sql"
+import { SessionChunk } from "./chunk"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessageWithCause } from "@/util/error"
@@ -325,27 +326,18 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           }
           if (part.state.status === "error") {
             const output = part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined
-            if (typeof output === "string") {
-              assistantMessage.parts.push({
-                type: ("tool-" + part.tool) as `tool-${string}`,
-                state: "output-available",
-                toolCallId: part.callID,
-                input: part.state.input,
-                output,
-                ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
-                ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
-              })
-            } else {
-              assistantMessage.parts.push({
-                type: ("tool-" + part.tool) as `tool-${string}`,
-                state: "output-error",
-                toolCallId: part.callID,
-                input: part.state.input,
-                errorText: part.state.error,
-                ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
-                ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
-              })
-            }
+            // 中断工具仍按失败结果投影，同时保留已产生的输出供模型恢复现场。
+            const errorText =
+              typeof output === "string" && output.length > 0 ? `${output}\n\n${part.state.error}` : part.state.error
+            assistantMessage.parts.push({
+              type: ("tool-" + part.tool) as `tool-${string}`,
+              state: "output-error",
+              toolCallId: part.callID,
+              input: part.state.input,
+              errorText,
+              ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+              ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
+            })
           }
           // Handle pending/running tool calls to prevent dangling tool_use blocks
           // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
@@ -579,16 +571,36 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
   return filterCompacted(yield* stream(sessionID))
 })
 
+const DEFAULT_CHUNK_TARGET_TOKENS = 20_000
+const DEFAULT_CHUNK_HARD_TOKENS = 24_000
+
 /**
- * 唯一历史投影入口。chunk / model 策略都走 filterCompacted：
- * chunk 在 persistChunkBoundary 时已写入 summary assistant + tail_start_id。
+ * 唯一历史投影入口。model 策略读取持久化 summary；chunk 策略从原始消息按预算
+ * 重建已完成工作，并原样保留最后一个 chunk 之后的 active tail。
  */
 export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (input: {
   sessionID: SessionID
   strategy?: "model" | "chunk"
   chunk?: { target_tokens?: number; hard_tokens?: number }
 }) {
-  return filterCompacted(yield* stream(input.sessionID))
+  const streamed = yield* stream(input.sessionID)
+  if (input.strategy !== "chunk") return filterCompacted(streamed)
+  const messages = [...streamed].reverse()
+  const compaction = messages.findLast((msg) =>
+    msg.parts.some((part): part is CompactionPart => part.type === "compaction" && part.chunks !== undefined),
+  )
+  const part = compaction?.parts.find(
+    (item): item is CompactionPart => item.type === "compaction" && item.chunks !== undefined,
+  )
+  const chunks = part?.chunks ?? []
+  if (chunks.length === 0) return filterCompacted(streamed)
+  const targetTokens = input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS
+  const hardTokens = input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS
+  const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
+  // 单个历史 chunk 的 user 原文超硬上限时保留完整输入，让 provider 明确报告超限，
+  // 禁止在投影层静默截断用户指令。
+  if (selection.oversize) return messages
+  return SessionChunk.project({ messages, selection, targetTokens, hardTokens })
 })
 
 // filterCompacted reorders messages for model consumption

@@ -46,7 +46,9 @@ export function errorMessageWithCause(error: unknown): string {
 
 function describeErrorLayer(error: unknown): string {
   if (error instanceof Error) {
-    return formatNameMessageCode(error.name, error.message, codeOf(error))
+    // Effect TaggedError 的 name/_tag 是判别标签，不应进入面向用户的错误文案。
+    const name = isRecord(error) && error._tag === error.name ? undefined : error.name
+    return formatNameMessageCode(name, error.message, codeOf(error))
   }
 
   if (isRecord(error)) {

@@ -3175,6 +3175,8 @@ ToolRegistry.register({
       <BasicTool
         {...props}
         icon="console"
+        // 运行中的 shell 也展开输出，让长命令的进度可以实时观察。
+        forceOpen={pending()}
         trigger={(open) => (
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">

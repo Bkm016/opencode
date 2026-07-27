@@ -9,6 +9,8 @@ if (viteMetadata && solidPatch.mtimeMs > viteMetadata.mtimeMs) {
   await rm(new URL("../node_modules/.vite", import.meta.url), { recursive: true, force: true })
 }
 
+await $`bun run install-electron`
+
 await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
 
 await $`cd ../opencode && bun script/build-node.ts`

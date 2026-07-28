@@ -1795,9 +1795,20 @@ PART_MAPPING["compaction"] = function CompactionPartDisplay() {
 
 type ChunkSummaryBlock = {
   id: string
-  inputs: string[]
+  inputs: ChunkUserInput[]
   summary: string
   folded?: number
+}
+
+type ChunkUserInput = {
+  text: string
+  reference?: {
+    size?: string
+    lines?: string
+    tokens?: string
+    head?: string
+    tail?: string
+  }
 }
 
 type ParsedChunkSummary = {
@@ -1820,10 +1831,27 @@ function attrValue(attrs: string, name: string) {
   return match?.[1]
 }
 
-function parseUserMessages(body: string) {
+function parseUserMessageBody(body: string): ChunkUserInput {
+  const reference = extractTagged(body, "user-text-reference")[0]
+  if (!reference) return { text: body }
+  const sizeLine = reference.body.split("\n").find((line) => line.trim().startsWith("size:"))?.trim()
+  const metadata = sizeLine?.match(/^size:\s*([^,]+),\s*([^,]+)\s+lines,\s*approximately\s*([^\s]+)\s+tokens/)
+  return {
+    text: "",
+    reference: {
+      size: metadata?.[1],
+      lines: metadata?.[2],
+      tokens: metadata?.[3],
+      head: extractTagged(reference.body, "head")[0]?.body,
+      tail: extractTagged(reference.body, "tail")[0]?.body,
+    },
+  }
+}
+
+function parseUserMessages(body: string): ChunkUserInput[] {
   const tagged = extractTagged(body, "user-message")
-  if (tagged.length > 0) return tagged.map((item) => item.body).filter(Boolean)
-  return body.trim() ? [body.trim()] : []
+  if (tagged.length > 0) return tagged.map((item) => parseUserMessageBody(item.body)).filter((item) => item.text || item.reference)
+  return body.trim() ? [parseUserMessageBody(body.trim())] : []
 }
 
 function parseChunkSummaryText(text: string): ParsedChunkSummary | undefined {
@@ -1859,6 +1887,56 @@ function previewText(value: string, max = 120) {
   const one = value.replace(/\s+/g, " ").trim()
   if (one.length <= max) return one
   return one.slice(0, max - 1) + "…"
+}
+
+function ChunkUserInputDisplay(props: { input: ChunkUserInput }) {
+  const i18n = useI18n()
+  return (
+    <Show
+      when={props.input.reference}
+      fallback={<Markdown text={props.input.text} streaming={false} />}
+    >
+      {(reference) => (
+        <div data-slot="chunk-user-reference">
+          <div data-slot="chunk-user-reference-header">
+            <div data-slot="chunk-user-reference-title">
+              <Icon name="archive" size="small" />
+              <span>{i18n.t("ui.chunkSummary.largeInput")}</span>
+            </div>
+            <div data-slot="chunk-user-reference-meta">
+              <Show when={reference().size}>
+                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.size", { size: value() })}</span>}
+              </Show>
+              <Show when={reference().lines}>
+                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.lines", { count: value() })}</span>}
+              </Show>
+              <Show when={reference().tokens}>
+                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.tokens", { count: value() })}</span>}
+              </Show>
+            </div>
+          </div>
+          <p data-slot="chunk-user-reference-note">{i18n.t("ui.chunkSummary.largeInputNote")}</p>
+          <Show when={reference().head || reference().tail}>
+            <div data-slot="chunk-user-reference-preview">
+              <Show when={reference().head}>
+                <pre data-slot="chunk-user-reference-excerpt">{previewText(reference().head ?? "", 280)}</pre>
+              </Show>
+              <Show when={reference().head && reference().tail}>
+                <div data-slot="chunk-user-reference-ellipsis" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </Show>
+              <Show when={reference().tail}>
+                <pre data-slot="chunk-user-reference-excerpt">{previewText(reference().tail ?? "", 280)}</pre>
+              </Show>
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
+  )
 }
 
 function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string }) {
@@ -1905,7 +1983,13 @@ function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string
               <For each={props.parsed.chunks}>
                 {(chunk) => {
                   const isOpen = () => expanded().includes(chunk.id)
-                  const inputPreview = () => previewText(chunk.inputs.join(" · ") || i18n.t("ui.chunkSummary.noInput"))
+                  const inputPreview = () =>
+                    previewText(
+                      chunk.inputs
+                        .map((input) => (input.reference ? i18n.t("ui.chunkSummary.largeInput") : input.text))
+                        .filter(Boolean)
+                        .join(" · ") || i18n.t("ui.chunkSummary.noInput"),
+                    )
                   const summaryPreview = () =>
                     previewText(chunk.summary || i18n.t("ui.chunkSummary.noSummary"))
                   return (
@@ -1933,8 +2017,8 @@ function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string
                               <div data-slot="chunk-section-list">
                                 <For each={chunk.inputs}>
                                   {(input) => (
-                                    <div data-slot="chunk-user">
-                                      <Markdown text={input} streaming={false} />
+                                    <div data-slot="chunk-user" data-kind={input.reference ? "reference" : "text"}>
+                                      <ChunkUserInputDisplay input={input} />
                                     </div>
                                   )}
                                 </For>

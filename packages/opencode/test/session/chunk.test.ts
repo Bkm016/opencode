@@ -365,7 +365,7 @@ describe("selectVisible", () => {
     expect(seqs.at(-1)).toBe(5)
   })
 
-  test("user text over hard budget marks oversize", () => {
+  test("projects user text over hard budget to a stable reference", () => {
     const bigUser = "汉".repeat(30_000)
     const { messages, chunks } = build(1, bigUser, "ok")
     const selection = SessionChunk.selectVisible({
@@ -374,8 +374,16 @@ describe("selectVisible", () => {
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
-    expect(selection.oversize).toBeDefined()
-    expect(selection.visible).toHaveLength(0)
+    expect(selection.visible).toHaveLength(1)
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const input = (projected[1]!.parts[0] as SessionV1.TextPart).text
+    expect(input).toContain("<user-text-reference")
+    expect(input).toContain(`message_id="${messages[0]!.info.id}"`)
+    expect(input).toContain(`part_id="${messages[0]!.parts[0]!.id}"`)
+    expect(input).not.toContain(bigUser)
+    const persistedSummary = SessionChunk.summaryText({ messages, chunks })
+    expect(persistedSummary).toContain("<user-text-reference")
+    expect(persistedSummary).not.toContain(bigUser)
   })
 
   test("oversize final response excludes whole chunk and stops suffix", () => {
@@ -398,7 +406,6 @@ describe("selectVisible", () => {
     })
     // 最新 chunk 整 chunk 超 hard，停止，不跳过它选更早的小 chunk
     expect(selection.visible).toHaveLength(0)
-    expect(selection.oversize).toBeUndefined()
   })
 
   test("mixed CJK and ASCII estimation is conservative", () => {
@@ -464,6 +471,28 @@ describe("project", () => {
     expect(tailPart.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
   })
 
+  test("keeps a long active user text verbatim without dropping the active message", () => {
+    const u1 = user("q1")
+    const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
+    const chunk = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!
+    const longText = "error: " + "details\n".repeat(30_000)
+    const u2 = user(longText)
+    const active = assistant(u2.info.id, "working", { finish: "tool-calls", tool: true })
+    const messages = [u1, a1, u2, active]
+    const selection = SessionChunk.selectVisible({
+      messages,
+      chunks: [chunk],
+      targetTokens: 20_000,
+      hardTokens: 24_000,
+    })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const projectedUser = projected.find((message) => message.info.id === u2.info.id)!
+    const text = (projectedUser.parts[0] as SessionV1.TextPart).text
+
+    expect(text).toBe(longText)
+    expect(projected.some((message) => message.info.id === active.info.id)).toBe(true)
+  })
+
   test("archived chunks and checkpoint summaries do not leak into an active tail", () => {
     const u1 = user("old request")
     const a1 = assistant(u1.info.id, "old answer", { finish: "stop" })
@@ -497,7 +526,7 @@ describe("project", () => {
     const messages = [u1, a1, holder, summary, u2, active]
     const projected = SessionChunk.project({
       messages,
-      selection: { visible: [], archived: [chunk], oversize: undefined, tokens: 0 },
+      selection: { visible: [], archived: [chunk], tokens: 0 },
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
@@ -511,6 +540,21 @@ describe("project", () => {
 })
 
 describe("transcript / grep", () => {
+  test("reads referenced user text by stable message and part IDs", () => {
+    const message = user("first line\nneedle\nlast line")
+    const part = message.parts[0]!
+    const entries = SessionChunk.userTextTranscript({
+      messages: [message],
+      messageID: String(message.info.id),
+      partID: String(part.id),
+    })
+
+    expect(entries.map((entry) => entry.text)).toEqual(["first line", "needle", "last line"])
+    expect(entries.every((entry) => entry.messageID === String(message.info.id))).toBe(true)
+    expect(entries.every((entry) => entry.partID === String(part.id))).toBe(true)
+    expect(SessionChunk.formatUserTextTranscript(entries)).toContain(`0 USER message=${message.info.id} part=${part.id}:`)
+  })
+
   test("transcript covers user, assistant, tool call and output with line numbers", () => {
     const u1 = user("find the bug")
     const a1 = assistant(u1.info.id, "let me look", { finish: "tool-calls", tool: true })

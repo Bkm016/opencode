@@ -593,13 +593,12 @@ export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (i
     (item): item is CompactionPart => item.type === "compaction" && item.chunks !== undefined,
   )
   const chunks = part?.chunks ?? []
+  // 首次发送时必须把用户原文直传给 provider；只有已经存在 chunk checkpoint，
+  // 后续历史投影才允许把已完成的长 user text 替换成可回查引用。
   if (chunks.length === 0) return filterCompacted(streamed)
   const targetTokens = input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS
   const hardTokens = input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS
   const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
-  // 单个历史 chunk 的 user 原文超硬上限时保留完整输入，让 provider 明确报告超限，
-  // 禁止在投影层静默截断用户指令。
-  if (selection.oversize) return messages
   return SessionChunk.project({ messages, selection, targetTokens, hardTokens })
 })
 

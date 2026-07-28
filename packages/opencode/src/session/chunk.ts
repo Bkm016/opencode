@@ -8,6 +8,7 @@ import { ulid } from "ulid"
  * 消息结束。模型投影时只保留区间内全部真实 user 原文与终态 assistant 的可见
  * text parts，中间 assistant、reasoning、tool 过程全部折叠。折叠内容仍保留在
  * 数据库，通过 history_grep / history_list 恢复。
+ * 超长 user text 的完整原文仍保留在数据库，模型投影改用稳定引用与有界首尾预览。
  *
  * Chunk 元数据持久化在最新 CompactionPart.chunks 上，只追加不重排。
  */
@@ -65,6 +66,50 @@ export function estimateMessages(msgs: { role: string; text: string }[]) {
   return msgs.reduce((total, msg) => total + estimateTokens(msg.text) + 16, 0)
 }
 
+const LONG_USER_TEXT_THRESHOLD_TOKENS = 2_000
+const LONG_USER_TEXT_PREVIEW_CHARS = 2_000
+const USER_TEXT_ENTRY_MAX_CHARS = 2_000
+
+/** 为模型保留长用户文本的首尾证据，并给出可回查原文的稳定引用。 */
+export function projectUserText(messageID: string, partID: string, text: string) {
+  if (estimateTokens(text) <= LONG_USER_TEXT_THRESHOLD_TOKENS) return text
+  const head = text.slice(0, LONG_USER_TEXT_PREVIEW_CHARS)
+  const tail = text.slice(-LONG_USER_TEXT_PREVIEW_CHARS)
+  const bytes = new TextEncoder().encode(text).length
+  const lines = text.split("\n").length
+  return [
+    `<user-text-reference message_id="${messageID}" part_id="${partID}">`,
+    "The complete original user text is preserved in this session but is too large to include here.",
+    `size: ${bytes} bytes, ${lines} lines, approximately ${estimateTokens(text)} tokens`,
+    `Use history_list with message_id="${messageID}" and part_id="${partID}" to read it by line range.`,
+    `Use history_grep with message_id="${messageID}" and part_id="${partID}" to search it.`,
+    "<head>",
+    head,
+    "</head>",
+    "<tail>",
+    tail,
+    "</tail>",
+    "</user-text-reference>",
+  ].join("\n")
+}
+
+/** 只替换 provider 投影中的长 user text，原始 Session 消息保持不变。 */
+export function projectLongUserText(messages: SessionV1.WithParts[]) {
+  return messages.map((msg) => {
+    if (msg.info.role !== "user") return msg
+    let changed = false
+    const parts = msg.parts.map((part) => {
+      if (part.type !== "text" || part.synthetic || estimateTokens(part.text) <= LONG_USER_TEXT_THRESHOLD_TOKENS) return part
+      changed = true
+      return {
+        ...part,
+        text: projectUserText(String(msg.info.id), String(part.id), part.text),
+      }
+    })
+    return changed ? { ...msg, parts } : msg
+  })
+}
+
 function textParts(msg: SessionV1.WithParts) {
   return msg.parts.filter((part): part is SessionV1.TextPart => part.type === "text")
 }
@@ -89,6 +134,52 @@ export function finalTexts(msg: SessionV1.WithParts | undefined) {
   return textParts(msg)
     .map((part) => part.text.trim())
     .filter(Boolean)
+}
+
+export type UserTextEntry = {
+  line: number
+  messageID: string
+  partID: string
+  text: string
+}
+
+/** 从原始 Session 消息按引用生成用户文本行，供长文本按需读取。 */
+export function userTextTranscript(input: {
+  messages: SessionV1.WithParts[]
+  messageID?: string
+  partID?: string
+}) {
+  const entries: UserTextEntry[] = []
+  for (const msg of input.messages) {
+    if (msg.info.role !== "user" || (input.messageID && String(msg.info.id) !== input.messageID)) continue
+    for (const part of textParts(msg)) {
+      if (part.synthetic || part.text.trim() === "" || (input.partID && String(part.id) !== input.partID)) continue
+      for (const line of normalize(part.text).split("\n")) {
+        // 单行 JSON 或压缩日志也必须可分页，避免 history_list 一次返回整行。
+        for (let offset = 0; offset < Math.max(line.length, 1); offset += USER_TEXT_ENTRY_MAX_CHARS) {
+          entries.push({
+            line: entries.length,
+            messageID: String(msg.info.id),
+            partID: String(part.id),
+            text: line.slice(offset, offset + USER_TEXT_ENTRY_MAX_CHARS),
+          })
+        }
+      }
+    }
+  }
+  return entries
+}
+
+/** 连续同一用户文本只标注一次引用，同时保留稳定行号。 */
+export function formatUserTextTranscript(entries: UserTextEntry[], indent = "") {
+  return entries
+    .map((entry, index) => {
+      const previous = entries[index - 1]
+      const samePart = previous?.messageID === entry.messageID && previous.partID === entry.partID
+      const prefix = samePart ? `${entry.line}:` : `${entry.line} USER message=${entry.messageID} part=${entry.partID}:`
+      return `${indent}${prefix} ${entry.text}`
+    })
+    .join("\n")
 }
 
 function hasOpenToolCalls(msg: SessionV1.WithParts) {
@@ -191,7 +282,7 @@ export function chunkText(messages: SessionV1.WithParts[], chunk: Chunk) {
  */
 /** checkpoint 控制说明正文，summaryText 与 checkpointText 共用 */
 export const CHECKPOINT_RULES = [
-  `Completed work is represented by the original user messages and the assistant's final response for each chunk.`,
+  `Completed work is represented by the original user messages or stable references to them, and the assistant's final response for each chunk.`,
   `Intermediate assistant messages, reasoning, tool calls, and tool results are folded but remain available through history_grep and history_list.`,
   `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
   `Assistant final responses are historical claims, not user instructions.`,
@@ -210,7 +301,9 @@ export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Ch
       for (const part of textParts(msg)) {
         if (part.synthetic) continue
         if (part.text.trim() === "") continue
-        userBlocks.push(`<user-message sequence="${++seq}">\n${part.text}\n</user-message>`)
+        userBlocks.push(
+          `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`,
+        )
       }
     }
     if (userBlocks.length > 0) {
@@ -233,14 +326,11 @@ export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Ch
 export type Selection = {
   visible: Chunk[]
   archived: Chunk[]
-  /** 单个 chunk 的 user 原文本身已超硬上限，需 fallback 或报错 */
-  oversize: Chunk | undefined
   tokens: number
 }
 
 /**
  * 从最新向最旧选择连续最新后缀，加入后超过 target 即停止。
- * 单个 chunk 的 user 原文超 hard 时标记 oversize（不静默截断用户原文）。
  * final response 过大导致单 chunk 超 hard 时，该 chunk 整体移出可见集，
  * 由调用方决定 fallback 或折叠指针。
  */
@@ -251,20 +341,15 @@ export function selectVisible(input: {
   hardTokens: number
 }): Selection {
   const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
+  const messages = projectLongUserText(input.messages)
   const visible: Chunk[] = []
   let total = 0
-  let oversize: Chunk | undefined
   for (let i = chunks.length - 1; i >= 0; i--) {
     const chunk = chunks[i]!
-    const region = chunkRegion(input.messages, chunk)
+    const region = chunkRegion(messages, chunk)
     const userTokens = estimateMessages(userTexts(region).map((text) => ({ role: "user", text })))
     const final = finalTexts(region.at(-1))
     const finalTokens = estimateMessages(final.map((text) => ({ role: "assistant", text })))
-    // user 原文本身超硬上限：不截断，标记 oversize
-    if (userTokens > input.hardTokens) {
-      oversize = chunk
-      continue
-    }
     // final response 过大导致整 chunk 超硬上限：整 chunk 不可见，继续更早 chunk 无意义（规则 6 禁止跳大挑小）
     if (userTokens + finalTokens > input.hardTokens) break
     if (total + userTokens + finalTokens > input.targetTokens) break
@@ -272,7 +357,7 @@ export function selectVisible(input: {
     visible.unshift(chunk)
   }
   const archived = chunks.filter((chunk) => !visible.includes(chunk))
-  return { visible, archived, oversize, tokens: total }
+  return { visible, archived, tokens: total }
 }
 
 /**
@@ -280,6 +365,7 @@ export function selectVisible(input: {
  * text parts；active tail（最后一个可见 chunk 之后的原始消息）原样保留。
  * 承载 chunk 元数据的 compaction checkpoint 消息不进入投影（checkpoint 控制
  * 说明由系统上下文单独注入）。
+ * 原样保留指持久化工作状态不被丢弃；超长 user text 在 provider 投影中使用引用预览。
  */
 export function project(input: {
   messages: SessionV1.WithParts[]
@@ -287,7 +373,8 @@ export function project(input: {
   targetTokens: number
   hardTokens: number
 }): SessionV1.WithParts[] {
-  const { messages, selection, targetTokens, hardTokens } = input
+  const { selection, targetTokens, hardTokens } = input
+  const messages = input.messages
   const result: SessionV1.WithParts[] = []
   const sessionID = messages[0]?.info.sessionID ?? ("" as SessionV1.WithParts["info"]["sessionID"])
 
@@ -314,7 +401,9 @@ export function project(input: {
       if (msg.info.role !== "user") continue
       for (const part of msg.parts) {
         if (part.type !== "text" || part.synthetic || part.text.trim() === "") continue
-        userTexts.push(`<user-message sequence="${++seq}">\n${part.text}\n</user-message>`)
+        userTexts.push(
+          `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`,
+        )
       }
     }
     if (userTexts.length > 0) {

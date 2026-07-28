@@ -1862,8 +1862,8 @@ const layer = Layer.effect(
             if (result === "stop") return "break" as const
             if (result === "compact") {
               // chunk 策略：provider 整包溢出时不做模型摘要，先持久化边界，
-              // 投影在下一轮重新按 24K 预算裁剪后重试；仍超限时由 oversize
-              // 检测回退 model compaction。
+              // 投影在下一轮重新按 24K 预算裁剪后重试；长 user text 已提前替换为
+              // 有界引用，仍超限只代表 active tail 或 system/tool 本身无法容纳。
               const cfg = yield* config.get()
               if (cfg.compaction?.strategy === "chunk") {
                 const chunkReplay = lastUserMsg?.parts.some(

@@ -3005,7 +3005,7 @@ function TaskCard(props: {
                 </Show>
               </span>
               <Show when={activityKey()} keyed>
-                {() => (
+                {(_key) => (
                   <span data-component="task-tool-activity">
                     <ShellSubmessage text={activity()?.text ?? ""} animate />
                   </span>

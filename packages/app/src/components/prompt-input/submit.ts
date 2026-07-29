@@ -36,7 +36,7 @@ const GOAL_DEFAULT_CONTRACT = {
     "Work in evidence-backed increments. Record disproven approaches as lessons and do not repeat them without relevant new evidence.",
   blockedCondition: "Pause and report the exact blocker when no evidence-backed path remains.",
   tokenBudget: 1_000_000_000,
-} as const
+}
 
 const isGoalReplaceConflict = (error: unknown) => {
   if (!(error instanceof Error)) return false

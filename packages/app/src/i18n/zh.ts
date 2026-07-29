@@ -46,6 +46,7 @@ export const dict = {
   "command.session.previous.unseen": "上一个未读会话",
   "command.session.next.unseen": "下一个未读会话",
   "command.session.archive": "归档会话",
+  "command.session.archived": "已归档会话",
 
   "command.theme.cycle": "切换主题",
   "command.theme.set": "使用主题：{{theme}}",
@@ -128,6 +129,7 @@ export const dict = {
   "dialog.provider.empty": "未找到提供商",
   "dialog.provider.group.popular": "热门",
   "dialog.provider.group.other": "其他",
+  "dialog.provider.custom.label": "自定义 OpenAI 兼容提供商",
   "dialog.provider.tag.recommended": "推荐",
   "dialog.provider.opencode.note": "使用 OpenCode Zen 或 API 密钥连接",
   "dialog.provider.opencode.tagline": "可靠的优化模型",
@@ -147,6 +149,7 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "切换所有 {{provider}} 模型",
   "dialog.model.unpaid.freeModels.title": "OpenCode 提供的免费模型",
   "dialog.model.unpaid.addMore.title": "从热门提供商添加更多模型",
+  "dialog.model.unpaid.viewMoreProviders": "查看 70+ 更多提供商",
   "dialog.model.cacheReset.title": "切换模型会使缓存失效，是否继续？",
   "dialog.model.cacheReset.description": "切换后将无法复用当前模型的上下文缓存。下一次请求需要重新建立缓存，可能增加输入 Token 消耗。",
   "dialog.model.cacheReset.confirm": "继续切换",
@@ -818,6 +821,9 @@ export const dict = {
   "session.header.open.ariaLabel": "在 {{app}} 中打开",
   "session.header.open.menu": "打开选项",
   "session.header.open.copyPath": "复制路径",
+  "session.header.reveal.finder": "在访达中显示",
+  "session.header.reveal.fileExplorer": "在文件资源管理器中显示",
+  "session.header.reveal.containingFolder": "打开所在文件夹",
 
   "status.popover.trigger": "状态",
   "status.popover.ariaLabel": "服务器配置",

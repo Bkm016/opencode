@@ -30,16 +30,29 @@ function formatCount(value: number | undefined) {
   return value.toLocaleString()
 }
 
+// 生成 SDK 中 Schema.Finite 的编码带 "NaN" | "Infinity" 字符串联合；
+// 存储预算接口实际只产出有限数，这里统一收窄回 number。
+type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
+
+function finiteNumber(value: WireNumber | undefined): number | undefined {
+  if (typeof value !== "number") return undefined
+  return Number.isFinite(value) ? value : undefined
+}
+
+function finite(value: WireNumber | undefined): number {
+  return finiteNumber(value) ?? 0
+}
+
 function databaseFootprint(info: StorageBudget["database"] | undefined) {
   if (!info) return 0
-  return (info.size ?? 0) + (info.walSize ?? 0) + (info.shmSize ?? 0)
+  return finite(info.size) + finite(info.walSize) + finite(info.shmSize)
 }
 
 function compactReclaimed(result: StorageCompactResult | undefined) {
   if (!result) return 0
   const db = Math.max(0, databaseFootprint(result.before?.database) - databaseFootprint(result.after?.database))
-  const tool = result.toolOutputBytes ?? 0
-  const logs = result.logsBytes ?? 0
+  const tool = finite(result.toolOutputBytes)
+  const logs = finite(result.logsBytes)
   return db + tool + logs
 }
 
@@ -102,7 +115,7 @@ const SettingsDatabaseContent: Component = () => {
   const totalSize = createMemo(() => {
     const info = database()
     if (!info) return undefined
-    return (info.size ?? 0) + (info.walSize ?? 0) + (info.shmSize ?? 0)
+    return finite(info.size) + finite(info.walSize) + finite(info.shmSize)
   })
 
   const selected = createMemo(() => {
@@ -119,7 +132,7 @@ const SettingsDatabaseContent: Component = () => {
   const sessionCandidates = createMemo(() => {
     const info = budget.latest?.sessions
     if (!info) return 0
-    return Math.max(0, info.candidates - info.blocked)
+    return Math.max(0, finite(info.candidates) - finite(info.blocked))
   })
 
   const estimateBytes = createMemo(() => {
@@ -127,10 +140,10 @@ const SettingsDatabaseContent: Component = () => {
     if (!info) return 0
     const current = actions()
     let total = 0
-    if (current.vacuum) total += info.database?.reclaimableBytes ?? 0
-    if (current.checkpoint) total += info.database?.walSize ?? 0
-    if (current.toolOutput) total += info.toolOutput?.expiredBytes ?? 0
-    if (current.logs) total += info.logs?.expiredBytes ?? 0
+    if (current.vacuum) total += finite(info.database?.reclaimableBytes)
+    if (current.checkpoint) total += finite(info.database?.walSize)
+    if (current.toolOutput) total += finite(info.toolOutput?.expiredBytes)
+    if (current.logs) total += finite(info.logs?.expiredBytes)
     return total
   })
 
@@ -183,7 +196,7 @@ const SettingsDatabaseContent: Component = () => {
       const data = result.data as StorageCompactResult | undefined
       refresh()
       const reclaimed = compactReclaimed(data)
-      const sessionsRemoved = data?.sessionsRemoved ?? 0
+      const sessionsRemoved = finite(data?.sessionsRemoved)
       const parts: string[] = []
       if (reclaimed > 0) {
         parts.push(
@@ -197,7 +210,7 @@ const SettingsDatabaseContent: Component = () => {
       if (current.sessions && sessionsRemoved > 0) {
         parts.push(
           language.t("settings.database.compact.toast.success.sessions", {
-            count: formatCount(sessionsRemoved),
+            count: formatCount(finiteNumber(sessionsRemoved)),
           }),
         )
       }
@@ -245,8 +258,8 @@ const SettingsDatabaseContent: Component = () => {
               <Show when={actions().toolOutput}>
                 <li>
                   {language.t("settings.database.compact.action.toolOutput.detail", {
-                    count: formatCount(budget.latest?.toolOutput?.expiredFiles),
-                    size: formatBytes(budget.latest?.toolOutput?.expiredBytes),
+                    count: formatCount(finiteNumber(budget.latest?.toolOutput?.expiredFiles)),
+                    size: formatBytes(finiteNumber(budget.latest?.toolOutput?.expiredBytes)),
                     days: String(budget.latest?.retentionDays ?? 7),
                   })}
                 </li>
@@ -254,8 +267,8 @@ const SettingsDatabaseContent: Component = () => {
               <Show when={actions().logs}>
                 <li>
                   {language.t("settings.database.compact.action.logs.detail", {
-                    count: formatCount(budget.latest?.logs?.expiredFiles),
-                    size: formatBytes(budget.latest?.logs?.expiredBytes),
+                    count: formatCount(finiteNumber(budget.latest?.logs?.expiredFiles)),
+                    size: formatBytes(finiteNumber(budget.latest?.logs?.expiredBytes)),
                     days: String(budget.latest?.retentionDays ?? 7),
                   })}
                 </li>
@@ -404,7 +417,7 @@ const SettingsDatabaseContent: Component = () => {
                   <SettingsList>
                     <StatRow
                       title={language.t("settings.database.breakdown.total")}
-                      value={formatBytes(budget.latest?.dataBytes)}
+                      value={formatBytes(finiteNumber(budget.latest?.dataBytes))}
                     />
                     <StatRow
                       title={language.t("settings.database.breakdown.activeDb")}
@@ -432,7 +445,7 @@ const SettingsDatabaseContent: Component = () => {
                           </div>
                           <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                             <span class="text-12-regular text-text-weak font-mono">
-                              {formatBytes(entry.bytes)}
+                              {formatBytes(finiteNumber(entry.bytes))}
                             </span>
                             <Show when={platform.revealPath}>
                               <Button size="small" variant="ghost" onClick={() => reveal(entry.path)}>
@@ -472,7 +485,7 @@ const SettingsDatabaseContent: Component = () => {
                               {table.rows === undefined
                                 ? language.t("settings.database.tables.rowsUnknown")
                                 : language.t("settings.database.tables.rows", {
-                                    count: formatCount(table.rows),
+                                    count: formatCount(finiteNumber(table.rows)),
                                   })}
                             </span>
                           </div>
@@ -492,27 +505,27 @@ const SettingsDatabaseContent: Component = () => {
                   <SettingsList>
                     <StatRow
                       title={language.t("settings.database.compact.row.reclaimable.title")}
-                      value={formatBytes(budget.latest?.database?.reclaimableBytes)}
+                      value={formatBytes(finiteNumber(budget.latest?.database?.reclaimableBytes))}
                     />
                     <StatRow
                       title={language.t("settings.database.compact.row.toolOutput.title")}
                       value={language.t("settings.database.compact.row.files.value", {
-                        size: formatBytes(budget.latest?.toolOutput?.expiredBytes),
-                        count: formatCount(budget.latest?.toolOutput?.expiredFiles),
+                        size: formatBytes(finiteNumber(budget.latest?.toolOutput?.expiredBytes)),
+                        count: formatCount(finiteNumber(budget.latest?.toolOutput?.expiredFiles)),
                       })}
                     />
                     <StatRow
                       title={language.t("settings.database.compact.row.logs.title")}
                       value={language.t("settings.database.compact.row.files.value", {
-                        size: formatBytes(budget.latest?.logs?.expiredBytes),
-                        count: formatCount(budget.latest?.logs?.expiredFiles),
+                        size: formatBytes(finiteNumber(budget.latest?.logs?.expiredBytes)),
+                        count: formatCount(finiteNumber(budget.latest?.logs?.expiredFiles)),
                       })}
                     />
                     <StatRow
                       title={language.t("settings.database.compact.row.sessions.title")}
                       value={language.t("settings.database.compact.row.sessions.value", {
                         count: formatCount(sessionCandidates()),
-                        blocked: formatCount(budget.latest?.sessions?.blocked),
+                        blocked: formatCount(finiteNumber(budget.latest?.sessions?.blocked)),
                       })}
                     />
                     <Show when={!unloadedProjectsAvailable()}>
@@ -633,11 +646,11 @@ const SettingsDatabaseContent: Component = () => {
                   <SettingsList>
                     <StatRow
                       title={language.t("settings.database.row.size.title")}
-                      value={formatBytes(info().size)}
+                      value={formatBytes(finiteNumber(info().size))}
                     />
                     <StatRow
                       title={language.t("settings.database.row.walSize.title")}
-                      value={formatBytes(info().walSize)}
+                      value={formatBytes(finiteNumber(info().walSize))}
                     />
                     <StatRow
                       title={language.t("settings.database.row.totalSize.title")}
@@ -649,15 +662,15 @@ const SettingsDatabaseContent: Component = () => {
                     />
                     <StatRow
                       title={language.t("settings.database.row.pageCount.title")}
-                      value={formatCount(info().pageCount)}
+                      value={formatCount(finiteNumber(info().pageCount))}
                     />
                     <StatRow
                       title={language.t("settings.database.row.pageSize.title")}
-                      value={info().pageSize !== undefined ? formatBytes(info().pageSize) : "—"}
+                      value={finiteNumber(info().pageSize) !== undefined ? formatBytes(finiteNumber(info().pageSize)) : "—"}
                     />
                     <StatRow
                       title={language.t("settings.database.row.freelist.title")}
-                      value={formatCount(info().freelistCount)}
+                      value={formatCount(finiteNumber(info().freelistCount))}
                     />
                   </SettingsList>
                 </div>

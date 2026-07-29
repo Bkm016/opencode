@@ -34,13 +34,14 @@ const toolPart = (id: string, messageID: string, input: Record<string, unknown>,
     sessionID: "s",
     messageID,
     type: "tool",
+    callID: "call",
     tool: "grep",
     state: {
       status: "completed",
       input,
       output,
     },
-  }) as Part
+  }) as unknown as Part
 
 const taskPart = (id: string, messageID: string, description: string, output: string): Part =>
   ({
@@ -48,13 +49,14 @@ const taskPart = (id: string, messageID: string, description: string, output: st
     sessionID: "s",
     messageID,
     type: "tool",
+    callID: "call",
     tool: "task",
     state: {
       status: "completed",
       input: { description },
       output,
     },
-  }) as Part
+  }) as unknown as Part
 
 describe("session-find", () => {
   test("partSearchText reads text parts", () => {

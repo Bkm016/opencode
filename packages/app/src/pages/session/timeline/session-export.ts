@@ -1,5 +1,9 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 
+// 生成 SDK 中 Schema.Finite 的编码带 "NaN" | "Infinity" 字符串联合；
+// 存储/诊断接口实际只产出有限数，这里统一收窄回 number。
+type WireNumber = number | "NaN" | "Infinity" | "-Infinity"
+
 type SDK = {
   client: {
     session: {
@@ -7,7 +11,7 @@ type SDK = {
         sessionID: string
         limit?: number
         before?: string
-      }) => Promise<{ data?: Message[]; error?: unknown }>
+      }) => Promise<{ data?: SessionMessageRecord[]; error?: unknown }>
     }
     experimental: {
       session: {
@@ -22,31 +26,34 @@ type SDK = {
   }
 }
 
+// session.messages 端点返回的是 { info, parts } 包装，而非扁平 Message
+type SessionMessageRecord = { info: Message; parts?: Part[] }
+
 type ProviderRequestDump = {
   sessionID: string
-  at: number
+  at: WireNumber
   model: string
   provider: string
   route: string
   protocol: string
   url?: string
   body: unknown
-  bodyBytes: number
+  bodyBytes: WireNumber
   runtime?: string
 }
 
 type ProviderResponseDump = {
   sessionID: string
-  at: number
+  at: WireNumber
   model: string
   provider: string
   route: string
   protocol: string
   url?: string
-  status?: number
+  status?: WireNumber
   headers?: Record<string, string>
   body: unknown
-  bodyBytes: number
+  bodyBytes: WireNumber
   runtime?: string
   error?: boolean
 }
@@ -81,15 +88,16 @@ function partToText(part: Part): string {
   return ""
 }
 
-function messageToMarkdown(msg: Message): string {
-  const role = msg.role === "user" ? "🧑 User" : "🤖 Assistant"
-  const time = msg.time?.created ? formatDate(msg.time.created) : ""
+function messageToMarkdown(msg: SessionMessageRecord): string {
+  const info = msg.info
+  const role = info.role === "user" ? "🧑 User" : "🤖 Assistant"
+  const time = info.time?.created ? formatDate(info.time.created) : ""
   const parts = (msg.parts ?? [])
     .map(partToText)
     .filter((text) => text.trim() !== "")
     .join("\n\n")
   const header = `### ${role}${time ? ` · ${time}` : ""}`
-  const summary = msg.role === "user" && msg.summary ? formatSummary(msg.summary) : ""
+  const summary = info.role === "user" && info.summary ? formatSummary(info.summary) : ""
   return [header, summary, parts].filter(Boolean).join("\n\n")
 }
 
@@ -117,8 +125,8 @@ function formatSummary(summary: {
 }
 
 // 分页拉取会话的全部消息,按时间正序返回
-async function fetchAllMessages(sdk: SDK, sessionID: string): Promise<Message[]> {
-  const all: Message[] = []
+async function fetchAllMessages(sdk: SDK, sessionID: string): Promise<SessionMessageRecord[]> {
+  const all: SessionMessageRecord[] = []
   let before: string | undefined
   const limit = 200
   while (true) {
@@ -129,7 +137,7 @@ async function fetchAllMessages(sdk: SDK, sessionID: string): Promise<Message[]>
     all.push(...batch)
     if (batch.length < limit) break
     // messages 接口按 time_created/id 倒序返回,before 游标取最后一条 id
-    before = batch[batch.length - 1]?.id
+    before = batch[batch.length - 1]?.info.id
     if (!before) break
   }
   // 倒序拉取后翻回正序,便于阅读

@@ -158,7 +158,7 @@ describe("estimateSessionContextBreakdown", () => {
     expect(output.tools.some((row) => row.name === "read")).toBeTrue()
   })
 
-  test("splits system prompt into labeled sections and separates synthetic user text", () => {
+  test("aggregates system blocks into one prompt row and separates synthetic user text", () => {
     const systemPrompt = [
       "You are a coding agent.",
       "Here is some useful information about the environment you are running in:\n<env>\n  Working directory: /tmp\n</env>",
@@ -178,11 +178,11 @@ describe("estimateSessionContextBreakdown", () => {
       messages,
       parts,
       input: 500,
-      systemPrompt,
+      systemPrompts: [systemPrompt],
     })
 
-    const systemNames = output.prompts.filter((row) => row.kind === "system").map((row) => row.name)
-    expect(systemNames).toEqual(expect.arrayContaining(["section-1", "core/environment", "core/date", "instructions"]))
+    // 实现按单块聚合 system 提示词；合成用户文本独立成行。
+    expect(output.prompts.filter((row) => row.kind === "system")).toHaveLength(1)
     expect(output.prompts.some((row) => row.kind === "user")).toBeTrue()
     expect(output.prompts.some((row) => row.kind === "synthetic")).toBeTrue()
   })

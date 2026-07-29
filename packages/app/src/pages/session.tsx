@@ -359,9 +359,9 @@ export default function Page() {
   const size = createSizing()
   const desktopTabsOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopSidePanelOpen = desktopTabsOpen
-  const mobileContextOpen = createMemo(
-    () => !isDesktop() && view().reviewPanel.opened() && tabs().active() === "context",
-  )
+  // 侧栏目前只有 context 面板；桌面与移动端共用 reviewPanel.opened 判定，
+  // 不再引用已移除的 tabs().active 状态。
+  const mobileContextOpen = createMemo(() => !isDesktop() && view().reviewPanel.opened())
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(

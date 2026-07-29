@@ -819,8 +819,10 @@ export function MessageTimeline(props: {
     setExporting(true)
     try {
       const sdk = serverSDK()
-      if (mode === "summary") await exportSummary(sdk, id, t)
-      else if (mode === "full") await exportFull(sdk, id, t)
+      // 无标题时用时间戳兜底，保证导出文件名始终非空
+      const name = t ?? new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+      if (mode === "summary") await exportSummary(sdk, id, name)
+      else if (mode === "full") await exportFull(sdk, id, name)
       else if (mode === "request") await exportLastRequest(sdk, id)
       else await exportLastResponse(sdk, id)
       showToast({

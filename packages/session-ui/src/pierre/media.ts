@@ -1,4 +1,10 @@
-import type { FileContent } from "@opencode-ai/sdk/v2"
+// 生成 SDK 已无 FileContent 导出；文件读取结果在 UI 侧只依赖这几个宽松字段。
+export type FileContent = {
+  content?: unknown
+  encoding?: string
+  mimeType?: string
+  type?: string
+}
 
 export type MediaKind = "image" | "audio" | "svg"
 

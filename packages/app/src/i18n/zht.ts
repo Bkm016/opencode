@@ -117,6 +117,9 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "OpenCode 提供的免費模型",
   "dialog.model.unpaid.addMore.title": "從熱門提供者新增更多模型",
+  "dialog.model.cacheReset.title": "切換模型會使快取失效，是否繼續？",
+  "dialog.model.cacheReset.description": "切換後將無法重複使用目前模型的上下文快取。下一次請求需要重新建立快取，可能增加輸入 Token 用量。",
+  "dialog.model.cacheReset.confirm": "繼續切換",
 
   "dialog.provider.viewAll": "查看更多提供者",
 

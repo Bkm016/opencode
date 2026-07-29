@@ -126,6 +126,9 @@ export const dict = {
   "dialog.model.unpaid.freeModels.title": "Free models provided by OpenCode",
   "dialog.model.unpaid.addMore.title": "Add more models from popular providers",
   "dialog.model.unpaid.viewMoreProviders": "See 70+ more providers",
+  "dialog.model.cacheReset.title": "Switching models will invalidate the cache. Continue?",
+  "dialog.model.cacheReset.description": "The current model's prompt cache cannot be reused after switching. The next request will rebuild it and may use more input tokens.",
+  "dialog.model.cacheReset.confirm": "Continue",
 
   "dialog.provider.viewAll": "Show more providers",
 

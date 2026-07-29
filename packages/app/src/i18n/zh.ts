@@ -147,6 +147,9 @@ export const dict = {
   "dialog.model.manage.provider.toggle": "切换所有 {{provider}} 模型",
   "dialog.model.unpaid.freeModels.title": "OpenCode 提供的免费模型",
   "dialog.model.unpaid.addMore.title": "从热门提供商添加更多模型",
+  "dialog.model.cacheReset.title": "切换模型会使缓存失效，是否继续？",
+  "dialog.model.cacheReset.description": "切换后将无法复用当前模型的上下文缓存。下一次请求需要重新建立缓存，可能增加输入 Token 消耗。",
+  "dialog.model.cacheReset.confirm": "继续切换",
 
   "dialog.provider.viewAll": "查看更多提供商",
 

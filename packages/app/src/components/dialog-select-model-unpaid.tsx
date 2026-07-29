@@ -11,6 +11,9 @@ import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
 import { decode64 } from "@/utils/base64"
+import { useParams } from "@solidjs/router"
+import { useSync } from "@/context/sync"
+import { showModelCacheResetConfirmation } from "./dialog-select-model"
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
@@ -21,6 +24,8 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
   const directory = () => decode64(local.slug())
   const providers = useProviders(directory)
   const language = useLanguage()
+  const params = useParams()
+  const sync = useSync()
 
   const openProviders = (provider?: string) => {
     void import("./dialog-connect-provider").then((x) => {
@@ -69,6 +74,24 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
             </Tooltip>
           )}
           onSelect={(x) => {
+            const previous = model.current()
+            if (
+              x &&
+              showModelCacheResetConfirmation({
+                dialog,
+                session: params.id ? sync().session.get(params.id) : undefined,
+                previous,
+                next: x,
+                title: language.t("dialog.model.cacheReset.title"),
+                description: language.t("dialog.model.cacheReset.description"),
+                cancel: language.t("common.cancel"),
+                confirm: language.t("dialog.model.cacheReset.confirm"),
+                dismiss: () => dialog.close(),
+                onConfirm: () => model.set({ modelID: x.id, providerID: x.provider.id }, { recent: true }),
+              })
+            )
+              return
+
             model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
               recent: true,
             })

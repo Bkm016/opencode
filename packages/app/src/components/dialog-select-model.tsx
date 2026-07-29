@@ -11,7 +11,9 @@ import {
   ValidComponent,
 } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useParams } from "@solidjs/router"
 import { useLocal } from "@/context/local"
+import { useSync } from "@/context/sync"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@opencode-ai/ui/button"
@@ -28,15 +30,64 @@ import { handleDocumentSearchKeydown } from "@/utils/search-keydown"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { matchesModelSearch } from "./dialog-select-model-search"
 import { animateSurfaceIn, animateSurfaceItems } from "@opencode-ai/ui/hooks/gsap-surface"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 type ModelItem = ReturnType<ModelState["list"]>[number]
+export type ModelIdentity = Pick<ModelItem, "id" | "provider">
 
-const modelKey = (model: ModelItem) => `${model.provider.id}:${model.id}`
+const modelKey = (model: ModelIdentity) => `${model.provider.id}:${model.id}`
 const manageKey = "action:manage"
+
+const shouldWarnModelCacheReset = (
+  session: Session | undefined,
+  previous: ModelIdentity | undefined,
+  next: ModelIdentity,
+) => {
+  if (!previous || modelKey(previous) === modelKey(next)) return false
+  const cache = session?.tokens?.cache
+  return (cache?.read ?? 0) > 0 || (cache?.write ?? 0) > 0
+}
+
+export function showModelCacheResetConfirmation(input: {
+  dialog: ReturnType<typeof useDialog>
+  session: Session | undefined
+  previous: ModelIdentity | undefined
+  next: ModelIdentity
+  title: string
+  description: string
+  cancel: string
+  confirm: string
+  dismiss: () => void
+  onConfirm: () => void
+}) {
+  if (!shouldWarnModelCacheReset(input.session, input.previous, input.next)) return false
+
+  input.dismiss()
+  input.dialog.show(() => (
+    <Dialog title={input.title} description={input.description} fit>
+      <div class="flex justify-end gap-2 px-1.5 pb-1.5">
+        <Button variant="ghost" size="large" onClick={() => input.dialog.close()}>
+          {input.cancel}
+        </Button>
+        <Button
+          variant="primary"
+          size="large"
+          onClick={() => {
+            input.onConfirm()
+            input.dialog.close()
+          }}
+        >
+          {input.confirm}
+        </Button>
+      </div>
+    </Dialog>
+  ))
+  return true
+}
 
 const sortModelGroups = (a: { category: string; items: ModelItem[] }, b: { category: string; items: ModelItem[] }) => {
   const aIndex = popularProviders.indexOf(a.category)
@@ -59,6 +110,9 @@ const ModelList: Component<{
 }> = (props) => {
   const model = props.model ?? useLocal().model
   const language = useLanguage()
+  const params = useParams()
+  const sync = useSync()
+  const dialog = useDialog()
 
   const models = createMemo(() =>
     model
@@ -97,6 +151,24 @@ const ModelList: Component<{
         </Tooltip>
       )}
       onSelect={(x) => {
+        const previous = model.current()
+        if (
+          x &&
+          showModelCacheResetConfirmation({
+            dialog,
+            session: params.id ? sync().session.get(params.id) : undefined,
+            previous,
+            next: x,
+            title: language.t("dialog.model.cacheReset.title"),
+            description: language.t("dialog.model.cacheReset.description"),
+            cancel: language.t("common.cancel"),
+            confirm: language.t("dialog.model.cacheReset.confirm"),
+            dismiss: props.onSelect,
+            onConfirm: () => model.set({ modelID: x.id, providerID: x.provider.id }, { recent: true }),
+          })
+        )
+          return
+
         model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
         })

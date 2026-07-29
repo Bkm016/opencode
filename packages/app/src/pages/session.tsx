@@ -556,7 +556,7 @@ export default function Page() {
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
-  let revealMessage = (_id: string) => {}
+  let revealMessage = (_id: string, _messageID?: string, _partID?: string) => {}
   let scrollToEnd = () => {}
   let scrollMark = 0
   let messageMark = 0
@@ -785,14 +785,7 @@ export default function Page() {
     const match = matches[next]
     if (!match) return
     autoScroll.pause()
-    revealMessage(match.userMessageID)
-    // Re-apply after virtualizer mounts the target row.
-    scheduleSessionFindHighlights({
-      host: scroller,
-      query: findQuery(),
-      matches,
-      activeIndex: next,
-    })
+    revealMessage(match.userMessageID, match.messageID, match.partID)
   }
 
   const findNext = () => {

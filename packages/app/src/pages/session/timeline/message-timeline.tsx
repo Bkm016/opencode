@@ -343,7 +343,7 @@ export function MessageTimeline(props: {
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string) => void) => void
+  setRevealMessage?: (fn: (id: string, messageID?: string, partID?: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
 }) {
@@ -625,10 +625,53 @@ export function MessageTimeline(props: {
   )
   const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
   createEffect(() => {
-    props.setRevealMessage?.((id) => {
-      const index = messageRowIndex().get(id)
+    props.setRevealMessage?.((id, messageID, partID) => {
+      const target = partID
+        ? timelineRows().find((row) => {
+            if (row.userMessageID !== id) return false
+            if (row._tag === "AssistantPart") {
+              return row.group.type === "part" && row.group.ref.messageID === messageID && row.group.ref.partID === partID
+            }
+            if (row._tag !== "ProcessSummary") return false
+            return row.groups.some((group) => {
+              if (group.type === "part") {
+                return group.ref.messageID === messageID && group.ref.partID === partID
+              }
+              return group.refs.some((ref) => ref.messageID === messageID && ref.partID === partID)
+            })
+          })
+        : undefined
+      const index = target ? timelineRows().findIndex((row) => row === target) : messageRowIndex().get(id)
       if (index === undefined) return
+
+      if (target?._tag === "ProcessSummary") {
+        // 搜索命中处理区时先展开对应虚拟行，隐藏的 part 才能参与精确定位和高亮。
+        setProcessOpen(id, true)
+        for (const group of target.groups) {
+          if (group.type === "part") {
+            if (group.ref.messageID === messageID && group.ref.partID === partID) setToolOpen(group.ref.partID, true)
+            continue
+          }
+          if (group.refs.some((ref) => ref.messageID === messageID && ref.partID === partID)) {
+            setToolOpen(`context:${group.key}`, true)
+          }
+        }
+      }
+
+      if (target?._tag === "AssistantPart" && target.group.type === "part") {
+        setToolOpen(target.group.ref.partID, true)
+      }
       virtualizer.scrollToIndex(index, { align: "center" })
+      if (partID) {
+        // 展开会改变虚拟行高度，下一帧再把具体 part 调整到视口中央。
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const root = listRoot()
+            const part = root?.querySelector<HTMLElement>(`[data-timeline-part-id="${CSS.escape(partID)}"]`)
+            part?.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" })
+          })
+        })
+      }
     })
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
@@ -1460,6 +1503,13 @@ export function MessageTimeline(props: {
         () => scheduleMeasure(false),
         { defer: true },
       ),
+    )
+    createEffect(
+      on(open, (value) => {
+        if (!value || bodyMounted()) return
+        setBodyMounted(true)
+        scheduleMeasure()
+      }),
     )
     return (
       <TimelineRowFrame row={props.row}>

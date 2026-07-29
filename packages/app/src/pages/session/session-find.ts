@@ -1,4 +1,6 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2"
+import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { isContextGroupTool } from "@opencode-ai/session-ui/message-part-groups"
 
 export type SessionFindMatch = {
   messageID: string
@@ -17,6 +19,46 @@ export function partSearchText(part: Part) {
     const title = "title" in state && typeof state.title === "string" ? state.title : ""
     const output = "output" in state && typeof state.output === "string" ? state.output : ""
     const error = "error" in state && typeof state.error === "string" ? state.error : ""
+    if (
+      part.tool === "task" ||
+      part.tool === "task_async" ||
+      part.tool === "project_task" ||
+      part.tool === "task_async_followup"
+    ) {
+      const input = state.input ?? {}
+      const metadataValue = "metadata" in state ? state.metadata : undefined
+      const metadata =
+        metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue)
+          ? (metadataValue as Record<string, unknown>)
+          : {}
+      const chunks = [
+        typeof input.description === "string" ? input.description : "",
+        typeof input.prompt === "string" ? input.prompt : "",
+        typeof input.title === "string" ? input.title : "",
+        typeof input.agent === "string" ? input.agent : "",
+        typeof metadata.description === "string" ? metadata.description : "",
+        typeof metadata.title === "string" ? metadata.title : "",
+        error,
+      ].filter(Boolean)
+      return chunks.join("\n")
+    }
+    if (isContextGroupTool(part)) {
+      const input = part.state.input ?? {}
+      const filePath = typeof input.filePath === "string" ? input.filePath : undefined
+      const path = typeof input.path === "string" ? input.path : undefined
+      const pattern = typeof input.pattern === "string" ? input.pattern : ""
+      const include = typeof input.include === "string" ? input.include : ""
+      const chunks = [
+        part.tool === "read" ? getFilename(filePath) : "",
+        part.tool === "list_dir" ? getDirectory(path) : "",
+        part.tool !== "read" && part.tool !== "list_dir" ? getDirectory(path) : "",
+        pattern,
+        include,
+        part.tool === "read" && typeof input.offset === "number" ? `offset=${input.offset}` : "",
+        part.tool === "read" && typeof input.limit === "number" ? `limit=${input.limit}` : "",
+      ].filter(Boolean)
+      return chunks.join("\n")
+    }
     const chunks = [title, output, error].filter(Boolean)
     if (chunks.length > 0) return chunks.join("\n")
   }

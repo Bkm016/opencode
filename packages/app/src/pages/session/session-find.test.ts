@@ -28,6 +28,34 @@ const textPart = (id: string, messageID: string, text: string): Part =>
     text,
   }) as Part
 
+const toolPart = (id: string, messageID: string, input: Record<string, unknown>, output: string): Part =>
+  ({
+    id,
+    sessionID: "s",
+    messageID,
+    type: "tool",
+    tool: "grep",
+    state: {
+      status: "completed",
+      input,
+      output,
+    },
+  }) as Part
+
+const taskPart = (id: string, messageID: string, description: string, output: string): Part =>
+  ({
+    id,
+    sessionID: "s",
+    messageID,
+    type: "tool",
+    tool: "task",
+    state: {
+      status: "completed",
+      input: { description },
+      output,
+    },
+  }) as Part
+
 describe("session-find", () => {
   test("partSearchText reads text parts", () => {
     expect(partSearchText(textPart("p1", "m1", "hello"))).toBe("hello")
@@ -63,5 +91,17 @@ describe("session-find", () => {
         query: "   ",
       }),
     ).toEqual([])
+  })
+
+  test("partSearchText follows the visible context-tool summary instead of raw grep output", () => {
+    const part = toolPart("p1", "m1", { path: "C:/project/src", pattern: "Handler", include: "*.kt" }, "teleport")
+    expect(partSearchText(part)).toContain("Handler")
+    expect(partSearchText(part)).not.toContain("teleport")
+  })
+
+  test("partSearchText does not search task-internal output", () => {
+    const part = taskPart("p1", "m1", "Inspect visibility", "teleport implementation details")
+    expect(partSearchText(part)).toContain("Inspect visibility")
+    expect(partSearchText(part)).not.toContain("teleport")
   })
 })

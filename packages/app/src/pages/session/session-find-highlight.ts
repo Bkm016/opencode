@@ -11,19 +11,21 @@ type Layer = {
 let layer: Layer | undefined
 
 function ensureLayer(host: HTMLElement) {
-  if (layer && layer.host === host && host.contains(layer.root)) return layer
+  if (layer && layer.host === host && layer.root.isConnected) return layer
 
   clearSessionFindHighlights()
 
-  const style = getComputedStyle(host)
-  if (style.position === "static") host.style.position = "relative"
+  // 高亮层不能挂在滚动内容上，否则滚动时内容坐标和视口坐标会被重复换算。
+  const container = host.parentElement ?? host
+  const style = getComputedStyle(container)
+  if (style.position === "static") container.style.position = "relative"
 
   const root = document.createElement("div")
   root.setAttribute(LAYER_ATTR, "")
   root.setAttribute("data-component", "session-find-highlight-layer")
   root.style.cssText =
     "position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden;"
-  host.appendChild(root)
+  container.appendChild(root)
   layer = { root, host, cleanup: [] }
   return layer
 }
@@ -108,26 +110,71 @@ function rangesForQuery(root: Element, query: string, caseSensitive: boolean) {
   return ranges
 }
 
-function partRoot(match: SessionFindMatch, scope: ParentNode) {
-  const byPart = scope.querySelector(`[data-timeline-part-id="${CSS.escape(match.partID)}"]`)
-  if (byPart) return byPart
-  return scope.querySelector(`[data-message-id="${CSS.escape(match.userMessageID)}"]`) ?? undefined
+function indexPartRoots(scope: ParentNode) {
+  const roots = new Map<string, Element>()
+  for (const element of scope.querySelectorAll<HTMLElement>("[data-timeline-part-id]")) {
+    const partID = element.dataset.timelinePartId
+    if (partID) roots.set(partID, element)
+  }
+  for (const element of scope.querySelectorAll<HTMLElement>("[data-timeline-part-ids]")) {
+    for (const partID of element.dataset.timelinePartIds?.split(",") ?? []) {
+      if (partID && !roots.has(partID)) roots.set(partID, element)
+    }
+  }
+  return roots
 }
 
 function paintRanges(host: HTMLElement, ranges: Range[], active: Range | undefined) {
   const current = ensureLayer(host)
   current.root.replaceChildren()
-  const origin = host.getBoundingClientRect()
+  const viewport = host.getBoundingClientRect()
+  const origin = current.root.getBoundingClientRect()
+  const clipCache = new Map<Element, { left: number; top: number; right: number; bottom: number }>()
+
+  const clipsFor = (range: Range) => {
+    const owner = range.startContainer.parentElement
+    if (!owner) return viewport
+    const cached = clipCache.get(owner)
+    if (cached) return cached
+
+    const clip = {
+      left: viewport.left,
+      top: viewport.top,
+      right: viewport.right,
+      bottom: viewport.bottom,
+    }
+    let parent: HTMLElement | null = owner
+    while (parent && parent !== host) {
+      const style = getComputedStyle(parent)
+      const clipsX = /^(auto|clip|hidden|scroll)$/.test(style.overflowX)
+      const clipsY = /^(auto|clip|hidden|scroll)$/.test(style.overflowY)
+      if (clipsX || clipsY) {
+        const bounds = parent.getBoundingClientRect()
+        if (clipsX) {
+          clip.left = Math.max(clip.left, bounds.left)
+          clip.right = Math.min(clip.right, bounds.right)
+        }
+        if (clipsY) {
+          clip.top = Math.max(clip.top, bounds.top)
+          clip.bottom = Math.min(clip.bottom, bounds.bottom)
+        }
+      }
+      parent = parent.parentElement
+    }
+    clipCache.set(owner, clip)
+    return clip
+  }
 
   const add = (range: Range, kind: "all" | "active") => {
     const rects = range.getClientRects()
     for (const rect of rects) {
       if (rect.width < 1 || rect.height < 1) continue
       // Clip to host viewport so highlights never spill outside the chat pane.
-      const left = Math.max(rect.left, origin.left) - origin.left + host.scrollLeft
-      const top = Math.max(rect.top, origin.top) - origin.top + host.scrollTop
-      const right = Math.min(rect.right, origin.right) - origin.left + host.scrollLeft
-      const bottom = Math.min(rect.bottom, origin.bottom) - origin.top + host.scrollTop
+      const clip = clipsFor(range)
+      const left = Math.max(clip.left, rect.left) - origin.left
+      const top = Math.max(clip.top, rect.top) - origin.top
+      const right = Math.min(clip.right, rect.right) - origin.left
+      const bottom = Math.min(clip.bottom, rect.bottom) - origin.top
       const width = right - left
       const height = bottom - top
       if (width < 1 || height < 1) continue
@@ -149,6 +196,29 @@ function paintRanges(host: HTMLElement, ranges: Range[], active: Range | undefin
 
   for (const range of ranges) add(range, "all")
   if (active) add(active, "active")
+}
+
+function scrollRangeIntoView(range: Range, host: HTMLElement) {
+  const scrollables: HTMLElement[] = []
+  let parent = range.startContainer.parentElement
+  while (parent) {
+    const style = getComputedStyle(parent)
+    if (/^(auto|clip|hidden|scroll)$/.test(style.overflowY)) scrollables.push(parent)
+    if (parent === host) break
+    parent = parent.parentElement
+  }
+
+  for (const scrollable of scrollables) {
+    const rect = range.getBoundingClientRect()
+    const viewport = scrollable.getBoundingClientRect()
+    if (rect.top < viewport.top) {
+      scrollable.scrollTop += rect.top - viewport.top - (viewport.height - rect.height) / 2
+      continue
+    }
+    if (rect.bottom > viewport.bottom) {
+      scrollable.scrollTop += rect.bottom - viewport.bottom + (viewport.height - rect.height) / 2
+    }
+  }
 }
 
 function bindRepaint(host: HTMLElement, repaint: () => void) {
@@ -187,45 +257,42 @@ export function applySessionFindHighlights(input: {
   const active = input.matches[input.activeIndex]
 
   const collect = () => {
+    const roots = indexPartRoots(host)
     const nextAll: Range[] = []
     const nextSeen = new Set<Element>()
-    let mounted = 0
     for (const match of input.matches) {
-      const root = partRoot(match, host)
+      const root = roots.get(match.partID)
       if (!root) continue
-      mounted += 1
       if (nextSeen.has(root)) continue
       nextSeen.add(root)
       nextAll.push(...rangesForQuery(root, query, caseSensitive))
     }
     let nextActive: Range | undefined
     if (active) {
-      const root = partRoot(active, host)
+      const root = roots.get(active.partID)
       if (root) {
         const local = rangesForQuery(root, query, caseSensitive)
-        const samePart = input.matches
-          .map((item, index) => ({ item, index }))
-          .filter(({ item }) => item.partID === active.partID && item.messageID === active.messageID)
-        const localIndex = Math.max(
-          0,
-          samePart.findIndex(({ index }) => index === input.activeIndex),
-        )
+        const localIndex = input.matches
+          .slice(0, input.activeIndex)
+          .filter((item) => roots.get(item.partID) === root).length
         nextActive = local[localIndex] ?? local[0]
       }
     }
-    return { nextAll, nextActive, mounted }
+    return { nextAll, nextActive }
   }
 
   const paint = () => {
-    const { nextAll, nextActive } = collect()
-    paintRanges(host, nextAll, nextActive)
+    const next = collect()
+    paintRanges(host, next.nextAll, next.nextActive)
+    return next
   }
-  paint()
+  const first = paint()
   bindRepaint(host, paint)
 
-  const first = collect()
-  if (!active) return first.nextAll.length > 0 || first.mounted > 0
-  return !!partRoot(active, host) && (first.nextAll.length > 0 || first.mounted > 0)
+  if (!active) return first.nextAll.length > 0
+  if (!first.nextActive) return false
+  scrollRangeIntoView(first.nextActive, host)
+  return true
 }
 
 export function scheduleSessionFindHighlights(

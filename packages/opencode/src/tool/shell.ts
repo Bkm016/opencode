@@ -1,6 +1,7 @@
 import { Effect, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
+import { mkdir } from "node:fs/promises"
 import * as Tool from "./tool"
 import { InputAlias } from "./input-aliases"
 import path from "path"
@@ -612,7 +613,15 @@ export const ShellTool = Tool.define(
         const shell = Shell.acceptable(cfg.shell)
         const name = Shell.name(shell)
         const limits = yield* trunc.limits()
-        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs)
+        const instanceCtx = yield* InstanceState.context
+        // 项目临时目录跟随项目保存，避免 Bash 把中间文件散落到全局系统临时目录。
+        const tmp = path.join(
+          instanceCtx.project.vcs ? instanceCtx.worktree : instanceCtx.directory,
+          ".opencode",
+          "tmp",
+        )
+        yield* Effect.promise(() => mkdir(tmp, { recursive: true })).pipe(Effect.orDie)
+        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs, tmp)
         yield* Effect.logInfo("shell tool using shell", { shell })
 
         return {

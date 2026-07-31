@@ -237,4 +237,17 @@ describe("pty create defaults", () => {
       expect(info.title).toBe("configured")
     }),
   )
+
+  configuredTest("runs initial input through the configured shell", () =>
+    Effect.gen(function* () {
+      if (!configuredShell) return
+      const pty = yield* Pty.Service
+      const info = yield* Effect.acquireRelease(
+        pty.create({ title: "initial-input", initialInput: "printf RUN_SENTINEL" }),
+        (created) => pty.remove(created.id).pipe(Effect.ignore),
+      )
+      const attached = yield* attachCollecting(info.id)
+      expect(yield* waitForOutput(attached.output, "RUN_SENTINEL")).toContain("RUN_SENTINEL")
+    }),
+  )
 })

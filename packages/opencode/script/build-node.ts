@@ -49,7 +49,15 @@ console.log("Build complete")
 function isFreshBuild() {
   if (!fs.existsSync(outFile)) return false
   const outMtime = fs.statSync(outFile).mtimeMs
-  const roots = [path.join(dir, "src"), path.join(dir, "script"), path.join(dir, "package.json")]
+  const roots = [
+    path.join(dir, "src"),
+    path.join(dir, "script"),
+    path.join(dir, "package.json"),
+    path.resolve(dir, "../core/src"),
+    path.resolve(dir, "../protocol/src"),
+    path.resolve(dir, "../schema/src"),
+    path.resolve(dir, "../server/src"),
+  ]
   for (const root of roots) {
     if (newestMtime(root) > outMtime) return false
   }

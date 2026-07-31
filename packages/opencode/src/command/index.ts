@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 import { PromptCatalog } from "@/session/prompt-catalog"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 
 type State = {
   commands: Record<string, Info>
@@ -23,7 +24,7 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
-  source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
+  source: Schema.optional(Schema.Literals(["command", "mcp", "skill", "run"])),
   // Some command templates are lazy promises from MCP prompt resolution.
   template: Schema.Unknown,
   subtask: Schema.optional(Schema.Boolean),
@@ -50,6 +51,7 @@ export const Default = {
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
+  readonly reload: Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
@@ -58,6 +60,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
+    const fs = yield* FSUtil.Service
     const mcp = yield* MCP.Service
     const skill = yield* Skill.Service
 
@@ -100,6 +103,21 @@ const layer = Layer.effect(
           },
           subtask: command.subtask,
           hints: hints(command.template),
+        }
+      }
+
+      const runPath = path.join(ctx.project.vcs ? ctx.worktree : ctx.directory, ".opencode", "run.json")
+      const runConfig = yield* fs.readJson(runPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const scripts = isRecord(runConfig) && isRecord(runConfig.scripts) ? runConfig.scripts : runConfig
+      if (isRecord(scripts)) {
+        for (const [name, template] of Object.entries(scripts)) {
+          if (name === "$schema" || typeof template !== "string") continue
+          commands[name] = {
+            name,
+            source: "run",
+            template,
+            hints: hints(template),
+          }
         }
       }
 
@@ -169,10 +187,14 @@ const layer = Layer.effect(
       return Object.values(s.commands)
     })
 
-    return Service.of({ get, list })
+    return Service.of({ get, list, reload: InstanceState.invalidate(state) })
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, MCP.node, Skill.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, FSUtil.node, MCP.node, Skill.node] })
 
 export * as Command from "."
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}

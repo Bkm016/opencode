@@ -61,6 +61,7 @@ import { normalize } from "@opencode-ai/session-ui/session-diff"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { SessionRunScripts } from "@/components/session-run-scripts"
 import { exportFull, exportLastRequest, exportLastResponse, exportSummary } from "./session-export"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
@@ -1779,6 +1780,7 @@ export function MessageTimeline(props: {
                         </button>
                       </Tooltip>
                     </Show>
+                    <SessionRunScripts />
                     <SessionContextUsage
                       placement="bottom"
                       buttonAppearance="default"

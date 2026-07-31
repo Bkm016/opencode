@@ -5226,6 +5226,20 @@ export type CommandV2Info = {
   agent?: string
   model?: ModelRef
   subtask?: boolean
+  source?: "command" | "mcp" | "skill" | "run"
+}
+
+export type CommandRunFile = {
+  path: string
+  scripts: {
+    [key: string]: string
+  }
+}
+
+export type CommandV2RunConfig = {
+  scripts: {
+    [key: string]: string
+  }
 }
 
 export type SkillV2Info = {
@@ -9351,6 +9365,7 @@ export type PtyCreateData = {
     env?: {
       [key: string]: string
     }
+    initialInput?: string
   }
   path?: never
   query?: {
@@ -13841,6 +13856,80 @@ export type V2CommandListResponses = {
 
 export type V2CommandListResponse = V2CommandListResponses[keyof V2CommandListResponses]
 
+export type V2CommandGetRunData = {
+  body?: never
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/command/run"
+}
+
+export type V2CommandGetRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CommandGetRunError = V2CommandGetRunErrors[keyof V2CommandGetRunErrors]
+
+export type V2CommandGetRunResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: CommandRunFile
+  }
+}
+
+export type V2CommandGetRunResponse = V2CommandGetRunResponses[keyof V2CommandGetRunResponses]
+
+export type V2CommandUpdateRunData = {
+  body: CommandV2RunConfig
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/command/run"
+}
+
+export type V2CommandUpdateRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CommandUpdateRunError = V2CommandUpdateRunErrors[keyof V2CommandUpdateRunErrors]
+
+export type V2CommandUpdateRunResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: CommandRunFile
+  }
+}
+
+export type V2CommandUpdateRunResponse = V2CommandUpdateRunResponses[keyof V2CommandUpdateRunResponses]
+
 export type V2SkillListData = {
   body?: never
   path?: never
@@ -13953,6 +14042,7 @@ export type V2PtyCreateData = {
     env?: {
       [key: string]: string
     }
+    initialInput?: string
   }
   path?: never
   query?: {

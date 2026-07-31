@@ -185,7 +185,14 @@ export function registerIpcHandlers(deps: Deps) {
     const resolvedPath = path.startsWith("~/") || path.startsWith("~\\") ? join(homedir(), path.slice(2)) : path
     if (!app) {
       const error = await shell.openPath(resolvedPath)
-      if (error) throw new Error(error)
+      if (!error) return
+      const exists = await stat(resolvedPath).then(
+        () => true,
+        () => false,
+      )
+      if (!exists) throw new Error(error)
+      // 系统没有关联 JSON 编辑器时仍应让用户能定位已写入的文件。
+      shell.showItemInFolder(resolvedPath)
       return
     }
     await new Promise<void>((resolve, reject) => {

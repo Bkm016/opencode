@@ -2458,7 +2458,39 @@ export type CommandsListOutput = {
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
     readonly subtask?: boolean
+    readonly source?: "command" | "mcp" | "skill" | "run"
   }>
+}
+
+export type CommandsGetRunInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type CommandsGetRunOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly path: string }
+}
+
+export type CommandsUpdateRunInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly scripts: { readonly scripts: { readonly [x: string]: string } }["scripts"]
+}
+
+export type CommandsUpdateRunOutput = {
+  readonly location: {
+    readonly directory: string
+    readonly workspaceID?: string
+    readonly project: { readonly id: string; readonly directory: string }
+  }
+  readonly data: { readonly path: string }
 }
 
 export type SkillsListInput = {
@@ -2518,6 +2550,7 @@ export type PtysCreateInput = {
     readonly cwd?: string
     readonly title?: string
     readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
   }["command"]
   readonly args?: {
     readonly command?: string
@@ -2525,6 +2558,7 @@ export type PtysCreateInput = {
     readonly cwd?: string
     readonly title?: string
     readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
   }["args"]
   readonly cwd?: {
     readonly command?: string
@@ -2532,6 +2566,7 @@ export type PtysCreateInput = {
     readonly cwd?: string
     readonly title?: string
     readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
   }["cwd"]
   readonly title?: {
     readonly command?: string
@@ -2539,6 +2574,7 @@ export type PtysCreateInput = {
     readonly cwd?: string
     readonly title?: string
     readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
   }["title"]
   readonly env?: {
     readonly command?: string
@@ -2546,7 +2582,16 @@ export type PtysCreateInput = {
     readonly cwd?: string
     readonly title?: string
     readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
   }["env"]
+  readonly initialInput?: {
+    readonly command?: string
+    readonly args?: ReadonlyArray<string>
+    readonly cwd?: string
+    readonly title?: string
+    readonly env?: { readonly [x: string]: string }
+    readonly initialInput?: string
+  }["initialInput"]
 }
 
 export type PtysCreateOutput = {

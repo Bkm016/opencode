@@ -1,4 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
+import { $ } from "bun"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Deferred, Effect, Layer } from "effect"
@@ -22,6 +23,7 @@ import { Session as SessionNs } from "@/session/session"
 import { errorMessage } from "../../src/util/error"
 import { TestLLMServer } from "../lib/llm-server"
 import path from "path"
+import { mkdir } from "node:fs/promises"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, testEffect } from "../lib/effect"
@@ -397,6 +399,85 @@ describe("HttpApi SDK", () => {
         expect(request!.headers.has("x-opencode-workspace")).toBe(false)
       }),
     ),
+  )
+
+  httpapi(
+    "writes project run scripts through the v2 SDK",
+    withProject("raw", { git: true }, ({ sdk, directory }) =>
+      Effect.gen(function* () {
+        const nestedDirectory = path.join(directory, "nested")
+        yield* Effect.promise(() => mkdir(nestedDirectory, { recursive: true }))
+        const result = yield* call(() =>
+          sdk.v2.command.updateRun({
+            location: { directory: nestedDirectory },
+            commandV2RunConfig: { scripts: { "build-windows": "bun ./script/build-windows.ts" } },
+          }),
+        )
+        const resolved = yield* call(() => sdk.v2.command.getRun({ location: { directory: nestedDirectory } }))
+        const listed = yield* call(() => sdk.v2.command.list({ location: { directory: nestedDirectory } }))
+        const content = yield* Effect.promise(() => Bun.file(path.join(directory, ".opencode", "run.json")).text())
+        const commands = Array.isArray(listed.data) ? listed.data : listed.data?.data
+
+        expect(result.response.status).toBe(200)
+        expect(result.data?.data.path).toBe(path.join(directory, ".opencode", "run.json"))
+        expect(resolved.data?.data.path).toBe(result.data?.data.path)
+        expect(commands).toEqual(
+          expect.arrayContaining([expect.objectContaining({ name: "build-windows", source: "run" })]),
+        )
+        expect(JSON.parse(content)).toEqual({
+          scripts: { "build-windows": "bun ./script/build-windows.ts" },
+        })
+      }),
+    ),
+  )
+
+  it.live(
+    "uses the same run script path for a git project without commits",
+    withProject(
+      "raw",
+      {
+        setup: (directory) => Effect.promise(() => $`git init`.cwd(directory).quiet()).pipe(Effect.asVoid),
+      },
+      ({ sdk, directory }) =>
+        Effect.gen(function* () {
+          const nestedDirectory = path.join(directory, "nested")
+          yield* Effect.promise(() => mkdir(nestedDirectory, { recursive: true }))
+          const saved = yield* call(() =>
+            sdk.v2.command.updateRun({
+              location: { directory: nestedDirectory },
+              commandV2RunConfig: { scripts: { dev: "bun dev" } },
+            }),
+          )
+          const opened = yield* call(() => sdk.v2.command.getRun({ location: { directory: nestedDirectory } }))
+
+          expect(saved.data?.location.project.id).toBe("global")
+          expect(saved.data?.data.path).toBe(path.join(directory, ".opencode", "run.json"))
+          expect(opened.data?.data.path).toBe(saved.data?.data.path)
+          expect(yield* Effect.promise(() => Bun.file(opened.data!.data.path).exists())).toBe(true)
+        }),
+    ),
+    20_000,
+  )
+
+  it.live(
+    "uses the requested directory for a non-git run script file",
+    withProject("raw", {}, ({ sdk, directory }) =>
+      Effect.gen(function* () {
+        const saved = yield* call(() =>
+          sdk.v2.command.updateRun({
+            location: { directory },
+            commandV2RunConfig: { scripts: { dev: "bun dev" } },
+          }),
+        )
+        const opened = yield* call(() => sdk.v2.command.getRun({ location: { directory } }))
+
+        expect(path.resolve(saved.data!.location.project.directory)).toBe(path.parse(directory).root)
+        expect(saved.data?.data.path).toBe(path.join(directory, ".opencode", "run.json"))
+        expect(opened.data?.data.path).toBe(saved.data?.data.path)
+        expect(yield* Effect.promise(() => Bun.file(opened.data!.data.path).exists())).toBe(true)
+      }),
+    ),
+    20_000,
   )
 
   serverPathParity("matches generated SDK global and control behavior", (serverPath) =>

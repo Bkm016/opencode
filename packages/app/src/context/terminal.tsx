@@ -304,35 +304,38 @@ function createWorkspaceTerminalSession(
         setStore("all", [])
       })
     },
-    new(options?: { focus?: boolean }) {
+    async new(options?: { focus?: boolean; initialInput?: string; title?: string }) {
       const nextNumber = pickNextTerminalNumber()
       const focusRequest = options?.focus ? requestFocus(undefined, true) : undefined
 
-      sdk.client.pty
-        .create({ title: defaultTitle(nextNumber) })
-        .then((pty: { data?: { id?: string; title?: string } }) => {
-          const id = pty.data?.id
-          if (!id) {
-            if (focusRequest !== undefined) cancelFocus(focusRequest)
-            return
-          }
-          const newTerminal = {
-            id,
-            title: pty.data?.title ?? defaultTitle(nextNumber),
-            titleNumber: nextNumber,
-          }
-          batch(() => {
-            setStore("all", store.all.length, newTerminal)
-            setStore("active", id)
-            if (focusRequest !== undefined && ui.focus?.request === focusRequest) {
-              setUi("focus", { request: focusRequest, id, pending: false })
-            }
-          })
+      try {
+        const pty = await sdk.client.pty.create({
+          initialInput: options?.initialInput,
+          title: options?.title ?? defaultTitle(nextNumber),
         })
-        .catch((error: unknown) => {
+        const id = pty.data?.id
+        if (!id) {
           if (focusRequest !== undefined) cancelFocus(focusRequest)
-          console.error("Failed to create terminal", error)
+          return undefined
+        }
+        const newTerminal = {
+          id,
+          title: pty.data?.title ?? options?.title ?? defaultTitle(nextNumber),
+          titleNumber: nextNumber,
+        }
+        batch(() => {
+          setStore("all", store.all.length, newTerminal)
+          setStore("active", id)
+          if (focusRequest !== undefined && ui.focus?.request === focusRequest) {
+            setUi("focus", { request: focusRequest, id, pending: false })
+          }
         })
+        return id
+      } catch (error: unknown) {
+        if (focusRequest !== undefined) cancelFocus(focusRequest)
+        console.error("Failed to create terminal", error)
+        return undefined
+      }
     },
     update(pty: Partial<LocalPTY> & { id: string }) {
       update(sdk.client, pty)
@@ -501,7 +504,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       ready: () => workspace().ready(),
       all: () => workspace().all(),
       active: () => workspace().active(),
-      new: (options?: { focus?: boolean }) => workspace().new(options),
+      new: (options?: { focus?: boolean; initialInput?: string; title?: string }) => workspace().new(options),
       update: (pty: Partial<LocalPTY> & { id: string }) => workspace().update(pty),
       trim: (id: string) => workspace().trim(id),
       trimAll: () => workspace().trimAll(),

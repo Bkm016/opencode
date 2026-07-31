@@ -1,5 +1,7 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
+import { RunConfig, RunFile } from "@opencode-ai/schema/command"
+import { Location } from "@opencode-ai/schema/location"
 import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
@@ -64,6 +66,8 @@ export const InstancePaths = {
   vcsDiffRaw: "/vcs/diff/raw",
   vcsApply: "/vcs/apply",
   command: "/command",
+  // Desktop V1 客户端请求的是完整 API 路径；不要再改回相对 Instance 路径。
+  commandRun: "/api/command/run",
   agent: "/agent",
   skill: "/skill",
   lsp: "/lsp",
@@ -160,6 +164,27 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "command.list",
             summary: "List commands",
             description: "Get a list of all available commands in the OpenCode system.",
+          }),
+        ),
+        HttpApiEndpoint.get("commandGetRun", InstancePaths.commandRun, {
+          query: WorkspaceRoutingQuery,
+          success: described(Location.response(RunFile), "Resolve the project run script file"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "command.getRun",
+            summary: "Get project run script file",
+            description: "Resolve the authoritative .opencode/run.json path.",
+          }),
+        ),
+        HttpApiEndpoint.put("commandUpdateRun", InstancePaths.commandRun, {
+          query: WorkspaceRoutingQuery,
+          payload: RunConfig,
+          success: described(Location.response(RunFile), "Write project run scripts"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "command.updateRun",
+            summary: "Update project run scripts",
+            description: "Write the project .opencode/run.json script definitions.",
           }),
         ),
         HttpApiEndpoint.get("agent", InstancePaths.agent, {

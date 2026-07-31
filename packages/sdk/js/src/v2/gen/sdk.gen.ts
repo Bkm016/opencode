@@ -17,6 +17,7 @@ import type {
   AuthSetResponses,
   CommandListErrors,
   CommandListResponses,
+  CommandV2RunConfig,
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
@@ -305,8 +306,12 @@ import type {
   TuiSubmitPromptResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2CommandGetRunErrors,
+  V2CommandGetRunResponses,
   V2CommandListErrors,
   V2CommandListResponses,
+  V2CommandUpdateRunErrors,
+  V2CommandUpdateRunResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -2894,6 +2899,7 @@ export class Pty extends HeyApiClient {
       env?: {
         [key: string]: string
       }
+      initialInput?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2909,6 +2915,7 @@ export class Pty extends HeyApiClient {
             { in: "body", key: "cwd" },
             { in: "body", key: "title" },
             { in: "body", key: "env" },
+            { in: "body", key: "initialInput" },
           ],
         },
       ],
@@ -7167,6 +7174,66 @@ export class Command2 extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Get project run script file
+   *
+   * Resolve the authoritative project .opencode/run.json path.
+   */
+  public getRun<ThrowOnError extends boolean = false>(
+    parameters?: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
+    return (options?.client ?? this.client).get<V2CommandGetRunResponses, V2CommandGetRunErrors, ThrowOnError>({
+      url: "/api/command/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update project run scripts
+   *
+   * Write the project .opencode/run.json script definitions.
+   */
+  public updateRun<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      commandV2RunConfig: CommandV2RunConfig
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "location" },
+            { key: "commandV2RunConfig", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<V2CommandUpdateRunResponses, V2CommandUpdateRunErrors, ThrowOnError>({
+      url: "/api/command/run",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Skill extends HeyApiClient {
@@ -7248,6 +7315,7 @@ export class Pty2 extends HeyApiClient {
       env?: {
         [key: string]: string
       }
+      initialInput?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -7262,6 +7330,7 @@ export class Pty2 extends HeyApiClient {
             { in: "body", key: "cwd" },
             { in: "body", key: "title" },
             { in: "body", key: "env" },
+            { in: "body", key: "initialInput" },
           ],
         },
       ],

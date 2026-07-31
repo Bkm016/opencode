@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "build-windows": "bun ./script/build-windows.ts"
+  }
+}

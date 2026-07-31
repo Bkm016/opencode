@@ -2,6 +2,7 @@ import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
 import * as InstanceState from "@/effect/instance-state"
+import type { InstanceContext } from "@/project/instance-context"
 import { Format } from "@/format"
 import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
@@ -11,10 +12,28 @@ import { Skill } from "@/skill"
 import { sql } from "drizzle-orm"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import fs from "fs/promises"
+import path from "path"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
+import { Location } from "@opencode-ai/schema/location"
+
+function runFilePath(ctx: InstanceContext) {
+  const directory = ctx.project.vcs ? ctx.worktree : ctx.directory
+  return path.join(directory, ".opencode", "run.json")
+}
+
+function runFileResponse(ctx: InstanceContext, filepath: string, scripts: Record<string, string>) {
+  return {
+    location: new Location.Info({
+      directory: AbsolutePath.make(ctx.directory),
+      project: { id: ctx.project.id, directory: AbsolutePath.make(ctx.worktree) },
+    }),
+    data: { path: AbsolutePath.make(filepath), scripts },
+  }
+}
 
 // Count every user table so the Database settings page can show what fills the SQLite file.
 
@@ -148,7 +167,47 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     })
 
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
+      yield* command.reload
       return yield* command.list()
+    })
+
+    const getRunFile = Effect.fn("InstanceHttpApi.commandGetRun")(function* () {
+      const ctx = yield* InstanceState.context
+      const filepath = runFilePath(ctx)
+      const value = yield* Effect.promise(() => fs.readFile(filepath, "utf8")).pipe(
+        Effect.map((content) => JSON.parse(content) as unknown),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      const scripts =
+        typeof value === "object" && value !== null && !Array.isArray(value) && "scripts" in value
+          ? value.scripts
+          : value
+      console.info(`[run] resolved path: ${filepath}`)
+      return runFileResponse(
+        ctx,
+        filepath,
+        typeof scripts === "object" && scripts !== null && !Array.isArray(scripts)
+          ? Object.fromEntries(Object.entries(scripts).filter(([, template]) => typeof template === "string"))
+          : {},
+      )
+    })
+
+    const updateRun = Effect.fn("InstanceHttpApi.commandUpdateRun")(function* (input: {
+      payload: { scripts: Record<string, string> }
+    }) {
+      const ctx = yield* InstanceState.context
+      const filepath = runFilePath(ctx)
+      console.info(`[run] saving path: ${filepath}`)
+      yield* Effect.promise(async () => {
+        await fs.mkdir(path.dirname(filepath), { recursive: true })
+        await fs.writeFile(filepath, JSON.stringify(input.payload, null, 2) + "\n")
+        console.info(`[run] saved path: ${filepath}`)
+      }).pipe(
+        Effect.tapError((cause) => Effect.sync(() => console.error(`[run] save failed: ${filepath}`, cause))),
+        Effect.orDie,
+      )
+      yield* command.reload
+      return runFileResponse(ctx, filepath, input.payload.scripts)
     })
 
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {
@@ -176,6 +235,8 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("vcsDiffRaw", getVcsDiffRaw)
       .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
+      .handle("commandGetRun", getRunFile)
+      .handle("commandUpdateRun", updateRun)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
       .handle("lsp", getLsp)

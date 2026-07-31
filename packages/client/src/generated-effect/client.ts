@@ -475,7 +475,26 @@ type Endpoint10_0Input = { readonly location?: Endpoint10_0Request["query"]["loc
 const Endpoint10_0 = (raw: RawClient["server.command"]) => (input?: Endpoint10_0Input) =>
   raw["command.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
 
-const adaptGroup10 = (raw: RawClient["server.command"]) => ({ list: Endpoint10_0(raw) })
+type Endpoint10_1Request = Parameters<RawClient["server.command"]["command.getRun"]>[0]
+type Endpoint10_1Input = { readonly location?: Endpoint10_1Request["query"]["location"] }
+const Endpoint10_1 = (raw: RawClient["server.command"]) => (input?: Endpoint10_1Input) =>
+  raw["command.getRun"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint10_2Request = Parameters<RawClient["server.command"]["command.updateRun"]>[0]
+type Endpoint10_2Input = {
+  readonly location?: Endpoint10_2Request["query"]["location"]
+  readonly scripts: Endpoint10_2Request["payload"]["scripts"]
+}
+const Endpoint10_2 = (raw: RawClient["server.command"]) => (input: Endpoint10_2Input) =>
+  raw["command.updateRun"]({ query: { location: input["location"] }, payload: { scripts: input["scripts"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+const adaptGroup10 = (raw: RawClient["server.command"]) => ({
+  list: Endpoint10_0(raw),
+  getRun: Endpoint10_1(raw),
+  updateRun: Endpoint10_2(raw),
+})
 
 type Endpoint11_0Request = Parameters<RawClient["server.skill"]["skill.list"]>[0]
 type Endpoint11_0Input = { readonly location?: Endpoint11_0Request["query"]["location"] }
@@ -507,6 +526,7 @@ type Endpoint13_1Input = {
   readonly cwd?: Endpoint13_1Request["payload"]["cwd"]
   readonly title?: Endpoint13_1Request["payload"]["title"]
   readonly env?: Endpoint13_1Request["payload"]["env"]
+  readonly initialInput?: Endpoint13_1Request["payload"]["initialInput"]
 }
 const Endpoint13_1 = (raw: RawClient["server.pty"]) => (input?: Endpoint13_1Input) =>
   raw["pty.create"]({
@@ -517,6 +537,7 @@ const Endpoint13_1 = (raw: RawClient["server.pty"]) => (input?: Endpoint13_1Inpu
       cwd: input?.["cwd"],
       title: input?.["title"],
       env: input?.["env"],
+      initialInput: input?.["initialInput"],
     },
   }).pipe(Effect.mapError(mapClientError))
 

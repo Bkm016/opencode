@@ -79,6 +79,10 @@ import type {
   PermissionsReplyOutput,
   CommandsListInput,
   CommandsListOutput,
+  CommandsGetRunInput,
+  CommandsGetRunOutput,
+  CommandsUpdateRunInput,
+  CommandsUpdateRunOutput,
   SkillsListInput,
   SkillsListOutput,
   EventsSubscribeOutput,
@@ -763,6 +767,31 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      getRun: (input?: CommandsGetRunInput, requestOptions?: RequestOptions) =>
+        request<CommandsGetRunOutput>(
+          {
+            method: "GET",
+            path: `/api/command/run`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      updateRun: (input: CommandsUpdateRunInput, requestOptions?: RequestOptions) =>
+        request<CommandsUpdateRunOutput>(
+          {
+            method: "PUT",
+            path: `/api/command/run`,
+            query: { location: input["location"] },
+            body: { scripts: input["scripts"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
     },
     skills: {
       list: (input?: SkillsListInput, requestOptions?: RequestOptions) =>
@@ -810,6 +839,7 @@ export function make(options: ClientOptions) {
               cwd: input?.["cwd"],
               title: input?.["title"],
               env: input?.["env"],
+              initialInput: input?.["initialInput"],
             },
             successStatus: 200,
             declaredStatuses: [401, 400],

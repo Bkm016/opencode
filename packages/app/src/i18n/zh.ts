@@ -67,6 +67,7 @@ export const dict = {
   "command.input.focus": "聚焦输入框",
 
   "command.terminal.toggle": "切换终端",
+  "session.header.run": "运行",
 
   "command.review.toggle": "切换审查",
 
@@ -817,6 +818,17 @@ export const dict = {
   "session.new.workspace.existing": "工作树…",
   "session.new.lastModified": "最后修改",
   "session.header.openIn": "打开方式",
+  "dialog.run.title": "编辑运行脚本",
+  "dialog.run.description": "编辑保存在 .opencode/run.json 中的脚本。",
+  "dialog.run.invalid": "每个脚本都需要唯一名称和命令。",
+  "dialog.run.saveFailed": "脚本保存失败，请重试。",
+  "dialog.run.openFile": "打开文件",
+  "dialog.run.name": "名称",
+  "dialog.run.namePlaceholder": "build-windows",
+  "dialog.run.command": "命令",
+  "dialog.run.commandPlaceholder": "bun ./script/build-windows.ts",
+  "dialog.run.add": "新增脚本",
+  "dialog.run.remove": "删除脚本",
   "session.header.open.action": "打开 {{app}}",
   "session.header.open.ariaLabel": "在 {{app}} 中打开",
   "session.header.open.menu": "打开选项",

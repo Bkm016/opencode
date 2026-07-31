@@ -2,7 +2,7 @@ export * as ConfigCommandPlugin from "./command"
 
 import { define } from "../../plugin/internal"
 import path from "path"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Types } from "effect"
 import { CommandV2 } from "../../command"
 import { Config } from "../../config"
 import { FSUtil } from "../../fs-util"
@@ -31,6 +31,9 @@ export const Plugin = define({
           for (const [name, command] of Object.entries(document.commands ?? {})) {
             draft.update(name, (item) => {
               item.template = command.template
+              // CommandV2.Info 的旧类型投影尚未暴露来源字段，运行时 schema 已保留它用于区分运行脚本。
+              const source = item as Types.DeepMutable<CommandV2.Info> & { source?: "run" }
+              source.source = command.source
               if (command.description !== undefined) item.description = command.description
               if (command.agent !== undefined) item.agent = command.agent
               if (command.model !== undefined) {
@@ -54,7 +57,7 @@ function loadDirectory(fs: FSUtil.Interface, directory: string) {
     const files = yield* fs
       .glob("{command,commands}/**/*.md", { cwd: directory, absolute: true, dot: true, symlink: true })
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
-    return yield* Effect.forEach(files.toSorted(), (filepath) =>
+    const commands = yield* Effect.forEach(files.toSorted(), (filepath) =>
       fs.readFileStringSafe(filepath).pipe(
         Effect.map((content) => (content === undefined ? undefined : decode(directory, filepath, content))),
         Effect.catch(() => Effect.succeed(undefined)),
@@ -64,7 +67,25 @@ function loadDirectory(fs: FSUtil.Interface, directory: string) {
         commands.filter((command): command is { name: string; info: ConfigCommand.Info } => command !== undefined),
       ),
     )
+    const run = yield* loadRun(fs, directory)
+    return [...commands, ...run]
   })
+}
+
+function loadRun(fs: FSUtil.Interface, directory: string) {
+  return Effect.gen(function* () {
+    const value = yield* fs.readJson(path.join(directory, "run.json")).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    const scripts = isRecord(value) && isRecord(value.scripts) ? value.scripts : value
+    if (!isRecord(scripts)) return []
+    return Object.entries(scripts).flatMap(([name, template]) => {
+      if (name === "$schema" || typeof template !== "string") return []
+      return [{ name, info: { template, source: "run" as const } }]
+    })
+  })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function decode(directory: string, filepath: string, content: string) {

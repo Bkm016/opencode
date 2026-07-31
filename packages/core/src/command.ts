@@ -8,6 +8,9 @@ import { State } from "./state"
 export const Info = Command.Info
 export type Info = Command.Info
 
+export const RunFile = Command.RunFile
+export type RunFile = Command.RunFile
+
 export type Data = {
   commands: Map<string, Types.DeepMutable<Info>>
 }

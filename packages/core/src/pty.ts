@@ -181,6 +181,10 @@ const layer = Layer.effect(
       yield* Effect.logInfo("creating session", { id, cmd: command, args, cwd })
       const { spawn } = yield* Effect.promise(() => pty())
       const proc = yield* Effect.sync(() => spawn(command, args, { name: "xterm-256color", cwd, env }))
+      if (input.initialInput !== undefined) {
+        // 在 PTY 建立后注入输入，复用用户配置的 shell，避免把整行脚本误当成可执行文件路径。
+        proc.write(input.initialInput + "\r")
+      }
       const info: Info = {
         id,
         title: input.title || `Terminal ${id.slice(-4)}`,

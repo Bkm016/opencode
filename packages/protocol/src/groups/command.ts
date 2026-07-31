@@ -19,6 +19,7 @@ export const CommandGroup = HttpApiGroup.make("server.command")
         }),
       ),
   )
+  // Desktop 的运行脚本接口属于旧版 Instance API，v2 路由不再维护。
   .annotateMerge(
     OpenApi.annotations({
       title: "commands",

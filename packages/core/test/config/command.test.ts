@@ -41,6 +41,10 @@ Review files`,
             )
             await fs.writeFile(path.join(tmp.path, "commands", "nested", "docs.md"), "Write docs")
             await fs.writeFile(path.join(tmp.path, "commands", "empty.md"), "")
+            await fs.writeFile(
+              path.join(tmp.path, "run.json"),
+              JSON.stringify({ scripts: { "build-windows": "bun ./script/build-windows.ts" } }),
+            )
           })
 
           const command = yield* CommandV2.Service
@@ -75,6 +79,7 @@ Review files`,
             }),
             CommandV2.Info.make({ name: "empty", template: "" }),
             CommandV2.Info.make({ name: "nested/docs", template: "Write docs" }),
+            CommandV2.Info.make({ name: "build-windows", template: "bun ./script/build-windows.ts", source: "run" }),
           ])
         }),
       ),

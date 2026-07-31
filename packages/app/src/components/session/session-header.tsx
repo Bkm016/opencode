@@ -142,7 +142,6 @@ export function SessionHeader() {
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const os = createMemo(() => detectOS(platform))
-
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
     finder: true,
   })

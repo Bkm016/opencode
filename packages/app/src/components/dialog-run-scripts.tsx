@@ -52,7 +52,7 @@ export function DialogRunScripts(props: { scripts: RunScript[]; onSaved: () => v
   const openFile = async () => {
     if (!canOpenFile() || !platform.openPath) return
     try {
-      const result = await sdk().client.v2.command.getRun({ location: { directory: sdk().directory } })
+      const result = await sdk().client.command.getRun({ directory: sdk().directory })
       const runPath = runFilePath(result)
       if (!runPath) throw new Error("The current run script file is unavailable.")
       await platform.openPath(runPath)
@@ -84,9 +84,9 @@ export function DialogRunScripts(props: { scripts: RunScript[]; onSaved: () => v
       setSaving(true)
       const directory = sdk().directory
       console.info(`[run] save request directory: ${directory}`)
-      const result = await sdk().client.v2.command.updateRun(
+      const result = await sdk().client.command.updateRun(
         {
-          location: { directory },
+          directory,
           commandV2RunConfig: { scripts },
         },
         { throwOnError: true },

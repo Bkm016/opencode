@@ -43,7 +43,7 @@ export function SessionRunScripts() {
     try {
       return await retry(
         async () => {
-          const result = await sdk().client.v2.command.getRun({ location: { directory: sdk().directory } })
+          const result = await sdk().client.command.getRun({ directory: sdk().directory })
           const file = runFileData(result)
           if (!file) throw new Error("Run script file is not ready")
           const parsed = Object.entries(file.scripts).map(([name, template]) => ({ name, template, source: "run" }))
@@ -67,11 +67,10 @@ export function SessionRunScripts() {
     })
   }
 
-  const edit = async () => {
-    const loaded = await commandsControl.refetch()
+  const edit = () => {
     dialog.show(() => (
       <DialogRunScripts
-        scripts={(loaded ?? []).filter((command) => command.source === "run")}
+        scripts={scripts()}
         onSaved={() => {
           void commandsControl.refetch()
         }}

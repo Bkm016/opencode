@@ -189,6 +189,7 @@ function createCompactionMarker(sessionID: SessionID) {
         type: "compaction",
         auto: false,
       })
+      return msg
     }),
   )
 }
@@ -604,6 +605,38 @@ describe("session.compaction.create", () => {
           reason: "auto",
           summary: "",
         })
+      }),
+    ),
+  )
+})
+
+describe("session.compaction.restore", () => {
+  it.live(
+    "removes only the latest compaction and preserves earlier layers and original messages",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const ssn = yield* SessionNs.Service
+        const info = yield* ssn.create({})
+        const user = yield* createUserMessage(info.id, "important request")
+        const assistant = yield* createAssistantMessage(info.id, user.id, dir)
+        const olderHolder = yield* createCompactionMarker(info.id)
+        const olderSummary = yield* createSummaryAssistantMessage(info.id, olderHolder.id, dir, "older summary")
+        const latestHolder = yield* createCompactionMarker(info.id)
+        yield* createSummaryAssistantMessage(info.id, latestHolder.id, dir, "latest summary")
+
+        expect(yield* compact.restore(info.id)).toBe(2)
+
+        const messages = yield* ssn.messages({ sessionID: info.id })
+        expect(messages.map((message) => message.info.id)).toEqual([
+          user.id,
+          assistant.id,
+          olderHolder.id,
+          olderSummary.id,
+        ])
+        expect(messages[0]?.parts).toEqual(
+          expect.arrayContaining([expect.objectContaining({ type: "text", text: "important request" })]),
+        )
       }),
     ),
   )

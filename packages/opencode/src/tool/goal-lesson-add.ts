@@ -43,7 +43,7 @@ export const GoalLessonAddTool = Tool.define<typeof GoalLessonAddParameters, Met
                     "detail" in error
                       ? error.detail
                       : error._tag === "SessionGoalNotFoundError"
-                        ? "no active Goal exists for this session"
+                        ? "No active GOAL CONTRACT exists. No lesson is needed; continue the ordinary task without calling Goal tools."
                         : "the active Goal changed before the lesson was added"
                   }`,
                 }),

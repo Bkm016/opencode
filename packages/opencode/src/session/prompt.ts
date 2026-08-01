@@ -54,6 +54,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionChunk } from "./chunk"
+import { usable } from "./overflow"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { Goal } from "./goal"
@@ -1296,9 +1297,9 @@ const layer = Layer.effect(
         time: { created: Date.now() },
         agent: user.agent,
         model: user.model,
-        format: user.format,
-        tools: user.tools,
-        system: user.system,
+        format: recovery ? undefined : user.format,
+        tools: recovery ? undefined : user.tools,
+        system: recovery ? undefined : user.system,
       })
       yield* sessions.updatePart({
         id: PartID.ascending(),
@@ -1389,6 +1390,15 @@ const layer = Layer.effect(
           chunks: allChunks,
           tail_start_id: tailStart,
         })
+      } else if (compactionMsgWithChunks && compactionPartWithChunks) {
+        // 自动 chunk checkpoint 始终原位更新，避免每次 overflow 都在 Timeline
+        // 追加一组「会话已压缩」holder / summary。
+        holderID = compactionMsgWithChunks.info.id
+        yield* sessions.updatePart({
+          ...compactionPartWithChunks,
+          chunks: allChunks,
+          tail_start_id: tailStart,
+        })
       } else if (added > 0 || options?.force) {
         const holder = yield* sessions.updateMessage({
           id: MessageID.ascending(),
@@ -1415,6 +1425,28 @@ const layer = Layer.effect(
       // 立刻持久化 summary assistant（含无新边界的密封场景），使 filterCompacted
       // 与 latest() 把本次 /compact 标为已完成，避免空转再拾取 compaction task。
       const summaryText = SessionChunk.summaryText({ messages: raw, chunks: allChunks })
+      const existingSummary = raw.findLast(
+        (message) =>
+          message.info.role === "assistant" && message.info.summary === true && message.info.parentID === holderID,
+      )
+      const existingSummaryText = existingSummary?.parts.find(
+        (part): part is SessionV1.TextPart => part.type === "text",
+      )
+      if (existingSummary?.info.role === "assistant" && existingSummaryText) {
+        const now = Date.now()
+        yield* sessions.updateMessage({
+          ...existingSummary.info,
+          error: undefined,
+          finish: "stop",
+          time: { ...existingSummary.info.time, completed: now },
+        })
+        yield* sessions.updatePart({
+          ...existingSummaryText,
+          text: summaryText,
+          time: { start: existingSummaryText.time?.start ?? now, end: now },
+        })
+        return
+      }
       const ctx = yield* InstanceState.context
       const assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
@@ -1703,21 +1735,73 @@ const layer = Layer.effect(
                 },
               })
             }
-
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+            let providerMsgs = msgs
+            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: providerMsgs })
 
-            const [system, modelMsgs] = yield* Effect.all([
+            const [system, initialModelMsgs] = yield* Effect.all([
               providerTurnSystem({
                 agent,
                 session,
                 format: lastUser.format,
                 goal: goalIsActive ? capturedGoal : undefined,
               }).pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(providerMsgs, model),
             ])
+            let modelMsgs = initialModelMsgs
+            if (cfg.compaction?.strategy === "chunk") {
+              const maxInputTokens = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+              if (maxInputTokens > 0) {
+                // chunk 的 target 只约束历史正文；provider 实际还会收到完整 system、
+                // tools 与 active tail。发送前按整包估算逐级移除最旧可见 chunk，
+                // 避免把可预测的 overflow 交给 provider 后再补救。
+                const requestLimit = Math.floor(maxInputTokens * 0.8)
+                const fullSystem = SystemPrompt.assemble({
+                  model,
+                  agent,
+                  system,
+                  userSystem: lastUser.system,
+                  prompts: cfg.prompts,
+                })
+                const toolDefinitions = Object.fromEntries(
+                  Object.entries(tools).map(([name, item]) => [
+                    name,
+                    { description: item.description, inputSchema: item.inputSchema },
+                  ]),
+                )
+                let requestTokens = SessionChunk.estimateTokens(
+                  JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
+                )
+                while (requestTokens > requestLimit) {
+                  const chunkInput = providerMsgs.find((message) => String(message.info.id).startsWith("chunk-input-"))
+                  if (!chunkInput) break
+                  const displayID = String(chunkInput.info.id).slice("chunk-input-".length)
+                  providerMsgs = providerMsgs.filter(
+                    (message) =>
+                      String(message.info.id) !== `chunk-input-${displayID}` &&
+                      String(message.info.id) !== `chunk-summary-${displayID}`,
+                  )
+                  modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model)
+                  requestTokens = SessionChunk.estimateTokens(
+                    JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
+                  )
+                }
+                if (requestTokens > requestLimit) {
+                  // 没有可见历史可移除时，再压低 active tail 的媒体与 tool output；
+                  // 完整内容仍在 Session 数据库和 managed output 中。
+                  providerMsgs = SessionChunk.projectLongUserText(providerMsgs)
+                  modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, {
+                    stripMedia: true,
+                    toolOutputMaxChars: 4_000,
+                  })
+                  requestTokens = SessionChunk.estimateTokens(
+                    JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
+                  )
+                }
+              }
+            }
             const format = lastUser.format ?? { type: "text" as const }
             const result = yield* handle.process({
               user: lastUser,
@@ -1871,54 +1955,29 @@ const layer = Layer.effect(
               // 有界引用，仍超限只代表 active tail 或 system/tool 本身无法容纳。
               const cfg = yield* config.get()
               if (cfg.compaction?.strategy === "chunk") {
-                const chunkReplay = lastUserMsg?.parts.some(
-                  (part) => part.type === "text" && part.metadata?.[SessionChunk.COMPACTION_REPLAY] === true,
-                )
                 const chunkRecovery = lastUserMsg?.parts.some(
                   (part) => part.type === "text" && part.metadata?.[SessionChunk.COMPACTION_RECOVERY] === true,
                 )
                 if (chunkRecovery) {
-                  // 零历史预算的恢复请求仍超限时才进入 model fallback，避免 recovery 自旋。
-                  yield* compaction.create({
-                    sessionID,
-                    agent: lastUser.agent,
-                    model: lastUser.model,
-                    auto: true,
-                    overflow: true,
-                  })
-                  return "continue" as const
-                }
-                if (chunkReplay) {
-                  // 二次 overflow 时先终止当前 provider attempt，使完整 active tail 成为
-                  // 可关闭 chunk；随后以零历史预算续跑，Goal 状态保持 active。
-                  handle.message.error = new SessionV1.ContextOverflowError({
-                    message: "Chunk replay exceeded the model context limit; the active turn was archived for recovery.",
-                  }).toObject()
+                  // 发送前预算门禁已将 recovery 降到最小；provider 仍拒绝说明其
+                  // 实际限制与 catalog 不一致。禁止再次压缩形成无限 checkpoint 循环。
                   handle.message.finish = "error"
                   yield* sessions.updateMessage(handle.message)
-                  const recovered = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
-                    Effect.map(() => true),
-                    Effect.catchDefect((defect: unknown) =>
-                      Effect.gen(function* () {
-                        yield* Effect.logWarning("chunk recovery persist failed", { error: String(defect) })
-                        return false
-                      }),
-                    ),
-                  )
-                  if (!recovered) {
-                    yield* compaction.create({
-                      sessionID,
-                      agent: lastUser.agent,
-                      model: lastUser.model,
-                      auto: true,
-                      overflow: true,
-                    })
-                    return "continue" as const
-                  }
-                  yield* createChunkContinuation(sessionID, lastUser, true)
-                  return "continue" as const
+                  yield* Effect.logWarning("minimal chunk recovery still overflowed", {
+                    "session.id": sessionID,
+                    providerID: model.providerID,
+                    modelID: model.id,
+                  })
+                  return "break" as const
                 }
-                const persisted = yield* persistChunkBoundary(sessionID, { force: true, endBefore: msg.id }).pipe(
+                const interrupted = !handle.message.finish || handle.message.finish === "tool-calls"
+                if (interrupted) {
+                  // 第一次 overflow 就关闭并封存完整 active turn，不能把可能包含数百个
+                  // assistant/tool step 的 tail 原样重放到下一次 provider 请求。
+                  handle.message.finish = "error"
+                  yield* sessions.updateMessage(handle.message)
+                }
+                const persisted = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
                   Effect.map(() => true),
                   Effect.catchDefect((defect: unknown) =>
                     Effect.gen(function* () {
@@ -1927,22 +1986,13 @@ const layer = Layer.effect(
                     }),
                   ),
                 )
-                if (!persisted || !lastUserMsg) {
-                  yield* compaction.create({
-                    sessionID,
-                    agent: lastUser.agent,
-                    model: lastUser.model,
-                    auto: true,
-                    overflow: true,
-                  })
-                  return "continue" as const
-                }
+                if (!persisted) return "break" as const
                 // 已完整输出的 final response 不需要重跑；本次只为后续请求释放历史预算。
                 // 仍回到安全边界，让 active Goal 创建下一条 continuation。
-                if (handle.message.finish && handle.message.finish !== "tool-calls") return "continue" as const
+                if (!interrupted) return "continue" as const
                 // 与 model 压缩一致：checkpoint 后创建隐藏 continuation turn，避免
                 // Timeline 把续跑 assistant 重新归到压缩前的原 user。
-                yield* createChunkContinuation(sessionID, lastUser)
+                yield* createChunkContinuation(sessionID, lastUser, true)
                 return "continue" as const
               }
               yield* compaction.create({
@@ -1983,7 +2033,7 @@ const layer = Layer.effect(
       if (!busy) return false
 
       // 直接中断 Runner，复用正常取消的 transport / tool abort 与持久化 cleanup；
-      // 随后把已中断 assistant 留在 active tail，仅压缩它之前已完成的工作。
+      // 随后关闭并封存完整 active turn，避免巨型 tail 在 continuation 中原样重放。
       yield* state.cancel(sessionID)
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const currentAssistant = raw.findLast(
@@ -1999,8 +2049,9 @@ const layer = Layer.effect(
       if (currentAssistant.info.error && SessionV1.AbortedError.isInstance(currentAssistant.info.error)) {
         yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined })
       }
-      yield* persistChunkBoundary(sessionID, { force: true, endBefore: currentAssistant.info.id }).pipe(Effect.orDie)
-      yield* createChunkContinuation(sessionID, currentUser.info)
+      yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined, finish: "error" })
+      yield* persistChunkBoundary(sessionID, { force: true }).pipe(Effect.orDie)
+      yield* createChunkContinuation(sessionID, currentUser.info, true)
       yield* loop({ sessionID }).pipe(Effect.forkIn(scope, { startImmediately: true }))
       return true
     })

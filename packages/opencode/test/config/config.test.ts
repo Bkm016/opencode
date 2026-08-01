@@ -397,6 +397,28 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+it.effect("does not restart instances when only compaction strategy changes", () =>
+  withGlobalConfig({ config: { compaction: { strategy: "model", auto: true } } }, () =>
+    Effect.gen(function* () {
+      const result = yield* Config.use.updateGlobal({ compaction: { strategy: "chunk", auto: true } })
+
+      expect(result.changed).toBe(true)
+      expect(result.restartRequired).toBe(false)
+    }),
+  ),
+)
+
+it.effect("restarts instances when other global config changes", () =>
+  withGlobalConfig({ config: { compaction: { strategy: "model" } } }, () =>
+    Effect.gen(function* () {
+      const result = yield* Config.use.updateGlobal({ compaction: { strategy: "chunk", auto: false } })
+
+      expect(result.changed).toBe(true)
+      expect(result.restartRequired).toBe(true)
+    }),
+  ),
+)
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

@@ -93,6 +93,8 @@ export const dict = {
   "command.session.redo.description": "重做上一則復原的訊息",
   "command.session.compact": "精簡工作階段",
   "command.session.compact.description": "總結工作階段以減少上下文大小",
+  "command.session.uncompact": "撤銷工作階段壓縮",
+  "command.session.uncompact.description": "僅撤銷最近一次壓縮，不刪除任何真實訊息",
   "command.session.fork": "從訊息分支",
   "command.session.fork.description": "從先前的訊息建立新工作階段",
   "command.session.share": "分享工作階段",

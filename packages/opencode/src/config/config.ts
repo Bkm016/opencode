@@ -18,7 +18,7 @@ import { isRecord } from "@/util/record"
 import type { ConsoleState } from "@opencode-ai/core/v1/config/console-state"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema, ScopedCache } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
@@ -35,6 +35,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { isDeepStrictEqual } from "node:util"
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -126,7 +127,9 @@ export interface Interface {
   readonly getGlobal: () => Effect.Effect<Info>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
   readonly update: (config: Info) => Effect.Effect<void>
-  readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
+  readonly updateGlobal: (
+    config: Info,
+  ) => Effect.Effect<{ info: Info; changed: boolean; restartRequired: boolean }>
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
@@ -641,12 +644,12 @@ const layer = Layer.effect(
       const file = globalConfigFile()
       const before = (yield* readConfigFile(file)) ?? "{}"
       const patch = writableGlobal(config)
+      const previous = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
 
       let next: Info
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
-        const existing = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
-        const merged = mergeDeep(writable(existing), patch)
+        const merged = mergeDeep(writable(previous), patch)
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
@@ -658,8 +661,29 @@ const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
-      if (changed) yield* invalidate()
-      return { info: next, changed }
+      if (!changed) return { info: next, changed, restartRequired: false }
+
+      yield* invalidate()
+      const withoutCompactionStrategy = (info: Info) => {
+        const normalized = structuredClone(writable(info))
+        if (!normalized.compaction) return normalized
+        delete normalized.compaction.strategy
+        if (Object.values(normalized.compaction).every((value) => value === undefined)) delete normalized.compaction
+        return normalized
+      }
+      const strategyChanged = previous.compaction?.strategy !== next.compaction?.strategy
+      const strategyOnly =
+        strategyChanged && isDeepStrictEqual(withoutCompactionStrategy(previous), withoutCompactionStrategy(next))
+      if (!strategyOnly) return { info: next, changed, restartRequired: true }
+
+      // 压缩策略在每次 provider turn 前读取；仅刷新 Config 缓存即可生效，
+      // 不得销毁 Instance，否则会连带中断所有正在运行的 Session Runner。
+      const keys = yield* ScopedCache.keys(state.cache)
+      yield* Effect.forEach(keys, (key) => ScopedCache.invalidate(state.cache, key), {
+        concurrency: "unbounded",
+        discard: true,
+      })
+      return { info: next, changed, restartRequired: false }
     })
 
     return Service.of({

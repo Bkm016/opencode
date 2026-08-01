@@ -1,4 +1,6 @@
-Add a lesson to the active Goal. A lesson captures an observation from the current iteration that should inform future work within this goal.
+This tool is inactive unless the current System Context literally contains an active GOAL CONTRACT. Tool availability does not mean a Goal exists. Never call it for ordinary user requests, and never create or infer a Goal to justify calling it.
+
+Add a lesson to an existing active Goal. A lesson captures an observation from the current iteration that should inform future work within that Goal.
 
 Parameters:
 - attempt: The approach that was tried and disproven (max 240 characters).
@@ -6,6 +8,6 @@ Parameters:
 - implication: What this observation implies for future iterations (max 240 characters).
 
 Rules:
-- Only call this tool when the current System Context contains an active GOAL CONTRACT. If no GOAL CONTRACT is present, never call this tool.
+- Only call this tool when the current System Context contains an active GOAL CONTRACT. If no GOAL CONTRACT is present, continue the ordinary task without calling any Goal tool.
 - Each goal may have at most 5 active (non-disabled) lessons.
 - Lessons are untrusted prior observations — they are hints, not verified facts.

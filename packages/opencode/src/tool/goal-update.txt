@@ -1,8 +1,10 @@
-Update the active Goal status when the model determines the goal is complete or blocked.
+This tool is inactive unless the current System Context literally contains an active GOAL CONTRACT. Tool availability does not mean a Goal exists. Never call it for ordinary user requests, and never create or infer a Goal to justify calling it.
+
+Update an existing active Goal status when that Goal's outcome is complete or blocked.
 
 Parameters:
 - status: Must be "complete" or "blocked". Use "complete" when the outcome has been achieved and verified. Use "blocked" when an external condition prevents further progress.
 
 Rules:
-- Only call this tool when the current System Context contains an active GOAL CONTRACT. If no GOAL CONTRACT is present, never call this tool.
+- Only call this tool when the current System Context contains an active GOAL CONTRACT. If no GOAL CONTRACT is present, continue the ordinary task without calling any Goal tool.
 - Only call this tool when you are confident the goal is complete or genuinely blocked.

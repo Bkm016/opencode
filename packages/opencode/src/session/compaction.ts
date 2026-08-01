@@ -134,6 +134,7 @@ export interface Interface {
     model: Provider.Model
   }) => Effect.Effect<boolean>
   readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+  readonly restore: (sessionID: SessionID) => Effect.Effect<number>
   readonly process: (input: {
     parentID: MessageID
     messages: SessionV1.WithParts[]
@@ -340,6 +341,29 @@ const layer = Layer.effect(
         }
         yield* Effect.logInfo("pruned", { count: toPrune.length })
       }
+    })
+
+    const restore = Effect.fn("SessionCompaction.restore")(function* (sessionID: SessionID) {
+      const messages = yield* session.messages({ sessionID }).pipe(Effect.orDie)
+      const holder = messages.findLast(
+        (message) =>
+          message.info.role === "user" && message.parts.some((part) => part.type === "compaction"),
+      )
+      if (!holder) return 0
+      const summaries = messages.filter(
+        (message) =>
+          message.info.role === "assistant" &&
+          message.info.summary === true &&
+          message.info.parentID === holder.info.id,
+      )
+      // 只撤销最近一层压缩：先移除 summary child，再移除 holder。
+      // 更早的压缩层级、真实会话消息和 tool 记录全部保留。
+      yield* Effect.forEach(
+        [...summaries, holder],
+        (message) => session.removeMessage({ sessionID, messageID: message.info.id }),
+        { discard: true },
+      )
+      return summaries.length + 1
     })
 
     const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
@@ -578,6 +602,7 @@ const layer = Layer.effect(
     return Service.of({
       isOverflow,
       prune,
+      restore,
       process: processCompaction,
       replayUser,
       create,

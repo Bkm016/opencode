@@ -119,6 +119,8 @@ export const dict = {
   "command.session.redo.description": "重做上一条撤销的消息",
   "command.session.compact": "精简会话",
   "command.session.compact.description": "总结会话以减少上下文大小",
+  "command.session.uncompact": "撤销会话压缩",
+  "command.session.uncompact.description": "仅撤销最近一次压缩，不删除任何真实消息",
   "command.session.fork": "从消息分叉",
   "command.session.fork.description": "从之前的消息创建新会话",
   "command.session.share": "分享会话",

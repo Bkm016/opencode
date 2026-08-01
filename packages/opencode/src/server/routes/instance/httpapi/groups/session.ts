@@ -95,6 +95,7 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
+  uncompact: `${root}/:sessionID/uncompact`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
   command: `${root}/:sessionID/command`,
@@ -339,6 +340,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        HttpApiEndpoint.post("uncompact", SessionPaths.uncompact, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Number, "Removed latest compaction scaffold messages"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.uncompact",
+            summary: "Undo session compaction",
+            description: "Remove the latest compaction checkpoint and summary while preserving earlier compactions and the original conversation.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {

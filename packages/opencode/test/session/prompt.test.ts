@@ -401,7 +401,10 @@ const user = Effect.fn("test.user")(function* (sessionID: SessionID, text: strin
   return msg
 })
 
-const seed = Effect.fn("test.seed")(function* (sessionID: SessionID, opts?: { finish?: string }) {
+const seed = Effect.fn("test.seed")(function* (
+  sessionID: SessionID,
+  opts?: { finish?: string; text?: string },
+) {
   const session = yield* Session.Service
   const msg = yield* user(sessionID, "hello")
   const assistant: SessionV1.Assistant = {
@@ -425,7 +428,7 @@ const seed = Effect.fn("test.seed")(function* (sessionID: SessionID, opts?: { fi
     messageID: assistant.id,
     sessionID,
     type: "text",
-    text: "hi there",
+    text: opts?.text ?? "hi there",
   })
   return { user: msg, assistant }
 })
@@ -537,7 +540,7 @@ it.instance("chunk compaction seals an empty result and accepts the next prompt"
   }),
 )
 
-it.instance("chunk compaction retries an overflowing prompt in place", () =>
+it.instance("chunk compaction archives an overflowing prompt before retrying", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -569,11 +572,63 @@ it.instance("chunk compaction retries an overflowing prompt in place", () =>
     expect(requests).toHaveLength(1)
     expect(JSON.stringify(hits[0]?.body.messages)).toContain("x".repeat(10_000))
     expect(JSON.stringify(hits[1]?.body.messages)).not.toContain("x".repeat(10_000))
-    expect(JSON.stringify(hits[1]?.body.messages)).toContain("<user-text-reference")
+    expect(JSON.stringify(hits[1]?.body.messages)).toContain("archived chunks: 1")
+    expect(JSON.stringify(hits[1]?.body.messages)).toContain("Continue the interrupted work")
+    const retryTools = hits[1]?.body.tools as Array<{ function?: { name?: string } }> | undefined
+    expect(retryTools?.some((tool) => tool.function?.name === "edit")).toBe(true)
     expect(result.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "text", text: "continued after chunk compaction" }),
       ]),
+    )
+  }),
+)
+
+it.instance("chunk compaction fits the complete request before calling the provider", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => {
+      const config = providerCfg(url)
+      return {
+        ...config,
+        compaction: { strategy: "chunk" },
+        provider: {
+          ...config.provider,
+          test: {
+            ...config.provider.test,
+            models: {
+              ...config.provider.test.models,
+              "test-model": {
+                ...config.provider.test.models["test-model"],
+                limit: { context: 40_000, output: 10_000 },
+              },
+            },
+          },
+        },
+      }
+    })
+    const prompt = yield* SessionPrompt.Service
+    const compaction = yield* SessionCompaction.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    yield* seed(chat.id, { finish: "stop", text: "x".repeat(60_000) })
+    yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+    yield* prompt.loop({ sessionID: chat.id })
+    yield* llm.text("continued within budget")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "continue safely" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+
+    expect(hits).toHaveLength(1)
+    expect(JSON.stringify(hits[0]?.body.messages)).not.toContain("x".repeat(10_000))
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("archived chunk IDs:")
+    expect(result.parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "text", text: "continued within budget" })]),
     )
   }),
 )
@@ -714,7 +769,7 @@ it.instance("forced chunk overflow immediately aborts a running tool", () =>
   }),
 )
 
-withGoal.instance("chunk compaction archives a second overflow and completes the active Goal", () =>
+withGoal.instance("chunk compaction archives the first overflow and completes the active Goal", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -732,7 +787,6 @@ withGoal.instance("chunk compaction archives a second overflow and completes the
       boundaries: [],
       iterationPolicy: "Continue until verified",
     })
-    yield* llm.error(413, { error: { message: "request entity too large" } })
     yield* llm.error(413, { error: { message: "request entity too large" } })
     yield* llm.push(
       reply().tool("goal_update", { status: "complete" }).item(),
@@ -758,11 +812,18 @@ withGoal.instance("chunk compaction archives a second overflow and completes the
       ),
     )
     const hits = yield* llm.hits
-    const recoveryMessages = hits[2]?.body.messages
+    const recoveryMessages = hits[1]?.body.messages
 
-    expect(hits).toHaveLength(4)
+    expect(hits).toHaveLength(3)
     expect(requests).toHaveLength(1)
     expect(recovery).toBeDefined()
+    expect(messages.filter((message) => message.info.role === "assistant" && message.info.error)).toHaveLength(0)
+    expect(
+      messages.filter(
+        (message) => message.info.role === "user" && message.parts.some((part) => part.type === "compaction"),
+      ),
+    ).toHaveLength(1)
+    expect(messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
     expect(Array.isArray(recoveryMessages)).toBe(true)
     expect(JSON.stringify(recoveryMessages)).not.toContain("finish after fallback")
     expect(JSON.stringify(recoveryMessages)).toContain("archived chunk IDs:")

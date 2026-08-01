@@ -15,8 +15,12 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  CommandGetRunErrors,
+  CommandGetRunResponses,
   CommandListErrors,
   CommandListResponses,
+  CommandUpdateRunErrors,
+  CommandUpdateRunResponses,
   CommandV2RunConfig,
   Config as Config3,
   ConfigGetErrors,
@@ -257,6 +261,8 @@ import type {
   SessionSummarizeResponses,
   SessionTodoErrors,
   SessionTodoResponses,
+  SessionUncompactErrors,
+  SessionUncompactResponses,
   SessionUnrevertErrors,
   SessionUnrevertResponses,
   SessionUnshareErrors,
@@ -306,12 +312,8 @@ import type {
   TuiSubmitPromptResponses,
   V2AgentListErrors,
   V2AgentListResponses,
-  V2CommandGetRunErrors,
-  V2CommandGetRunResponses,
   V2CommandListErrors,
   V2CommandListResponses,
-  V2CommandUpdateRunErrors,
-  V2CommandUpdateRunResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -2314,6 +2316,73 @@ export class Command extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Get project run script file
+   *
+   * Resolve the authoritative .opencode/run.json path.
+   */
+  public getRun<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<CommandGetRunResponses, CommandGetRunErrors, ThrowOnError>({
+      url: "/api/command/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update project run scripts
+   *
+   * Write the project .opencode/run.json script definitions.
+   */
+  public updateRun<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      commandV2RunConfig: CommandV2RunConfig
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "commandV2RunConfig", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<CommandUpdateRunResponses, CommandUpdateRunErrors, ThrowOnError>({
+      url: "/api/command/run",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Lsp extends HeyApiClient {
@@ -4284,6 +4353,38 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Undo session compaction
+   *
+   * Remove compaction checkpoints and summaries while preserving the original conversation.
+   */
+  public uncompact<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionUncompactResponses, SessionUncompactErrors, ThrowOnError>({
+      url: "/session/{sessionID}/uncompact",
+      ...options,
+      ...params,
     })
   }
 
@@ -7172,66 +7273,6 @@ export class Command2 extends HeyApiClient {
       url: "/api/command",
       ...options,
       ...params,
-    })
-  }
-
-  /**
-   * Get project run script file
-   *
-   * Resolve the authoritative project .opencode/run.json path.
-   */
-  public getRun<ThrowOnError extends boolean = false>(
-    parameters?: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
-    return (options?.client ?? this.client).get<V2CommandGetRunResponses, V2CommandGetRunErrors, ThrowOnError>({
-      url: "/api/command/run",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Update project run scripts
-   *
-   * Write the project .opencode/run.json script definitions.
-   */
-  public updateRun<ThrowOnError extends boolean = false>(
-    parameters: {
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      commandV2RunConfig: CommandV2RunConfig
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "location" },
-            { key: "commandV2RunConfig", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).put<V2CommandUpdateRunResponses, V2CommandUpdateRunErrors, ThrowOnError>({
-      url: "/api/command/run",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
     })
   }
 }

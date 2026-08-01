@@ -1116,6 +1116,12 @@ export function MessageTimeline(props: {
   }
 
   const workingTurn = (userMessageID: string) => sessionStatus().type !== "idle" && activeMessageID() === userMessageID
+  // 会话正在工作时隐藏重放/重置按钮，防止误触打断正在执行的 turn。
+  const sessionActions = createMemo(() => {
+    const actions = props.actions
+    if (!actions || sessionStatus().type === "idle") return actions
+    return { openAttachment: actions.openAttachment }
+  })
 
   const turnDurationMs = (userMessageID: string) => {
     const message = messageByID().get(userMessageID)
@@ -1318,7 +1324,7 @@ export function MessageTimeline(props: {
                     <Message
                       message={message()}
                       parts={getMsgParts(userMessageRow().userMessageID)}
-                      actions={props.actions}
+                      actions={sessionActions()}
                     />
                   </div>
                 </div>

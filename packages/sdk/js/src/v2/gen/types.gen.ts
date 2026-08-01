@@ -2537,7 +2537,7 @@ export type Command = {
   description?: string
   agent?: string
   model?: string
-  source?: "command" | "mcp" | "skill"
+  source?: "command" | "mcp" | "skill" | "run"
   template: string
   subtask?: boolean
   hints: Array<string>
@@ -4064,6 +4064,28 @@ export type ConfigV2ExperimentalPolicy = {
   resource: string
 }
 
+export type LocationInfo = {
+  directory: string
+  workspaceID?: string
+  project: {
+    id: string
+    directory: string
+  }
+}
+
+export type CommandRunFile = {
+  path: string
+  scripts: {
+    [key: string]: string
+  }
+}
+
+export type CommandV2RunConfig = {
+  scripts: {
+    [key: string]: string
+  }
+}
+
 export type ProjectDirectories = Array<{
   directory: string
   strategy?: string
@@ -4077,15 +4099,6 @@ export type PtyTicketConnectToken = {
 export type WorkspaceEventConnectionStatus = {
   workspaceID: string
   status: "connected" | "connecting" | "disconnected" | "error"
-}
-
-export type LocationInfo = {
-  directory: string
-  workspaceID?: string
-  project: {
-    id: string
-    directory: string
-  }
 }
 
 export type ProviderRequest = {
@@ -5227,19 +5240,6 @@ export type CommandV2Info = {
   model?: ModelRef
   subtask?: boolean
   source?: "command" | "mcp" | "skill" | "run"
-}
-
-export type CommandRunFile = {
-  path: string
-  scripts: {
-    [key: string]: string
-  }
-}
-
-export type CommandV2RunConfig = {
-  scripts: {
-    [key: string]: string
-  }
 }
 
 export type SkillV2Info = {
@@ -8717,6 +8717,76 @@ export type CommandListResponses = {
 
 export type CommandListResponse = CommandListResponses[keyof CommandListResponses]
 
+export type CommandGetRunData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/command/run"
+}
+
+export type CommandGetRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: unknown
+}
+
+export type CommandGetRunError = CommandGetRunErrors[keyof CommandGetRunErrors]
+
+export type CommandGetRunResponses = {
+  /**
+   * Resolve the project run script file
+   */
+  200: {
+    location: LocationInfo
+    data: CommandRunFile
+  }
+}
+
+export type CommandGetRunResponse = CommandGetRunResponses[keyof CommandGetRunResponses]
+
+export type CommandUpdateRunData = {
+  body: CommandV2RunConfig
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/api/command/run"
+}
+
+export type CommandUpdateRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: unknown
+}
+
+export type CommandUpdateRunError = CommandUpdateRunErrors[keyof CommandUpdateRunErrors]
+
+export type CommandUpdateRunResponses = {
+  /**
+   * Write project run scripts
+   */
+  200: {
+    location: LocationInfo
+    data: CommandRunFile
+  }
+}
+
+export type CommandUpdateRunResponse = CommandUpdateRunResponses[keyof CommandUpdateRunResponses]
+
 export type AppAgentsData = {
   body?: never
   path?: never
@@ -10605,6 +10675,40 @@ export type SessionSummarizeResponses = {
 }
 
 export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
+
+export type SessionUncompactData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/uncompact"
+}
+
+export type SessionUncompactErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionUncompactError = SessionUncompactErrors[keyof SessionUncompactErrors]
+
+export type SessionUncompactResponses = {
+  /**
+   * Removed compaction scaffold messages
+   */
+  200: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type SessionUncompactResponse = SessionUncompactResponses[keyof SessionUncompactResponses]
 
 export type SessionPromptAsyncData = {
   body?: {
@@ -13855,80 +13959,6 @@ export type V2CommandListResponses = {
 }
 
 export type V2CommandListResponse = V2CommandListResponses[keyof V2CommandListResponses]
-
-export type V2CommandGetRunData = {
-  body?: never
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/command/run"
-}
-
-export type V2CommandGetRunErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2CommandGetRunError = V2CommandGetRunErrors[keyof V2CommandGetRunErrors]
-
-export type V2CommandGetRunResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: CommandRunFile
-  }
-}
-
-export type V2CommandGetRunResponse = V2CommandGetRunResponses[keyof V2CommandGetRunResponses]
-
-export type V2CommandUpdateRunData = {
-  body: CommandV2RunConfig
-  path?: never
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/api/command/run"
-}
-
-export type V2CommandUpdateRunErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2CommandUpdateRunError = V2CommandUpdateRunErrors[keyof V2CommandUpdateRunErrors]
-
-export type V2CommandUpdateRunResponses = {
-  /**
-   * Success
-   */
-  200: {
-    location: LocationInfo
-    data: CommandRunFile
-  }
-}
-
-export type V2CommandUpdateRunResponse = V2CommandUpdateRunResponses[keyof V2CommandUpdateRunResponses]
 
 export type V2SkillListData = {
   body?: never

@@ -300,6 +300,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  const uncompact = async () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    await sdk().client.session.uncompact({ sessionID })
+  }
+
   const fork = () => {
     void openDialog(
       () => import("@/components/dialog-fork"),
@@ -384,6 +390,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "compact",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: compact,
+    }),
+    sessionCommand({
+      id: "session.uncompact",
+      title: language.t("command.session.uncompact"),
+      description: language.t("command.session.uncompact.description"),
+      slash: "uncompact",
+      disabled: !params.id,
+      onSelect: uncompact,
     }),
     sessionCommand({
       id: "session.fork",

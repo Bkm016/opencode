@@ -256,7 +256,9 @@ const WorkspaceSessionList = (props: {
     () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
   )
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean>>({})
-  let groupCommandRevision = 0
+  // 挂载时记录当前命令版本，避免把挂载前的一次性折叠/展开命令重复套用到新列表上。
+  const initialCommand = props.ctx.sessionGroupsCommand()
+  let groupCommandRevision = initialCommand?.revision ?? 0
 
   const isGroupOpen = (group: SessionGroup) => groupOpen[group.key] ?? group.defaultOpen
 

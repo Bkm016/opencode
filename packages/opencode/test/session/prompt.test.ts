@@ -31,6 +31,7 @@ import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { SessionCompaction } from "../../src/session/compaction"
+import { Goal } from "../../src/session/goal"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
@@ -225,8 +226,14 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
   return LayerNode.compile(promptRoot, replacements)
 }
 
-function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
-  const root = LayerNode.group([promptRoot, testLLMServerNode])
+function makeHttp(input?: {
+  mcpInstructions?: MCP.ServerInstructions[]
+  processor?: "blocking"
+  exposeGoal?: boolean
+}) {
+  const root = LayerNode.group(
+    input?.exposeGoal ? [promptRoot, testLLMServerNode, Goal.node] : [promptRoot, testLLMServerNode],
+  )
   const replacements = [
     [SessionSummary.node, summary],
     [LSP.node, lsp],
@@ -245,6 +252,7 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 }
 
 const it = testEffect(makeHttp())
+const withGoal = testEffect(makeHttp({ exposeGoal: true }))
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -538,13 +546,14 @@ it.instance("chunk compaction retries an overflowing prompt in place", () =>
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const chat = yield* sessions.create({ title: "Pinned" })
+    const request = `finish the original request\n${"x".repeat(20_000)}`
     yield* llm.error(413, { error: { message: "request entity too large" } })
     yield* llm.text("continued after chunk compaction")
     yield* prompt.prompt({
       sessionID: chat.id,
       agent: "build",
       noReply: true,
-      parts: [{ type: "text", text: "finish the original request" }],
+      parts: [{ type: "text", text: request }],
     })
 
     const result = yield* prompt.loop({ sessionID: chat.id })
@@ -552,11 +561,15 @@ it.instance("chunk compaction retries an overflowing prompt in place", () =>
     const requests = messages.filter(
       (message) =>
         message.info.role === "user" &&
-        message.parts.some((part) => part.type === "text" && part.text === "finish the original request"),
+        message.parts.some((part) => part.type === "text" && part.text === request),
     )
+    const hits = yield* llm.hits
 
-    expect(yield* llm.hits).toHaveLength(2)
+    expect(hits).toHaveLength(2)
     expect(requests).toHaveLength(1)
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("x".repeat(10_000))
+    expect(JSON.stringify(hits[1]?.body.messages)).not.toContain("x".repeat(10_000))
+    expect(JSON.stringify(hits[1]?.body.messages)).toContain("<user-text-reference")
     expect(result.parts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "text", text: "continued after chunk compaction" }),
@@ -701,7 +714,7 @@ it.instance("forced chunk overflow immediately aborts a running tool", () =>
   }),
 )
 
-it.instance("chunk compaction preserves current work when the compacted retry still overflows", () =>
+withGoal.instance("chunk compaction archives a second overflow and completes the active Goal", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -709,9 +722,22 @@ it.instance("chunk compaction preserves current work when the compacted retry st
     }))
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
+    const goals = yield* Goal.Service
     const chat = yield* sessions.create({ title: "Pinned" })
+    yield* goals.createOrReplace({
+      sessionID: chat.id,
+      outcome: "Complete overflow recovery",
+      verification: ["The recovered turn reaches the provider"],
+      constraints: [],
+      boundaries: [],
+      iterationPolicy: "Continue until verified",
+    })
     yield* llm.error(413, { error: { message: "request entity too large" } })
     yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.push(
+      reply().tool("goal_update", { status: "complete" }).item(),
+      reply().text("goal survived overflow recovery").stop().item(),
+    )
     yield* prompt.prompt({
       sessionID: chat.id,
       agent: "build",
@@ -721,19 +747,34 @@ it.instance("chunk compaction preserves current work when the compacted retry st
 
     const result = yield* prompt.loop({ sessionID: chat.id })
     const messages = yield* sessions.messages({ sessionID: chat.id })
-    const summaries = messages.filter((message) => message.info.role === "assistant" && message.info.summary)
     const requests = messages.filter(
       (message) =>
         message.info.role === "user" &&
         message.parts.some((part) => part.type === "text" && part.text === "finish after fallback"),
     )
+    const recovery = messages.find((message) =>
+      message.parts.some(
+        (part) => part.type === "text" && part.metadata?.chunk_compaction_recovery === true,
+      ),
+    )
+    const hits = yield* llm.hits
+    const recoveryMessages = hits[2]?.body.messages
 
-    expect(yield* llm.hits).toHaveLength(2)
-    expect(summaries).toHaveLength(1)
+    expect(hits).toHaveLength(4)
     expect(requests).toHaveLength(1)
+    expect(recovery).toBeDefined()
+    expect(Array.isArray(recoveryMessages)).toBe(true)
+    expect(JSON.stringify(recoveryMessages)).not.toContain("finish after fallback")
+    expect(JSON.stringify(recoveryMessages)).toContain("archived chunk IDs:")
     expect(result.info.role).toBe("assistant")
     if (result.info.role !== "assistant") throw new Error("Expected assistant result")
-    expect(JSON.stringify(result.info.error)).toContain("当前工作已完整保留")
+    expect(result.info.error).toBeUndefined()
+    expect(result.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "goal survived overflow recovery" }),
+      ]),
+    )
+    expect(yield* goals.get(chat.id)).toMatchObject({ status: "complete" })
   }),
 )
 

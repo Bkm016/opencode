@@ -577,6 +577,7 @@ const DEFAULT_CHUNK_HARD_TOKENS = 24_000
 /**
  * 唯一历史投影入口。model 策略读取持久化 summary；chunk 策略从原始消息按预算
  * 重建已完成工作，并原样保留最后一个 chunk 之后的 active tail。
+ * active tail 中的超长用户文本只在 provider 投影里替换为可回查引用。
  */
 export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (input: {
   sessionID: SessionID
@@ -592,13 +593,25 @@ export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (i
   const part = compaction?.parts.find(
     (item): item is CompactionPart => item.type === "compaction" && item.chunks !== undefined,
   )
-  const chunks = part?.chunks ?? []
-  // 首次发送时必须把用户原文直传给 provider；只有已经存在 chunk checkpoint，
-  // 后续历史投影才允许把已完成的长 user text 替换成可回查引用。
-  if (chunks.length === 0) return filterCompacted(streamed)
+  // 首次发送时必须把用户原文直传给 provider；checkpoint 落库后才允许
+  // 把 active tail 的长文本替换成可回查引用。
+  if (!part) return filterCompacted(streamed)
+  const chunks = part.chunks ?? []
+  // 空 checkpoint 仍保留 summary scaffold 的消息顺序，确保流式中断的 assistant
+  // 可以续接；只替换 active tail 中导致 overflow 的超长用户文本。
+  if (chunks.length === 0) return SessionChunk.projectLongUserText(filterCompacted(streamed))
   const targetTokens = input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS
   const hardTokens = input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS
-  const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
+  const recovering = messages
+    .findLast((message) => message.info.role === "user")
+    ?.parts.some(
+      (item) => item.type === "text" && item.metadata?.[SessionChunk.COMPACTION_RECOVERY] === true,
+    )
+  // 二次 overflow 已把 active tail 封存为 chunk；恢复请求只携带 checkpoint
+  // 与新的 continuation，完整现场继续通过 history 工具按需回查。
+  const selection = recovering
+    ? { visible: [], archived: chunks, tokens: 0 }
+    : SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
   return SessionChunk.project({ messages, selection, targetTokens, hardTokens })
 })
 

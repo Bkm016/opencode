@@ -66,7 +66,6 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
-const CHUNK_COMPACTION_REPLAY = "chunk_compaction_replay"
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -1288,6 +1287,7 @@ const layer = Layer.effect(
     const createChunkContinuation = Effect.fn("SessionPrompt.createChunkContinuation")(function* (
       sessionID: SessionID,
       user: SessionV1.User,
+      recovery = false,
     ) {
       const continuation = yield* sessions.updateMessage({
         id: MessageID.ascending(),
@@ -1305,9 +1305,14 @@ const layer = Layer.effect(
         messageID: continuation.id,
         sessionID,
         type: "text",
-        text: "Continue the interrupted work from the preserved active context.",
+        text: recovery
+          ? "Continue the interrupted work. The overflowed active turn is preserved in archived chunk history; use history_grep or history_list when details are needed."
+          : "Continue the interrupted work from the preserved active context.",
         synthetic: true,
-        metadata: { [CHUNK_COMPACTION_REPLAY]: true },
+        metadata: {
+          [SessionChunk.COMPACTION_REPLAY]: true,
+          ...(recovery ? { [SessionChunk.COMPACTION_RECOVERY]: true } : {}),
+        },
       })
       return continuation
     })
@@ -1867,17 +1872,51 @@ const layer = Layer.effect(
               const cfg = yield* config.get()
               if (cfg.compaction?.strategy === "chunk") {
                 const chunkReplay = lastUserMsg?.parts.some(
-                  (part) => part.type === "text" && part.metadata?.[CHUNK_COMPACTION_REPLAY] === true,
+                  (part) => part.type === "text" && part.metadata?.[SessionChunk.COMPACTION_REPLAY] === true,
                 )
+                const chunkRecovery = lastUserMsg?.parts.some(
+                  (part) => part.type === "text" && part.metadata?.[SessionChunk.COMPACTION_RECOVERY] === true,
+                )
+                if (chunkRecovery) {
+                  // 零历史预算的恢复请求仍超限时才进入 model fallback，避免 recovery 自旋。
+                  yield* compaction.create({
+                    sessionID,
+                    agent: lastUser.agent,
+                    model: lastUser.model,
+                    auto: true,
+                    overflow: true,
+                  })
+                  return "continue" as const
+                }
                 if (chunkReplay) {
-                  // active tail 自身仍超限时不能用 model compaction 丢弃当前 tool / assistant
-                  // 过程；保留现场并停止，等待用户缩短输入或切换更大上下文模型。
+                  // 二次 overflow 时先终止当前 provider attempt，使完整 active tail 成为
+                  // 可关闭 chunk；随后以零历史预算续跑，Goal 状态保持 active。
                   handle.message.error = new SessionV1.ContextOverflowError({
-                    message: "Chunk 压缩后上下文仍超过模型限制；当前工作已完整保留，请缩短输入或切换更大上下文模型。",
+                    message: "Chunk replay exceeded the model context limit; the active turn was archived for recovery.",
                   }).toObject()
                   handle.message.finish = "error"
                   yield* sessions.updateMessage(handle.message)
-                  return "break" as const
+                  const recovered = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
+                    Effect.map(() => true),
+                    Effect.catchDefect((defect: unknown) =>
+                      Effect.gen(function* () {
+                        yield* Effect.logWarning("chunk recovery persist failed", { error: String(defect) })
+                        return false
+                      }),
+                    ),
+                  )
+                  if (!recovered) {
+                    yield* compaction.create({
+                      sessionID,
+                      agent: lastUser.agent,
+                      model: lastUser.model,
+                      auto: true,
+                      overflow: true,
+                    })
+                    return "continue" as const
+                  }
+                  yield* createChunkContinuation(sessionID, lastUser, true)
+                  return "continue" as const
                 }
                 const persisted = yield* persistChunkBoundary(sessionID, { force: true, endBefore: msg.id }).pipe(
                   Effect.map(() => true),
@@ -1888,9 +1927,19 @@ const layer = Layer.effect(
                     }),
                   ),
                 )
-                if (!persisted || !lastUserMsg) return "break" as const
+                if (!persisted || !lastUserMsg) {
+                  yield* compaction.create({
+                    sessionID,
+                    agent: lastUser.agent,
+                    model: lastUser.model,
+                    auto: true,
+                    overflow: true,
+                  })
+                  return "continue" as const
+                }
                 // 已完整输出的 final response 不需要重跑；本次只为后续请求释放历史预算。
-                if (handle.message.finish && handle.message.finish !== "tool-calls") return "break" as const
+                // 仍回到安全边界，让 active Goal 创建下一条 continuation。
+                if (handle.message.finish && handle.message.finish !== "tool-calls") return "continue" as const
                 // 与 model 压缩一致：checkpoint 后创建隐藏 continuation turn，避免
                 // Timeline 把续跑 assistant 重新归到压缩前的原 user。
                 yield* createChunkContinuation(sessionID, lastUser)

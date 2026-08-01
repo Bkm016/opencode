@@ -17,6 +17,8 @@ export * as SessionChunk from "./chunk"
 export type Chunk = SessionV1.ChunkMeta
 
 export const TRANSCRIPT_VERSION = 2
+export const COMPACTION_REPLAY = "chunk_compaction_replay"
+export const COMPACTION_RECOVERY = "chunk_compaction_recovery"
 
 const DISPLAY_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789"
 
@@ -445,7 +447,7 @@ export function project(input: {
   // tail 中跳过纯 compaction checkpoint 消息（带 chunks 元数据、无真实用户文本），
   // 但保留新 /compact 命令创建的 compaction 消息（无 chunks），
   // 否则 latest() 无法拾取 compaction task，/compact 分支永远不触发。
-  const tail = messages.slice(tailIndex).filter((msg) => {
+  const tail = projectLongUserText(messages.slice(tailIndex)).filter((msg) => {
     if (msg.info.role === "assistant" && msg.info.summary) return false
     if (msg.info.role !== "user") return true
     const compaction = msg.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
@@ -469,12 +471,14 @@ export function checkpointText(input: {
 }) {
   const { chunks, selection } = input
   const visibleSeq = selection.visible.map((chunk) => chunk.sequence)
+  const archivedIDs = selection.archived.map((chunk) => chunk.display_id)
   const lines = [
     `<conversation-checkpoint strategy="chunk">`,
     ...CHECKPOINT_RULES,
     ``,
     `visible chunks: ${selection.visible.length}`,
     `archived chunks: ${selection.archived.length}`,
+    `archived chunk IDs: ${archivedIDs.length > 0 ? archivedIDs.join(", ") : "none"}`,
     `visible sequences: ${visibleSeq.length > 0 ? `${visibleSeq[0]}..${visibleSeq.at(-1)}` : "none"}`,
     `history budget: ${selection.tokens}/${input.targetTokens} tokens (hard ${input.hardTokens})`,
     `</conversation-checkpoint>`,

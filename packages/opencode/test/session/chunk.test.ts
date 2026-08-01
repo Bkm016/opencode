@@ -471,7 +471,7 @@ describe("project", () => {
     expect(tailPart.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
   })
 
-  test("keeps a long active user text verbatim without dropping the active message", () => {
+  test("projects a long active user text as a reference without dropping the active message", () => {
     const u1 = user("q1")
     const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
     const chunk = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!
@@ -489,7 +489,10 @@ describe("project", () => {
     const projectedUser = projected.find((message) => message.info.id === u2.info.id)!
     const text = (projectedUser.parts[0] as SessionV1.TextPart).text
 
-    expect(text).toBe(longText)
+    expect(text).not.toBe(longText)
+    expect(text).toContain(`<user-text-reference message_id="${u2.info.id}"`)
+    expect(text).toContain("error: details")
+    expect((u2.parts[0] as SessionV1.TextPart).text).toBe(longText)
     expect(projected.some((message) => message.info.id === active.info.id)).toBe(true)
   })
 

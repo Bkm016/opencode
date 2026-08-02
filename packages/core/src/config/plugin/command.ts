@@ -7,6 +7,7 @@ import { CommandV2 } from "../../command"
 import { Config } from "../../config"
 import { FSUtil } from "../../fs-util"
 import { ModelV2 } from "../../model"
+import { RunScript } from "../../run-script"
 import { ConfigCommand } from "../command"
 import { ConfigMarkdown } from "../markdown"
 
@@ -74,18 +75,17 @@ function loadDirectory(fs: FSUtil.Interface, directory: string) {
 
 function loadRun(fs: FSUtil.Interface, directory: string) {
   return Effect.gen(function* () {
-    const value = yield* fs.readJson(path.join(directory, "run.json")).pipe(Effect.catch(() => Effect.succeed(undefined)))
-    const scripts = isRecord(value) && isRecord(value.scripts) ? value.scripts : value
-    if (!isRecord(scripts)) return []
-    return Object.entries(scripts).flatMap(([name, template]) => {
-      if (name === "$schema" || typeof template !== "string") return []
-      return [{ name, info: { template, source: "run" as const } }]
-    })
+    const filepath = RunScript.filePath(directory)
+    // 解析失败或文件缺失都视为无运行脚本，不阻塞其余命令加载。
+    const value = yield* fs.readJson(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (value === undefined) return []
+    const scripts = yield* RunScript.parseEffect(filepath, value).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (!scripts) return []
+    return Object.entries(scripts).map(([name, template]) => ({
+      name,
+      info: { template, source: "run" as const },
+    }))
   })
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function decode(directory: string, filepath: string, content: string) {

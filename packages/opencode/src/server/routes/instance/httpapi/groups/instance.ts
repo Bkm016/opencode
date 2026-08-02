@@ -57,6 +57,17 @@ export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsAp
   { httpApiStatus: 400 },
 ) {}
 
+export class ApiRunScriptError extends Schema.ErrorClass<ApiRunScriptError>("RunScriptError")(
+  {
+    name: Schema.Literal("RunScriptError"),
+    data: Schema.Struct({
+      message: Schema.String,
+      path: Schema.String,
+    }),
+  },
+  { httpApiStatus: 422 },
+) {}
+
 export const InstancePaths = {
   dispose: "/instance/dispose",
   reload: "/instance/reload",
@@ -169,6 +180,7 @@ export const InstanceApi = HttpApi.make("instance")
         HttpApiEndpoint.get("commandGetRun", InstancePaths.commandRun, {
           query: WorkspaceRoutingQuery,
           success: described(Location.response(RunFile), "Resolve the project run script file"),
+          error: ApiRunScriptError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "command.getRun",

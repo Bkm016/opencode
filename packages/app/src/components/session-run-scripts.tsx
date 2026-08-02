@@ -1,33 +1,19 @@
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { createMemo, createResource, For } from "solid-js"
+import { createMemo, createResource, For, Show } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useTerminal } from "@/context/terminal"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { focusTerminalById } from "@/pages/session/helpers"
-import { retry } from "@opencode-ai/core/util/retry"
 import { DialogRunScripts } from "./dialog-run-scripts"
 
 type RunCommand = {
   name: string
   template: string
   source?: string
-}
-
-function runFileData(value: unknown): { scripts: Record<string, string> } | undefined {
-  if (typeof value !== "object" || value === null) return
-  if (
-    "scripts" in value &&
-    typeof value.scripts === "object" &&
-    value.scripts !== null &&
-    !Array.isArray(value.scripts)
-  ) {
-    return { scripts: value.scripts as Record<string, string> }
-  }
-  if ("data" in value) return runFileData(value.data)
 }
 
 export function SessionRunScripts() {
@@ -39,22 +25,16 @@ export function SessionRunScripts() {
   const directory = createMemo(() => params.dir ?? "")
   const [commands, commandsControl] = createResource(directory, async (value): Promise<RunCommand[]> => {
     if (!value) return []
-
-    try {
-      return await retry(
-        async () => {
-          const result = await sdk().client.command.getRun({ directory: sdk().directory })
-          const file = runFileData(result)
-          if (!file) throw new Error("Run script file is not ready")
-          const parsed = Object.entries(file.scripts).map(([name, template]) => ({ name, template, source: "run" }))
-          console.info(`[run] list response scripts: ${parsed.map((command) => command.name).join(", ")}`)
-          return parsed
-        },
-        { attempts: 6, delay: 500, retryIf: () => true },
-      )
-    } catch {
-      return []
-    }
+    // throwOnError 客户端在请求失败（含 run.json 解析失败返回 422）时直接抛错，
+    // 失败必须冒泡为 resource.error，绝不能静默降级成空列表。
+    const result = await sdk().client.command.getRun({ directory: sdk().directory })
+    // getRun 成功时返回 Location.response(RunFile) 的 { location, data } 信封。
+    if (!result.data) throw new Error("Run script file is unavailable")
+    return Object.entries(result.data.data.scripts).map(([name, template]) => ({
+      name,
+      template,
+      source: "run",
+    }))
   })
   const scripts = createMemo(() => commands()?.filter((command) => command.source === "run") ?? [])
 
@@ -92,14 +72,23 @@ export function SessionRunScripts() {
         <DropdownMenu.Content class="mt-1 min-w-44">
           <DropdownMenu.Group>
             <DropdownMenu.GroupLabel>{language.t("session.header.run")}</DropdownMenu.GroupLabel>
-            <For each={scripts()}>
-              {(script) => (
-                <DropdownMenu.Item onSelect={() => run(script)}>
-                  <Icon name="console" size="small" class="text-icon-weak" />
-                  <DropdownMenu.ItemLabel>{script.name}</DropdownMenu.ItemLabel>
-                </DropdownMenu.Item>
-              )}
-            </For>
+            <Show
+              when={!commands.error}
+              fallback={
+                <div class="max-w-64 px-2 py-1.5 text-12-regular text-icon-critical-base">
+                  {commands.error instanceof Error ? commands.error.message : String(commands.error)}
+                </div>
+              }
+            >
+              <For each={scripts()}>
+                {(script) => (
+                  <DropdownMenu.Item onSelect={() => run(script)}>
+                    <Icon name="console" size="small" class="text-icon-weak" />
+                    <DropdownMenu.ItemLabel>{script.name}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </Show>
           </DropdownMenu.Group>
           <DropdownMenu.Separator />
           <DropdownMenu.Item onSelect={edit}>

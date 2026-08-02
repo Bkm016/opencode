@@ -20,22 +20,6 @@ type DraftScript = {
   template: string
 }
 
-function runFilePath(value: unknown) {
-  if (typeof value !== "object" || value === null) return
-  if ("path" in value && typeof value.path === "string") return value.path
-  if (!("data" in value) || typeof value.data !== "object" || value.data === null) return
-  if ("path" in value.data && typeof value.data.path === "string") return value.data.path
-  if (
-    !("data" in value.data) ||
-    typeof value.data.data !== "object" ||
-    value.data.data === null ||
-    !("path" in value.data.data) ||
-    typeof value.data.data.path !== "string"
-  )
-    return
-  return value.data.data.path
-}
-
 export function DialogRunScripts(props: { scripts: RunScript[]; onSaved: () => void }) {
   const dialog = useDialog()
   const language = useLanguage()
@@ -53,9 +37,9 @@ export function DialogRunScripts(props: { scripts: RunScript[]; onSaved: () => v
     if (!canOpenFile() || !platform.openPath) return
     try {
       const result = await sdk().client.command.getRun({ directory: sdk().directory })
-      const runPath = runFilePath(result)
-      if (!runPath) throw new Error("The current run script file is unavailable.")
-      await platform.openPath(runPath)
+      // getRun 成功时返回 Location.response(RunFile) 的 { location, data } 信封。
+      if (!result.data) throw new Error("The current run script file is unavailable.")
+      await platform.openPath(result.data.data.path)
     } catch (cause) {
       showToast({
         variant: "error",
@@ -82,17 +66,13 @@ export function DialogRunScripts(props: { scripts: RunScript[]; onSaved: () => v
       if (Object.keys(scripts).length !== store.scripts.length) throw new Error("invalid")
 
       setSaving(true)
-      const directory = sdk().directory
-      console.info(`[run] save request directory: ${directory}`)
       const result = await sdk().client.command.updateRun(
         {
-          directory,
+          directory: sdk().directory,
           commandV2RunConfig: { scripts },
         },
         { throwOnError: true },
       )
-      console.info("[run] save response:", JSON.stringify(result))
-      console.info(`[run] save response path: ${runFilePath(result) ?? "unknown"}`)
       dialog.close()
       props.onSaved()
     } catch (cause) {

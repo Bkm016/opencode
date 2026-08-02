@@ -41,8 +41,9 @@ Review files`,
             )
             await fs.writeFile(path.join(tmp.path, "commands", "nested", "docs.md"), "Write docs")
             await fs.writeFile(path.join(tmp.path, "commands", "empty.md"), "")
+            await fs.mkdir(path.join(tmp.path, ".opencode"), { recursive: true })
             await fs.writeFile(
-              path.join(tmp.path, "run.json"),
+              path.join(tmp.path, ".opencode", "run.json"),
               JSON.stringify({ scripts: { "build-windows": "bun ./script/build-windows.ts" } }),
             )
           })

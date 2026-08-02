@@ -10,6 +10,7 @@ import { Skill } from "../skill"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 import { PromptCatalog } from "@/session/prompt-catalog"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { RunScript } from "@opencode-ai/core/run-script"
 
 type State = {
   commands: Record<string, Info>
@@ -106,12 +107,15 @@ const layer = Layer.effect(
         }
       }
 
-      const runPath = path.join(ctx.project.vcs ? ctx.worktree : ctx.directory, ".opencode", "run.json")
+      const runPath = RunScript.filePath(ctx.project.vcs ? ctx.worktree : ctx.directory)
+      // run.json 缺失或结构异常时都视为无运行脚本，不能因解析失败拖垮整个命令列表。
       const runConfig = yield* fs.readJson(runPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      const scripts = isRecord(runConfig) && isRecord(runConfig.scripts) ? runConfig.scripts : runConfig
-      if (isRecord(scripts)) {
+      const scripts =
+        runConfig === undefined
+          ? undefined
+          : yield* RunScript.parseEffect(runPath, runConfig).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (scripts) {
         for (const [name, template] of Object.entries(scripts)) {
-          if (name === "$schema" || typeof template !== "string") continue
           commands[name] = {
             name,
             source: "run",
@@ -194,7 +198,3 @@ const layer = Layer.effect(
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [Config.node, FSUtil.node, MCP.node, Skill.node] })
 
 export * as Command from "."
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}

@@ -16,7 +16,8 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import fs from "fs/promises"
 import path from "path"
 import { InstanceHttpApi } from "../api"
-import { ApiVcsApplyError } from "../groups/instance"
+import { ApiRunScriptError, ApiVcsApplyError } from "../groups/instance"
+import { RunScript } from "@opencode-ai/core/run-script"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
 import { Location } from "@opencode-ai/schema/location"
 
@@ -174,22 +175,28 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const getRunFile = Effect.fn("InstanceHttpApi.commandGetRun")(function* () {
       const ctx = yield* InstanceState.context
       const filepath = runFilePath(ctx)
-      const value = yield* Effect.promise(() => fs.readFile(filepath, "utf8")).pipe(
-        Effect.map((content) => JSON.parse(content) as unknown),
-        Effect.catch(() => Effect.succeed(undefined)),
+      const toApiError = (detail: string) =>
+        new ApiRunScriptError({
+          name: "RunScriptError",
+          data: { message: `Failed to load run scripts from ${filepath}: ${detail}`, path: filepath },
+        })
+      const exists = yield* Effect.tryPromise({
+        try: () => fs.stat(filepath),
+        catch: () => "missing" as const,
+      }).pipe(
+        Effect.map(() => true),
+        Effect.catch(() => Effect.succeed(false)),
       )
-      const scripts =
-        typeof value === "object" && value !== null && !Array.isArray(value) && "scripts" in value
-          ? value.scripts
-          : value
-      console.info(`[run] resolved path: ${filepath}`)
-      return runFileResponse(
-        ctx,
-        filepath,
-        typeof scripts === "object" && scripts !== null && !Array.isArray(scripts)
-          ? Object.fromEntries(Object.entries(scripts).filter(([, template]) => typeof template === "string"))
-          : {},
-      )
+      if (!exists) {
+        // A project simply having no run.json yet is not an error.
+        return runFileResponse(ctx, filepath, {})
+      }
+      const value = yield* Effect.tryPromise({
+        try: async () => JSON.parse(await fs.readFile(filepath, "utf8")) as unknown,
+        catch: (cause) => toApiError(cause instanceof Error ? cause.message : String(cause)),
+      })
+      const scripts = yield* RunScript.parseEffect(filepath, value).pipe(Effect.mapError((error) => toApiError(error.detail)))
+      return runFileResponse(ctx, filepath, scripts)
     })
 
     const updateRun = Effect.fn("InstanceHttpApi.commandUpdateRun")(function* (input: {
@@ -197,15 +204,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     }) {
       const ctx = yield* InstanceState.context
       const filepath = runFilePath(ctx)
-      console.info(`[run] saving path: ${filepath}`)
       yield* Effect.promise(async () => {
         await fs.mkdir(path.dirname(filepath), { recursive: true })
         await fs.writeFile(filepath, JSON.stringify(input.payload, null, 2) + "\n")
-        console.info(`[run] saved path: ${filepath}`)
-      }).pipe(
-        Effect.tapError((cause) => Effect.sync(() => console.error(`[run] save failed: ${filepath}`, cause))),
-        Effect.orDie,
-      )
+      }).pipe(Effect.orDie)
       yield* command.reload
       return runFileResponse(ctx, filepath, input.payload.scripts)
     })

@@ -90,8 +90,12 @@ async function writeClipboard(text: string): Promise<boolean> {
   )
 }
 
-function ShellSubmessage(props: { text: string; animate?: boolean }) {
-  let widthRef: HTMLSpanElement | undefined
+function firstLine(text: unknown) {
+  if (typeof text !== "string") return undefined
+  return text.split("\n", 1)[0] || undefined
+}
+
+function ShellSubmessage(props: { text: string; animate?: boolean }) {  let widthRef: HTMLSpanElement | undefined
   let valueRef: HTMLSpanElement | undefined
 
   onMount(() => {
@@ -605,6 +609,12 @@ export function getToolInfo(
         title: i18n.t("ui.tool.shell"),
         subtitle: input.command,
       }
+    case "python":
+      return {
+        icon: "console",
+        title: i18n.t("ui.tool.python"),
+        subtitle: firstLine(input.code),
+      }
     case "edit":
       return {
         icon: "code-lines",
@@ -834,7 +844,7 @@ export function isProcessGroup(group: PartGroup, resolve: (ref: PartRef) => Part
 }
 
 function toolDefaultOpen(tool: string, shell = false, edit = false) {
-  if (tool === "bash") return shell
+  if (tool === "bash" || tool === "python") return shell
   if (tool === "edit" || tool === "write" || tool === "apply_patch" || tool === "multiedit") return edit
 }
 
@@ -3228,6 +3238,77 @@ for (const name of ["task_async_status", "task_async_wait", "task_async_abort"] 
     },
   })
 }
+
+ToolRegistry.register({
+  name: "python",
+  render(props) {
+    const i18n = useI18n()
+    const pending = () => props.status === "pending" || props.status === "running"
+    const sawPending = pending()
+    const text = createMemo(() => {
+      const code = props.input.code ?? props.metadata.code ?? ""
+      const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
+      return `>>> ${firstLine(code) ?? ""}${out ? "\n\n" + out : ""}`
+    })
+    const [copied, setCopied] = createSignal(false)
+
+    const handleCopy = async () => {
+      const content = text()
+      if (!content) return
+      if (await writeClipboard(content)) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    }
+
+    return (
+      <BasicTool
+        {...props}
+        icon="console"
+        // 运行中的 python 也展开输出，让长脚本的进度可以实时观察。
+        forceOpen={pending()}
+        trigger={(open) => (
+          <div data-slot="basic-tool-tool-info-structured">
+            <div data-slot="basic-tool-tool-info-main">
+              <span data-slot="basic-tool-tool-title">
+                <TextShimmer text={i18n.t("ui.tool.python")} active={pending()} />
+              </span>
+              <Show when={!pending() && !open() && props.input.code}>
+                <ShellSubmessage text={firstLine(props.input.code) ?? ""} animate={sawPending} />
+              </Show>
+            </div>
+          </div>
+        )}
+      >
+        <div data-component="bash-output">
+          <div data-slot="bash-copy">
+            <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+              <IconButtonV2
+                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                size="normal"
+                variant="ghost-muted"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleCopy}
+                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+              />
+            </TooltipV2>
+          </div>
+          <div
+            data-slot="bash-scroll"
+            data-scrollable
+            tabIndex={0}
+            role="region"
+            aria-label={i18n.t("ui.scrollView.ariaLabel")}
+          >
+            <pre data-slot="bash-pre">
+              <code>{text()}</code>
+            </pre>
+          </div>
+        </div>
+      </BasicTool>
+    )
+  },
+})
 
 ToolRegistry.register({
   name: "bash",

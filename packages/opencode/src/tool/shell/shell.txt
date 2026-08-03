@@ -1,3 +1,5 @@
+Use this tool for ordinary terminal commands and short scripts. For complex scripts, prefer the `python` tool and pass the source through its `code` parameter.
+
 ${intro}
 
 Be aware: OS: ${os}, Shell: ${shell}
@@ -7,6 +9,8 @@ ${workdirSection}
 Use `${tmp}` for temporary work inside the current project. This directory has already been created and exists.
 
 IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+
+For complex script logic, prefer the `python` tool; use this shell for simple commands and short shell snippets.
 
 ${commandSection}
 

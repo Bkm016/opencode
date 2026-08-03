@@ -1,0 +1,7 @@
+Execute a Python script directly without going through a shell.
+
+Use this tool for complex scripts instead of composing them in `bash` or PowerShell. Use the shell tool for simple commands and short shell snippets.
+
+Pass the Python source code through `code`; do not pass a file path. Pass script arguments through `args`, and use `workdir` when the code must run from another project directory.
+
+The tool runs Python with unbuffered UTF-8 output, captures both standard output and standard error, returns the process exit code, and terminates the process when `timeout` milliseconds are exceeded.

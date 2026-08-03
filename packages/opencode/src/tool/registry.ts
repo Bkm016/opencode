@@ -7,6 +7,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
+import { PythonTool } from "./python"
 import { EditTool } from "./edit"
 import { MultiEditTool } from "./multiedit"
 import { GlobTool } from "./glob"
@@ -66,6 +67,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { AppProcess } from "@opencode-ai/core/process"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
@@ -125,6 +127,7 @@ const layer = Layer.effect(
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
+    const python = yield* PythonTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
     const edit = yield* EditTool
@@ -245,6 +248,7 @@ const layer = Layer.effect(
           taskAsyncAbort: Tool.init(taskAsyncAbort),
           taskAsyncFollowup: Tool.init(taskAsyncFollowup),
           fetch: Tool.init(webfetch),
+          python: Tool.init(python),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
@@ -264,6 +268,7 @@ const layer = Layer.effect(
           builtin: [
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
+            tool.python,
             tool.shell,
             tool.read,
             tool.list_dir,
@@ -513,6 +518,7 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
     httpClient,
     CrossSpawnSpawner.node,
+    AppProcess.node,
     Format.node,
     Truncate.node,
     RuntimeFlags.node,

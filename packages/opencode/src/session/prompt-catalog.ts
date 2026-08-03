@@ -38,6 +38,7 @@ import TOOL_TODOWRITE from "../tool/todowrite.txt"
 import TOOL_APPLY_PATCH from "../tool/apply_patch.txt"
 import TOOL_PLAN_EXIT from "../tool/plan-exit.txt"
 import TOOL_SHELL from "../tool/shell/shell.txt"
+import TOOL_PYTHON from "../tool/python.txt"
 
 import TOOL_GOAL_UPDATE from "../tool/goal-update.txt"
 import TOOL_GOAL_LESSON_ADD from "../tool/goal-lesson-add.txt"
@@ -343,6 +344,13 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "bash / shell",
     description: "Shell tool description template (supports placeholder tokens from the shell renderer)",
     default: TOOL_SHELL,
+  },
+  {
+    id: "tool.python",
+    group: "tool",
+    title: "python",
+    description: "Tool description for the python tool",
+    default: TOOL_PYTHON,
   },
   {
     id: "tool.goal_update",

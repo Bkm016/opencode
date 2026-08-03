@@ -126,6 +126,8 @@ function powershellCommandSection(
 ) {
   return `${powershellNotes(name)}
 
+Use this shell for simple commands and short scripts. For complex scripts, prefer the \`python\` tool and pass the source through its \`code\` parameter.
+
 Before executing the command, please follow these steps:
 
 1. Directory Verification:

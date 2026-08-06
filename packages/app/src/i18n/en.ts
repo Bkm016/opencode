@@ -98,6 +98,8 @@ export const dict = {
   "command.session.uncompact.description": "Undo only the latest compaction without deleting original messages",
   "command.session.fork": "Fork from message",
   "command.session.fork.description": "Create a new session from a previous message",
+  "command.session.duplicate": "Duplicate session",
+  "command.session.duplicate.description": "Copy this entire session into a new one, without rolling back any messages",
   "command.session.share": "Share session",
   "command.session.share.description": "Share this session and copy the URL to clipboard",
   "command.session.unshare": "Unshare session",

@@ -123,6 +123,8 @@ export const dict = {
   "command.session.uncompact.description": "仅撤销最近一次压缩，不删除任何真实消息",
   "command.session.fork": "从消息分叉",
   "command.session.fork.description": "从之前的消息创建新会话",
+  "command.session.duplicate": "复制会话",
+  "command.session.duplicate.description": "将整个会话复制为一个新会话，不回滚任何消息",
   "command.session.share": "分享会话",
   "command.session.share.description": "分享此会话并将链接复制到剪贴板",
   "command.session.unshare": "取消分享会话",

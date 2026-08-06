@@ -97,6 +97,8 @@ export const dict = {
   "command.session.uncompact.description": "僅撤銷最近一次壓縮，不刪除任何真實訊息",
   "command.session.fork": "從訊息分支",
   "command.session.fork.description": "從先前的訊息建立新工作階段",
+  "command.session.duplicate": "複製工作階段",
+  "command.session.duplicate.description": "將整個工作階段複製為新工作階段，不回溯任何訊息",
   "command.session.share": "分享工作階段",
   "command.session.share.description": "分享此工作階段並將連結複製到剪貼簿",
   "command.session.unshare": "取消分享工作階段",

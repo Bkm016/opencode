@@ -313,6 +313,25 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
+  // 原地复制整个会话，不选消息不回滚；服务端不传 messageID 即完整 fork。
+  const duplicate = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    sdk()
+      .client.session.fork({ sessionID })
+      .then((forked) => {
+        if (!forked.data) {
+          showToast({ title: language.t("common.requestFailed") })
+          return
+        }
+        navigate(`/${params.dir}/session/${forked.data.id}`)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+  }
+
   const openChildSessions = () => {
     const sessionID = params.id
     if (!sessionID) return
@@ -406,6 +425,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "fork",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: fork,
+    }),
+    sessionCommand({
+      id: "session.duplicate",
+      title: language.t("command.session.duplicate"),
+      description: language.t("command.session.duplicate.description"),
+      slash: "duplicate",
+      disabled: !params.id,
+      onSelect: duplicate,
     }),
     sessionCommand({
       id: "session.children",

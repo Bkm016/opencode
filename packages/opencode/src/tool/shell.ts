@@ -11,6 +11,7 @@ import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
 
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { which } from "@opencode-ai/core/util/which"
 import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -292,6 +293,21 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
   })
 })
 
+// 远端执行：spawn 本地 ssh，脚本通过 stdin 喂给远端 bash -s，本地 shell 完全不参与解析，避免转义地狱。
+function remote(host: string, command: string, cwd: string) {
+  const bin = which("ssh")
+  if (!bin) {
+    throw new Error("ssh client not found. Install OpenSSH (Windows: Settings > Optional Features > OpenSSH Client) and make it available on PATH.")
+  }
+  // workdir 有值时用 cd 包裹脚本；bash 双引号语义与 JSON 字符串转义一致，可直接复用。
+  const script = cwd ? `cd ${JSON.stringify(cwd)} && {\n${command}\n}` : command
+  // -T 禁用伪终端（Windows OpenSSH 的 -tt 行为与 POSIX 不同），BatchMode 避免卡住等待密码输入。
+  return ChildProcess.make(bin, ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, "bash -s"], {
+    stdin: Stream.make(new TextEncoder().encode(script + "\n")),
+    detached: false,
+  })
+}
+
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
     const launch = Shell.launch(shell, command, cwd)
@@ -443,6 +459,7 @@ export const ShellTool = Tool.define(
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
+        host?: string
       },
       ctx: Tool.Context,
     ) {
@@ -493,7 +510,11 @@ export const ShellTool = Tool.define(
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+          const handle = yield* spawner.spawn(
+            input.host
+              ? remote(input.host, input.command, input.cwd)
+              : cmd(input.shell, input.command, input.cwd, input.env),
+          )
 
           yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
@@ -596,11 +617,13 @@ export const ShellTool = Tool.define(
         output += "\n\n<shell_metadata>\n" + meta.join("\n") + "\n</shell_metadata>"
       }
       return {
-        title: input.command,
+        title: input.host ? `${input.command} (on ${input.host})` : input.command,
         metadata: {
           output: Shell.plain(last) || preview(output),
           exit: code,
           truncated: cut,
+          ...(input.host ? { host: input.host } : {}),
+          ...(input.cwd ? { workdir: input.cwd } : {}),
           ...(cut && file ? { outputPath: file } : {}),
         },
         output,
@@ -633,13 +656,38 @@ export const ShellTool = Tool.define(
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
               const instanceCtx = yield* InstanceState.context
-              const cwd = params.workdir
-                ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
-                : instanceCtx.directory
               if (params.timeout !== undefined && params.timeout < 0) {
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
               const timeout = params.timeout ?? defaultTimeoutMs
+
+              // 远端模式：跳过本地路径解析与本地目录权限，改为按主机粒度的 ssh 权限询问。
+              if (params.host) {
+                yield* ctx.ask({
+                  permission: ShellID.ToolID,
+                  patterns: [`ssh ${params.host} *`],
+                  always: [`ssh ${params.host} *`],
+                  metadata: {
+                    command: params.command,
+                    host: params.host,
+                  },
+                })
+                return yield* run(
+                  {
+                    shell,
+                    command: params.command,
+                    cwd: params.workdir ?? "",
+                    env: {},
+                    timeout,
+                    host: params.host,
+                  },
+                  ctx,
+                )
+              }
+
+              const cwd = params.workdir
+                ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
+                : instanceCtx.directory
               const ps = Shell.ps(shell)
               yield* Effect.scoped(
                 Effect.gen(function* () {

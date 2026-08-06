@@ -685,6 +685,71 @@
   }
 }
 
+[data-slot="bash-trigger"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  font-size: 13px;
+}
+
+[data-slot="bash-trigger-main"] {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+[data-slot="bash-trigger-prompt"] {
+  color: var(--v2-text-text-faint);
+  font-family: var(--font-family-mono);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+[data-slot="bash-trigger-cmd"] {
+  color: var(--v2-text-text-base);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+[data-slot="bash-trigger-location"] {
+  color: var(--v2-text-text-faint);
+  font-family: var(--font-family-sans);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+[data-slot="bash-trigger-location"]::before {
+  content: "@";
+  margin-right: 5px;
+  opacity: 0.7;
+}
+
+[data-slot="bash-trigger-exit"] {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+[data-slot="bash-trigger-exit"][data-exit="fail"] {
+  color: var(--v2-state-fg-danger);
+  background: color-mix(in srgb, var(--v2-state-fg-danger) 12%, transparent);
+}
+
 [data-component="bash-output"] {
   width: 100%;
   border: 0.5px solid var(--v2-border-border-base);
@@ -693,19 +758,61 @@
   position: relative;
   overflow: hidden;
 
-  [data-slot="bash-copy"] {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease;
+  [data-slot="bash-header"] {
+    display: flex;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 6px 8px 6px 12px;
+    border-bottom: 0.5px solid var(--v2-border-border-base);
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    line-height: 1.4;
   }
 
-  &:hover [data-slot="bash-copy"],
-  &:focus-within [data-slot="bash-copy"] {
-    opacity: 1;
-    pointer-events: auto;
+  [data-slot="bash-meta"] {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  [data-slot="bash-meta-key"] {
+    color: var(--v2-text-text-faint);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  [data-slot="bash-meta-value"] {
+    color: var(--v2-text-text-base);
+    font-family: var(--font-family-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-slot="bash-meta-value"][data-accent] {
+    color: var(--v2-text-text-accent);
+  }
+
+  [data-slot="bash-meta-value"][data-exit="ok"] {
+    color: var(--v2-state-fg-success);
+  }
+
+  [data-slot="bash-meta-value"][data-exit="fail"] {
+    color: var(--v2-state-fg-danger);
+  }
+
+  [data-slot="bash-header-tail"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  [data-slot="bash-prompt"] {
+    color: var(--v2-text-text-faint);
+    user-select: none;
   }
 
   [data-slot="bash-scroll"] {
@@ -723,6 +830,10 @@
   [data-slot="bash-pre"] {
     margin: 0;
     padding: 12px;
+  }
+
+  [data-slot="bash-pre"][data-section="output"] {
+    border-top: 0.5px solid var(--v2-border-border-base);
   }
 
   [data-slot="bash-pre"] code {

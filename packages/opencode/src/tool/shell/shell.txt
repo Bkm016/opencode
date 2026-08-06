@@ -6,6 +6,12 @@ Be aware: OS: ${os}, Shell: ${shell}
 
 ${workdirSection}
 
+# Remote execution over SSH
+- Set the optional `host` parameter to an SSH config alias (from ~/.ssh/config) or `user@ip` to run the command on that remote machine instead of locally.
+- In remote mode the command is fed to a remote `bash` shell through stdin, so the local shell listed above and its escaping/quoting rules do not apply — write the command as plain bash.
+- Remote mode requires key-based SSH authentication already set up on this machine (no interactive password). A missing or unreachable host fails fast.
+- The `workdir` parameter also applies remotely: it is the directory on the remote host.
+
 Use `${tmp}` for temporary work inside the current project. This directory has already been created and exists.
 
 IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.

@@ -1307,7 +1307,7 @@ const layer = Layer.effect(
         sessionID,
         type: "text",
         text: recovery
-          ? "Continue the interrupted work. The active turn's instructions and progress are preserved in the visible chunk history above."
+          ? "Continue the interrupted work from the preserved chunk history. Use the visible context above, or history_grep and history_list when details are omitted."
           : "Continue the interrupted work from the preserved active context.",
         synthetic: true,
         metadata: {
@@ -1972,10 +1972,8 @@ const layer = Layer.effect(
                 }
                 const interrupted = !handle.message.finish || handle.message.finish === "tool-calls"
                 if (interrupted) {
-                  // 第一次 overflow 就关闭并封存完整 active turn：无 error 的
-                  // finish=error 作为可关闭的定界标记（canClose 拒绝真实失败），
-                  // 封存后 chunk-input/summary 在预算内继续可见，不能把可能包含
-                  // 数百个 assistant/tool step 的 tail 原样重放到下一次请求。
+                  // 第一次 overflow 就关闭并封存完整 active turn，不能把可能包含数百个
+                  // assistant/tool step 的 tail 原样重放到下一次 provider 请求。
                   handle.message.finish = "error"
                   yield* sessions.updateMessage(handle.message)
                 }

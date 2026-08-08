@@ -200,13 +200,20 @@ function chunkStatus(msg: SessionV1.WithParts): Chunk["status"] {
     return "failed"
   }
   if (info.finish === "stop") return "completed"
-  if (info.finish === "error" || info.finish === "content-filter" || info.finish === "length") return "failed"
+  if (info.finish === "content-filter" || info.finish === "length") return "failed"
+  if (info.finish === "error") {
+    // 带具体错误对象是真实失败；无 error 的 finish=error 是 overflow 定界标记，
+    // 该 turn 是被上下文封存中断，按 interrupted 记录。
+    return info.error === undefined ? "interrupted" : "failed"
+  }
   return "interrupted"
 }
 
 /**
  * 关闭一个 chunk 的前提：Session loop 已停止、最终 assistant 已持久化、没有未
  * 闭合的 tool call/result。`tool-calls` finish 不能关闭 chunk。
+ * 无 error 对象的 `finish=error` 是 overflow 封存中断 turn 的定界标记：turn 已
+ * 终止且必须关闭成 chunk，否则投影拿不到 chunk-input/summary，恢复现场只剩一句话。
  */
 function canClose(msg: SessionV1.WithParts | undefined) {
   if (!msg || msg.info.role !== "assistant") return false
@@ -215,6 +222,8 @@ function canClose(msg: SessionV1.WithParts | undefined) {
   if (hasOpenToolCalls(msg)) return false
   if (!msg.info.finish) return false
   if (msg.info.finish === "tool-calls") return false
+  // 带 error 对象的失败（如 provider error）不是可恢复的 overflow 定界，不能封存
+  if (msg.info.finish === "error" && msg.info.error !== undefined) return false
   return true
 }
 

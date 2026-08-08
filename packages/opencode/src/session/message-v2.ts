@@ -325,7 +325,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             })
           }
           if (part.state.status === "error") {
-            const output = part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined
+            // error state 的 output 字段优先，兜底读 running 期间写入的 metadata.output
+            const output = part.state.output ?? (part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined)
             // 中断工具仍按失败结果投影，同时保留已产生的输出供模型恢复现场。
             const errorText =
               typeof output === "string" && output.length > 0 ? `${output}\n\n${part.state.error}` : part.state.error
@@ -602,16 +603,7 @@ export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (i
   if (chunks.length === 0) return SessionChunk.projectLongUserText(filterCompacted(streamed))
   const targetTokens = input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS
   const hardTokens = input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS
-  const recovering = messages
-    .findLast((message) => message.info.role === "user")
-    ?.parts.some(
-      (item) => item.type === "text" && item.metadata?.[SessionChunk.COMPACTION_RECOVERY] === true,
-    )
-  // 二次 overflow 已把 active tail 封存为 chunk；恢复请求只携带 checkpoint
-  // 与新的 continuation，完整现场继续通过 history 工具按需回查。
-  const selection = recovering
-    ? { visible: [], archived: chunks, tokens: 0 }
-    : SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
+  const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
   return SessionChunk.project({ messages, selection, targetTokens, hardTokens })
 })
 

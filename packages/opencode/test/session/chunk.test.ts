@@ -148,14 +148,25 @@ describe("closeChunk", () => {
 
   test("maps error finish and error object to failed", () => {
     const u1 = user("hello")
-    const a1 = assistant(u1.info.id, "partial", { finish: "error" })
-    expect(SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!.status).toBe("failed")
+    const err = new SessionV1.APIError({ message: "boom", isRetryable: true }).toObject()
+    const a1 = assistant(u1.info.id, "partial", { finish: "error", error: err })
+    expect(SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })).toBeUndefined()
 
     const a2 = assistant(u1.info.id, "blocked", { finish: "content-filter" })
     expect(SessionChunk.closeChunk({ messages: [u1, a2], chunks: [] })!.status).toBe("failed")
 
     const a3 = assistant(u1.info.id, "long", { finish: "length" })
     expect(SessionChunk.closeChunk({ messages: [u1, a3], chunks: [] })!.status).toBe("failed")
+  })
+
+  test("closes an overflow-delimited turn without error object as interrupted", () => {
+    const u1 = user("hello")
+    // overflow 封存标记：finish=error 且无 error 对象，turn 已终止、必须可关闭
+    const a1 = assistant(u1.info.id, "partial", { finish: "error" })
+    const chunk = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })
+    expect(chunk).toBeDefined()
+    expect(chunk!.status).toBe("interrupted")
+    expect(chunk!.end_message_id).toBe(a1.info.id)
   })
 
   test("maps abort to interrupted", () => {

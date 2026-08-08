@@ -571,8 +571,11 @@ it.instance("chunk compaction archives an overflowing prompt before retrying", (
     expect(hits).toHaveLength(2)
     expect(requests).toHaveLength(1)
     expect(JSON.stringify(hits[0]?.body.messages)).toContain("x".repeat(10_000))
+    // 封存的 chunk 在预算内保持可见，恢复请求携带完整现场而非一句话。
+    // 超长 user 原文替换为引用（含部分预览），但不允许整 chunk 归档清空。
+    expect(JSON.stringify(hits[1]?.body.messages)).toContain("finish the original request")
     expect(JSON.stringify(hits[1]?.body.messages)).not.toContain("x".repeat(10_000))
-    expect(JSON.stringify(hits[1]?.body.messages)).toContain("archived chunks: 1")
+    expect(JSON.stringify(hits[1]?.body.messages)).toContain("visible chunks: 1")
     expect(JSON.stringify(hits[1]?.body.messages)).toContain("Continue the interrupted work")
     const retryTools = hits[1]?.body.tools as Array<{ function?: { name?: string } }> | undefined
     expect(retryTools?.some((tool) => tool.function?.name === "edit")).toBe(true)
@@ -825,8 +828,9 @@ withGoal.instance("chunk compaction archives the first overflow and completes th
     ).toHaveLength(1)
     expect(messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
     expect(Array.isArray(recoveryMessages)).toBe(true)
-    expect(JSON.stringify(recoveryMessages)).not.toContain("finish after fallback")
-    expect(JSON.stringify(recoveryMessages)).toContain("archived chunk IDs:")
+    // 封存的 chunk 在预算内保持可见，Goal 恢复时能看到原始指令
+    expect(JSON.stringify(recoveryMessages)).toContain("finish after fallback")
+    expect(JSON.stringify(recoveryMessages)).toContain("visible chunks: 1")
     expect(result.info.role).toBe("assistant")
     if (result.info.role !== "assistant") throw new Error("Expected assistant result")
     expect(result.info.error).toBeUndefined()

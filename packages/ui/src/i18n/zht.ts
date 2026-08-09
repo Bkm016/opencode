@@ -99,6 +99,7 @@ export const dict = {
   "ui.messagePart.review.title": "檢查你的答案",
   "ui.messagePart.questions.dismissed": "問題已略過",
   "ui.messagePart.compaction": "工作階段已壓縮",
+  "ui.messagePart.compactHere": "在此處壓縮",
   "ui.chunkSummary.title.one": "已折疊 {{count}} 個 chunk",
   "ui.chunkSummary.title.other": "已折疊 {{count}} 個 chunk",
   "ui.chunkSummary.note": "中間過程已折疊。可用歷史工具查看完整 transcript。",

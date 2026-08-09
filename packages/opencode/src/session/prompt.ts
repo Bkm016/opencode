@@ -4,6 +4,7 @@ import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
+import { Identifier } from "@/id/id"
 import { MessageV2 } from "./message-v2"
 import { SessionRevert } from "./revert"
 import { Session } from "./session"
@@ -97,6 +98,7 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly forceOverflow: (sessionID: SessionID) => Effect.Effect<boolean>
+  readonly compactAt: (sessionID: SessionID, messageID: MessageID) => Effect.Effect<boolean, Session.NotFound | Provider.DefaultModelError>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly systemPrompt: (
@@ -1322,7 +1324,7 @@ const layer = Layer.effect(
     // tail_start_id。投影走 filterCompacted，模型从持久化的 assistant 消息读到折叠内容。
     const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
       sessionID: SessionID,
-      options?: { force?: boolean; endBefore?: MessageID },
+      options?: { force?: boolean; endBefore?: MessageID; position?: number },
     ) {
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const compactionMsgWithChunks = raw.findLast((msg) =>
@@ -1400,13 +1402,20 @@ const layer = Layer.effect(
           tail_start_id: tailStart,
         })
       } else if (added > 0 || options?.force) {
+        // 从中间压缩时分界线必须落在 endBefore 之前：用 position-2 作为 holder 的
+        // id 时间戳（summary 用 position-1，保证 holder < summary < endBefore），
+        // 让按 id 字典序（即时间序）排序的时间线把它显示在正确位置。
+        const holderCreated = options?.position !== undefined ? options.position - 2 : Date.now()
         const holder = yield* sessions.updateMessage({
-          id: MessageID.ascending(),
+          id:
+            options?.position !== undefined
+              ? MessageID.make(Identifier.create("msg", "ascending", holderCreated))
+              : MessageID.ascending(),
           role: "user",
           sessionID,
           agent: "compaction",
           model: modelRef,
-          time: { created: Date.now() },
+          time: { created: holderCreated },
         })
         holderID = holder.id
         yield* sessions.updatePart({
@@ -1448,8 +1457,13 @@ const layer = Layer.effect(
         return
       }
       const ctx = yield* InstanceState.context
+      // summary assistant 跟随 holder 的排序位置，保持「分界线」整体落在 endBefore 之前
+      const summaryCreated = options?.position !== undefined ? options.position - 1 : Date.now()
       const assistant = yield* sessions.updateMessage({
-        id: MessageID.ascending(),
+        id:
+          options?.position !== undefined
+            ? MessageID.make(Identifier.create("msg", "ascending", summaryCreated))
+            : MessageID.ascending(),
         role: "assistant",
         parentID: holderID,
         sessionID,
@@ -1461,7 +1475,7 @@ const layer = Layer.effect(
         tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
         modelID: modelRef.modelID,
         providerID: modelRef.providerID,
-        time: { created: Date.now(), completed: Date.now() },
+        time: { created: summaryCreated, completed: summaryCreated },
         finish: "stop",
       })
       yield* sessions.updatePart({
@@ -1470,7 +1484,7 @@ const layer = Layer.effect(
         sessionID,
         type: "text",
         text: summaryText,
-        time: { start: Date.now(), end: Date.now() },
+        time: { start: summaryCreated, end: summaryCreated },
       })
     })
 
@@ -2025,6 +2039,17 @@ const layer = Layer.effect(
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), run)
     })
 
+    const compactAt = Effect.fn("SessionPrompt.compactAt")(function* (sessionID: SessionID, messageID: MessageID) {
+      yield* sessions.get(sessionID)
+      // 分界线要落在被压缩区间的末尾（endBefore 之前），取该消息的时间戳作为排序位置
+      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const boundary = raw.find((msg) => msg.info.id === messageID)
+      const position = boundary ? Identifier.timestamp(boundary.info.id) : undefined
+      // 只关到 messageID 之前的可终止边界；该消息及之后的工作原样保留为 active tail。
+      yield* persistChunkBoundary(sessionID, { force: true, endBefore: messageID, position })
+      return true
+    })
+
     const forceOverflow = Effect.fn("SessionPrompt.forceOverflow")(function* (sessionID: SessionID) {
       const busy = yield* state.assertNotBusy(sessionID).pipe(
         Effect.as(false),
@@ -2216,6 +2241,7 @@ const layer = Layer.effect(
     return Service.of({
       cancel,
       forceOverflow,
+      compactAt,
       prompt,
       loop,
       systemPrompt,

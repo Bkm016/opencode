@@ -221,6 +221,8 @@ import type {
   SessionChildrenResponses,
   SessionCommandErrors,
   SessionCommandResponses,
+  SessionCompactHereErrors,
+  SessionCompactHereResponses,
   SessionCreateErrors,
   SessionCreateResponses,
   SessionDeleteErrors,
@@ -4357,9 +4359,43 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Compact history up to a message
+   *
+   * Seal all completed work before the given message into chunk compaction history while keeping that message and everything after it as the active tail.
+   */
+  public compactHere<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionCompactHereResponses, SessionCompactHereErrors, ThrowOnError>({
+      url: "/session/{sessionID}/message/{messageID}/compact",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Undo session compaction
    *
-   * Remove compaction checkpoints and summaries while preserving the original conversation.
+   * Remove the latest compaction checkpoint and summary while preserving earlier compactions and the original conversation.
    */
   public uncompact<ThrowOnError extends boolean = false>(
     parameters: {

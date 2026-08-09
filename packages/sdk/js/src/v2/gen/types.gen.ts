@@ -525,6 +525,7 @@ export type ToolStateError = {
     [key: string]: unknown
   }
   error: string
+  output?: string
   metadata?: {
     [key: string]: unknown
   }
@@ -2541,6 +2542,14 @@ export type Command = {
   template: string
   subtask?: boolean
   hints: Array<string>
+}
+
+export type RunScriptError = {
+  name: "RunScriptError"
+  data: {
+    message: string
+    path: string
+  }
 }
 
 export type Agent = {
@@ -8736,6 +8745,10 @@ export type CommandGetRunErrors = {
    * Unauthorized
    */
   401: unknown
+  /**
+   * RunScriptError
+   */
+  422: RunScriptError
 }
 
 export type CommandGetRunError = CommandGetRunErrors[keyof CommandGetRunErrors]
@@ -10676,6 +10689,41 @@ export type SessionSummarizeResponses = {
 
 export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
 
+export type SessionCompactHereData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/compact"
+}
+
+export type SessionCompactHereErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionCompactHereError = SessionCompactHereErrors[keyof SessionCompactHereErrors]
+
+export type SessionCompactHereResponses = {
+  /**
+   * Compacted history before the given message
+   */
+  200: boolean
+}
+
+export type SessionCompactHereResponse = SessionCompactHereResponses[keyof SessionCompactHereResponses]
+
 export type SessionUncompactData = {
   body?: never
   path: {
@@ -10703,7 +10751,7 @@ export type SessionUncompactError = SessionUncompactErrors[keyof SessionUncompac
 
 export type SessionUncompactResponses = {
   /**
-   * Removed compaction scaffold messages
+   * Removed latest compaction scaffold messages
    */
   200: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }

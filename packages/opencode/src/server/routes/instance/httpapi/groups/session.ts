@@ -95,6 +95,7 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
+  compactHere: `${root}/:sessionID/message/:messageID/compact`,
   uncompact: `${root}/:sessionID/uncompact`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
@@ -340,6 +341,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        HttpApiEndpoint.post("compactHere", SessionPaths.compactHere, {
+          params: { sessionID: SessionID, messageID: MessageID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Compacted history before the given message"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.compactHere",
+            summary: "Compact history up to a message",
+            description:
+              "Seal all completed work before the given message into chunk compaction history while keeping that message and everything after it as the active tail.",
           }),
         ),
         HttpApiEndpoint.post("uncompact", SessionPaths.uncompact, {

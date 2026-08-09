@@ -105,6 +105,7 @@ export const dict: Record<string, string> = {
   "ui.messagePart.review.title": "Review your answers",
   "ui.messagePart.questions.dismissed": "Questions dismissed",
   "ui.messagePart.compaction": "Session compacted",
+  "ui.messagePart.compactHere": "Compact up to here",
   "ui.chunkSummary.title.one": "{{count}} chunk folded",
   "ui.chunkSummary.title.other": "{{count}} chunks folded",
   "ui.chunkSummary.note": "Intermediate steps are folded. Use history tools to inspect full transcripts.",

@@ -587,6 +587,37 @@ it.instance("chunk compaction archives an overflowing prompt before retrying", (
   }),
 )
 
+it.instance("compactAt places the compaction divider before the boundary message", () =>
+  Effect.gen(function* () {
+    yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    // 第一段已完成工作（将被压缩）
+    yield* seed(chat.id, { finish: "stop", text: "first answer" })
+    // 第二段：作为分界线的目标消息（保留为 active tail 起点）
+    const tail = yield* seed(chat.id, { finish: "stop", text: "second answer" })
+
+    yield* prompt.compactAt(chat.id, tail.user.id)
+
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const holder = messages.find((message) => message.parts.some((part) => part.type === "compaction"))
+    const summary = messages.find(
+      (message) => message.info.role === "assistant" && message.info.summary && message.info.parentID === holder?.info.id,
+    )
+    expect(holder).toBeDefined()
+    expect(summary).toBeDefined()
+    // 分界线（holder + summary）的 id 必须字典序小于边界消息，时间线按 id 排序才会落在正确位置
+    expect(holder!.info.id < tail.user.id).toBe(true)
+    expect(summary!.info.id < tail.user.id).toBe(true)
+    // holder 在 summary 之前
+    expect(holder!.info.id < summary!.info.id).toBe(true)
+  }),
+)
+
 it.instance("chunk compaction fits the complete request before calling the provider", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => {

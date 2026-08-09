@@ -67,6 +67,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
@@ -354,6 +355,7 @@ export function MessageTimeline(props: {
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
+  const serverSync = useServerSync()
   const settings = useSettings()
   const tabs = useTabs()
   const dialog = useDialog()
@@ -1157,6 +1159,19 @@ export function MessageTimeline(props: {
     }
   }
 
+  // 仅 chunk 策略暴露「在此处压缩」；model 策略的 AI 摘要不支持从中间截断
+  const chunkStrategy = createMemo(() => (serverSync().data.config.compaction?.strategy ?? "model") === "chunk")
+  const compactHereEnabled = createMemo(() => chunkStrategy() && sessionStatus().type === "idle")
+  const compactHere = (messageID: string) => {
+    const id = sessionID()
+    if (!id || !compactHereEnabled()) return
+    sdk()
+      .client.session.compactHere({ sessionID: id, messageID })
+      .catch((err: unknown) => {
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: String(err) })
+      })
+  }
+
   const renderPartGroup = (input: {
     userMessageID: string
     group: PartGroup
@@ -1213,6 +1228,12 @@ export function MessageTimeline(props: {
                 message={message()}
                 showAssistantCopyPartID={assistantCopyPartID(input.userMessageID)}
                 turnDurationMs={turnDurationMs(input.userMessageID)}
+                onCompactHere={compactHere}
+                compactHere={{
+                  visible: true,
+                  disabled: !compactHereEnabled(),
+                  label: language.t("ui.messagePart.compactHere"),
+                }}
                 defaultOpen={defaultOpen()}
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}

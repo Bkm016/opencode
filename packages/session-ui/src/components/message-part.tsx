@@ -198,11 +198,15 @@ export interface MessagePartProps {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   onViewFile?: (file: string) => void
+  /** 在该条 assistant 文本处触发「从中间压缩」，由 app 层注入真实调用 */
+  onCompactHere?: (messageID: string) => void
+  /** 压缩按钮的可见性与可用性（策略 / 会话空闲由调用方决定） */
+  compactHere?: { visible: boolean; disabled?: boolean; label: string }
 }
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "arrow-up" | "check" | "copy" | "reset"
+    icon: "arrow-up" | "check" | "copy" | "reset" | "archive"
     label: JSX.Element
   },
 ) {
@@ -1571,6 +1575,8 @@ export function Part(props: MessagePartProps) {
           showAssistantCopyPartID={props.showAssistantCopyPartID}
           turnDurationMs={props.turnDurationMs}
           onViewFile={props.onViewFile}
+          onCompactHere={props.onCompactHere}
+          compactHere={props.compactHere}
         />
       </div>
     </Show>
@@ -1737,9 +1743,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
-          <Match when={part().state.status === "error" && (part().state as any).error}>
+          {/* bash/python 中断/失败时保留命令与已有输出，不走 ToolErrorCard 吞掉 input/output；错误通过 status 传给渲染器 */}
+          <Match when={part().state.status === "error" && (part().state as any).error && part().tool !== "bash" && part().tool !== "python"}>
             {(error) => {
-              const cleaned = error().replace("Error: ", "")
+              const cleaned = typeof error() === "string" ? error().replace("Error: ", "") : String(error())
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">
@@ -2173,6 +2180,16 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                   onClick={handleCopy}
                   aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
                 />
+                <Show when={props.onCompactHere && props.compactHere?.visible !== false && !chunkSummary()}>
+                  <MessageActionButton
+                    icon="archive"
+                    label={props.compactHere?.label ?? "Compact up to here"}
+                    disabled={props.compactHere?.disabled}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => props.onCompactHere?.(props.message.id)}
+                    aria-label={props.compactHere?.label ?? "Compact up to here"}
+                  />
+                </Show>
                 <Show when={meta()}>
                   <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
                     {meta()}
@@ -3258,7 +3275,8 @@ ToolRegistry.register({
       // 展示完整脚本而不是首行，方便核对实际执行的内容。
       const raw = typeof props.input.code === "string" ? props.input.code : (props.metadata.code ?? "")
       const code = String(raw).replace(/\r\n?/g, "\n").trimEnd()
-      const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
+      const rawOut = props.output ?? props.metadata.output
+      const out = stripAnsi(typeof rawOut === "string" ? rawOut : "").replace(/\r\n?/g, "\n")
       const script = code
         .split("\n")
         .map((line, index) => (index === 0 ? `>>> ${line}` : `... ${line}`))
@@ -3330,15 +3348,28 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
-    const host = createMemo(() => {
+    const errored = () => props.status === "error"
+    const errorText = createMemo(() => {
+      if (!errored()) return ""
+      const meta = props.metadata
+      if (meta.interrupted === true) return i18n.t("ui.message.interrupted")
+      const raw = meta.error
+      return typeof raw === "string" ? raw.replace(/^Error:\s*/, "").trim() : ""
+    })
+    // 远端主机（用户显式传入）才在折叠态高亮；本地命令不标 @，避免噪音。
+    const remote = createMemo(() => {
       const value = props.input.host ?? props.metadata.host
       return typeof value === "string" && value ? value : undefined
     })
+    const host = createMemo(() => remote() ?? "localhost")
     const workdir = createMemo(() => {
       const value = props.input.workdir ?? props.metadata.workdir
       return typeof value === "string" && value ? value : undefined
     })
-    const command = createMemo(() => props.input.command ?? props.metadata.command ?? "")
+    const command = createMemo(() => {
+      const raw = props.input.command ?? props.metadata.command
+      return typeof raw === "string" ? raw : ""
+    })
     // 折叠态把多行命令压成单行预览：首行 + 行数提示，避免 heredoc 之类把布局顶乱。
     const commandPreview = createMemo(() => {
       const lines = String(command()).replace(/\r\n?/g, "\n").split("\n")
@@ -3346,9 +3377,11 @@ ToolRegistry.register({
       const extra = lines.length - 1
       return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
     })
-    const output = createMemo(() =>
-      stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n").trimEnd(),
-    )
+    const output = createMemo(() => {
+      const raw = props.output ?? props.metadata.output
+      const text = typeof raw === "string" ? raw : ""
+      return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
+    })
     const exit = createMemo(() => {
       const code = props.metadata.exit
       return typeof code === "number" ? code : undefined
@@ -3356,7 +3389,7 @@ ToolRegistry.register({
     const failed = createMemo(() => exit() !== undefined && exit() !== 0)
     const location = createMemo(() => {
       const parts: string[] = []
-      if (host()) parts.push(host()!)
+      if (remote()) parts.push(remote()!)
       if (workdir()) parts.push(workdir()!)
       return parts.join(" · ")
     })
@@ -3406,6 +3439,11 @@ ToolRegistry.register({
             <Show when={!pending() && failed()}>
               <span data-slot="bash-trigger-exit" data-exit="fail">
                 {i18n.t("ui.tool.shell.exit")} {exit()}
+              </span>
+            </Show>
+            <Show when={errored()}>
+              <span data-slot="bash-trigger-exit" data-exit="fail">
+                {errorText() || i18n.t("ui.message.interrupted")}
               </span>
             </Show>
           </div>
@@ -3467,6 +3505,11 @@ ToolRegistry.register({
             <Show when={output()}>
               <pre data-slot="bash-pre" data-section="output">
                 <code>{output()}</code>
+              </pre>
+            </Show>
+            <Show when={errored() && errorText()}>
+              <pre data-slot="bash-pre" data-section="error">
+                <code>{errorText()}</code>
               </pre>
             </Show>
           </div>

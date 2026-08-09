@@ -307,6 +307,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const compactHere = Effect.fn("SessionHttpApi.compactHere")(function* (ctx: {
+      params: { sessionID: SessionID; messageID: MessageID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* runState
+        .assertNotBusy(ctx.params.sessionID)
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return yield* promptSvc
+        .compactAt(ctx.params.sessionID, ctx.params.messageID)
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+    })
+
     const uncompact = Effect.fn("SessionHttpApi.uncompact")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
       yield* runState
@@ -453,6 +465,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("share", share)
       .handle("unshare", unshare)
       .handle("summarize", summarize)
+      .handle("compactHere", compactHere)
       .handle("uncompact", uncompact)
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)

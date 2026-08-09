@@ -100,6 +100,7 @@ export const dict = {
 
   "ui.messagePart.questions.dismissed": "问题已忽略",
   "ui.messagePart.compaction": "会话已压缩",
+  "ui.messagePart.compactHere": "在此处压缩",
   "ui.chunkSummary.title.one": "已折叠 {{count}} 个 chunk",
   "ui.chunkSummary.title.other": "已折叠 {{count}} 个 chunk",
   "ui.chunkSummary.note": "中间过程已折叠。可用历史工具查看完整 transcript。",

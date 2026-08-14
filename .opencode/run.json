@@ -1,5 +1,6 @@
 {
   "scripts": {
-    "build-windows": "bun ./script/build-windows.ts"
+    "build-windows": "bun ./script/build-windows.ts",
+    "dev": "npm run dev:desktop"
   }
 }

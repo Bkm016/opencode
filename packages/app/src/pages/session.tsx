@@ -171,7 +171,7 @@ export function SessionRouteErrorBoundary(
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message
+  if (error instanceof Error) return error.stack ?? error.message
   if (typeof error === "string") return error
   return "Something went wrong"
 }
@@ -197,19 +197,30 @@ function SessionErrorFallback(props: {
   if (isCurrentSessionNotFoundError(props.error, props.sessionID) && props.sessionID) {
     return <LeaveMissingSession sessionID={props.sessionID} serverKey={props.serverKey} />
   }
+  const [copied, setCopied] = createSignal(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(errorMessage(props.error))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
   return (
     <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
       <div class="text-16-medium text-text-strong">Session error</div>
-      <pre class="max-w-xl max-h-48 overflow-auto whitespace-pre-wrap break-words text-12-regular text-text-weak">
+      <pre class="max-w-xl max-h-48 overflow-auto whitespace-pre-wrap break-words text-12-regular text-text-weak select-text">
         {errorMessage(props.error)}
       </pre>
-      <Show when={props.onDismiss}>
-        {(dismiss) => (
-          <Button size="large" onClick={() => dismiss()()}>
-            Dismiss
-          </Button>
-        )}
-      </Show>
+      <div class="flex gap-2">
+        <Button size="large" variant="secondary" onClick={copy}>
+          {copied() ? "Copied" : "Copy"}
+        </Button>
+        <Show when={props.onDismiss}>
+          {(dismiss) => (
+            <Button size="large" onClick={() => dismiss()()}>
+              Dismiss
+            </Button>
+          )}
+        </Show>
+      </div>
     </div>
   )
 }

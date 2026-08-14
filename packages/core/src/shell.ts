@@ -8,6 +8,9 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { which } from "./util/which"
+import { mkdirSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { createHash } from "crypto"
 
 const SIGKILL_TIMEOUT_MS = 200
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
@@ -202,23 +205,37 @@ export function args(file: string, command: string, cwd: string) {
 /** Spawn target for running `command` in `file` (bin + argv). */
 export function launch(file: string, command: string, cwd: string): { command: string; args: string[] } {
   if (process.platform === "win32" && ps(file)) {
-    // chcp must run in the parent console before powershell.exe starts: parser
-    // errors emit before any in-script UTF-8 preamble can take effect. EncodedCommand
-    // carries the script as UTF-16LE base64 so CJK in the source is not mangled by
-    // the ANSI CreateProcess command line.
-    const encoded = Buffer.from(psBody(command), "utf16le").toString("base64")
+    // 写入带 BOM 的 UTF-8 临时脚本并用 -File 执行：-EncodedCommand 在 Windows PowerShell 5.1 下
+    // 会先走 ANSI 命令行解码，CJK 脚本内容会被破坏（如“开发”→“闂l讲”）。脚本文件以 BOM 标记
+    // 强制 5.1 按 UTF-8 解析，从而彻底绕开 ANSI CreateProcess 命令行编码。
+    const script = writeUtf8Script(command)
     const shell = /[\s"]/.test(file) ? `"${file.replaceAll('"', "")}"` : file
+    // 脚本路径无空格（opencode-ps\<hex>.ps1），-File 不加引号——cmd 的 & 拆词会把
+    // 引号当字面字符传给 -File，导致 "Illegal characters in path"。
     return {
       command: process.env.COMSPEC || "cmd.exe",
-      args: ["/d", "/c", `chcp 65001>nul & ${shell} -NoLogo -NoProfile -NonInteractive -EncodedCommand ${encoded}`],
+      args: ["/d", "/c", `chcp 65001>nul & ${shell} -NoLogo -NoProfile -NonInteractive -File ${script}`],
     }
   }
   return { command: file, args: args(file, command, cwd) }
 }
 
+/** Write `command` to a UTF-8-BOM .ps1 temp file and return its path. 内容哈希命名可复用，避免每次堆积临时目录。 */
+function writeUtf8Script(command: string): string {
+  const dir = path.join(tmpdir(), "opencode-ps")
+  mkdirSync(dir, { recursive: true })
+  const body = psBody(command)
+  const name = createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16) + ".ps1"
+  const file = path.join(dir, name)
+  writeFileSync(file, "\uFEFF" + body, { encoding: "utf8" })
+  return file
+}
+
 function psBody(command: string) {
   if (process.platform !== "win32") return command
-  return `[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); ${command}`
+  // PSDefaultParameterValues 强制 Get-Content 等 cmdlet 默认按 UTF-8 解码文本文件；
+  // 5.1 原生默认是系统 ANSI，直接读取 UTF-8 无 BOM 文件会得到"寮€鍙"类 GBK 乱码。
+  return `[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.UTF8Encoding]::new($false); $PSDefaultParameterValues['*:Encoding'] = 'utf8'; ${command}`
 }
 
 function psArgs(command: string) {

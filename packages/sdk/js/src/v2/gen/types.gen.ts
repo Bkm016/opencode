@@ -253,7 +253,7 @@ export type UserMessage = {
     body?: string
     diffs: Array<SnapshotFileDiff>
   }
-  agent: string
+  agent?: string
   model: {
     providerID: string
     modelID: string

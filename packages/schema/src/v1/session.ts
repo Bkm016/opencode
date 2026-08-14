@@ -307,6 +307,8 @@ export const ToolStateError = Schema.Struct({
   status: Schema.Literal("error"),
   input: Schema.Record(Schema.String, Schema.Any),
   error: Schema.String,
+  // 中断/失败时保留已产生的输出，供前端继续展示命令与部分结果
+  output: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
   time: Schema.Struct({
     start: NonNegativeInt,
@@ -357,7 +359,7 @@ export const User = Schema.Struct({
       diffs: Schema.Array(FileDiff.Info),
     }),
   ),
-  agent: Schema.String,
+  agent: Schema.optional(Schema.String),
   model: Schema.Struct({
     providerID: Provider.ID,
     modelID: Model.ID,

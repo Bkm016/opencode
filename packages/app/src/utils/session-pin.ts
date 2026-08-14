@@ -42,7 +42,10 @@ function persist() {
   save(snapshot())
 }
 
-/** Pinned session IDs for a workspace directory (most recently pinned first). */
+/**
+ * Pinned session IDs for a workspace directory (most recently pinned first).
+ * Drag sorting can override the initial most-recent-first order.
+ */
 export function pinnedSessionIds(directory: string): string[] {
   return store[pathKey(directory)] ?? []
 }
@@ -81,6 +84,21 @@ export function toggleSessionPin(directory: string, sessionID: string) {
     return
   }
   pinSession(directory, sessionID)
+}
+
+export function movePinnedSession(directory: string, sessionID: string, targetID: string) {
+  const key = pathKey(directory)
+  const list = store[key] ?? []
+  const fromIndex = list.indexOf(sessionID)
+  const toIndex = list.indexOf(targetID)
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return
+
+  const next = [...list]
+  const [session] = next.splice(fromIndex, 1)
+  if (!session) return
+  next.splice(toIndex, 0, session)
+  setStore(key, next)
+  persist()
 }
 
 /** Drop a pin id (e.g. after archive). No-op when not pinned. */

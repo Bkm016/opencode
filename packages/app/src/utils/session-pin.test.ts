@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
+  movePinnedSession,
   pinListOf,
+  pinnedSessionIds,
+  pinSession,
+  removeSessionPin,
   withPinnedSession,
   withoutPinnedSession,
   type SessionPinMap,
@@ -43,6 +47,23 @@ describe("session pin map", () => {
     let map: SessionPinMap = withPinnedSession({}, "C:\\tmp\\app", "x")
     expect(pinListOf(map, "C:/tmp/app")).toEqual(["x"])
     expect(pinListOf(map, "/other")).toEqual([])
+  })
+
+  test("moves pinned sessions to the dropped position", () => {
+    const directory = "/workspace-move-test"
+    pinSession(directory, "a")
+    pinSession(directory, "b")
+    pinSession(directory, "c")
+
+    movePinnedSession(directory, "c", "a")
+    expect(pinnedSessionIds(directory)).toEqual(["b", "a", "c"])
+
+    movePinnedSession(directory, "a", "b")
+    expect(pinnedSessionIds(directory)).toEqual(["a", "b", "c"])
+
+    removeSessionPin(directory, "a")
+    removeSessionPin(directory, "b")
+    removeSessionPin(directory, "c")
   })
 })
 

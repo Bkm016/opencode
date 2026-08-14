@@ -1,7 +1,13 @@
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { createSortable } from "@thisbeyond/solid-dnd"
+import {
+  closestCenter,
+  createSortable,
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+} from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -19,7 +25,8 @@ import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
-import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
+import { isSessionPinned, movePinnedSession, pinnedSessionIds } from "@/utils/session-pin"
+import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -244,6 +251,22 @@ const WorkspaceActions = (props: {
   </div>
 )
 
+const SortablePinnedSession = (props: { session: Session; children: JSX.Element }): JSX.Element => {
+  const sortable = createSortable(props.session.id)
+
+  return (
+    <div
+      // @ts-ignore
+      use:sortable
+      // 置顶会话位于可排序工作区内部时，只让最近一层拖拽上下文接收手势。
+      onPointerDown={(event) => event.stopPropagation()}
+      classList={{ "relative z-10": sortable.isActiveDraggable }}
+    >
+      {props.children}
+    </div>
+  )
+}
+
 const WorkspaceSessionList = (props: {
   slug: Accessor<string>
   mobile?: boolean
@@ -266,10 +289,16 @@ const WorkspaceSessionList = (props: {
     setGroupOpen(group.key, open)
   }
 
+  const pinnedSessions = createMemo(() =>
+    props.sessions().filter((session) => isSessionPinned(session.directory, session.id)),
+  )
+  const unpinnedSessions = createMemo(() =>
+    props.sessions().filter((session) => !isSessionPinned(session.directory, session.id)),
+  )
+
   const groups = createMemo(() => {
-    const sessions = props.sessions()
     // 置顶会话保持在日期分组之前，避免日期分组打乱现有置顶顺序。
-    const pinned = sessions.filter((session) => isSessionPinned(session.directory, session.id))
+    const pinned = pinnedSessions()
     const groups: SessionGroup[] = []
     if (pinned.length > 0) {
       groups.push({ key: "pinned", sessions: pinned, collapsible: false, defaultOpen: true })
@@ -279,34 +308,32 @@ const WorkspaceSessionList = (props: {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
     const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime()
-    sessions
-      .filter((session) => !isSessionPinned(session.directory, session.id))
-      .forEach((session) => {
-        const date = new Date(session.time.updated ?? session.time.created)
-        const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-        const older = day <= sevenDaysAgo
-        const key = older ? "older" : String(day)
-        const label =
-          older
-            ? language.t("home.sessions.group.sevenDaysAgo")
-            : day === today
-              ? language.t("home.sessions.group.today")
-              : day === yesterday
-                ? language.t("home.sessions.group.yesterday")
-                : dateFormatter().format(date)
-        const group = groups.at(-1)
-        if (group?.key === key) {
-          group.sessions.push(session)
-          return
-        }
-        groups.push({
-          key,
-          label,
-          sessions: [session],
-          collapsible: true,
-          defaultOpen: !groups.some((item) => item.collapsible),
-        })
+    unpinnedSessions().forEach((session) => {
+      const date = new Date(session.time.updated ?? session.time.created)
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+      const older = day <= sevenDaysAgo
+      const key = older ? "older" : String(day)
+      const label =
+        older
+          ? language.t("home.sessions.group.sevenDaysAgo")
+          : day === today
+            ? language.t("home.sessions.group.today")
+            : day === yesterday
+              ? language.t("home.sessions.group.yesterday")
+              : dateFormatter().format(date)
+      const group = groups.at(-1)
+      if (group?.key === key) {
+        group.sessions.push(session)
+        return
+      }
+      groups.push({
+        key,
+        label,
+        sessions: [session],
+        collapsible: true,
+        defaultOpen: !groups.some((item) => item.collapsible),
       })
+    })
     return groups
   })
   createEffect(() => {
@@ -334,6 +361,31 @@ const WorkspaceSessionList = (props: {
     <div class="flex flex-col gap-1">
       <For each={sessions}>{item}</For>
     </div>
+  )
+  const pinnedSessionItems = (sessions: Session[]) => (
+    <DragDropProvider
+      onDragEnd={(event) => {
+        const target = event.droppable
+        if (!target) return
+        const sessionID = event.draggable.id.toString()
+        const targetID = target.id.toString()
+        if (sessionID === targetID) return
+        const session = sessions.find((item) => item.id === sessionID)
+        if (!session) return
+        movePinnedSession(session.directory, sessionID, targetID)
+      }}
+      collisionDetector={closestCenter}
+    >
+      <DragDropSensors />
+      <ConstrainDragXAxis />
+      <SortableProvider ids={sessions.map((session) => session.id)}>
+        <div class="flex flex-col gap-1">
+          <For each={sessions}>
+            {(session) => <SortablePinnedSession session={session}>{item(session)}</SortablePinnedSession>}
+          </For>
+        </div>
+      </SortableProvider>
+    </DragDropProvider>
   )
 
   return (
@@ -375,13 +427,21 @@ const WorkspaceSessionList = (props: {
           </div>
         </div>
       </Show>
-      <Show when={!props.mobile} fallback={sessionItems(props.sessions())}>
+      <Show
+        when={!props.mobile}
+        fallback={
+          <>
+            <Show when={pinnedSessions().length > 0}>{pinnedSessionItems(pinnedSessions())}</Show>
+            <Show when={unpinnedSessions().length > 0}>{sessionItems(unpinnedSessions())}</Show>
+          </>
+        }
+      >
         <For each={groups()}>
           {(group) => (
             <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
               <Show
                 when={group.collapsible}
-                fallback={sessionItems(group.sessions)}
+                fallback={group.key === "pinned" ? pinnedSessionItems(group.sessions) : sessionItems(group.sessions)}
               >
                 <Collapsible
                   variant="ghost"

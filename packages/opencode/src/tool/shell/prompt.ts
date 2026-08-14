@@ -19,7 +19,7 @@ export function parameterSchema() {
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
     host: Schema.optional(Schema.String).annotate({
-      description: `Optional remote host to execute the command on over SSH, such as an SSH config alias or user@ip. When set, the command runs in a remote bash shell fed through stdin, so the local shell and its escaping rules do not apply. Requires key-based SSH authentication configured on this machine.`,
+      description: `Remote host to execute the command on over SSH (config alias or user@ip). Prefer this over writing ssh commands manually: the command runs in a remote bash shell fed through stdin, so local shell escaping does not apply. Requires key-based SSH authentication configured on this machine.`,
     }),
   })
 }

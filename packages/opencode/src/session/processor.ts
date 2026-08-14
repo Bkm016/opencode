@@ -201,14 +201,18 @@ const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        // running 期间流式写入的 metadata.output 保留到 error state，中断后前端仍能展示已有输出
+        const partial = match.part.state.metadata?.output
+        const message = errorMessage(error)
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
             input: match.part.state.input,
-            error: errorMessage(error),
-            // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
-            metadata: match.part.state.metadata,
+            error: message,
+            output: typeof partial === "string" ? partial : undefined,
+            // error 文本同步进 metadata，前端渲染器无需访问 state 即可展示
+            metadata: { ...match.part.state.metadata, error: message },
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
@@ -688,13 +692,16 @@ const layer = Layer.effect(
           const part = match.part
           const end = Date.now()
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+          // running 期间流式写入的 metadata.output 保留到 error state，中断后前端仍能展示已有输出
+          const partial = typeof metadata.output === "string" ? metadata.output : undefined
           yield* session.updatePart({
             ...part,
             state: {
               ...part.state,
               status: "error",
               error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
+              output: partial,
+              metadata: { ...metadata, interrupted: true, error: "Tool execution aborted" },
               time: { start: "time" in part.state ? part.state.time.start : end, end },
             },
           })

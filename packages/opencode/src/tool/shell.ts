@@ -622,7 +622,7 @@ export const ShellTool = Tool.define(
           output: Shell.plain(last) || preview(output),
           exit: code,
           truncated: cut,
-          ...(input.host ? { host: input.host } : {}),
+          host: input.host ?? "localhost",
           ...(input.cwd ? { workdir: input.cwd } : {}),
           ...(cut && file ? { outputPath: file } : {}),
         },
@@ -660,6 +660,13 @@ export const ShellTool = Tool.define(
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
               const timeout = params.timeout ?? defaultTimeoutMs
+
+              // 模型手写 ssh 命令时拦截并提示改用 host 参数，避免本地转义/stdin 处理出错。
+              if (!params.host && /^\s*ssh\s/.test(params.command)) {
+                throw new Error(
+                  "Do not invoke `ssh` directly in the command. Use the `host` parameter instead (e.g. host=\"user@ip\" or an SSH config alias). The command runs in a remote bash shell fed through stdin, so local shell escaping does not apply.",
+                )
+              }
 
               // 远端模式：跳过本地路径解析与本地目录权限，改为按主机粒度的 ssh 权限询问。
               if (params.host) {

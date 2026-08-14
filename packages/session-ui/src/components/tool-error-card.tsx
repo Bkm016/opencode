@@ -64,7 +64,10 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
-  const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
+  const cleaned = createMemo(() => {
+    const raw = split.error
+    return (typeof raw === "string" ? raw : String(raw ?? "")).replace(/^Error:\s*/, "").trim()
+  })
   const tail = createMemo(() => {
     const value = cleaned()
     const prefix = `${split.tool} `

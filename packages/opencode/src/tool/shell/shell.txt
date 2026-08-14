@@ -1,4 +1,5 @@
 Use this tool for ordinary terminal commands and short scripts. For complex scripts, prefer the `python` tool and pass the source through its `code` parameter.
+To run a command on a remote machine, do not invoke `ssh` directly in the command; pass the target via the `host` parameter instead (e.g. host="user@ip" or an SSH config alias). This keeps stdin/stdout handling and escaping correct.
 
 ${intro}
 

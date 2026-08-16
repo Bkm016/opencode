@@ -1556,6 +1556,8 @@ export function Part(props: MessagePartProps) {
       <div
         data-slot="message-part-motion"
         ref={(el) => {
+          // Fork 和冷历史拥有全新的 part ID；只有未完成的 assistant 消息才是实时输出。
+          if (props.message.role !== "assistant" || props.message.time.completed !== undefined) return
           // One-shot enter for newly streamed/completed parts; bulk loads are skipped.
           // Opacity-only — y on streaming rows fights the scroller and looks like flicker.
           animateOutputEnter(el, props.part.id, { y: 0, duration: 0.22 })

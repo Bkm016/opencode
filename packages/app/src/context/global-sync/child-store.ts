@@ -307,6 +307,8 @@ export function createChildStoreManager(input: {
   function child(directory: string, options: ChildOptions = {}) {
     const key = directoryKey(directory)
     const childStore = ensureChild(directory)
+    // passive 读取（如 memo 内批量 enrich）不注册 pin/cleanup，否则会随重算振荡。
+    if (options.passive) return childStore
     pinForOwner(key)
     if (options.mcp) enableMcp(directory, key, childStore)
     const shouldBootstrap = options.bootstrap ?? true

@@ -82,10 +82,12 @@ export function TabNavItem(props: {
 
   const measureTitleOverflow = () => {
     if (!titleEl || editing()) {
-      setTitleOverflowing(false)
+      // 值未变化时跳过写入，避免 data-title-overflow 属性改动反向触发 ResizeObserver 自循环。
+      if (titleOverflowing()) setTitleOverflowing(false)
       return
     }
-    setTitleOverflowing(titleEl.scrollWidth > titleEl.clientWidth)
+    const next = titleEl.scrollWidth > titleEl.clientWidth
+    if (next !== titleOverflowing()) setTitleOverflowing(next)
   }
 
   const scheduleTitleOverflow = () => {

@@ -201,7 +201,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   createEffect(() => {
     const el = optionsRef
     if (!el) return
-    const update = () => setStore("optionsHeight", (height) => Math.max(height, el.scrollHeight))
+    // scrollHeight 未增长时跳过写入，避免 ResizeObserver 自触发循环。
+    const update = () => setStore("optionsHeight", (height) => (el.scrollHeight > height ? el.scrollHeight : height))
     update()
     createResizeObserver(el, update)
   })

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import gsap from "gsap"
 import {
   DragDropProvider,
@@ -38,19 +38,51 @@ export const SidebarContent = (props: {
   let stage: HTMLDivElement | undefined
   let rail: HTMLDivElement | undefined
   let selection: HTMLDivElement | undefined
+  // 窗口 resize 期间禁用 selection 补间：拖动会让列表反复重排，GSAP 每次补间
+  // 都 getComputedStyle 读 transform 强制同步布局，几十个补间叠加直接卡死主线程。
+  let resizing = false
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined
+
+  onMount(() => {
+    const onResize = () => {
+      resizing = true
+      if (selection) gsap.killTweensOf(selection)
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        resizing = false
+        resizeTimer = undefined
+        // resize 结束后补一次定位，恢复 selection 到正确位置。
+        moveSelection()
+      }, 150)
+    }
+    window.addEventListener("resize", onResize)
+    onCleanup(() => {
+      window.removeEventListener("resize", onResize)
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer)
+    })
+  })
   let frame: number | undefined
   let restoreFrame: number | undefined
   let scrollTop = 0
   let pendingProjectScroll: { project: string; top: number } | undefined
+  // 记录上一次应用的 selection 目标，相同目标直接短路，避免高频触发时反复
+  // kill+重建 GSAP tween（每次 init 都 getComputedStyle 强制布局，形成自激振荡）。
+  let lastSelectionKey: string | undefined
 
   const moveSelection = () => {
     if (frame !== undefined) cancelAnimationFrame(frame)
     frame = requestAnimationFrame(() => {
       frame = undefined
+      // resize 期间跳过布局读取：列表正反复重排，此时 getBoundingClientRect 会
+      // 强制同步布局，等 resize 结束（resizing 复位）后由下一次触发重新定位。
+      if (resizing) return
       if (!stage || !rail || !selection) return
 
       const target = rail.querySelector<HTMLElement>('[data-action="project-switch"][data-selected="true"]')
       if (!target) {
+        // 选中项已隐藏，仅当之前不是隐藏态时才补间到 opacity 0，避免重复 tween。
+        if (lastSelectionKey === "hidden") return
+        lastSelectionKey = "hidden"
         gsap.to(selection, { opacity: 0, duration: 0.16, overwrite: "auto" })
         return
       }
@@ -64,7 +96,12 @@ export const SidebarContent = (props: {
         height: target.offsetHeight,
         opacity: 1,
       }
-      if (prefersReducedMotion()) {
+      // 目标位置未变化时不重复补间。
+      const key = `${values.left},${values.top},${values.width},${values.height}`
+      if (key === lastSelectionKey) return
+      lastSelectionKey = key
+      // resize 期间瞬时定位，避免补间读 transform 触发 layout thrashing。
+      if (resizing || prefersReducedMotion()) {
         gsap.set(selection, values)
         return
       }

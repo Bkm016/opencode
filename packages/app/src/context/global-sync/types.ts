@@ -103,6 +103,10 @@ export type IconCache = {
 export type ChildOptions = {
   bootstrap?: boolean
   mcp?: boolean
+  // 纯读取已有 child store，不做 pin/activate 等副作用。
+  // 供在 memo 等会被反复重算的上下文中读取元数据，避免 pin 注册 cleanup
+  // 在 memo dispose 时触发 unpin→eviction→dispose→数据变更→memo 失效的自激振荡。
+  passive?: boolean
 }
 
 export type DirState = {

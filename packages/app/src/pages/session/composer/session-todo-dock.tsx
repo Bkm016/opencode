@@ -84,7 +84,9 @@ export function SessionTodoDock(props: {
     const el = contentRef
     if (!el) return
     const update = () => {
-      setStore("height", (height) => Math.max(height, el.scrollHeight))
+      // scrollHeight 未增长时跳过写入，避免 ResizeObserver 自触发循环。
+      const next = el.scrollHeight
+      setStore("height", (height) => (next > height ? next : height))
     }
     update()
     createResizeObserver(el, update)

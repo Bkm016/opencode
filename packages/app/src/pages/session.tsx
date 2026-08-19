@@ -377,7 +377,11 @@ export default function Page() {
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(
     () => panelRow,
-    ({ width }) => setPanelRowWidth(width),
+    // 宽度未变化时跳过写入，避免 panel 宽度回写反向改变 panelRow 尺寸形成自循环。
+    ({ width }) => {
+      if (panelRowWidth() === width) return
+      setPanelRowWidth(width)
+    },
   )
   // The observer reports the content-box width, which already excludes the row
   // padding; only the flex gap between the panels remains to subtract.

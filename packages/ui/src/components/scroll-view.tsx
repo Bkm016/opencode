@@ -175,11 +175,11 @@ export function ScrollView(props: ScrollViewProps) {
     const { scrollTop, scrollHeight, clientHeight } = viewportRef
 
     if (scrollHeight <= clientHeight || scrollHeight === 0) {
+      if (!state.showThumb) return
       setState("showThumb", false)
       return
     }
 
-    setState("showThumb", true)
     const trackPadding = 8
     const trackClientHeight = thumbMount()?.clientHeight || clientHeight
     const trackHeight = trackClientHeight - trackPadding * 2
@@ -197,6 +197,16 @@ export function ScrollView(props: ScrollViewProps) {
     // Ensure thumb stays within bounds (shouldn't be necessary due to math above, but good for safety)
     const boundedTop = trackPadding + Math.max(0, Math.min(top, maxThumbTop))
 
+    // 尺寸未变化时不写状态，避免 ResizeObserver 自触发循环（拖窗口时会直接卡死）。
+    if (
+      state.showThumb &&
+      state.thumbHeight === height &&
+      state.thumbTop === boundedTop
+    ) {
+      return
+    }
+
+    setState("showThumb", true)
     setState("thumbHeight", height)
     setState("thumbTop", boundedTop)
   }

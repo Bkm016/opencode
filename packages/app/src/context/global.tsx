@@ -111,7 +111,9 @@ function createServerCtx(
   const sync = createServerSyncContext(sdk)
 
   function enrich(project: { worktree: string; expanded: boolean }) {
-    const [childStore] = sync.child(project.worktree, { bootstrap: false })
+    // passive：projectsList memo 重算时会批量调用 enrich，pin 会随 memo dispose
+    // 触发 unpin→eviction→dispose 的振荡，这里只需纯读取已有 child store。
+    const [childStore] = sync.child(project.worktree, { bootstrap: false, passive: true })
     const projectID = childStore.project
     const metadata = projectID
       ? sync.data.project.find((x) => x.id === projectID)

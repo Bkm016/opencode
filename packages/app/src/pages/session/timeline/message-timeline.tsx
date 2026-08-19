@@ -1602,15 +1602,24 @@ export function MessageTimeline(props: {
     const asyncFile = () => ["edit", "write", "apply_patch"].includes(tool()?.tool ?? "")
     const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
     let contentMeasureFrame: number | undefined
+    // 记录上次上报的高度，相同高度不再触发 measureElement，斩断
+    // measure → 高度写回 → RO observe 再触发 measure 的自循环。
+    let lastMeasuredHeight: number | undefined
+    const measure = () => {
+      if (!element) return
+      // 与 virtual-core 一致用 offsetHeight 去重，避免漏测。
+      const height = element.offsetHeight
+      if (lastMeasuredHeight !== undefined && height === lastMeasuredHeight) return
+      lastMeasuredHeight = height
+      virtualizer.measureElement(element)
+    }
 
-    onMount(() => virtualizer.measureElement(element))
+    onMount(measure)
 
     createEffect(
       on(
         () => item().index,
-        () => {
-          virtualizer.measureElement(element)
-        },
+        measure,
         { defer: true },
       ),
     )
@@ -1645,7 +1654,7 @@ export function MessageTimeline(props: {
             onSizeChange={() => {
               setReady(true)
               if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
-              contentMeasureFrame = scheduleConnectedMeasure(element, virtualizer.measureElement)
+              contentMeasureFrame = scheduleConnectedMeasure(element, measure)
             }}
           />
         </div>

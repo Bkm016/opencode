@@ -47,6 +47,8 @@ const getBase = (appId: string): Configuration => ({
     output: "dist",
     buildResources: "resources",
   },
+  // 复用本地已装的 Electron，避免每次打包都联网下载 electron zip。
+  electronDist: "node_modules/electron/dist",
   // Linux launchers are .desktop files, so this is the desktop file name,
   // not just the app id. For prod, app id "ai.opencode.desktop" becomes
   // "ai.opencode.desktop.desktop".

@@ -1805,9 +1805,11 @@ const layer = Layer.effect(
                 if (requestTokens > requestLimit) {
                   // 没有可见历史可移除时，再压低 active tail 的媒体与 tool output；
                   // 完整内容仍在 Session 数据库和 managed output 中。
+                  // 本轮用户媒体必须保留，否则长 Session 会静默丢弃刚上传的图片。
                   providerMsgs = SessionChunk.projectLongUserText(providerMsgs)
                   modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, {
                     stripMedia: true,
+                    preserveMediaForMessageID: lastUser.id,
                     toolOutputMaxChars: 4_000,
                   })
                   requestTokens = SessionChunk.estimateTokens(

@@ -319,6 +319,60 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("strips historical user media while preserving the current user attachment", async () => {
+    const oldID = "msg-old"
+    const currentID = "msg-current"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(oldID),
+        parts: [
+          {
+            ...basePart(oldID, "old-image"),
+            type: "file",
+            mime: "image/png",
+            filename: "old.png",
+            url: "data:image/png;base64,b2xk",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: userInfo(currentID),
+        parts: [
+          {
+            ...basePart(currentID, "current-image"),
+            type: "file",
+            mime: "image/png",
+            filename: "current.png",
+            url: "data:image/png;base64,Y3VycmVudA==",
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(
+      await MessageV2.toModelMessages(input, model, {
+        stripMedia: true,
+        preserveMediaForMessageID: MessageID.make(currentID),
+      }),
+    ).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "[Attached image/png: old.png]" }],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "current.png",
+            data: "data:image/png;base64,Y3VycmVudA==",
+          },
+        ],
+      },
+    ])
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

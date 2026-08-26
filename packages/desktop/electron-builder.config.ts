@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -50,7 +51,8 @@ const getBase = (appId: string): Configuration => ({
     buildResources: "resources",
   },
   // 复用本地已装的 Electron，避免每次打包都联网下载 electron zip。
-  electronDist,
+  // CI 的 hoisted 安装可能没有 postinstall 生成的 dist，由 builder 下载并复用 Actions 缓存。
+  ...(process.env.GITHUB_ACTIONS !== "true" && existsSync(electronDist) ? { electronDist } : {}),
   // Linux launchers are .desktop files, so this is the desktop file name,
   // not just the app id. For prod, app id "ai.opencode.desktop" becomes
   // "ai.opencode.desktop.desktop".

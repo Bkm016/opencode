@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { createRequire } from "node:module"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
@@ -8,6 +9,7 @@ import type { Configuration } from "electron-builder"
 const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(packageDir, "../..")
+const electronDist = path.join(path.dirname(createRequire(import.meta.url).resolve("electron/package.json")), "dist")
 const signScript = path.join(rootDir, "script", "sign-windows.ps1")
 // The Electron 42 packaging update briefly installed Linux launchers/icons under
 // "opencode-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
@@ -48,7 +50,7 @@ const getBase = (appId: string): Configuration => ({
     buildResources: "resources",
   },
   // 复用本地已装的 Electron，避免每次打包都联网下载 electron zip。
-  electronDist: "node_modules/electron/dist",
+  electronDist,
   // Linux launchers are .desktop files, so this is the desktop file name,
   // not just the app id. For prod, app id "ai.opencode.desktop" becomes
   // "ai.opencode.desktop.desktop".

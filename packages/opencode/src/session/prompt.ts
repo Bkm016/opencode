@@ -43,7 +43,7 @@ import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
-import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -544,11 +544,16 @@ const layer = Layer.effect(
           const launch = Shell.launch(sh, input.command, cwd)
           let output = ""
           let aborted = false
+          let released = false
 
           const finish = Effect.uninterruptible(
             Effect.gen(function* () {
               if (aborted) {
                 output += "\n\n" + ["<metadata>", "User aborted the command", "</metadata>"].join("\n")
+              }
+              if (released) {
+                output +=
+                  "\n\n" + ["<metadata>", "Command interrupted by a new user message", "</metadata>"].join("\n")
               }
               const completed = Date.now()
               if (!msg.time.completed) {
@@ -569,6 +574,8 @@ const layer = Layer.effect(
             }),
           )
 
+          // 用户直接启动的 shell 与模型 bash 共用协作释放语义，新消息只结束进程而不取消 Runner。
+          const registration = yield* state.registerWait(input.sessionID, part.callID)
           const exit = yield* restore(
             Effect.gen(function* () {
               const shellEnv = yield* plugin.trigger(
@@ -584,17 +591,32 @@ const layer = Layer.effect(
                 forceKillAfter: "3 seconds",
               })
               const handle = yield* spawner.spawn(cmd)
-              yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
-                Effect.gen(function* () {
-                  output += chunk
-                  if (part.state.status === "running") {
-                    part.state.metadata = { output: Shell.plain(output) }
-                    yield* sessions.updatePart(part)
-                  }
-                }),
+              const outputStream = yield* Effect.forkScoped(
+                Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
+                  Effect.gen(function* () {
+                    output += chunk
+                    if (part.state.status === "running") {
+                      part.state.metadata = { output: Shell.plain(output) }
+                      yield* sessions.updatePart(part)
+                    }
+                  }),
+                ),
               )
-              yield* handle.exitCode
-            }).pipe(Effect.scoped, Effect.orDie),
+              const outcome = yield* Effect.raceFirst(
+                handle.exitCode.pipe(Effect.as("exit" as const)),
+                Deferred.await(registration.released).pipe(Effect.as("released" as const)),
+              )
+              if (outcome === "released") {
+                released = true
+                yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+              }
+              // release 后保留输出 fiber，收集进程退出时写入的尾部日志。
+              yield* Fiber.await(outputStream)
+            }).pipe(
+              Effect.scoped,
+              Effect.orDie,
+              Effect.ensuring(state.unregisterWait(input.sessionID, registration.token)),
+            ),
           ).pipe(Effect.exit)
 
           if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause) && !Cause.hasDies(exit.cause)) {
@@ -1092,15 +1114,16 @@ const layer = Layer.effect(
       if (input.noReply === true) return message
       openProjectDirs.set(input.sessionID, input.openProjectDirectories ?? [])
       if (promoteWaitingTask) {
-        // 用户消息已持久化：提升前台子任务并协作式释放 task_async_wait，现有 Runner 在安全边界继续。
-        // sticky 仅绑定当前仍 running 的 task_async_wait callID，避免普通 busy 流误释放后续 wait。
+        // 用户消息已持久化：提升前台子任务并协作式释放可中断工具等待，现有 Runner 在安全边界继续。
+        // sticky 仅绑定当前仍 running 的 wait/bash callID，避免普通 busy 流误释放后续等待。
         const runningWaitCallIDs = yield* sessions.messages({ sessionID: input.sessionID }).pipe(
           Effect.map((msgs) =>
             [
               ...new Set(
                 msgs.flatMap((msg) =>
                   msg.parts.flatMap((part) => {
-                    if (part.type !== "tool" || part.tool !== "task_async_wait") return []
+                    if (part.type !== "tool") return []
+                    if (part.tool !== "task_async_wait" && part.tool !== ShellID.ToolID) return []
                     if (part.state.status !== "running" || !part.callID) return []
                     return [part.callID]
                   }),

@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Exit, Stream } from "effect"
+import { Effect, Exit, Fiber, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -95,6 +95,39 @@ describe("cross-spawn spawner", () => {
         const handle = yield* js("process.exit(42)")
         const code = yield* handle.exitCode
         expect(code).toBe(ChildProcessSpawner.ExitCode(42))
+      }),
+    )
+
+    fx.live(
+      "completes when a detached child inherits output pipes",
+      Effect.gen(function* () {
+        const handle = yield* js(
+          [
+            'const { spawn } = require("node:child_process")',
+            'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {',
+            '  detached: true, stdio: ["ignore", "inherit", "inherit"]',
+            "})",
+            "child.unref()",
+            'require("node:fs").writeSync(1, Buffer.alloc(256 * 1024, 120))',
+            'process.stdout.write("BUILD SUCCESSFUL")',
+          ].join("\n"),
+        )
+        const output = yield* decodeByteStream(handle.stdout).pipe(Effect.forkChild)
+        const code = yield* handle.exitCode.pipe(
+          Effect.timeoutOrElse({
+            duration: "2 seconds",
+            orElse: () => Effect.die("exitCode remained blocked on inherited output pipes"),
+          }),
+        )
+        const out = yield* Fiber.join(output).pipe(
+          Effect.timeoutOrElse({
+            duration: "2 seconds",
+            orElse: () => Effect.die("output remained blocked on inherited output pipes"),
+          }),
+        )
+
+        expect(code).toBe(ChildProcessSpawner.ExitCode(0))
+        expect(out).toBe("x".repeat(256 * 1024) + "BUILD SUCCESSFUL")
       }),
     )
   })
@@ -283,6 +316,36 @@ describe("cross-spawn spawner", () => {
         yield* handle.exitCode
         const running = yield* handle.isRunning
         expect(running).toBe(false)
+      }),
+    )
+
+    fx.live(
+      "kill is idempotent after process exit",
+      Effect.gen(function* () {
+        const fixture = yield* Effect.acquireRelease(
+          Effect.gen(function* () {
+            const handle = yield* js(
+              [
+                'const { spawn } = require("node:child_process")',
+                'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {',
+                '  detached: process.platform === "win32", stdio: "ignore"',
+                "})",
+                "child.unref()",
+                "process.stdout.write(String(child.pid))",
+              ].join("\n"),
+            )
+            const output = yield* decodeByteStream(handle.stdout).pipe(Effect.forkChild)
+            yield* handle.exitCode
+            return { handle, pid: Number(yield* Fiber.join(output)) }
+          }),
+          ({ pid }) =>
+            Effect.sync(() => {
+              if (alive(pid)) process.kill(pid, "SIGKILL")
+            }),
+        )
+
+        yield* fixture.handle.kill()
+        expect(alive(fixture.pid)).toBe(true)
       }),
     )
   })

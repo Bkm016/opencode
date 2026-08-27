@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
@@ -21,6 +21,7 @@ import { testEffect } from "../lib/effect"
 import { Tool } from "@/tool/tool"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
+import { SessionRunState } from "@/session/run-state"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -32,6 +33,7 @@ const shellLayer = Layer.mergeAll(
       Config.node,
       Agent.node,
       RuntimeFlags.node,
+      SessionRunState.node,
     ]),
   ),
   testInstanceStoreLayer,
@@ -122,6 +124,13 @@ const fill = (mode: "lines" | "bytes", n: number) => {
   if (PS.has(sh())) return `& ${text}`
   return text
 }
+const stall = () => {
+  // 脚本不含引号，同一参数可安全穿过 Bash、cmd 和 PowerShell。
+  const code = "process.stdout.write(String.fromCharCode(114,101,97,100,121));setInterval(()=>{},30000)"
+  const text = `${bin} -e ${evalarg(code)}`
+  if (PS.has(sh())) return `& ${text}`
+  return text
+}
 const glob = (p: string) =>
   process.platform === "win32" ? Filesystem.normalizePathPattern(p) : p.replaceAll("\\", "/")
 
@@ -190,6 +199,39 @@ describe("tool.shell", () => {
         })
         expect(result.metadata.exit).toBe(0)
         expect(result.metadata.output).toContain("test")
+      }),
+    ),
+  )
+
+  it.live("new user prompt interrupts a running command", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        const ready = yield* Deferred.make<void>()
+        const callID = "call_interrupt"
+        const next: Tool.Context = {
+          ...ctx,
+          callID,
+          metadata: (input) => {
+            const output = input.metadata?.output
+            if (typeof output !== "string" || !output.includes("ready")) return Effect.void
+            return Deferred.succeed(ready, undefined).pipe(Effect.ignore)
+          },
+        }
+        const fiber = yield* run({ command: stall(), timeout: 30_000 }, next).pipe(Effect.forkChild)
+        yield* Deferred.await(ready).pipe(
+          Effect.timeoutOrElse({
+            duration: "5 seconds",
+            orElse: () => Effect.die("shell never published readiness output"),
+          }),
+        )
+
+        const runState = yield* SessionRunState.Service
+        yield* runState.onUserPrompt(next.sessionID, [callID])
+
+        const result = yield* Fiber.join(fiber)
+        expect(result.metadata.exit).toBeNull()
+        expect(result.output).toContain("Command interrupted by a new user message")
       }),
     ),
   )

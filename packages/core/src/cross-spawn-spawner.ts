@@ -22,7 +22,7 @@ import {
   ProcessId,
 } from "effect/unstable/process/ChildProcessSpawner"
 import * as NodeChildProcess from "node:child_process"
-import { PassThrough } from "node:stream"
+import { PassThrough, Readable } from "node:stream"
 import launch from "cross-spawn"
 import { makeGlobalNode } from "./effect/app-node"
 import { filesystem, path } from "./effect/app-node-platform"
@@ -95,6 +95,16 @@ const toPlatformError = (
 }
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
+
+const readableOutputs = (proc: NodeChildProcess.ChildProcess) =>
+  [proc.stdout, proc.stderr, ...proc.stdio.slice(3)].filter((stream): stream is Readable => stream instanceof Readable)
+
+const closeOutputs = (streams: readonly Readable[]) => {
+  for (const stream of streams) {
+    if (!stream.readableEnded) stream.push(null)
+    if (!stream.destroyed) stream.destroy()
+  }
+}
 
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
@@ -269,17 +279,44 @@ export const make = Effect.gen(function* () {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
       const proc = launch(command.command, command.args, opts)
       let end = false
-      let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
+      let drain: NodeJS.Timeout | undefined
+      let quiet = false
+      const complete = (result: readonly [code: number | null, signal: NodeJS.Signals | null]) => {
+        if (end) return
+        end = true
+        Deferred.doneUnsafe(signal, Exit.succeed(result))
+      }
+      const scheduleDrain = () => {
+        drain = setTimeout(() => {
+          drain = undefined
+          const streams = readableOutputs(proc).filter((stream) => !stream.readableEnded && !stream.destroyed)
+          if (streams.length === 0) return
+          if (streams.some((stream) => stream.readableLength > 0)) {
+            quiet = false
+            scheduleDrain()
+            return
+          }
+          if (!quiet) {
+            quiet = true
+            scheduleDrain()
+            return
+          }
+          closeOutputs(streams)
+        }, 100)
+        drain.unref()
+      }
       proc.on("error", (err) => {
         resume(Effect.fail(toPlatformError("spawn", err, command)))
       })
       proc.on("exit", (...args) => {
-        exit = args
+        // 等本地缓冲连续两轮为空再发布 EOF；慢消费者不会被固定超时截断。
+        scheduleDrain()
+        complete(args)
       })
       proc.on("close", (...args) => {
-        if (end) return
-        end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
+        if (drain) clearTimeout(drain)
+        drain = undefined
+        complete(args)
       })
       proc.on("spawn", () => {
         resume(Effect.succeed([proc, signal]))
@@ -401,6 +438,7 @@ export const make = Effect.gen(function* () {
               return yield* Effect.ignore(escalated)
             }),
           )
+          yield* Effect.addFinalizer(() => Effect.sync(() => closeOutputs(readableOutputs(proc))))
 
           const fd = yield* setupFds(command, proc, extra)
           const out = setupOutput(command, proc, sout, serr)
@@ -424,17 +462,25 @@ export const make = Effect.gen(function* () {
                 ),
               )
             }),
-            kill: (opts?: ChildProcess.KillOptions) => {
+            kill: (opts?: ChildProcess.KillOptions) => Effect.gen(function* () {
+              // release 与自然退出可同时发生；目标已经退出时不得再触碰原进程组。
+              if (yield* Deferred.isDone(signal)) return
               const sig = opts?.killSignal ?? "SIGTERM"
               const send = (s: NodeJS.Signals) =>
                 Effect.catch(killGroup(command, proc, s), () => killOne(command, proc, s))
               const attempt = send(sig).pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid)
-              if (!opts?.forceKillAfter) return attempt
-              return Effect.timeoutOrElse(attempt, {
-                duration: opts.forceKillAfter,
-                orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
-              })
-            },
+              const result = opts?.forceKillAfter
+                ? Effect.timeoutOrElse(attempt, {
+                    duration: opts.forceKillAfter,
+                    orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
+                  })
+                : attempt
+              return yield* Effect.catch(result, (error) =>
+                Deferred.isDone(signal).pipe(
+                  Effect.flatMap((done) => (done ? Effect.void : Effect.fail(error))),
+                ),
+              )
+            }),
             unref: Effect.sync(() => {
               if (ref) {
                 proc.unref()

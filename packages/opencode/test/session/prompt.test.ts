@@ -349,6 +349,16 @@ const waitForBusy = (sessionID: SessionID, duration: Duration.Input = "2 seconds
     duration,
   )
 
+function blockingShellCommand() {
+  const name = Shell.name(Shell.acceptable())
+  // 脚本不含引号，同一参数可安全穿过 Bash、cmd 和 PowerShell。
+  const code = "process.stdout.write(String.fromCharCode(114,101,97,100,121));setInterval(()=>{},30000)"
+  const binary = JSON.stringify(process.execPath.replaceAll("\\", "/"))
+  const command = `${binary} -e ${name === "cmd" ? JSON.stringify(code) : `'${code}'`}`
+  if (name === "powershell" || name === "pwsh") return `& ${command}`
+  return command
+}
+
 const hasBash = Effect.sync(() => Bun.which("bash") !== null)
 
 const deferredAsPromise = <A>(deferred: Deferred.Deferred<A>): PromiseLike<A> => ({
@@ -1632,6 +1642,79 @@ it.instance(
 )
 
 it.instance(
+  "new prompt interrupts bash without aborting its assistant",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Interrupt bash",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.tool("bash", { command: blockingShellCommand(), timeout: 30_000 })
+      yield* llm.text("continued after bash interruption")
+
+      const first = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "run the command" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
+          const tool = assistant?.parts.find(
+            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "bash",
+          )
+          if (tool?.state.status === "running" && tool.state.metadata?.output.includes("ready")) return true as const
+        }),
+        "timed out waiting for bash readiness output",
+      )
+
+      const second = yield* awaitWithTimeout(
+        prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "stop the command and continue" }],
+        }),
+        "new prompt did not interrupt bash",
+      )
+
+      expect(second.parts.some((part) => part.type === "text" && part.text === "continued after bash interruption")).toBe(
+        true,
+      )
+      expect(Exit.isSuccess(yield* awaitWithTimeout(Fiber.await(first), "initial bash prompt did not release"))).toBe(
+        true,
+      )
+
+      const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+      const bashMessage = messages.find(
+        (message) =>
+          message.info.role === "assistant" &&
+          message.parts.some((part) => part.type === "tool" && part.tool === "bash"),
+      )
+      const bashPart = bashMessage?.parts.find(
+        (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "bash",
+      )
+      expect(bashPart?.state.status).toBe("completed")
+      if (bashPart?.state.status === "completed") {
+        expect(bashPart.state.output).toContain("Command interrupted by a new user message")
+      }
+      if (bashMessage?.info.role === "assistant") {
+        expect(bashMessage.info.error?.name).not.toBe("MessageAbortedError")
+      }
+    }),
+  15_000,
+)
+
+it.instance(
   "loop sets status to busy then idle",
   () =>
     Effect.gen(function* () {
@@ -2269,6 +2352,38 @@ unixNoLLMServer(
       }),
     ),
   { config: cfg },
+  30_000,
+)
+
+unixNoLLMServer(
+  "user prompt release interrupts a direct shell command",
+  () =>
+    Effect.gen(function* () {
+      const { prompt, run, chat } = yield* boot()
+      const shell = yield* prompt
+        .shell({ sessionID: chat.id, agent: "build", command: "trap 'printf tail' TERM; printf ready; sleep 30" })
+        .pipe(Effect.forkChild)
+
+      const callID = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+          const part = messages
+            .flatMap((message) => message.parts)
+            .find((part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "bash")
+          if (part?.state.status !== "running" || !part.state.metadata?.output.includes("ready")) return
+          return part.callID
+        }),
+        "direct shell never published readiness output",
+      )
+
+      yield* run.onUserPrompt(chat.id, [callID])
+
+      const result = yield* Fiber.join(shell)
+      const part = completedTool(result.parts)
+      expect(part?.state.output).toContain("tail")
+      expect(part?.state.output).toContain("Command interrupted by a new user message")
+    }),
+  { git: true, config: cfg },
   30_000,
 )
 

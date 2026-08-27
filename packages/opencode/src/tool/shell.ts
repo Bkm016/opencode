@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Deferred, Effect, Fiber, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import { mkdir } from "node:fs/promises"
@@ -24,6 +24,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { SessionRunState } from "@/session/run-state"
 
 export { Parameters } from "./shell/prompt"
 
@@ -363,6 +364,7 @@ export const ShellTool = Tool.define(
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
     const flags = yield* RuntimeFlags.Service
+    const runState = yield* SessionRunState.Service
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
@@ -475,6 +477,7 @@ export const ShellTool = Tool.define(
       let cut = false
       let expired = false
       let aborted = false
+      let released = false
 
       const closeSink = Effect.fnUntraced(function* () {
         const stream = sink
@@ -507,6 +510,8 @@ export const ShellTool = Tool.define(
         },
       })
 
+      // 先注册再启动进程：同 callID 的 sticky 可覆盖工具进入 running 到实际等待之间的窗口。
+      const registration = yield* runState.registerWait(ctx.sessionID, ctx.callID)
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
@@ -516,7 +521,7 @@ export const ShellTool = Tool.define(
               : cmd(input.shell, input.command, input.cwd, input.env),
           )
 
-          yield* Effect.forkScoped(
+          const output = yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })
@@ -576,6 +581,9 @@ export const ShellTool = Tool.define(
           const exit = yield* Effect.raceAll([
             handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
             abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
+            Deferred.await(registration.released).pipe(
+              Effect.map(() => ({ kind: "released" as const, code: null })),
+            ),
             timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
           ])
 
@@ -587,10 +595,19 @@ export const ShellTool = Tool.define(
             expired = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
           }
+          if (exit.kind === "released") {
+            released = true
+            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+          }
+          // exit 先于管道排空时仍需等输出 fiber 收口，避免丢失命令末尾日志。
+          yield* Fiber.await(output)
 
           return exit.kind === "exit" ? exit.code : null
         }),
-      ).pipe(Effect.orDie)
+      ).pipe(
+        Effect.orDie,
+        Effect.ensuring(runState.unregisterWait(ctx.sessionID, registration.token)),
+      )
 
       const meta: string[] = []
       if (expired) {
@@ -599,6 +616,7 @@ export const ShellTool = Tool.define(
         )
       }
       if (aborted) meta.push("User aborted the command")
+      if (released) meta.push("Command interrupted by a new user message")
       const raw = Shell.plain(list.map((item) => item.text).join(""))
       const end = tail(raw, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true

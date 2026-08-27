@@ -9,7 +9,7 @@ import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
 import { acquireInstanceActivity, type InstanceActivity } from "@/effect/instance-registry"
 
-/** 单次 task_async_wait 注册：独立 release Deferred，finally 注销。 */
+/** 单次可协作中断等待注册：独立 release Deferred，finally 注销。 */
 export type WaitRegistration = {
   readonly token: symbol
   readonly released: Deferred.Deferred<void>
@@ -22,7 +22,7 @@ type WaitEntry = {
   released: Deferred.Deferred<void>
 }
 
-/** 每会话 waiter 与按 callID 的 sticky（仅覆盖已 running 但尚未 register 的 wait）。 */
+/** 每会话 waiter 与按 callID 的 sticky（仅覆盖已 running 但尚未 register 的等待）。 */
 type SessionWaits = {
   waiters: Map<symbol, WaitEntry>
   stickyCallIDs: Set<string>
@@ -31,8 +31,8 @@ type SessionWaits = {
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   /**
-   * 用户消息已持久化后调用：提升前台子任务，并协作式释放本会话 active async wait。
-   * runningCallIDs 为当前仍 running 的 task_async_wait 的 callID；仅这些未注册的调用可 sticky。
+   * 用户消息已持久化后调用：提升前台子任务，并协作式释放本会话 active tool wait。
+   * runningCallIDs 为当前仍 running 的可中断工具 callID；仅这些未注册的调用可 sticky。
    */
   readonly onUserPrompt: (sessionID: SessionID, runningCallIDs?: readonly string[]) => Effect.Effect<void>
   /** 原子注册一次 wait；callID 用于消费匹配的 sticky。 */
@@ -147,7 +147,7 @@ const layer = Layer.effect(
       callID?: string,
     ) {
       const data = yield* InstanceState.get(state)
-      const token = Symbol("task_async_wait")
+      const token = Symbol("tool_wait")
       const released = yield* Deferred.make<void>()
       // modify 临界区内纯同步：仅匹配 callID 的 sticky 可立即完成。
       const immediate = yield* SynchronizedRef.modify(data.waits, (map) => {
@@ -224,7 +224,7 @@ const layer = Layer.effect(
       runningCallIDs: readonly string[] = [],
     ) {
       yield* promoteChildJobs(background, sessionID)
-      // 已是 background 的 job 上 promote 幂等；release 负责协作式结束 task_async_wait。
+      // 已是 background 的 job 上 promote 幂等；release 负责协作式结束可中断工具等待。
       yield* releaseWaits(sessionID, runningCallIDs)
     })
 

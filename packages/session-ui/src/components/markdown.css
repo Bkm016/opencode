@@ -296,6 +296,12 @@
     margin: 1.5rem 0;
     display: block;
   }
+
+  .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
 }
 
 [data-component="markdown"] {

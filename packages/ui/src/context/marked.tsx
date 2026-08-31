@@ -1,4 +1,5 @@
 import { marked, type MarkedExtension, type Tokens } from "marked"
+import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
@@ -395,6 +396,19 @@ function renderMathInText(text: string): string {
     }
   })
 
+  // 与 marked-katex-extension 保持相同边界，避免把标识符中的 `$` 当作公式。
+  const dollarMathRegex = /(^|[\s>])\$(?!\$)((?:\\.|[^\\\n])*?(?:\\.|[^\\\n$]))\$(?!\$)(?=[\s?!.,:？！。，：<]|$)/g
+  result = result.replace(dollarMathRegex, (_, prefix, math) => {
+    try {
+      return `${prefix}${katex.renderToString(math.trim(), {
+        displayMode: false,
+        throwOnError: false,
+      })}`
+    } catch {
+      return `${prefix}$${math}$`
+    }
+  })
+
   // Inline math: \(...\)
   const inlineMathRegex = /\\\(((?:\\.|[^\\\n])*?)\\\)/g
   result = result.replace(inlineMathRegex, (_, math) => {
@@ -518,53 +532,55 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
-export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
-  name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
-    const jsParser = marked.use(
-      markedCodeSpanBoundary,
-      {
-        renderer: {
-          link({ href, title, text }) {
-            const titleAttr = title ? ` title="${title}"` : ""
-            return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
-          },
+export function createMarkdownParser(props: { nativeParser?: NativeMarkdownParser }) {
+  const jsParser = marked.use(
+    markedCodeSpanBoundary,
+    {
+      renderer: {
+        link({ href, title, text }) {
+          const titleAttr = title ? ` title="${title}"` : ""
+          return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
         },
       },
-      katexExtension,
-      markedShiki({
-        async highlight(code, lang) {
-          const highlighter = await getSharedHighlighter({
-            themes: ["OpenCode"],
-            langs: [],
-            preferredHighlighter: "shiki-wasm",
-          })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
-          }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
-          }
-          return highlighter.codeToHtml(code, {
-            lang: lang || "text",
-            theme: "OpenCode",
-            tabindex: false,
-          })
-        },
-      }),
-    )
+    },
+    katexExtension,
+    markedKatex({
+      throwOnError: false,
+    }),
+    markedShiki({
+      async highlight(code, lang) {
+        const highlighter = await getSharedHighlighter({
+          themes: ["OpenCode"],
+          langs: [],
+          preferredHighlighter: "shiki-wasm",
+        })
+        if (!(lang in bundledLanguages)) {
+          lang = "text"
+        }
+        if (!highlighter.getLoadedLanguages().includes(lang)) {
+          await highlighter.loadLanguage(lang as BundledLanguage)
+        }
+        return highlighter.codeToHtml(code, {
+          lang: lang || "text",
+          theme: "OpenCode",
+          tabindex: false,
+        })
+      },
+    }),
+  )
 
-    if (props.nativeParser) {
-      const nativeParser = props.nativeParser
-      return {
-        async parse(markdown: string): Promise<string> {
-          const html = await nativeParser(markdown)
-          const withMath = renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
-        },
-      }
-    }
+  if (!props.nativeParser) return jsParser
+  const nativeParser = props.nativeParser
+  return {
+    async parse(markdown: string): Promise<string> {
+      const html = await nativeParser(markdown)
+      const withMath = renderMathExpressions(html)
+      return highlightCodeBlocks(withMath)
+    },
+  }
+}
 
-    return jsParser
-  },
+export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
+  name: "Marked",
+  init: createMarkdownParser,
 })

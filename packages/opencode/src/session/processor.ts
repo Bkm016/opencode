@@ -321,6 +321,30 @@ const layer = Layer.effect(
       const toolResultOutput = (
         value: Extract<StreamEvent, { type: "tool-result" }>,
       ): { title: string; metadata: Record<string, any>; output: string; attachments?: SessionV1.FilePart[] } => {
+        if (
+          value.name === "image_generation" &&
+          isRecord(value.result.value) &&
+          typeof value.result.value.result === "string" &&
+          value.result.value.result.length > 0
+        ) {
+          // OpenAI 将原生生图结果作为 provider tool 的 Base64 字段返回；转成附件，避免写入工具文本和 metadata。
+          return {
+            title: value.name,
+            metadata: {},
+            output: "Image generated successfully",
+            attachments: [
+              {
+                id: PartID.ascending(),
+                messageID: ctx.assistantMessage.id,
+                sessionID: ctx.assistantMessage.sessionID,
+                type: "file",
+                mime: "image/png",
+                filename: `generated-image-${value.id}.png`,
+                url: `data:image/png;base64,${value.result.value.result}`,
+              },
+            ],
+          }
+        }
         if (isRecord(value.result.value) && typeof value.result.value.output === "string") {
           return {
             title: typeof value.result.value.title === "string" ? value.result.value.title : value.name,

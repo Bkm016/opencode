@@ -178,6 +178,7 @@ export const dict = {
   "ui.tool.agent": "{{type}} 代理程式",
   "ui.tool.agent.default": "代理程式",
   "ui.tool.skill": "技能",
+  "ui.tool.imageGeneration": "生成圖片",
   "ui.goalTool.update.running": "正在更新目標",
   "ui.goalTool.update.failed": "目標更新失敗",
   "ui.goalTool.update.blocked": "目標已阻塞",

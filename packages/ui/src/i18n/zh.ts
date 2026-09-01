@@ -235,6 +235,7 @@ export const dict = {
   "ui.tool.task.abort": "中止任务",
   "ui.tool.task.followup": "任务续写",
   "ui.tool.skill": "技能",
+  "ui.tool.imageGeneration": "生成图片",
   "ui.goalTool.update.running": "正在更新目标",
   "ui.goalTool.update.failed": "目标更新失败",
   "ui.goalTool.update.blocked": "目标已阻塞",

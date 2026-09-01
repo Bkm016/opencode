@@ -15,13 +15,13 @@ import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { Effect } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
 import { EffectBridge } from "@/effect/bridge"
-import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -513,6 +513,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         }),
       )
     tools[key] = item
+  }
+
+  // 自定义 OpenAI 网关也可暴露相同的 Responses hosted tool，不能按 provider ID 限制。
+  if (
+    input.model.api.npm === "@ai-sdk/openai" &&
+    /^(gpt-4(?:\.1|o)|gpt-5|o3)(?:[-.]|$)/.test(input.model.api.id)
+  ) {
+    tools.image_generation = openai.tools.imageGeneration({
+      outputFormat: "png",
+      partialImages: 0,
+    }) as AITool
   }
 
   return tools

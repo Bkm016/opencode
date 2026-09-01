@@ -44,6 +44,10 @@ type StreamInput = {
   readonly sessionID?: string
 }
 
+function isNativeProviderTool(item: Tool) {
+  return item.type === "provider" && item.id === "openai.image_generation"
+}
+
 export function status(input: Pick<StreamInput, "model" | "provider" | "auth">): RuntimeStatus {
   return statusWithFetch(input, providerFetch(input))
 }
@@ -88,11 +92,13 @@ export function stream(input: StreamInput): StreamResult {
   // — if a field ever needs to differ between the two surfaces, the
   // translation belongs here, not split across both packages.
   const tools = nativeTools(input.tools, input)
+  const providerTools = Object.fromEntries(Object.entries(input.tools).filter(([, item]) => isNativeProviderTool(item)))
   const request = LLMNative.request({
     model: input.model,
     apiKey: current.apiKey,
     baseURL: current.baseURL,
     messages: ProviderTransform.message(input.messages, input.model, input.providerOptions ?? {}),
+    tools: providerTools,
     toolChoice: input.toolChoice,
     temperature: input.temperature,
     topP: input.topP,
@@ -170,27 +176,29 @@ function nativeSchema(value: unknown): JsonSchema {
 
 export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput, "messages" | "abort">) {
   return Object.fromEntries(
-    Object.entries(tools).map(([name, item]) => [
-      name,
-      // Tool execution remains opencode-owned. The native runtime only adapts
-      // the @opencode-ai/llm tool call back into the AI SDK Tool.execute shape.
-      NativeTool.make({
-        description: item.description ?? "",
-        jsonSchema: nativeSchema(item.inputSchema),
-        execute: (args: unknown, ctx) =>
-          Effect.tryPromise({
-            try: () => {
-              if (!item.execute) throw new Error(`Tool has no execute handler: ${name}`)
-              return item.execute(args, {
-                toolCallId: ctx?.id ?? name,
-                messages: input.messages,
-                abortSignal: input.abort,
-              })
-            },
-            catch: (error) => new ToolFailure({ message: errorMessage(error), error }),
-          }),
-      }),
-    ]),
+    Object.entries(tools)
+      .filter(([, item]) => !isNativeProviderTool(item))
+      .map(([name, item]) => [
+        name,
+        // Tool execution remains opencode-owned. The native runtime only adapts
+        // the @opencode-ai/llm tool call back into the AI SDK Tool.execute shape.
+        NativeTool.make({
+          description: item.description ?? "",
+          jsonSchema: nativeSchema(item.inputSchema),
+          execute: (args: unknown, ctx) =>
+            Effect.tryPromise({
+              try: () => {
+                if (!item.execute) throw new Error(`Tool has no execute handler: ${name}`)
+                return item.execute(args, {
+                  toolCallId: ctx?.id ?? name,
+                  messages: input.messages,
+                  abortSignal: input.abort,
+                })
+              },
+              catch: (error) => new ToolFailure({ message: errorMessage(error), error }),
+            }),
+        }),
+      ]),
   )
 }
 

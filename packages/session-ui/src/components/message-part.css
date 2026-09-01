@@ -1212,6 +1212,66 @@
   }
 }
 
+[data-slot="basic-tool-tool-subtitle"].image-generation-tool-prompt {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-component="image-generation-tool-grid"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+  gap: 8px;
+  width: min(520px, 100%);
+  padding: 10px 0 4px;
+}
+
+[data-slot="image-generation-tool-image"] {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--v2-background-bg-layer-02);
+  cursor: pointer;
+
+  /* inset box-shadows do not paint over <img> content, so the hairline is an overlay */
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
+    pointer-events: none;
+    transition: box-shadow 0.15s ease;
+  }
+
+  &:hover::after {
+    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+[data-component="image-generation-tool-error"] {
+  padding: 10px 0 4px;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-large);
+  color: var(--icon-critical-base);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 [data-component="todos"] {
   padding: 10px 0 24px 0;
   display: flex;

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { LLMEvent, ToolFailure } from "@opencode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor, type LLMClientShape } from "@opencode-ai/llm/route"
 import { jsonSchema, tool, type ModelMessage, type Tool } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { Effect, Fiber, Layer, Stream } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { LLMNative } from "@/session/llm/native-request"
@@ -296,6 +297,28 @@ describe("session.llm-native.request", () => {
     ])
   })
 
+  test("preserves OpenAI provider tools for native request lowering", () => {
+    const request = LLMNative.request({
+      model: baseModel,
+      messages: [{ role: "user", content: "generate an image" }],
+      tools: {
+        image_generation: openai.tools.imageGeneration({ outputFormat: "png", partialImages: 0 }),
+      },
+    })
+
+    expect(request.tools).toMatchObject([
+      {
+        name: "image_generation",
+        native: {
+          openai: {
+            id: "openai.image_generation",
+            args: { outputFormat: "png", partialImages: 0 },
+          },
+        },
+      },
+    ])
+  })
+
   test("maps stored provider metadata to native content metadata", () => {
     const reasoning = Object.assign(
       { type: "reasoning" as const, text: "thinking" },
@@ -539,6 +562,17 @@ describe("session.llm-native.request", () => {
       expect(failure.message).toContain("incomplete")
     }),
   )
+
+  test("native tool wrapper leaves provider-executed tools out of the local registry", () => {
+    const wrapped = LLMNativeRuntime.nativeTools(
+      {
+        image_generation: openai.tools.imageGeneration({ outputFormat: "png" }) as Tool,
+      },
+      { messages: [], abort: new AbortController().signal },
+    )
+
+    expect(wrapped).toEqual({})
+  })
 
   it.effect("emits native tool calls before overlapping local settlements complete", () =>
     Effect.gen(function* () {

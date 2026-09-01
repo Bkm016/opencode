@@ -24,6 +24,7 @@ import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
+import { isRecord } from "../utils/record"
 
 const ADAPTER = "openai-responses"
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -105,13 +106,27 @@ type OpenAIResponsesReasoningInput = {
 }
 type OpenAIResponsesReasoningReplay = Omit<OpenAIResponsesReasoningInput, "id">
 
-const OpenAIResponsesTool = Schema.Struct({
-  type: Schema.tag("function"),
-  name: Schema.String,
-  description: Schema.String,
-  parameters: JsonObject,
-  strict: Schema.optional(Schema.Boolean),
-})
+const OpenAIResponsesTool = Schema.Union([
+  Schema.Struct({
+    type: Schema.tag("function"),
+    name: Schema.String,
+    description: Schema.String,
+    parameters: JsonObject,
+    strict: Schema.optional(Schema.Boolean),
+  }),
+  Schema.Struct({
+    type: Schema.tag("image_generation"),
+    background: Schema.optional(Schema.Literals(["auto", "opaque", "transparent"])),
+    input_fidelity: Schema.optional(Schema.Literals(["low", "high"])),
+    model: Schema.optional(Schema.String),
+    moderation: Schema.optional(Schema.Literal("auto")),
+    output_compression: Schema.optional(Schema.Number),
+    output_format: Schema.optional(Schema.Literals(["png", "jpeg", "webp"])),
+    partial_images: Schema.optional(Schema.Number),
+    quality: Schema.optional(Schema.Literals(["auto", "low", "medium", "high"])),
+    size: Schema.optional(Schema.Literals(["auto", "1024x1024", "1024x1536", "1536x1024"])),
+  }),
+])
 type OpenAIResponsesTool = Schema.Schema.Type<typeof OpenAIResponsesTool>
 
 const OpenAIResponsesToolChoice = Schema.Union([
@@ -191,6 +206,7 @@ const OpenAIResponsesStreamItem = Schema.Struct({
   code: Schema.optional(Schema.String),
   container_id: Schema.optional(Schema.String),
   outputs: Schema.optional(Schema.Unknown),
+  result: Schema.optional(Schema.Unknown),
   server_label: Schema.optional(Schema.String),
   output: Schema.optional(Schema.Unknown),
   error: Schema.optional(Schema.Unknown),
@@ -256,14 +272,43 @@ const invalid = ProviderShared.invalidRequest
 // =============================================================================
 // Request Lowering
 // =============================================================================
-const lowerTool = (tool: ToolDefinition, inputSchema: JsonSchema): OpenAIResponsesTool => ({
-  type: "function",
-  name: tool.name,
-  description: tool.description,
-  parameters: ToolSchemaProjection.openAI(inputSchema),
-  // TODO: Read this from OpenAI-specific tool options so direct LLM callers can opt into strict schemas.
-  strict: false,
-})
+const lowerTool = (tool: ToolDefinition, inputSchema: JsonSchema): OpenAIResponsesTool => {
+  const native = tool.native?.openai
+  if (isRecord(native) && native.id === "openai.image_generation") {
+    const args = isRecord(native.args) ? native.args : {}
+    const background = args.background
+    const inputFidelity = args.inputFidelity
+    const moderation = args.moderation
+    const outputFormat = args.outputFormat
+    const quality = args.quality
+    const size = args.size
+    return {
+      type: "image_generation",
+      background:
+        background === "auto" || background === "opaque" || background === "transparent" ? background : undefined,
+      input_fidelity: inputFidelity === "low" || inputFidelity === "high" ? inputFidelity : undefined,
+      model: typeof args.model === "string" ? args.model : undefined,
+      moderation: moderation === "auto" ? moderation : undefined,
+      output_compression: typeof args.outputCompression === "number" ? args.outputCompression : undefined,
+      output_format: outputFormat === "png" || outputFormat === "jpeg" || outputFormat === "webp" ? outputFormat : undefined,
+      partial_images: typeof args.partialImages === "number" ? args.partialImages : undefined,
+      quality:
+        quality === "auto" || quality === "low" || quality === "medium" || quality === "high" ? quality : undefined,
+      size:
+        size === "auto" || size === "1024x1024" || size === "1024x1536" || size === "1536x1024"
+          ? size
+          : undefined,
+    }
+  }
+  return {
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    parameters: ToolSchemaProjection.openAI(inputSchema),
+    // TODO: Read this from OpenAI-specific tool options so direct LLM callers can opt into strict schemas.
+    strict: false,
+  }
+}
 
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
   ProviderShared.matchToolChoice("OpenAI Responses", toolChoice, {

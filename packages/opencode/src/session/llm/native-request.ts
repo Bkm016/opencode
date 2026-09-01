@@ -16,6 +16,9 @@ import { isRecord } from "@/util/record"
 type ToolInput = {
   readonly description?: string
   readonly inputSchema?: unknown
+  readonly type?: string
+  readonly id?: string
+  readonly args?: unknown
 }
 
 export type RequestInput = {
@@ -131,6 +134,15 @@ const tools = (input: Record<string, ToolInput> | undefined): ToolDefinition[] =
       name,
       description: item.description ?? "",
       inputSchema: schema(item.inputSchema),
+      native:
+        item.type === "provider" && item.id
+          ? {
+              openai: {
+                id: item.id,
+                args: item.args,
+              },
+            }
+          : undefined,
     }),
   )
 

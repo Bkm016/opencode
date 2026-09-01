@@ -209,6 +209,34 @@ const providerErrorLLM = Layer.succeed(
 const providerErrorEnv = LayerNode.compile(root, [...replacements, [LLM.node, providerErrorLLM]])
 const itProviderError = testEffect(providerErrorEnv)
 
+const generatedPng =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+const imageGenerationLLM = Layer.succeed(
+  LLM.Service,
+  LLM.Service.of({
+    stream: () =>
+      Stream.make(
+        LLMEvent.stepStart({ index: 0 }),
+        LLMEvent.toolCall({
+          id: "image-1",
+          name: "image_generation",
+          input: {},
+          providerExecuted: true,
+        }),
+        LLMEvent.toolResult({
+          id: "image-1",
+          name: "image_generation",
+          result: { type: "json", value: { result: generatedPng } },
+          providerExecuted: true,
+        }),
+        LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+        LLMEvent.finish({ reason: "stop" }),
+      ),
+  }),
+)
+const imageGenerationEnv = LayerNode.compile(root, [...replacements, [LLM.node, imageGenerationLLM]])
+const itImageGeneration = testEffect(imageGenerationEnv)
+
 const fragmentFailureLLM = Layer.succeed(
   LLM.Service,
   LLM.Service.of({
@@ -1128,6 +1156,54 @@ itProviderError.live("session.processor effect tests fail provider-executed erro
         expect(seen).toContain(MessageV2.Event.PartUpdated.type)
         expect(seen).toContain(MessageV2.Event.Updated.type)
         expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+      }),
+    { config: cfg },
+  ),
+)
+
+itImageGeneration.live("session.processor stores OpenAI generated images as tool attachments", () =>
+  provideTmpdirInstance(
+    (dir) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "generate an image")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+
+        yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "generate an image" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const call = parts.find((part): part is SessionV1.ToolPart => part.type === "tool")
+        expect(call?.metadata?.providerExecuted).toBe(true)
+        expect(call?.state.status).toBe("completed")
+        if (call?.state.status !== "completed") return
+        expect(call.state.output).toBe("Image generated successfully")
+        expect(call.state.metadata).toEqual({})
+        expect(call.state.attachments).toHaveLength(1)
+        expect(call.state.attachments?.[0]).toMatchObject({
+          type: "file",
+          mime: "image/png",
+          filename: "generated-image-image-1.png",
+          url: `data:image/png;base64,${generatedPng}`,
+        })
+        expect(JSON.stringify(call.state)).not.toContain('"result"')
       }),
     { config: cfg },
   ),

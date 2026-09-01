@@ -79,6 +79,38 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  it.effect("lowers the OpenAI image generation hosted tool", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.updateRequest(request, {
+          tools: [
+            {
+              name: "image_generation",
+              description: "",
+              inputSchema: { type: "object", properties: {} },
+              native: {
+                openai: {
+                  id: "openai.image_generation",
+                  args: { outputFormat: "png", partialImages: 0, quality: "high", size: "1024x1024" },
+                },
+              },
+            },
+          ],
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        {
+          type: "image_generation",
+          output_format: "png",
+          partial_images: 0,
+          quality: "high",
+          size: "1024x1024",
+        },
+      ])
+    }),
+  )
+
   it.effect("flattens top-level object unions in function schemas", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
@@ -1254,6 +1286,41 @@ describe("OpenAI Responses route", () => {
           result: { type: "json", value: item },
           providerExecuted: true,
           providerMetadata: { openai: { itemId: "ws_1" } },
+        },
+      ])
+    }),
+  )
+
+  it.effect("decodes image_generation_call without dropping the generated image", () =>
+    Effect.gen(function* () {
+      const item = {
+        type: "image_generation_call",
+        id: "image_1",
+        status: "completed",
+        result: "aW1hZ2U=",
+      }
+      const body = sseEvents(
+        { type: "response.output_item.done", item },
+        { type: "response.completed", response: { usage: { input_tokens: 5, output_tokens: 1 } } },
+      )
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+
+      expect(response.events.filter((event) => event.type === "tool-call" || event.type === "tool-result")).toEqual([
+        {
+          type: "tool-call",
+          id: "image_1",
+          name: "image_generation",
+          input: {},
+          providerExecuted: true,
+          providerMetadata: { openai: { itemId: "image_1" } },
+        },
+        {
+          type: "tool-result",
+          id: "image_1",
+          name: "image_generation",
+          result: { type: "json", value: item },
+          providerExecuted: true,
+          providerMetadata: { openai: { itemId: "image_1" } },
         },
       ])
     }),

@@ -65,6 +65,7 @@ import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/
 import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
 import { isContextGroupTool } from "./message-part-groups"
+import { ImageGenerationTool } from "./image-generation-tool"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1592,6 +1593,10 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  /** 完成态工具产出的附件（如原生生图工具的图片），由 ToolPartDisplay 从 completed state 透传 */
+  attachments?: FilePart[]
+  /** 失败态错误文本，由 ToolPartDisplay 从 error state 透传，供需要保留专属错误渲染的工具使用 */
+  error?: string
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -1737,6 +1742,18 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
+  const state = () => part().state
+  const completedAttachments = createMemo(() => {
+    const current = state()
+    if (current.status !== "completed") return undefined
+    return current.attachments
+  })
+  const errorText = createMemo(() => {
+    const current = state()
+    if (current.status !== "error") return undefined
+    return current.error
+  })
+
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
@@ -1745,8 +1762,17 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
+          {/* image_generation 失败时保留 BasicTool 框架，由专属渲染器呈现错误，不走通用 ToolErrorCard */}
           {/* bash/python 中断/失败时保留命令与已有输出，不走 ToolErrorCard 吞掉 input/output；错误通过 status 传给渲染器 */}
-          <Match when={part().state.status === "error" && (part().state as any).error && part().tool !== "bash" && part().tool !== "python"}>
+          <Match
+            when={
+              part().state.status === "error" &&
+              (part().state as any).error &&
+              part().tool !== "bash" &&
+              part().tool !== "python" &&
+              part().tool !== "image_generation"
+            }
+          >
             {(error) => {
               const cleaned = typeof error() === "string" ? error().replace("Error: ", "") : String(error())
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
@@ -1782,6 +1808,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               // @ts-expect-error
               output={part().state.output}
               status={part().state.status}
+              attachments={completedAttachments()}
+              error={errorText()}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}
@@ -4023,5 +4051,14 @@ ToolRegistry.register({
     )
 
     return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
+  },
+})
+
+// OpenAI 原生生图工具：成品图片由处理器写入 ToolStateCompleted.attachments（base64 data URL），
+// 完成态默认展开、图片网格优先展示；失败态保留 BasicTool 框架并展示错误文本。
+ToolRegistry.register({
+  name: "image_generation",
+  render(props) {
+    return <ImageGenerationTool {...props} />
   },
 })

@@ -1,3 +1,13 @@
+// Aggregate ceiling for every attachment in a single model request. Per-attachment
+// limits alone cannot stop a long session from accumulating dozens of individually
+// legal images, and all of them are replayed on every turn.
+const MAX_TOTAL_BASE64_BYTES = 8 * 1024 * 1024
+
+/** Combined attachment budget for one model request, in base64 bytes. */
+export function mediaBudget(attachment?: { max_total_base64_bytes?: number }) {
+  return attachment?.max_total_base64_bytes ?? MAX_TOTAL_BASE64_BYTES
+}
+
 const startsWith = (bytes: Uint8Array, prefix: number[]) => prefix.every((value, index) => bytes[index] === value)
 
 export function isPdfAttachment(mime: string) {

@@ -20597,6 +20597,10 @@
           "max_base64_bytes": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "compress_over_base64_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           }
         },
         "additionalProperties": false
@@ -20606,6 +20610,10 @@
         "properties": {
           "image": {
             "$ref": "#/components/schemas/ImageAttachmentConfig"
+          },
+          "max_total_base64_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           }
         },
         "additionalProperties": false

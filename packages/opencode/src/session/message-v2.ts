@@ -130,13 +130,72 @@ function providerMeta(metadata: Record<string, any> | undefined) {
   return Object.keys(rest).length > 0 ? rest : undefined
 }
 
+/** Payload size of a data URL, measured on the base64 body that goes on the wire. */
+function dataUrlBytes(url: string) {
+  const index = url.indexOf(",")
+  return index === -1 ? url.length : url.length - index - 1
+}
+
+/**
+ * Aggregate media guard.
+ *
+ * Per-attachment limits cannot stop a long session from piling up dozens of
+ * individually legal images; every one of them is replayed on every turn, so the
+ * request grows until the provider times out and the session looks stuck forever.
+ * Walk media newest-first and return the keys of everything that no longer fits -
+ * the most recent media is what the current turn is actually about.
+ *
+ * Keys are `part.id` for user file parts and `${part.id}:${index}` for tool
+ * result attachments.
+ */
+export function elidedMedia(input: WithParts[], budget: number) {
+  const drop = new Set<string>()
+  if (!Number.isFinite(budget) || budget <= 0) return drop
+  let used = 0
+  const consider = (key: string, mime: string, url: string) => {
+    if (!isMedia(mime) || !url.startsWith("data:")) return
+    const bytes = dataUrlBytes(url)
+    if (used + bytes <= budget) {
+      used += bytes
+      return
+    }
+    drop.add(key)
+  }
+  for (let i = input.length - 1; i >= 0; i--) {
+    const msg = input[i]
+    for (let j = msg.parts.length - 1; j >= 0; j--) {
+      const part = msg.parts[j]
+      if (part.type === "file") consider(part.id, part.mime, part.url)
+      if (part.type === "tool" && part.state.status === "completed" && !part.state.time.compacted) {
+        const attachments = part.state.attachments ?? []
+        for (let k = attachments.length - 1; k >= 0; k--) {
+          const attachment = attachments[k]
+          consider(`${part.id}:${k}`, attachment.mime, attachment.url)
+        }
+      }
+    }
+  }
+  return drop
+}
+
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; preserveMediaForMessageID?: MessageID; toolOutputMaxChars?: number },
+  options?: {
+    stripMedia?: boolean
+    preserveMediaForMessageID?: MessageID
+    toolOutputMaxChars?: number
+    mediaBudgetBytes?: number
+  },
 ) {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
+  const dropped = options?.mediaBudgetBytes ? elidedMedia(input, options.mediaBudgetBytes) : new Set<string>()
+  if (dropped.size > 0)
+    yield* Effect.logWarning("media budget exceeded, eliding oldest attachments", {
+      elided: dropped.size,
+      budget: options?.mediaBudgetBytes,
+    })
   // Track media from tool results that need to be injected as user messages
   // for providers that don't support that media type in tool results.
   //
@@ -213,9 +272,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         // text/plain and directory files are converted into text parts, ignore them
         if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
           if (
-            options?.stripMedia &&
-            msg.info.id !== options.preserveMediaForMessageID &&
-            isMedia(part.mime)
+            isMedia(part.mime) &&
+            ((options?.stripMedia && msg.info.id !== options.preserveMediaForMessageID) || dropped.has(part.id))
           ) {
             userMessage.parts.push({
               type: "text",
@@ -296,10 +354,19 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         if (part.type === "tool") {
           toolNames.add(part.tool)
           if (part.state.status === "completed") {
-            const outputText = part.state.time.compacted
+            const rawAttachments =
+              part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const attachments = dropped.size
+              ? rawAttachments.filter((_, index) => !dropped.has(`${part.id}:${index}`))
+              : rawAttachments
+            const elidedCount = rawAttachments.length - attachments.length
+            const baseOutputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const outputText =
+              elidedCount > 0
+                ? `${baseOutputText}\n\n[${elidedCount} attachment${elidedCount === 1 ? "" : "s"} omitted: older media beyond this request's media budget. Re-read the file if you need it again.]`
+                : baseOutputText
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message
@@ -415,7 +482,12 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 export function toModelMessages(
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; preserveMediaForMessageID?: MessageID; toolOutputMaxChars?: number },
+  options?: {
+    stripMedia?: boolean
+    preserveMediaForMessageID?: MessageID
+    toolOutputMaxChars?: number
+    mediaBudgetBytes?: number
+  },
 ): Promise<ModelMessage[]> {
   return Effect.runPromise(toModelMessagesEffect(input, model, options))
 }

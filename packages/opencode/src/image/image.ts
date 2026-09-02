@@ -8,10 +8,17 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const MAX_BASE64_BYTES = 5 * 1024 * 1024
+// Warning line. Anything above this is re-encoded (and downscaled if that is not
+// enough) even though it is still far below MAX_BASE64_BYTES. A single 1400x1250
+// screenshot is ~1.7MB of base64 as PNG but ~370KB as JPEG q80 at the very same
+// resolution, so a handful of untouched screenshots is enough to blow past a
+// provider's request limit and stall the session.
+const COMPRESS_OVER_BASE64_BYTES = 400 * 1024
 const MAX_WIDTH = 2000
 const MAX_HEIGHT = 2000
 const AUTO_RESIZE = true
 const JPEG_QUALITIES = [80, 85, 70, 55, 40]
+
 export class ResizerUnavailableError extends Schema.TaggedErrorClass<ResizerUnavailableError>()(
   "ImageResizerUnavailableError",
   {},
@@ -79,7 +86,11 @@ const layer = Layer.effect(
         maxWidth: image?.max_width ?? MAX_WIDTH,
         maxHeight: image?.max_height ?? MAX_HEIGHT,
         maxBase64Bytes: image?.max_base64_bytes ?? MAX_BASE64_BYTES,
+        compressOverBase64Bytes: image?.compress_over_base64_bytes ?? COMPRESS_OVER_BASE64_BYTES,
       }
+      // Hard failure line vs. the (lower) line we actually aim for.
+      const hardMax = info.maxBase64Bytes
+      const target = Math.min(hardMax, info.compressOverBase64Bytes)
       if (!input.url.startsWith("data:") || !input.url.includes(";base64,"))
         return yield* new InvalidDataUrlError({ url: input.url })
 
@@ -96,17 +107,25 @@ const layer = Layer.effect(
       try {
         const originalWidth = decoded.get_width()
         const originalHeight = decoded.get_height()
-        if (originalWidth <= info.maxWidth && originalHeight <= info.maxHeight && bytes <= info.maxBase64Bytes)
-          return input
-        if (!info.autoResize)
+        const dimensionsOk = originalWidth <= info.maxWidth && originalHeight <= info.maxHeight
+        if (dimensionsOk && bytes <= target) return input
+        // auto_resize off keeps the old contract: only the hard limits are enforced,
+        // the compression warning line is advisory and cannot fail an attachment.
+        if (!info.autoResize) {
+          if (dimensionsOk && bytes <= hardMax) return input
           return yield* new SizeError({
             bytes,
-            max: info.maxBase64Bytes,
+            max: hardMax,
             width: originalWidth,
             height: originalHeight,
             max_width: info.maxWidth,
             max_height: info.maxHeight,
           })
+        }
+
+        // Smallest encoding produced anywhere along the ladder, used as a fallback
+        // when nothing reaches the target but the hard limit is still satisfiable.
+        let best: { data: string; mime: string; bytes: number } | undefined
 
         const scale = Math.min(1, info.maxWidth / originalWidth, info.maxHeight / originalHeight)
         for (const size of Array.from({ length: 32 }).reduce<Array<{ width: number; height: number }>>((acc) => {
@@ -124,15 +143,27 @@ const layer = Layer.effect(
           return acc.some((item) => item.width === next.width && item.height === next.height) ? acc : [...acc, next]
         }, [])) {
           const resized = photon.resize(decoded, size.width, size.height, photon.SamplingFilter.Lanczos3)
-          const candidate = [
-            { data: Buffer.from(resized.get_bytes()).toString("base64"), mime: "image/png" },
+          // Re-encoding to PNG at the original size cannot get under a target the
+          // original already exceeds - photon's PNG output is routinely larger than
+          // the source - so skip that encode instead of paying for it every time.
+          const identity = size.width === originalWidth && size.height === originalHeight
+          const encoders = [
+            ...(identity && bytes > target ? [] : [{ mime: "image/png", encode: () => resized.get_bytes() }]),
             ...JPEG_QUALITIES.map((quality) => ({
-              data: Buffer.from(resized.get_bytes_jpeg(quality)).toString("base64"),
               mime: "image/jpeg",
+              encode: () => resized.get_bytes_jpeg(quality),
             })),
           ]
-            .map((item) => ({ ...item, bytes: Buffer.byteLength(item.data, "utf8") }))
-            .find((item) => item.bytes <= info.maxBase64Bytes)
+          let candidate: { data: string; mime: string; bytes: number } | undefined
+          for (const encoder of encoders) {
+            const data = Buffer.from(encoder.encode()).toString("base64")
+            const encoded = { data, mime: encoder.mime, bytes: Buffer.byteLength(data, "utf8") }
+            if (!best || encoded.bytes < best.bytes) best = encoded
+            if (encoded.bytes <= target) {
+              candidate = encoded
+              break
+            }
+          }
           resized.free()
 
           if (candidate) {
@@ -141,6 +172,8 @@ const layer = Layer.effect(
               to_mime: candidate.mime,
               from: `${originalWidth}x${originalHeight}`,
               to: `${size.width}x${size.height}`,
+              from_bytes: bytes,
+              to_bytes: candidate.bytes,
             })
             return {
               ...input,
@@ -150,9 +183,27 @@ const layer = Layer.effect(
           }
         }
 
+        // Nothing hit the target. Keep the smallest encoding we found as long as it
+        // still respects the hard limit and actually improves on the original.
+        if (best && best.bytes <= hardMax && best.bytes < bytes) {
+          yield* Effect.logWarning("image compressed below hard limit but above target", {
+            from_mime: input.mime,
+            to_mime: best.mime,
+            from_bytes: bytes,
+            to_bytes: best.bytes,
+            target,
+          })
+          return {
+            ...input,
+            mime: best.mime,
+            url: `data:${best.mime};base64,${best.data}`,
+          }
+        }
+        if (dimensionsOk && bytes <= hardMax) return input
+
         return yield* new SizeError({
           bytes,
-          max: info.maxBase64Bytes,
+          max: hardMax,
           width: originalWidth,
           height: originalHeight,
           max_width: info.maxWidth,

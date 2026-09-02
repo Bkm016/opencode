@@ -41,6 +41,7 @@ import { ShellID } from "@/tool/shell/id"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
+import { mediaBudget } from "@/util/media"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Cause, Deferred, Effect, Exit, Fiber, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
@@ -1778,6 +1779,10 @@ const layer = Layer.effect(
             let providerMsgs = msgs
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: providerMsgs })
 
+            // 媒体总量上限对所有 compaction strategy 生效：单张图片的尺寸限制拦不住
+            // 长会话里累积的十几张合规截图，而它们每一轮都会被重新发送。
+            const mediaBudgetBytes = mediaBudget(cfg.attachment)
+
             const [system, initialModelMsgs] = yield* Effect.all([
               providerTurnSystem({
                 agent,
@@ -1785,7 +1790,7 @@ const layer = Layer.effect(
                 format: lastUser.format,
                 goal: goalIsActive ? capturedGoal : undefined,
               }).pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(providerMsgs, model),
+              MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes }),
             ])
             let modelMsgs = initialModelMsgs
             if (cfg.compaction?.strategy === "chunk") {
@@ -1820,7 +1825,7 @@ const layer = Layer.effect(
                       String(message.info.id) !== `chunk-input-${displayID}` &&
                       String(message.info.id) !== `chunk-summary-${displayID}`,
                   )
-                  modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model)
+                  modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes })
                   requestTokens = SessionChunk.estimateTokens(
                     JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
                   )
@@ -1834,6 +1839,7 @@ const layer = Layer.effect(
                     stripMedia: true,
                     preserveMediaForMessageID: lastUser.id,
                     toolOutputMaxChars: 4_000,
+                    mediaBudgetBytes,
                   })
                   requestTokens = SessionChunk.estimateTokens(
                     JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),

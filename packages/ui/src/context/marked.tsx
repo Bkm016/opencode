@@ -1,5 +1,4 @@
 import { marked, type MarkedExtension, type Tokens } from "marked"
-import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
@@ -380,6 +379,13 @@ export const OpenCodeTheme = {
 
 registerCustomTheme("OpenCode", () => Promise.resolve(OpenCodeTheme))
 
+function cleanMath(math: string): string {
+  // LaTeX 文本模式宏（\text, \textbf 等）中未经转义的下划线会导致 KaTeX 报 ParseError，统一转为 \_
+  return math.replace(/(\\text[a-z]*\s*\{)([^}]+)(\})/g, (_, prefix, content, suffix) => {
+    return prefix + content.replace(/(?<!\\)_/g, "\\_") + suffix
+  })
+}
+
 function renderMathInText(text: string): string {
   let result = text
 
@@ -387,7 +393,7 @@ function renderMathInText(text: string): string {
   const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
   result = result.replace(displayMathRegex, (_, math) => {
     try {
-      return katex.renderToString(math, {
+      return katex.renderToString(cleanMath(math.trim()), {
         displayMode: true,
         throwOnError: false,
       })
@@ -396,16 +402,16 @@ function renderMathInText(text: string): string {
     }
   })
 
-  // 与 marked-katex-extension 保持相同边界，避免把标识符中的 `$` 当作公式。
-  const dollarMathRegex = /(^|[\s>])\$(?!\$)((?:\\.|[^\\\n])*?(?:\\.|[^\\\n$]))\$(?!\$)(?=[\s?!.,:？！。，：<]|$)/g
-  result = result.replace(dollarMathRegex, (_, prefix, math) => {
+  // Inline math: $...$
+  const dollarMathRegex = /(?<![0-9a-zA-Z])\$(?!\s)((?:\\.|[^\n\\$])*?(?<!\s))\$(?![0-9a-zA-Z$])/g
+  result = result.replace(dollarMathRegex, (_, math) => {
     try {
-      return `${prefix}${katex.renderToString(math.trim(), {
+      return katex.renderToString(cleanMath(math.trim()), {
         displayMode: false,
         throwOnError: false,
-      })}`
+      })
     } catch {
-      return `${prefix}$${math}$`
+      return `$${math}$`
     }
   })
 
@@ -413,7 +419,7 @@ function renderMathInText(text: string): string {
   const inlineMathRegex = /\\\(((?:\\.|[^\\\n])*?)\\\)/g
   result = result.replace(inlineMathRegex, (_, math) => {
     try {
-      return katex.renderToString(math, {
+      return katex.renderToString(cleanMath(math.trim()), {
         displayMode: false,
         throwOnError: false,
       })
@@ -425,31 +431,13 @@ function renderMathInText(text: string): string {
   return result
 }
 
-const inlineMathRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
 const blockMathRegex = /^\$\$\n([\s\S]+?)\n\$\$(?:\n|$)/
+const inlineDoubleDollarRegex = /^\$\$((?:\\.|[\s\S])+?)\$\$/
+const inlineDollarRegex = /^\$(?!\s)((?:\\.|[^\n\\$])*?(?<!\s))\$(?![0-9a-zA-Z$])/
+const inlineParenRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
 
 const katexExtension: MarkedExtension = {
   extensions: [
-    {
-      name: "inlineKatex",
-      level: "inline",
-      start(src) {
-        const index = src.indexOf("\\(")
-        if (index === -1) return
-        return index
-      },
-      tokenizer(src) {
-        const match = src.match(inlineMathRegex)
-        if (!match) return
-        return {
-          type: "inlineKatex",
-          raw: match[0],
-          text: match[1].trim(),
-          displayMode: false,
-        }
-      },
-      renderer: renderKatexToken,
-    },
     {
       name: "blockKatex",
       level: "block",
@@ -465,11 +453,74 @@ const katexExtension: MarkedExtension = {
       },
       renderer: renderKatexToken,
     },
+    {
+      name: "inlineKatex",
+      level: "inline",
+      start(src) {
+        let indexSrc = src
+        while (indexSrc) {
+          let min = -1
+          let minTarget = ""
+          for (const target of ["$$", "$", "\\("]) {
+            const idx = indexSrc.indexOf(target)
+            if (idx !== -1 && (min === -1 || idx < min)) {
+              min = idx
+              minTarget = target
+            }
+          }
+          if (min === -1) return undefined
+
+          // 单个 $ 不能紧跟在英文字母或数字后面，避免碰撞类似 foo$bar 的变量
+          if (minTarget === "$") {
+            const charBefore = min === 0 ? "" : indexSrc.charAt(min - 1)
+            if (/[0-9a-zA-Z]/.test(charBefore)) {
+              indexSrc = indexSrc.slice(min + 1)
+              continue
+            }
+          }
+
+          return src.length - indexSrc.length + min
+        }
+      },
+      tokenizer(src) {
+        // 1. 行内/段内双美元公式：$$...$$
+        const matchDouble = src.match(inlineDoubleDollarRegex)
+        if (matchDouble) {
+          return {
+            type: "inlineKatex",
+            raw: matchDouble[0],
+            text: matchDouble[1].trim(),
+            displayMode: true,
+          }
+        }
+        // 2. 标准括号公式：\(...\)
+        const matchParen = src.match(inlineParenRegex)
+        if (matchParen) {
+          return {
+            type: "inlineKatex",
+            raw: matchParen[0],
+            text: matchParen[1].trim(),
+            displayMode: false,
+          }
+        }
+        // 3. 单美元公式：$...$
+        const matchSingle = src.match(inlineDollarRegex)
+        if (matchSingle) {
+          return {
+            type: "inlineKatex",
+            raw: matchSingle[0],
+            text: matchSingle[1].trim(),
+            displayMode: false,
+          }
+        }
+      },
+      renderer: renderKatexToken,
+    },
   ],
 }
 
 function renderKatexToken(token: Tokens.Generic) {
-  return katex.renderToString(typeof token.text === "string" ? token.text : "", {
+  return katex.renderToString(cleanMath(typeof token.text === "string" ? token.text : ""), {
     displayMode: token.displayMode === true,
     throwOnError: false,
   })
@@ -544,9 +595,6 @@ export function createMarkdownParser(props: { nativeParser?: NativeMarkdownParse
       },
     },
     katexExtension,
-    markedKatex({
-      throwOnError: false,
-    }),
     markedShiki({
       async highlight(code, lang) {
         const highlighter = await getSharedHighlighter({

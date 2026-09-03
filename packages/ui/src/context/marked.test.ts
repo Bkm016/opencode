@@ -37,4 +37,29 @@ describe("Markdown parser", () => {
     expect(html).toContain("Costs $5 or $10.")
     expect(html).not.toContain('class="katex"')
   })
+
+  test("renders inline double-dollar LaTeX and colon-preceded LaTeX", async () => {
+    const html1 = await createMarkdownParser({}).parse(
+      '在 Anthropic Messages 协议下，A6API 却返回：$$\\text{"input_tokens": 68508}, \\quad \\text{"cache_read_input_tokens": 68480}$$',
+    )
+    expect(html1).toContain('class="katex-display"')
+    expect(html1).not.toContain("katex-error")
+    expect(html1).not.toContain("$$")
+
+    const html2 = await createMarkdownParser({}).parse(
+      '网关被误导：Quark 网关按 Anthropic 官方规范计算总输入：$$\\text{总输入} = \\text{input_tokens (68508)} + \\text{cache_read_input_tokens (68480)} = \\mathbf{136,988}$$ 导致分母被凭空翻倍，原本 99% 的真实命中率被算成了 68480/136988 = 49.98%!',
+    )
+    expect(html2).toContain('class="katex-display"')
+    expect(html2).toContain("导致分母被凭空翻倍")
+    expect(html2).not.toContain("katex-error")
+    expect(html2).not.toContain("$$")
+  })
+
+  test("renders inline single-dollar LaTeX without preceding whitespace", async () => {
+    const html = await createMarkdownParser({}).parse("结晶消耗由$128 \\to \\mathbf{64}$,")
+
+    expect(html).toContain('class="katex"')
+    expect(html).toContain("<mo>→</mo>")
+    expect(html).not.toContain("$128")
+  })
 })

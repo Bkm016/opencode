@@ -650,12 +650,28 @@ const layer = Layer.effect(
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
         const merged = mergeDeep(writable(previous), patch)
+        if (patch.provider !== undefined) {
+          merged.provider = patch.provider
+        }
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
         next = merged
       } else {
-        const updated = patchJsonc(before, patch)
+        let updated = before
+        if (patch.provider !== undefined) {
+          const edits = modify(updated, ["provider"], patch.provider, {
+            formattingOptions: {
+              insertSpaces: true,
+              tabSize: 2,
+            },
+          })
+          updated = applyEdits(updated, edits)
+          const { provider: _providerPatch, ...restPatch } = patch
+          updated = patchJsonc(updated, restPatch)
+        } else {
+          updated = patchJsonc(before, patch)
+        }
         next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)

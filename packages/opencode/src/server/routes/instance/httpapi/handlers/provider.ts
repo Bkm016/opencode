@@ -47,6 +47,18 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) filtered[key] = value
       }
       const connected = yield* provider.list()
+      const configuredProviderIDs = config.provider ? Object.keys(config.provider) : []
+      if (configuredProviderIDs.length > 0) {
+        // 彻底尊重用户本地配置文件：只要用户配置了 provider，只认配置文件里的提供商，历史 db/凭据中的幽灵渠道全部剔除
+        const configuredSet = new Set(configuredProviderIDs)
+        for (const id of Object.keys(connected)) {
+          if (!configuredSet.has(id)) {
+            delete connected[id as ProviderV2.ID]
+          }
+        }
+      } else if (!config.provider?.["opencode"] && connected["opencode" as ProviderV2.ID]) {
+        delete connected["opencode" as ProviderV2.ID]
+      }
       const providers = Object.assign(
         mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
         connected,

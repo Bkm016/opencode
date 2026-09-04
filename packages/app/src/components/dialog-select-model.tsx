@@ -217,18 +217,19 @@ export function ModelSelectorPopover(props: {
     setStore("open", false)
   }
 
-  const handleManage = () => {
+  const openModelSettings = () => {
     close("manage")
-    void import("./dialog-manage-models").then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+    void import("./dialog-settings").then((x) => {
+      dialog.show(() => <x.DialogSettings defaultValue="models" />)
     })
   }
 
+  const handleManage = () => {
+    openModelSettings()
+  }
+
   const handleConnectProvider = () => {
-    close("provider")
-    void import("./dialog-connect-provider").then((x) => {
-      void dialog.show(() => <x.DialogConnectProvider directory={directory} />)
-    })
+    openModelSettings()
   }
   const language = useLanguage()
 
@@ -321,16 +322,18 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
   const local = useLocal()
   const directory = () => decode64(local.slug())
 
-  const provider = () => {
-    void import("./dialog-connect-provider").then((x) => {
-      void dialog.show(() => <x.DialogConnectProvider directory={directory} />)
+  const openModelSettings = () => {
+    void import("./dialog-settings").then((x) => {
+      dialog.show(() => <x.DialogSettings defaultValue="models" />)
     })
   }
 
+  const provider = () => {
+    openModelSettings()
+  }
+
   const manage = () => {
-    void import("./dialog-manage-models").then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
-    })
+    openModelSettings()
   }
 
   return (

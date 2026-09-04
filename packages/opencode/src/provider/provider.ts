@@ -177,6 +177,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         },
       }),
     opencode: Effect.fnUntraced(function* (input: Info) {
+      const cfg = yield* dep.config()
+      const hasConfig = Boolean(cfg.provider?.["opencode"])
       const env = yield* dep.env()
       const hasKey = iife(() => {
         if (input.env.some((item) => env[item])) return true
@@ -185,17 +187,11 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       const ok =
         hasKey ||
         Boolean(yield* dep.auth(input.id)) ||
-        Boolean((yield* dep.config()).provider?.["opencode"]?.options?.apiKey)
+        Boolean(cfg.provider?.["opencode"]?.options?.apiKey)
 
-      if (!ok) {
-        for (const [key, value] of Object.entries(input.models)) {
-          if (value.cost.input === 0) continue
-          delete input.models[key]
-        }
-      }
-
+      // 仅在用户显式配置了 opencode provider 时才加载，绝不默认注入 Zen free 模型
       return {
-        autoload: Object.keys(input.models).length > 0,
+        autoload: hasConfig,
         options: ok ? {} : { apiKey: "public" },
       }
     }),

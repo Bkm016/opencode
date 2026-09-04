@@ -4,6 +4,7 @@ import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 
 export type ModelKey = { providerID: string; modelID: string }
@@ -27,6 +28,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {
     const providers = useProviders(props.directory)
+    const serverSync = useServerSync()
 
     const [store, setStore, _, ready] = persisted(
       Persist.global("model", ["model.v1"]),
@@ -37,8 +39,20 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       }),
     )
 
+    const configProviders = createMemo(() => serverSync().data.config.provider ?? {})
+    const configuredSet = createMemo(() => new Set(Object.keys(configProviders())))
+
+    // 彻底尊重本地配置：一旦用户配置了 provider，只允许配置文件里的提供商，历史 db/凭据渠道直接剔除
+    const connectedProviders = createMemo(() => {
+      const set = configuredSet()
+      if (set.size > 0) {
+        return providers.connected().filter((p) => set.has(p.id))
+      }
+      return providers.connected().filter((p) => p.id !== "opencode")
+    })
+
     const available = createMemo(() =>
-      providers.connected().flatMap((p) =>
+      connectedProviders().flatMap((p) =>
         Object.values(p.models).map((m) => ({
           ...m,
           provider: p,
@@ -112,11 +126,19 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       setStore("user", store.user.length, { ...model, visibility: state })
     }
 
+    const isConfiguredModel = (model: ModelKey) => {
+      const p = configProviders()[model.providerID]
+      if (!p) return false
+      return Boolean(p.models && p.models[model.modelID])
+    }
+
     const visible = (model: ModelKey) => {
       const key = modelKey(model)
       const state = visibility().get(key)
       if (state === "hide") return false
       if (state === "show") return true
+      // 配置文件中显式配置的模型直接默认可见，完全尊重本地配置文件
+      if (isConfiguredModel(model)) return true
       if (latestSet().has(key)) return true
       const date = release().get(key)
       if (!date?.isValid) return true

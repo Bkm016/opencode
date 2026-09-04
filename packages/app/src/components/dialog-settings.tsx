@@ -4,10 +4,8 @@ import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { SettingsGeneral } from "./settings-general"
 import { SettingsKeybinds } from "./settings-keybinds"
-import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsServers } from "./settings-servers"
 import { SettingsDatabase } from "./settings-database"
@@ -17,12 +15,8 @@ import { SettingsPrompts } from "./settings-prompts"
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
-  const dialog = useDialog()
-  const [tab, setTab] = createSignal(props.defaultValue ?? "general")
-
-  const showProviders = () => {
-    void dialog.show(() => <DialogSettings defaultValue="providers" />)
-  }
+  const initialTab = props.defaultValue === "providers" ? "models" : (props.defaultValue ?? "general")
+  const [tab, setTab] = createSignal(initialTab)
 
   return (
     <Dialog size="x-large" transition>
@@ -62,10 +56,6 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                 <div class="flex flex-col gap-1.5">
                   <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
                   <div class="flex flex-col gap-1.5 w-full">
-                    <Tabs.Trigger value="providers">
-                      <Icon name="providers" />
-                      {language.t("settings.providers.title")}
-                    </Tabs.Trigger>
                     <Tabs.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
@@ -99,9 +89,6 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="database" class="no-scrollbar">
           <SettingsDatabase />
-        </Tabs.Content>
-        <Tabs.Content value="providers" class="no-scrollbar">
-          <SettingsProviders onBack={showProviders} />
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />

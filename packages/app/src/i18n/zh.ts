@@ -1198,8 +1198,8 @@ export const dict = {
   "settings.models.title": "模型",
   "settings.models.description": "模型设置将在此处可配置。",
 
-  "settings.agents.title": "智能体",
-  "settings.agents.description": "智能体设置将在此处可配置。",
+  "settings.agents.title": "代理",
+  "settings.agents.description": "代理设置将在此处可配置。",
 
   "settings.commands.title": "命令",
   "settings.commands.description": "命令设置将在此处可配置。",

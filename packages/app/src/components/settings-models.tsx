@@ -3,7 +3,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Switch } from "@opencode-ai/ui/switch"
-import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type Component, createMemo, createSignal, For, Show } from "solid-js"
@@ -226,11 +225,11 @@ const SettingsModelsContent: Component = () => {
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       {/* 顶部 Sticky 工具栏 */}
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[800px]">
+        <div class="flex flex-col gap-4 pt-6 pb-5 max-w-[800px]">
           <div class="flex items-center justify-between gap-4">
-            <div class="flex items-center gap-2">
+            <div class="flex items-baseline gap-2.5">
               <h2 class="text-16-medium text-text-strong">{language.t("settings.models.title")}</h2>
-              <Tag size="normal">本地配置直连</Tag>
+              <span class="text-12-regular text-text-subtle">本地提供商与模型</span>
             </div>
             <div class="flex items-center gap-2">
               <Show when={canOpenConfig()}>
@@ -251,7 +250,7 @@ const SettingsModelsContent: Component = () => {
             </div>
           </div>
 
-          <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
+          <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base border border-transparent focus-within:border-border-weak-base transition-colors">
             <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
             <TextField
               variant="ghost"
@@ -263,7 +262,7 @@ const SettingsModelsContent: Component = () => {
               autocorrect="off"
               autocomplete="off"
               autocapitalize="off"
-              class="flex-1"
+              class="flex-1 text-13-regular"
             />
             <Show when={search()}>
               <IconButton icon="circle-x" variant="ghost" onClick={() => setSearch("")} />
@@ -273,7 +272,7 @@ const SettingsModelsContent: Component = () => {
       </div>
 
       {/* 主内容区域 */}
-      <div class="flex flex-col gap-8 max-w-[800px]">
+      <div class="flex flex-col gap-6 max-w-[800px]">
         {/* 本地配置的 Providers */}
         <Show
           when={providerEntries().length > 0}
@@ -284,7 +283,7 @@ const SettingsModelsContent: Component = () => {
                 {search() ? "未找到匹配的模型或提供商" : "本地尚未配置任何 AI 提供商"}
               </span>
               <p class="text-13-regular text-text-weak mt-1 mb-5 max-w-md">
-                无需再手动编辑死板的 JSON 文件，直接通过表单添加你的提供商与模型，修改即刻保存并热重载生效。
+                通过表单添加你的提供商与模型，修改即刻保存至本地配置文件并热重载生效。
               </p>
               <Show when={!search()}>
                 <Button variant="primary" icon="plus" onClick={addProvider}>
@@ -311,32 +310,42 @@ const SettingsModelsContent: Component = () => {
 
               return (
                 <div class="flex flex-col gap-2">
-                  {/* Provider 头部（无边框，极简清爽） */}
-                  <div class="flex items-center justify-between gap-3 px-1 pb-1">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <ProviderIcon id={providerID} class="size-4 shrink-0 icon-strong-base" />
-                      <span class="text-14-medium text-text-strong truncate">
+                  {/* Provider 头部：克制优雅的元数据排版 */}
+                  <div class="flex items-center justify-between gap-3 px-1 pt-1">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <ProviderIcon id={providerID} class="size-4 shrink-0 text-text-base" />
+                      <span
+                        class="text-13-medium text-text-strong truncate"
+                        title={providerID !== (provider.name || providerID) ? `${provider.name || providerID} (${providerID})` : providerID}
+                      >
                         {provider.name || providerID}
                       </span>
-                      <span class="text-12-regular text-text-subtle font-mono">
-                        {providerID}
+                      <span class="text-12-regular text-text-subtle">·</span>
+                      <span class="text-11-regular text-text-subtle">
+                        {allModels().length} 个模型
                       </span>
-                      <span class="text-12-regular text-text-weak">
-                        ({allModels().length})
-                      </span>
-                      <Show when={provider.npm}>
-                        <span class="text-11-regular text-text-subtle font-mono hidden sm:inline">
-                          {provider.npm}
-                        </span>
+                      <Show when={provider.options?.baseURL}>
+                        {(url) => (
+                          <>
+                            <span class="text-12-regular text-text-subtle hidden sm:inline">·</span>
+                            <span
+                              class="text-11-regular text-text-subtle font-mono truncate max-w-[240px] hidden sm:inline"
+                              title={url()}
+                            >
+                              {url()}
+                            </span>
+                          </>
+                        )}
                       </Show>
                     </div>
 
-                    <div class="flex items-center gap-1 shrink-0">
+                    <div class="flex items-center gap-0.5 shrink-0">
                       <Button
                         size="small"
-                        variant="secondary"
+                        variant="ghost"
                         icon="plus-small"
                         onClick={() => addModel(providerID)}
+                        class="text-12-regular"
                       >
                         添加模型
                       </Button>
@@ -355,21 +364,12 @@ const SettingsModelsContent: Component = () => {
                     </div>
                   </div>
 
-                  {/* Base URL 提示 */}
-                  <Show when={provider.options?.baseURL}>
-                    {(url) => (
-                      <div class="text-11-regular text-text-subtle px-1 pb-1 font-mono truncate">
-                        Base URL: {url()}
-                      </div>
-                    )}
-                  </Show>
-
-                  {/* 该 Provider 下的模型列表（纯原生 SettingsList，无厚重外边框） */}
+                  {/* 该 Provider 下的模型列表 */}
                   <Show
                     when={filteredModels().length > 0}
                     fallback={
                       <div class="py-4 text-center text-13-regular text-text-weak bg-surface-base rounded-lg">
-                        暂无模型，点击右上角「添加模型」配置。
+                        暂无匹配模型，点击右上角「添加模型」配置。
                       </div>
                     }
                   >
@@ -381,64 +381,84 @@ const SettingsModelsContent: Component = () => {
                             m.variants ? Object.keys(m.variants).length : 0
 
                           return (
-                            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border-weak-base/40 last:border-none group">
-                              {/* 模型基本信息与精简徽标 */}
+                            <div class="flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded-md border-b border-border-weak-base/20 last:border-none hover:bg-surface-base-hover/40 transition-colors group">
+                              {/* 模型主信息与微标 */}
                               <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="flex items-baseline gap-2 min-w-0">
-                                  <span class="text-14-medium text-text-strong truncate">
-                                    {m.name || modelID}
-                                  </span>
-                                  <span class="text-12-regular font-mono text-text-subtle truncate">
-                                    {modelID}
-                                  </span>
-                                </div>
+                                <span
+                                  class="text-13-medium text-text-strong truncate"
+                                  title={modelID !== (m.name || modelID) ? `${m.name || modelID} (${modelID})` : modelID}
+                                >
+                                  {m.name || modelID}
+                                </span>
 
-                                {/* 精简微标（去掉冗长文字堆砌） */}
-                                <div class="flex items-center gap-1.5 shrink-0">
+                                {/* 能力与参数：数值 + 线性图标，告别汉字堆砌 */}
+                                <div class="flex items-center gap-2.5 shrink-0 text-text-subtle">
                                   <Show when={m.limit?.context}>
-                                    <span class="text-11-regular px-1.5 py-0.5 rounded bg-surface-weak-base text-text-weak">
+                                    <span
+                                      class="text-11-regular font-mono select-none"
+                                      title={`上下文容量: ${m.limit?.context?.toLocaleString()} tokens`}
+                                    >
                                       {formatTokenLimit(m.limit?.context)}
                                     </span>
                                   </Show>
+
                                   <Show when={m.reasoning}>
-                                    <span class="text-11-medium px-1.5 py-0.5 rounded bg-primary-base/10 text-text-interactive-base">
-                                      推理{variantCount() > 0 ? ` (${variantCount()})` : ""}
+                                    <span
+                                      class="inline-flex items-center gap-1 text-icon-base hover:text-text-strong transition-colors select-none"
+                                      title={`深度思考推理${variantCount() > 0 ? ` (${variantCount()} 个变体)` : ""}`}
+                                    >
+                                      <Icon name="brain" size="small" class="size-3.5 shrink-0" />
+                                      <Show when={variantCount() > 0}>
+                                        <span class="text-11-medium font-mono text-text-base leading-none">
+                                          {variantCount()}
+                                        </span>
+                                      </Show>
                                     </span>
                                   </Show>
+
                                   <Show when={m.tool_call}>
-                                    <span class="text-11-regular px-1.5 py-0.5 rounded bg-surface-weak-base text-text-subtle">
-                                      工具
+                                    <span
+                                      class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
+                                      title="支持工具调用 (Function Calling)"
+                                    >
+                                      <Icon name="sliders" size="small" class="size-3.5" />
                                     </span>
                                   </Show>
+
                                   <Show when={m.attachment}>
-                                    <span class="text-11-regular px-1.5 py-0.5 rounded bg-surface-weak-base text-text-subtle">
-                                      视觉
+                                    <span
+                                      class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
+                                      title="支持视觉多模态 / 图片附件输入"
+                                    >
+                                      <Icon name="photo" size="small" class="size-3.5" />
                                     </span>
                                   </Show>
                                 </div>
                               </div>
 
-                              {/* 右侧操作区 */}
+                              {/* 右侧操作区：操作按钮悬浮才淡入，默认只有 Switch，极简干净 */}
                               <div class="flex items-center gap-1 shrink-0">
-                                <IconButton
-                                  icon="edit"
-                                  variant="ghost"
-                                  onClick={() => editModel(providerID, modelID, m)}
-                                  title="编辑模型"
-                                />
-                                <IconButton
-                                  icon="copy"
-                                  variant="ghost"
-                                  onClick={() => cloneModel(providerID, modelID, m)}
-                                  title="克隆模型"
-                                />
-                                <IconButton
-                                  icon="trash"
-                                  variant="ghost"
-                                  onClick={() => deleteModel(providerID, modelID, m.name || modelID)}
-                                  title="删除模型"
-                                />
-                                <div class="pl-1.5 ml-0.5">
+                                <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                  <IconButton
+                                    icon="edit"
+                                    variant="ghost"
+                                    onClick={() => editModel(providerID, modelID, m)}
+                                    title="编辑模型"
+                                  />
+                                  <IconButton
+                                    icon="copy"
+                                    variant="ghost"
+                                    onClick={() => cloneModel(providerID, modelID, m)}
+                                    title="克隆模型"
+                                  />
+                                  <IconButton
+                                    icon="trash"
+                                    variant="ghost"
+                                    onClick={() => deleteModel(providerID, modelID, m.name || modelID)}
+                                    title="删除模型"
+                                  />
+                                </div>
+                                <div class="pl-1">
                                   <Switch
                                     checked={models.visible(key)}
                                     onChange={(checked) => models.setVisibility(key, checked)}

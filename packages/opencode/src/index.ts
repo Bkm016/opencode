@@ -29,6 +29,7 @@ import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
+import { SkillCommand } from "./cli/cmd/skill"
 
 const args = hideBin(process.argv)
 
@@ -89,6 +90,7 @@ const cli = yargs(args)
   .completion("completion", "generate shell completion script")
   .command(AcpCommand)
   .command(McpCommand)
+  .command(SkillCommand)
   .command(TuiThreadCommand)
   .command(AttachCommand)
   .command(RunCommand)

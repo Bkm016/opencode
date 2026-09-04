@@ -15,14 +15,15 @@ test("exposes every standard HTTP API group", () => {
     "integrations",
     "credentials",
     "permissions",
-    "files",
     "commands",
     "skills",
+    "cloudSkills",
     "events",
     "ptys",
     "questions",
     "references",
     "projectCopies",
+    "deployKeys",
   ])
   expect(Object.keys(client.messages)).toEqual(["list"])
   expect(Object.keys(client.integrations)).toEqual([
@@ -34,8 +35,62 @@ test("exposes every standard HTTP API group", () => {
     "attemptComplete",
     "attemptCancel",
   ])
-  expect(Object.keys(client.files)).toEqual(["list", "find"])
+  expect(Object.keys(client.cloudSkills)).toEqual(["list", "status", "configure", "update", "sync", "remove"])
   expect(Object.keys(client.ptys)).toEqual(["list", "create", "get", "update", "remove"])
+})
+
+test("cloudSkills.status uses the managed repository endpoint", async () => {
+  const client = OpenCode.make({
+    baseUrl: "http://localhost:3000",
+    fetch: async (input) => {
+      expect(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).toBe(
+        "http://localhost:3000/api/skill/cloud",
+      )
+      return Response.json({
+        name: "default",
+        state: "unconfigured",
+        configured: false,
+        directory: "/config/opencode/skills/cloud",
+        changes: 0,
+        ahead: 0,
+        behind: 0,
+      })
+    },
+  })
+
+  expect(await client.cloudSkills.status()).toEqual({
+    name: "default",
+    state: "unconfigured",
+    configured: false,
+    directory: "/config/opencode/skills/cloud",
+    changes: 0,
+    ahead: 0,
+    behind: 0,
+  })
+})
+
+test("deployKeys.get uses the server-wide deploy key endpoint", async () => {
+  const client = OpenCode.make({
+    baseUrl: "http://localhost:3000",
+    fetch: async (input) => {
+      expect(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).toBe(
+        "http://localhost:3000/api/deploy-key",
+      )
+      return Response.json({
+        algorithm: "ssh-ed25519",
+        publicKey: "ssh-ed25519 AAAA opencode-deploy",
+        publicKeyPath: "/data/ssh/opencode_deploy.pub",
+        privateKeyPath: "/data/ssh/opencode_deploy",
+      })
+    },
+  })
+
+  expect(await client.deployKeys.get()).toEqual({
+    algorithm: "ssh-ed25519",
+    publicKey: "ssh-ed25519 AAAA opencode-deploy",
+    publicKeyPath: "/data/ssh/opencode_deploy.pub",
+    privateKeyPath: "/data/ssh/opencode_deploy",
+  })
 })
 
 test("sessions.get returns the wire projection", async () => {

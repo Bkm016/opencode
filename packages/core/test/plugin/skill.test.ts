@@ -9,15 +9,22 @@ import { host } from "./host"
 const it = testEffect(AppNodeBuilder.build(SkillV2.node))
 
 describe("SkillPlugin.Plugin", () => {
-  it.effect("registers the built-in customize-opencode skill", () =>
+  it.effect("registers the built-in skill guidance", () =>
     Effect.gen(function* () {
       const skill = yield* SkillV2.Service
       yield* SkillPlugin.Plugin.effect(host({ skill: { ...skill, reload: skill.reload } }))
 
-      expect(yield* skill.list()).toContainEqual(
+      const list = yield* skill.list()
+      expect(list).toContainEqual(
         expect.objectContaining({
           name: "customize-opencode",
           description: expect.stringContaining("opencode's own configuration"),
+        }),
+      )
+      expect(list).toContainEqual(
+        expect.objectContaining({
+          name: "manage-cloud-skills",
+          description: expect.stringContaining("managed cloud Git repository"),
         }),
       )
     }),

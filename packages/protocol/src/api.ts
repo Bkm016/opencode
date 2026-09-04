@@ -8,6 +8,7 @@ import { makeSessionGroup } from "./groups/session"
 import { makePermissionGroup } from "./groups/permission"
 import { CommandGroup } from "./groups/command"
 import { SkillGroup } from "./groups/skill"
+import { SkillCloudGroup } from "./groups/skill-cloud"
 import { EventGroup, makeEventGroup } from "./groups/event"
 import type { Definition } from "@opencode-ai/schema/event"
 import { AgentGroup } from "./groups/agent"
@@ -19,6 +20,7 @@ import { Authorization } from "./middleware/authorization"
 import { LocationGroup } from "./groups/location"
 import { IntegrationGroup } from "./groups/integration"
 import { CredentialGroup } from "./groups/credential"
+import { DeployKeyGroup } from "./groups/deploy-key"
 import { ProjectCopyGroup } from "./groups/project-copy"
 
 // Protocol owns middleware placement, while Server injects concrete keys so Core service identities stay downstream.
@@ -46,11 +48,13 @@ const makeApiFromGroup = <
     .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))
+    .add(SkillCloudGroup)
     .add(eventGroup)
     .add(PtyGroup.middleware(locationMiddleware))
     .add(makeQuestionGroup(locationMiddleware, sessionLocationMiddleware))
     .add(ReferenceGroup.middleware(locationMiddleware))
     .add(ProjectCopyGroup.middleware(locationMiddleware))
+    .add(DeployKeyGroup)
     .annotateMerge(
       OpenApi.annotations({
         title: "opencode HttpApi",

@@ -271,6 +271,10 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SkillCloudConfigureInput,
+  SkillCloudRemoveInput,
+  SkillCloudSyncInput,
+  SkillCloudUpdateInput,
   StorageCompactPayload,
   SubtaskPartInput,
   SyncHistoryListErrors,
@@ -320,6 +324,8 @@ import type {
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
   V2CredentialUpdateResponses,
+  V2DeployKeyGetErrors,
+  V2DeployKeyGetResponses,
   V2EventSubscribeErrors,
   V2EventSubscribeResponses,
   V2HealthGetErrors,
@@ -426,6 +432,18 @@ import type {
   V2SessionSwitchModelResponses,
   V2SessionWaitErrors,
   V2SessionWaitResponses,
+  V2SkillCloudConfigureErrors,
+  V2SkillCloudConfigureResponses,
+  V2SkillCloudListErrors,
+  V2SkillCloudListResponses,
+  V2SkillCloudRemoveErrors,
+  V2SkillCloudRemoveResponses,
+  V2SkillCloudStatusErrors,
+  V2SkillCloudStatusResponses,
+  V2SkillCloudSyncErrors,
+  V2SkillCloudSyncResponses,
+  V2SkillCloudUpdateErrors,
+  V2SkillCloudUpdateResponses,
   V2SkillListErrors,
   V2SkillListResponses,
   VcsApplyErrors,
@@ -7337,6 +7355,139 @@ export class Skill extends HeyApiClient {
   }
 }
 
+export class SkillCloud extends HeyApiClient {
+  /**
+   * List cloud skill repositories
+   *
+   * List all configured managed Git repositories used for cloud skills.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2SkillCloudListResponses, V2SkillCloudListErrors, ThrowOnError>({
+      url: "/api/skill/cloud/list",
+      ...options,
+    })
+  }
+
+  /**
+   * Get cloud skill status
+   *
+   * Inspect a managed Git repository used for cloud skills.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      name?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "name" }] }])
+    return (options?.client ?? this.client).get<V2SkillCloudStatusResponses, V2SkillCloudStatusErrors, ThrowOnError>({
+      url: "/api/skill/cloud",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Configure cloud skills
+   *
+   * Clone or repoint a managed cloud skill Git repository.
+   */
+  public configure<ThrowOnError extends boolean = false>(
+    parameters: {
+      skillCloudConfigureInput: SkillCloudConfigureInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "skillCloudConfigureInput", map: "body" }] }])
+    return (options?.client ?? this.client).put<
+      V2SkillCloudConfigureResponses,
+      V2SkillCloudConfigureErrors,
+      ThrowOnError
+    >({
+      url: "/api/skill/cloud",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Update cloud skills
+   *
+   * Fetch and fast-forward managed cloud skill repositories.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      skillCloudUpdateInput: SkillCloudUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "skillCloudUpdateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2SkillCloudUpdateResponses, V2SkillCloudUpdateErrors, ThrowOnError>({
+      url: "/api/skill/cloud/update",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Sync cloud skills
+   *
+   * Commit local cloud skill changes, rebase, and push them to the configured repository.
+   */
+  public sync<ThrowOnError extends boolean = false>(
+    parameters: {
+      skillCloudSyncInput: SkillCloudSyncInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "skillCloudSyncInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2SkillCloudSyncResponses, V2SkillCloudSyncErrors, ThrowOnError>({
+      url: "/api/skill/cloud/sync",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove cloud skill repository
+   *
+   * Remove a managed cloud skill Git repository from the local environment.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      skillCloudRemoveInput: SkillCloudRemoveInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "skillCloudRemoveInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2SkillCloudRemoveResponses, V2SkillCloudRemoveErrors, ThrowOnError>({
+      url: "/api/skill/cloud/remove",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Event2 extends HeyApiClient {
   /**
    * Subscribe to events
@@ -7780,6 +7931,20 @@ export class ProjectCopy2 extends HeyApiClient {
   }
 }
 
+export class DeployKey extends HeyApiClient {
+  /**
+   * Get deploy key
+   *
+   * Get the public half and managed file locations of the server-wide SSH deploy key.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2DeployKeyGetResponses, V2DeployKeyGetErrors, ThrowOnError>({
+      url: "/api/deploy-key",
+      ...options,
+    })
+  }
+}
+
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7836,6 +8001,11 @@ export class V2 extends HeyApiClient {
     return (this._skill ??= new Skill({ client: this.client }))
   }
 
+  private _skillCloud?: SkillCloud
+  get skillCloud(): SkillCloud {
+    return (this._skillCloud ??= new SkillCloud({ client: this.client }))
+  }
+
   private _event?: Event2
   get event(): Event2 {
     return (this._event ??= new Event2({ client: this.client }))
@@ -7859,6 +8029,11 @@ export class V2 extends HeyApiClient {
   private _projectCopy?: ProjectCopy2
   get projectCopy(): ProjectCopy2 {
     return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
+  }
+
+  private _deployKey?: DeployKey
+  get deployKey(): DeployKey {
+    return (this._deployKey ??= new DeployKey({ client: this.client }))
   }
 }
 

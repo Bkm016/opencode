@@ -3012,6 +3012,23 @@ export type ProviderNotFoundError = {
   message: string
 }
 
+export type SkillCloudError = {
+  name: "SkillCloudError"
+  data: {
+    reason:
+      | "not_found"
+      | "not_configured"
+      | "invalid_repository"
+      | "directory_conflict"
+      | "authentication"
+      | "working_tree_dirty"
+      | "merge_conflict"
+      | "git_unavailable"
+      | "operation_failed"
+    message: string
+  }
+}
+
 export type OutputFormat1 =
   | {
       type: "text"
@@ -5259,6 +5276,37 @@ export type SkillV2Info = {
   content: string
 }
 
+export type SkillCloudStatus = {
+  name: string
+  state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  configured: boolean
+  repository?: string
+  branch?: string
+  directory: string
+  head?: string
+  changes: number
+  ahead: number
+  behind: number
+}
+
+export type SkillCloudConfigureInput = {
+  name?: string
+  repository: string
+}
+
+export type SkillCloudUpdateInput = {
+  name?: string
+}
+
+export type SkillCloudSyncInput = {
+  name?: string
+  message?: string
+}
+
+export type SkillCloudRemoveInput = {
+  name: string
+}
+
 export type ModelsDevRefreshed = {
   id: string
   metadata?: {
@@ -6461,6 +6509,13 @@ export type ReferenceInfo = {
 
 export type ProjectCopyCopy = {
   directory: string
+}
+
+export type DeployKeyInfo = {
+  algorithm: "ssh-ed25519"
+  publicKey: string
+  publicKeyPath: string
+  privateKeyPath: string
 }
 
 export type EventModelsDevRefreshed = {
@@ -14045,6 +14100,182 @@ export type V2SkillListResponses = {
 
 export type V2SkillListResponse = V2SkillListResponses[keyof V2SkillListResponses]
 
+export type V2SkillCloudListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/skill/cloud/list"
+}
+
+export type V2SkillCloudListErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudListError = V2SkillCloudListErrors[keyof V2SkillCloudListErrors]
+
+export type V2SkillCloudListResponses = {
+  /**
+   * Success
+   */
+  200: Array<SkillCloudStatus>
+}
+
+export type V2SkillCloudListResponse = V2SkillCloudListResponses[keyof V2SkillCloudListResponses]
+
+export type V2SkillCloudStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    name?: string
+  }
+  url: "/api/skill/cloud"
+}
+
+export type V2SkillCloudStatusErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudStatusError = V2SkillCloudStatusErrors[keyof V2SkillCloudStatusErrors]
+
+export type V2SkillCloudStatusResponses = {
+  /**
+   * SkillCloud.Status
+   */
+  200: SkillCloudStatus
+}
+
+export type V2SkillCloudStatusResponse = V2SkillCloudStatusResponses[keyof V2SkillCloudStatusResponses]
+
+export type V2SkillCloudConfigureData = {
+  body: SkillCloudConfigureInput
+  path?: never
+  query?: never
+  url: "/api/skill/cloud"
+}
+
+export type V2SkillCloudConfigureErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudConfigureError = V2SkillCloudConfigureErrors[keyof V2SkillCloudConfigureErrors]
+
+export type V2SkillCloudConfigureResponses = {
+  /**
+   * SkillCloud.Status
+   */
+  200: SkillCloudStatus
+}
+
+export type V2SkillCloudConfigureResponse = V2SkillCloudConfigureResponses[keyof V2SkillCloudConfigureResponses]
+
+export type V2SkillCloudUpdateData = {
+  body: SkillCloudUpdateInput
+  path?: never
+  query?: never
+  url: "/api/skill/cloud/update"
+}
+
+export type V2SkillCloudUpdateErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudUpdateError = V2SkillCloudUpdateErrors[keyof V2SkillCloudUpdateErrors]
+
+export type V2SkillCloudUpdateResponses = {
+  /**
+   * Success
+   */
+  200: Array<SkillCloudStatus>
+}
+
+export type V2SkillCloudUpdateResponse = V2SkillCloudUpdateResponses[keyof V2SkillCloudUpdateResponses]
+
+export type V2SkillCloudSyncData = {
+  body: SkillCloudSyncInput
+  path?: never
+  query?: never
+  url: "/api/skill/cloud/sync"
+}
+
+export type V2SkillCloudSyncErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudSyncError = V2SkillCloudSyncErrors[keyof V2SkillCloudSyncErrors]
+
+export type V2SkillCloudSyncResponses = {
+  /**
+   * SkillCloud.Status
+   */
+  200: SkillCloudStatus
+}
+
+export type V2SkillCloudSyncResponse = V2SkillCloudSyncResponses[keyof V2SkillCloudSyncResponses]
+
+export type V2SkillCloudRemoveData = {
+  body: SkillCloudRemoveInput
+  path?: never
+  query?: never
+  url: "/api/skill/cloud/remove"
+}
+
+export type V2SkillCloudRemoveErrors = {
+  /**
+   * SkillCloudError | InvalidRequestError
+   */
+  400: SkillCloudError | InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SkillCloudRemoveError = V2SkillCloudRemoveErrors[keyof V2SkillCloudRemoveErrors]
+
+export type V2SkillCloudRemoveResponses = {
+  /**
+   * Success
+   */
+  200: Array<SkillCloudStatus>
+}
+
+export type V2SkillCloudRemoveResponse = V2SkillCloudRemoveResponses[keyof V2SkillCloudRemoveResponses]
+
 export type V2EventSubscribeData = {
   body?: never
   path?: never
@@ -14665,6 +14896,35 @@ export type V2ProjectCopyRefreshResponses = {
 }
 
 export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
+
+export type V2DeployKeyGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/deploy-key"
+}
+
+export type V2DeployKeyGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2DeployKeyGetError = V2DeployKeyGetErrors[keyof V2DeployKeyGetErrors]
+
+export type V2DeployKeyGetResponses = {
+  /**
+   * DeployKey.Info
+   */
+  200: DeployKeyInfo
+}
+
+export type V2DeployKeyGetResponse = V2DeployKeyGetResponses[keyof V2DeployKeyGetResponses]
 
 export type PtyConnectData = {
   body?: never

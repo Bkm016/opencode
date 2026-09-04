@@ -81,6 +81,17 @@ import type {
   CommandsListOutput,
   SkillsListInput,
   SkillsListOutput,
+  CloudSkillsListOutput,
+  CloudSkillsStatusInput,
+  CloudSkillsStatusOutput,
+  CloudSkillsConfigureInput,
+  CloudSkillsConfigureOutput,
+  CloudSkillsUpdateInput,
+  CloudSkillsUpdateOutput,
+  CloudSkillsSyncInput,
+  CloudSkillsSyncOutput,
+  CloudSkillsRemoveInput,
+  CloudSkillsRemoveOutput,
   EventsSubscribeOutput,
   PtysListInput,
   PtysListOutput,
@@ -108,6 +119,7 @@ import type {
   ProjectCopiesRemoveOutput,
   ProjectCopiesRefreshInput,
   ProjectCopiesRefreshOutput,
+  DeployKeysGetOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -778,6 +790,79 @@ export function make(options: ClientOptions) {
           requestOptions,
         ),
     },
+    cloudSkills: {
+      list: (requestOptions?: RequestOptions) =>
+        request<CloudSkillsListOutput>(
+          {
+            method: "GET",
+            path: `/api/skill/cloud/list`,
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      status: (input?: CloudSkillsStatusInput, requestOptions?: RequestOptions) =>
+        request<CloudSkillsStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/skill/cloud`,
+            query: { name: input?.["name"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      configure: (input: CloudSkillsConfigureInput, requestOptions?: RequestOptions) =>
+        request<CloudSkillsConfigureOutput>(
+          {
+            method: "PUT",
+            path: `/api/skill/cloud`,
+            body: { name: input["name"], repository: input["repository"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      update: (input?: CloudSkillsUpdateInput, requestOptions?: RequestOptions) =>
+        request<CloudSkillsUpdateOutput>(
+          {
+            method: "POST",
+            path: `/api/skill/cloud/update`,
+            body: { name: input?.["name"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      sync: (input?: CloudSkillsSyncInput, requestOptions?: RequestOptions) =>
+        request<CloudSkillsSyncOutput>(
+          {
+            method: "POST",
+            path: `/api/skill/cloud/sync`,
+            body: { name: input?.["name"], message: input?.["message"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: CloudSkillsRemoveInput, requestOptions?: RequestOptions) =>
+        request<CloudSkillsRemoveOutput>(
+          {
+            method: "POST",
+            path: `/api/skill/cloud/remove`,
+            body: { name: input["name"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
     events: {
       subscribe: (requestOptions?: RequestOptions): AsyncIterable<EventsSubscribeOutput> =>
         sse<EventsSubscribeOutput>(
@@ -955,6 +1040,13 @@ export function make(options: ClientOptions) {
             declaredStatuses: [400, 401],
             empty: true,
           },
+          requestOptions,
+        ),
+    },
+    deployKeys: {
+      get: (requestOptions?: RequestOptions) =>
+        request<DeployKeysGetOutput>(
+          { method: "GET", path: `/api/deploy-key`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
           requestOptions,
         ),
     },

@@ -64,6 +64,22 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
   )
 
 describe("skill", () => {
+  it.live("registers the built-in cloud skill manager", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          expect(yield* skill.get("manage-cloud-skills")).toEqual(
+            expect.objectContaining({
+              name: "manage-cloud-skills",
+              location: "<built-in>",
+              content: expect.stringContaining("opencode skill cloud sync"),
+            }),
+          )
+        }),
+    ),
+  )
+
   it.effect("formats verbose locations as XML-safe filesystem paths", () =>
     Effect.sync(() => {
       const output = Skill.fmt(

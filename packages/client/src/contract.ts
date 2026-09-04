@@ -18,6 +18,7 @@ export const ClientApi = makeDefaultApi({
 
 export const groupNames = {
   "server.health": "health",
+  "server.deployKey": "deployKeys",
   "server.location": "location",
   "server.agent": "agents",
   "server.session": "sessions",
@@ -30,6 +31,7 @@ export const groupNames = {
   "server.fs": "files",
   "server.command": "commands",
   "server.skill": "skills",
+  "server.skillCloud": "cloudSkills",
   "server.event": "events",
   "server.pty": "ptys",
   "server.question": "questions",

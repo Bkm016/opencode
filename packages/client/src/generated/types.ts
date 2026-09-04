@@ -82,6 +82,25 @@ export type PermissionNotFoundError = {
 export const isPermissionNotFoundError = (value: unknown): value is PermissionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionNotFoundError"
 
+export type SkillCloudError = {
+  readonly name: "SkillCloudError"
+  readonly data: {
+    readonly reason:
+      | "not_found"
+      | "not_configured"
+      | "invalid_repository"
+      | "directory_conflict"
+      | "authentication"
+      | "working_tree_dirty"
+      | "merge_conflict"
+      | "git_unavailable"
+      | "operation_failed"
+    readonly message: string
+  }
+}
+export const isSkillCloudError = (value: unknown): value is SkillCloudError =>
+  typeof value === "object" && value !== null && "name" in value && value["name"] === "SkillCloudError"
+
 export type PtyNotFoundError = { readonly _tag: "PtyNotFoundError"; readonly ptyID: string; readonly message: string }
 export const isPtyNotFoundError = (value: unknown): value is PtyNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PtyNotFoundError"
@@ -2483,6 +2502,100 @@ export type SkillsListOutput = {
   }>
 }
 
+export type CloudSkillsListOutput = ReadonlyArray<{
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}>
+
+export type CloudSkillsStatusInput = { readonly name?: { readonly name?: string | undefined }["name"] }
+
+export type CloudSkillsStatusOutput = {
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}
+
+export type CloudSkillsConfigureInput = {
+  readonly name?: { readonly name?: string; readonly repository: string }["name"]
+  readonly repository: { readonly name?: string; readonly repository: string }["repository"]
+}
+
+export type CloudSkillsConfigureOutput = {
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}
+
+export type CloudSkillsUpdateInput = { readonly name?: { readonly name?: string }["name"] }
+
+export type CloudSkillsUpdateOutput = ReadonlyArray<{
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}>
+
+export type CloudSkillsSyncInput = {
+  readonly name?: { readonly name?: string; readonly message?: string }["name"]
+  readonly message?: { readonly name?: string; readonly message?: string }["message"]
+}
+
+export type CloudSkillsSyncOutput = {
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}
+
+export type CloudSkillsRemoveInput = { readonly name: { readonly name: string }["name"] }
+
+export type CloudSkillsRemoveOutput = ReadonlyArray<{
+  readonly name: string
+  readonly state: "unconfigured" | "ready" | "modified" | "ahead" | "behind" | "diverged"
+  readonly configured: boolean
+  readonly repository?: string
+  readonly branch?: string
+  readonly directory: string
+  readonly head?: string
+  readonly changes: number
+  readonly ahead: number
+  readonly behind: number
+}>
+
 export type EventsSubscribeOutput = OpenCodeEventEncoded
 
 export type PtysListInput = {
@@ -2763,3 +2876,10 @@ export type ProjectCopiesRefreshInput = {
 }
 
 export type ProjectCopiesRefreshOutput = void
+
+export type DeployKeysGetOutput = {
+  readonly algorithm: "ssh-ed25519"
+  readonly publicKey: string
+  readonly publicKeyPath: string
+  readonly privateKeyPath: string
+}

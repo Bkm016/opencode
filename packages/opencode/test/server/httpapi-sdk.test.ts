@@ -590,6 +590,8 @@ describe("HttpApi SDK", () => {
       Effect.gen(function* () {
         const project = yield* capture(() => sdk.project.current())
         const projects = yield* capture(() => sdk.project.list())
+        const deployKey = yield* capture(() => sdk.v2.deployKey.get())
+        const skillCloud = yield* capture(() => sdk.v2.skillCloud.status())
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
         const providers = yield* capture(() => sdk.config.providers())
@@ -604,6 +606,8 @@ describe("HttpApi SDK", () => {
           statuses: statuses({
             project,
             projects,
+            deployKey,
+            skillCloud,
             paths,
             config,
             providers,
@@ -615,6 +619,8 @@ describe("HttpApi SDK", () => {
             lsp,
           }),
           project: { worktreeSelected: record(project.data).worktree === directory },
+          deployKey: { publicKey: record(deployKey.data).publicKey },
+          skillCloud: { configured: record(skillCloud.data).configured },
           paths: { directorySelected: record(paths.data).directory === directory },
           hasProject: array(projects.data).length > 0,
           vcs: { hasBranch: typeof record(vcs.data).branch === "string" },

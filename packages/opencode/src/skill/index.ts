@@ -33,6 +33,10 @@ const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
 const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
   "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
 const CUSTOMIZE_OPENCODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
+const MANAGE_CLOUD_SKILLS_NAME = "manage-cloud-skills"
+const MANAGE_CLOUD_SKILLS_DESCRIPTION =
+  "Use when the user asks to configure, inspect, update, create, edit, sync, or publish Skills in OpenCode's managed cloud Git repository."
+const MANAGE_CLOUD_SKILLS_BODY = SkillPlugin.ManageCloudSkillsContent
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -280,6 +284,12 @@ const layer = Layer.effect(
           description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
           location: "<built-in>",
           content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+        }
+        s.skills[MANAGE_CLOUD_SKILLS_NAME] = {
+          name: MANAGE_CLOUD_SKILLS_NAME,
+          description: MANAGE_CLOUD_SKILLS_DESCRIPTION,
+          location: "<built-in>",
+          content: MANAGE_CLOUD_SKILLS_BODY,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s

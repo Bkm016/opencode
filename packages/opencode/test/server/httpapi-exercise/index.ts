@@ -667,6 +667,44 @@ const scenarios: Scenario[] = [
     object(body)
     check(body.healthy === true, "v2 server should report healthy")
   }),
+  http.protected.get("/api/deploy-key", "v2.deployKey.get").jsonEffect(200, (body) =>
+    Effect.gen(function* () {
+      object(body)
+      check(body.algorithm === "ssh-ed25519", "deploy key should use Ed25519")
+      check(typeof body.publicKey === "string" && body.publicKey.startsWith("ssh-ed25519 "), "public key missing")
+      if (typeof body.publicKeyPath !== "string") throw new Error("public key path missing")
+      if (typeof body.privateKeyPath !== "string") throw new Error("private key path missing")
+      const publicKeyPath = body.publicKeyPath
+      const privateKeyPath = body.privateKeyPath
+      check(yield* Effect.promise(() => Bun.file(publicKeyPath).exists()), "public key file should exist")
+      check(yield* Effect.promise(() => Bun.file(privateKeyPath).exists()), "private key file should exist")
+    }),
+  ),
+  http.protected
+    .get("/api/skill/cloud/list", "v2.skillCloud.list")
+    .global()
+    .json(200, (body) => {
+      array(body)
+    }),
+  http.protected
+    .get("/api/skill/cloud", "v2.skillCloud.status")
+    .global()
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.configured === "boolean", "cloud skill configured state missing")
+      check(typeof body.directory === "string", "cloud skill directory missing")
+    }),
+  http.protected
+    .put("/api/skill/cloud", "v2.skillCloud.configure")
+    .global()
+    .at(() => ({ path: "/api/skill/cloud", body: { repository: "not a repository" } }))
+    .status(400),
+  http.protected.post("/api/skill/cloud/update", "v2.skillCloud.update").global().status(400),
+  http.protected
+    .post("/api/skill/cloud/sync", "v2.skillCloud.sync")
+    .global()
+    .at(() => ({ path: "/api/skill/cloud/sync", body: {} }))
+    .status(400),
   http.protected.get("/api/location", "v2.location.get").json(200, object),
   http.protected.get("/api/agent", "v2.agent.list").json(200, locationData(array)),
   http.protected.get("/api/model", "v2.model.list").json(200, locationData(array)),

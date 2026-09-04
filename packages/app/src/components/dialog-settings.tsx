@@ -13,6 +13,7 @@ import { SettingsServers } from "./settings-servers"
 import { SettingsDatabase } from "./settings-database"
 import { SettingsInstructions } from "./settings-instructions"
 import { SettingsPrompts } from "./settings-prompts"
+import { SettingsMcp } from "./settings-mcp"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
@@ -78,6 +79,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="sliders" />
                       {language.t("settings.tab.instructions")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="mcp">
+                      <Icon name="mcp" />
+                      {language.t("settings.mcp.title")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -114,6 +119,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="instructions" class="no-scrollbar">
           <SettingsInstructions />
+        </Tabs.Content>
+        <Tabs.Content value="mcp" class="no-scrollbar">
+          <SettingsMcp />
         </Tabs.Content>
       </Tabs>
     </Dialog>

@@ -549,19 +549,16 @@ export function DialogConfirmAction(props: {
   }
 
   return (
-    <Dialog title={props.title} size="normal" transition>
-      <div class="flex flex-col gap-4 px-4 pb-6 pt-2">
-        <p class="text-14-regular text-text-base leading-relaxed">{props.description}</p>
-        <div class="flex items-center justify-end gap-3 pt-2">
-          <Button variant="ghost" onClick={close} disabled={busy()}>
+    <Dialog title={props.title} fit>
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <div class="flex flex-col gap-1">
+          <span class="text-14-regular text-text-strong leading-relaxed">{props.description}</span>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={close} disabled={busy()}>
             {language.t("common.cancel")}
           </Button>
-          <Button
-            variant="primary"
-            class={props.danger ? "bg-surface-critical-base text-text-critical-base hover:bg-surface-critical-base/80" : undefined}
-            onClick={run}
-            disabled={busy()}
-          >
+          <Button variant="primary" size="large" onClick={run} disabled={busy()}>
             {busy() ? "处理中..." : (props.confirmText ?? language.t("common.confirm"))}
           </Button>
         </div>

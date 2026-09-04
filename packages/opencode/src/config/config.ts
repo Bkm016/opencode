@@ -650,8 +650,12 @@ const layer = Layer.effect(
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
         const merged = mergeDeep(writable(previous), patch)
+        // 字典型配置由设置页整块提交；必须替换而非深合并，才能删除其中的条目。
         if (patch.provider !== undefined) {
           merged.provider = patch.provider
+        }
+        if (patch.mcp !== undefined) {
+          merged.mcp = patch.mcp
         }
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
@@ -659,19 +663,21 @@ const layer = Layer.effect(
         next = merged
       } else {
         let updated = before
-        if (patch.provider !== undefined) {
-          const edits = modify(updated, ["provider"], patch.provider, {
-            formattingOptions: {
-              insertSpaces: true,
-              tabSize: 2,
-            },
-          })
-          updated = applyEdits(updated, edits)
-          const { provider: _providerPatch, ...restPatch } = patch
-          updated = patchJsonc(updated, restPatch)
-        } else {
-          updated = patchJsonc(before, patch)
+        const replaceKeys = ["provider", "mcp"] as const
+        const restPatch = { ...patch } as Record<string, unknown>
+        for (const key of replaceKeys) {
+          if (patch[key] !== undefined) {
+            const edits = modify(updated, [key], patch[key], {
+              formattingOptions: {
+                insertSpaces: true,
+                tabSize: 2,
+              },
+            })
+            updated = applyEdits(updated, edits)
+            delete restPatch[key]
+          }
         }
+        updated = patchJsonc(updated, restPatch)
         next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)

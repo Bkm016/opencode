@@ -456,7 +456,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const updateConfigMutation = useMutation(() => ({
     mutationFn: (config: Config) => serverSDK.client.global.config.update({ config }),
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
+      // PATCH 成功后先用本次顶层配置覆盖缓存，避免弹窗重挂载时仍读取旧列表。
+      queryClient.setQueryData([serverSDK.scope, "config"], {
+        ...(res.data ?? globalStore.config),
+        ...variables,
+      })
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.

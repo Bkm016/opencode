@@ -397,6 +397,48 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+it.effect("replaces global MCP config in json", () =>
+  withGlobalConfig(
+    {
+      config: {
+        mcp: {
+          remove: { type: "local", command: ["remove"] },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ mcp: {} })
+
+        const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))
+        expect(writtenConfig.mcp).toEqual({})
+      }),
+  ),
+)
+
+it.effect("replaces global MCP config in jsonc", () =>
+  withGlobalConfig(
+    {
+      config: {
+        mcp: {
+          keep: { type: "local", command: ["keep"] },
+          remove: { type: "local", command: ["remove"] },
+        },
+      },
+      name: "opencode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ mcp: { keep: { type: "local", command: ["keep"] } } })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(parsed.mcp).toEqual({ keep: { type: "local", command: ["keep"] } })
+      }),
+  ),
+)
+
 it.effect("does not restart instances when only compaction strategy changes", () =>
   withGlobalConfig({ config: { compaction: { strategy: "model", auto: true } } }, () =>
     Effect.gen(function* () {

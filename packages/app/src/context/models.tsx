@@ -46,7 +46,33 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     const connectedProviders = createMemo(() => {
       const set = configuredSet()
       if (set.size > 0) {
-        return providers.connected().filter((p) => set.has(p.id))
+        const fromProviders = providers.connected().filter((p) => set.has(p.id))
+        if (fromProviders.length > 0) return fromProviders
+        // 若 providers 在会话切换或加载过渡期暂时为空，使用本地配置即时补全，杜绝模型列表闪烁或瞬间清空
+        return Object.entries(configProviders()).map(([id, p]) => ({
+          id,
+          name: p.name ?? id,
+          source: "config" as const,
+          env: [],
+          options: p,
+          models: Object.fromEntries(
+            Object.entries(p.models ?? {}).map(([modelID, m]) => [
+              modelID,
+              {
+                id: modelID,
+                name: m.name ?? modelID,
+                providerID: id,
+                status: "active" as const,
+                variants: m.variants,
+                capabilities: {
+                  reasoning: Boolean(m.variants && Object.keys(m.variants).length > 0),
+                  tools: true,
+                  attachment: true,
+                },
+              },
+            ]),
+          ),
+        }))
       }
       return providers.connected().filter((p) => p.id !== "opencode")
     })

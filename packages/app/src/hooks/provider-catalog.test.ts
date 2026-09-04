@@ -44,13 +44,12 @@ test("uses the route catalog when it is ready", () => {
   ).toBe(directory)
 })
 
-test("falls back to the global catalog for route consumers", () => {
+test("falls back to the global catalog for explicit directory when unready", () => {
   const global = catalog("global")
 
-  expect(selectProviderCatalog({ explicit: false, global })).toBe(global)
   expect(
     selectProviderCatalog({
-      explicit: false,
+      explicit: true,
       directory: "/repo",
       catalog: { ready: false, providers: catalog("directory") },
       global,

@@ -176,7 +176,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     }
 
-    const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
+    const configProviderModel = () => {
+      const pMap = sync().data.config.provider ?? {}
+      for (const [providerID, p] of Object.entries(pMap)) {
+        if (!p.models) continue
+        for (const modelID of Object.keys(p.models)) {
+          const model = { providerID, modelID }
+          if (validModel(model)) return model
+        }
+      }
+    }
+
+    const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel() ?? configProviderModel())
 
     const agent = {
       list,
@@ -229,14 +240,21 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    let lastValidModel: ReturnType<typeof models.find> | undefined
     const current = () => {
       const item = firstModel(
         () => scope()?.model,
         () => agent.current()?.model,
         fallback,
       )
-      if (!item) return
-      return models.find(item)
+      if (item) {
+        const found = models.find(item)
+        if (found) {
+          lastValidModel = found
+          return found
+        }
+      }
+      return lastValidModel
     }
 
     const configured = () => {

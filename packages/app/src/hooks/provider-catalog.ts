@@ -12,6 +12,7 @@ type ProviderCatalogInput =
       explicit: true
       directory?: string
       catalog?: DirectoryCatalog
+      global?: NormalizedProviderListResponse
     }
   | {
       explicit: false
@@ -22,6 +23,7 @@ type ProviderCatalogInput =
 
 export function selectProviderCatalog(input: ProviderCatalogInput) {
   if (input.directory && input.catalog?.ready) return input.catalog.providers
+  if (input.global) return input.global
   if (input.explicit) return emptyProviderCatalog
-  return input.global
+  return emptyProviderCatalog
 }

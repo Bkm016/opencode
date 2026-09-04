@@ -29,6 +29,7 @@ export function useProviders(directory?: Accessor<string | undefined>) {
         explicit: true,
         directory: value,
         catalog: projectStore && { ready: projectStore.provider_ready, providers: projectStore.provider },
+        global: serverSync().data.provider,
       })
     return selectProviderCatalog({
       explicit: false,

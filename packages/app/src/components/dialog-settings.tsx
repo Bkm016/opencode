@@ -8,6 +8,7 @@ import { SettingsGeneral } from "./settings-general"
 import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsAgents } from "./settings-agents"
 import { SettingsModels } from "./settings-models"
+import { SettingsPermissions } from "./settings-permissions"
 import { SettingsServers } from "./settings-servers"
 import { SettingsDatabase } from "./settings-database"
 import { SettingsInstructions } from "./settings-instructions"
@@ -58,12 +59,16 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                   <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
                   <div class="flex flex-col gap-1.5 w-full">
                     <Tabs.Trigger value="agents">
-                      <Icon name="subagent" />
+                      <Icon name="brain" />
                       {language.t("settings.agents.title")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="models">
                       <Icon name="models" />
                       {language.t("settings.models.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="permissions">
+                      <Icon name="shield" />
+                      {language.t("settings.permissions.title")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="prompts">
                       <Icon name="prompt" />
@@ -100,6 +105,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />
+        </Tabs.Content>
+        <Tabs.Content value="permissions" class="no-scrollbar">
+          <SettingsPermissions />
         </Tabs.Content>
         <Tabs.Content value="prompts" class="no-scrollbar">
           <SettingsPrompts />

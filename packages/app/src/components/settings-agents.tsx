@@ -272,7 +272,7 @@ const SettingsAgentsContent: Component = () => {
             {/* 列表顶部元数据信息栏 */}
             <div class="flex items-center justify-between gap-3 px-1 pt-1">
               <div class="flex items-center gap-2 min-w-0">
-                <Icon name="subagent" class="size-4 shrink-0 text-text-base" />
+                <Icon name="brain" class="size-4 shrink-0 text-text-base" />
                 <span class="text-13-medium text-text-strong">已配置代理</span>
                 <span class="text-12-regular text-text-subtle">·</span>
                 <span class="text-11-regular text-text-subtle">
@@ -314,22 +314,46 @@ const SettingsAgentsContent: Component = () => {
                           isDisabled() ? "opacity-50" : ""
                         }`}
                       >
-                        {/* 左侧：代理名称（第 1 行） + 职责描述（第 2 行） */}
+                        {/* 左侧：代理名称 + 关联模型与变体（第 1 行） + 职责描述（第 2 行） */}
                         <div class="flex flex-col min-w-0 flex-1 pr-4">
-                          <div class="flex items-center gap-2">
+                          <div class="flex items-center gap-2 flex-wrap">
                             <span
                               class="text-13-medium text-text-strong truncate"
                               title={id}
                             >
                               {id}
                             </span>
+
+                            {/* 绑定的模型与变体：紧随代理名称，自然流畅 */}
+                            <Show when={a.model}>
+                              <div class="flex items-center gap-1.5 shrink-0">
+                                <span
+                                  class="text-11-regular font-mono text-text-weak"
+                                  title={`绑定的模型: ${a.model}`}
+                                >
+                                  {shortModel()}
+                                </span>
+                                <Show when={a.variant}>
+                                  <span
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-raised-base border border-border-weak-base/40 shrink-0 select-none text-text-subtle"
+                                    title={`思考变体: ${a.variant}`}
+                                  >
+                                    <Icon name="brain" size="small" class="size-3 text-icon-base" />
+                                    <span class="font-mono text-10-regular text-text-base leading-none">
+                                      {a.variant}
+                                    </span>
+                                  </span>
+                                </Show>
+                              </div>
+                            </Show>
+
                             <Show when={a.mode === "primary"}>
-                              <span class="text-11-regular text-text-subtle font-mono">
+                              <span class="text-10-regular text-text-subtle font-mono">
                                 (primary)
                               </span>
                             </Show>
                             <Show when={a.mode === "all"}>
-                              <span class="text-11-regular text-text-subtle font-mono">
+                              <span class="text-10-regular text-text-subtle font-mono">
                                 (all)
                               </span>
                             </Show>
@@ -346,37 +370,27 @@ const SettingsAgentsContent: Component = () => {
                           </Show>
                         </div>
 
-                        {/* 右侧：整齐右对齐的绑定模型 + 操作按钮 + Switch */}
-                        <div class="flex items-center gap-3 shrink-0">
-                          {/* 绑定的模型与变体：官方 Tag 组件统一包装，细腻克制 */}
-                          <Show when={a.model}>
-                            <Tag class="shrink-0 font-mono text-11-regular text-text-weak border border-border-weak-base/40 bg-surface-base select-none">
-                              <span>{shortModel()}</span>
-                              <Show when={a.variant}>
-                                <span class="text-text-subtle ml-1 font-sans font-medium">· {a.variant}</span>
-                              </Show>
-                            </Tag>
-                          </Show>
-
-                          {/* 提示词图标指示 */}
-                          <Show when={a.prompt}>
-                            <span
-                              class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
-                              title="已配置自定义系统提示词"
-                            >
-                              <Icon name="prompt" size="small" class="size-3.5" />
-                            </span>
-                          </Show>
-
-                          {/* 隐藏状态图标 */}
-                          <Show when={a.hidden}>
-                            <span
-                              class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
-                              title="在 @ 菜单中隐藏"
-                            >
-                              <Icon name="glasses" size="small" class="size-3.5" />
-                            </span>
-                          </Show>
+                        {/* 右侧：纯粹的操作控制区（辅助图标 + Hover 淡入按钮 + Switch） */}
+                        <div class="flex items-center gap-2 shrink-0">
+                          {/* 辅助状态指示（提示词、隐藏状态） */}
+                          <div class="flex items-center gap-1 shrink-0">
+                            <Show when={a.prompt}>
+                              <span
+                                class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
+                                title="已配置自定义系统提示词"
+                              >
+                                <Icon name="prompt" size="small" class="size-3.5" />
+                              </span>
+                            </Show>
+                            <Show when={a.hidden}>
+                              <span
+                                class="inline-flex items-center text-icon-base hover:text-text-strong transition-colors select-none"
+                                title="在 @ 菜单中隐藏"
+                              >
+                                <Icon name="glasses" size="small" class="size-3.5" />
+                              </span>
+                            </Show>
+                          </div>
 
                           {/* 操作按钮组（Hover 淡入） */}
                           <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
@@ -401,7 +415,7 @@ const SettingsAgentsContent: Component = () => {
                           </div>
 
                           {/* 快捷启用 / 停用 Switch */}
-                          <div class="pl-1">
+                          <div class="shrink-0">
                             <Switch
                               checked={!isDisabled()}
                               onChange={() => toggleAgentDisabled(id, a.disable)}

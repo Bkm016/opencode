@@ -516,9 +516,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   }
 
   // 自定义 OpenAI 网关也可暴露相同的 Responses hosted tool，不能按 provider ID 限制。
+  // 只要属于 OpenAI 系列的模型（gpt-* 或 o系列）均支持注册 image_generation 工具。
   if (
     input.model.api.npm === "@ai-sdk/openai" &&
-    /^(gpt-4(?:\.1|o)|gpt-5|o3)(?:[-.]|$)/.test(input.model.api.id)
+    /^(?:gpt|o\d)(?:[-.]|$)/.test(input.model.api.id)
   ) {
     tools.image_generation = openai.tools.imageGeneration({
       outputFormat: "png",

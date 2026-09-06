@@ -48,6 +48,7 @@ export function DialogSkills(props: { directory: string }) {
     formRepository: "",
     editingName: undefined as string | undefined,
     action: undefined as string | undefined,
+    reposExpanded: true,
   })
 
   const [skills, { refetch }] = createResource(
@@ -265,6 +266,7 @@ export function DialogSkills(props: { directory: string }) {
       formName: repo.name,
       formRepository: repo.repository ?? "",
       editingName: repo.name,
+      reposExpanded: true,
     })
   }
 
@@ -274,6 +276,7 @@ export function DialogSkills(props: { directory: string }) {
       formName: "",
       formRepository: "",
       editingName: undefined,
+      reposExpanded: true,
     })
   }
 
@@ -341,7 +344,7 @@ export function DialogSkills(props: { directory: string }) {
         }
       >
         <Show
-          when={!skills.loading && !cloudList.loading}
+          when={!skills.loading}
           fallback={
             <div class="flex flex-1 items-center justify-center px-6 text-center">
               <span class="text-14-regular text-text-weak">{language.t("common.loading")}</span>
@@ -368,10 +371,21 @@ export function DialogSkills(props: { directory: string }) {
             </Tabs.List>
 
             <Show when={store.tab === "cloud"}>
-              <div class="border-b border-border-weak-base bg-surface-raised-base/20 px-4 py-3 sm:px-5 flex flex-col gap-2.5">
+              <div class="border-b border-border-weak-base bg-surface-raised-base/20 px-4 py-2.5 sm:px-5 flex flex-col gap-2 shrink-0">
                 {/* 顶部工具栏 */}
                 <div class="flex items-center justify-between gap-3 min-h-[30px]">
-                  <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer text-left select-none -ml-1 pl-1 py-0.5 rounded"
+                    onClick={() => setStore("reposExpanded", (v) => !v)}
+                  >
+                    <Icon
+                      name="chevron-down"
+                      classList={{
+                        "w-3.5 h-3.5 text-text-weak transition-transform duration-150 shrink-0": true,
+                        "-rotate-90": !store.reposExpanded && !store.formOpen,
+                      }}
+                    />
                     <Icon name="cloud-upload" class="w-4 h-4 text-text-weak shrink-0" />
                     <span class="text-13-medium text-text-strong">
                       {language.t("dialog.skills.cloud.repository")}
@@ -379,7 +393,7 @@ export function DialogSkills(props: { directory: string }) {
                     <span class="text-11-regular text-text-subtle font-mono">
                       ({cloudList.latest?.length ?? 0})
                     </span>
-                  </div>
+                  </button>
 
                   <div class="flex items-center gap-1.5">
                     <Show when={(cloudList.latest?.length ?? 0) > 1}>
@@ -482,120 +496,132 @@ export function DialogSkills(props: { directory: string }) {
                 </Show>
 
                 {/* 仓库列表卡片组 */}
-                <Show
-                  when={(cloudList.latest?.length ?? 0) > 0}
-                  fallback={
-                    <Show when={!store.formOpen}>
-                      <div class="flex items-center justify-between py-1 text-12-regular text-text-subtle">
-                        <span>{language.t("dialog.skills.cloud.empty")}</span>
+                <Show when={store.reposExpanded || store.formOpen}>
+                  <Show
+                    when={!cloudList.loading || (cloudList.latest?.length ?? 0) > 0}
+                    fallback={
+                      <div class="flex items-center gap-2 py-2 px-1 text-12-regular text-text-subtle">
+                        <span class="w-2 h-2 rounded-full bg-text-subtle/50 animate-pulse" />
+                        <span>{language.t("common.loading")}</span>
                       </div>
-                    </Show>
-                  }
-                >
-                  <div class="flex flex-col gap-1.5">
-                    <For each={cloudList.latest}>
-                      {(repo) => {
-                        const isSyncing = () => store.action === `sync:${repo.name}`
-                        const isUpdating = () => store.action === `update:${repo.name}`
-                        const isRemoving = () => store.action === `remove:${repo.name}`
-
-                        return (
-                          <div class="flex items-center justify-between gap-3 px-2.5 py-1.5 rounded bg-surface-base/70 border border-border-weak-base/50 min-h-[34px] group">
-                            {/* 左侧：状态与元信息 */}
-                            <div class="flex min-w-0 flex-1 items-center gap-2 flex-wrap">
-                              <span
-                                classList={{
-                                  "w-2 h-2 rounded-full shrink-0": true,
-                                  "bg-text-subtle/50": !repo.configured,
-                                  "bg-emerald-500": repo.state === "ready",
-                                  "bg-amber-500": repo.state === "modified" || repo.state === "ahead",
-                                  "bg-sky-500": repo.state === "behind",
-                                  "bg-red-500": repo.state === "diverged",
-                                }}
-                              />
-                              <span class="text-12-medium text-text-strong font-mono">{repo.name}</span>
-                              <span class="text-11-regular text-text-weak">{repoStateText(repo.state)}</span>
-                              <Show when={repo.branch}>
-                                {(branch) => (
-                                  <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/50 flex items-center gap-1">
-                                    <Icon name="branch" class="w-3 h-3 text-text-subtle" />
-                                    <span>{branch()}</span>
-                                  </Tag>
-                                )}
-                              </Show>
-                              <Show when={repo.changes}>
-                                {(count) => (
-                                  <Tag class="text-10-regular text-amber-500 bg-surface-base border-amber-500/30">
-                                    {language.t("dialog.skills.cloud.changes", { count: count() })}
-                                  </Tag>
-                                )}
-                              </Show>
-                              <Show when={repo.ahead}>
-                                {(count) => (
-                                  <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30">
-                                    {language.t("dialog.skills.cloud.ahead", { count: count() })}
-                                  </Tag>
-                                )}
-                              </Show>
-                              <Show when={repo.behind}>
-                                {(count) => (
-                                  <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30">
-                                    {language.t("dialog.skills.cloud.behind", { count: count() })}
-                                  </Tag>
-                                )}
-                              </Show>
-                              <Show when={repo.repository}>
-                                {(remoteUrl) => (
-                                  <span class="truncate text-11-regular font-mono text-text-subtle max-w-[200px]" title={remoteUrl()}>
-                                    {remoteUrl()}
-                                  </span>
-                                )}
-                              </Show>
-                            </div>
-
-                            {/* 右侧：单仓库操作按钮组 */}
-                            <div class="flex shrink-0 items-center gap-1">
-                              <IconButton
-                                icon="download"
-                                size="small"
-                                variant="ghost"
-                                title={language.t("dialog.skills.cloud.update")}
-                                disabled={!!store.action || !repo.configured}
-                                onClick={() => void handleUpdate(repo.name)}
-                              />
-                              <IconButton
-                                icon="cloud-upload"
-                                size="small"
-                                variant="ghost"
-                                title={language.t("dialog.skills.cloud.sync")}
-                                disabled={!!store.action || !repo.configured}
-                                onClick={() => void handleSync(repo.name)}
-                              />
-                              <IconButton
-                                icon="edit-small-2"
-                                size="small"
-                                variant="ghost"
-                                title={language.t("dialog.skills.cloud.edit")}
-                                disabled={!!store.action}
-                                onClick={() => startEdit(repo)}
-                              />
-                              <IconButton
-                                icon="trash"
-                                size="small"
-                                variant="ghost"
-                                title={language.t("dialog.skills.cloud.delete.title")}
-                                disabled={!!store.action}
-                                onClick={() => void handleRemove(repo.name)}
-                              />
-                            </div>
+                    }
+                  >
+                    <Show
+                      when={(cloudList.latest?.length ?? 0) > 0}
+                      fallback={
+                        <Show when={!store.formOpen}>
+                          <div class="flex items-center justify-between py-1 text-12-regular text-text-subtle">
+                            <span>{language.t("dialog.skills.cloud.empty")}</span>
                           </div>
-                        )
-                      }}
-                    </For>
-                  </div>
+                        </Show>
+                      }
+                    >
+                    <div class="flex flex-col gap-1.5 max-h-[115px] overflow-y-auto pr-1">
+                      <For each={cloudList.latest}>
+                        {(repo) => {
+                          const isSyncing = () => store.action === `sync:${repo.name}`
+                          const isUpdating = () => store.action === `update:${repo.name}`
+                          const isRemoving = () => store.action === `remove:${repo.name}`
+
+                          return (
+                            <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-surface-base/70 border border-border-weak-base/50 min-h-[32px] group">
+                              {/* 左侧：状态与元信息 */}
+                              <div class="flex min-w-0 flex-1 items-center gap-2">
+                                <span
+                                  classList={{
+                                    "w-2 h-2 rounded-full shrink-0": true,
+                                    "bg-text-subtle/50": !repo.configured,
+                                    "bg-emerald-500": repo.state === "ready",
+                                    "bg-amber-500": repo.state === "modified" || repo.state === "ahead",
+                                    "bg-sky-500": repo.state === "behind",
+                                    "bg-red-500": repo.state === "diverged",
+                                  }}
+                                />
+                                <span class="text-12-medium text-text-strong font-mono shrink-0">{repo.name}</span>
+                                <span class="text-11-regular text-text-weak shrink-0">{repoStateText(repo.state)}</span>
+                                <Show when={repo.branch}>
+                                  {(branch) => (
+                                    <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/50 flex items-center gap-1 shrink-0">
+                                      <Icon name="branch" class="w-3 h-3 text-text-subtle" />
+                                      <span>{branch()}</span>
+                                    </Tag>
+                                  )}
+                                </Show>
+                                <Show when={repo.changes}>
+                                  {(count) => (
+                                    <Tag class="text-10-regular text-amber-500 bg-surface-base border-amber-500/30 shrink-0">
+                                      {language.t("dialog.skills.cloud.changes", { count: count() })}
+                                    </Tag>
+                                  )}
+                                </Show>
+                                <Show when={repo.ahead}>
+                                  {(count) => (
+                                    <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
+                                      {language.t("dialog.skills.cloud.ahead", { count: count() })}
+                                    </Tag>
+                                  )}
+                                </Show>
+                                <Show when={repo.behind}>
+                                  {(count) => (
+                                    <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
+                                      {language.t("dialog.skills.cloud.behind", { count: count() })}
+                                    </Tag>
+                                  )}
+                                </Show>
+                                <Show when={repo.repository}>
+                                  {(remoteUrl) => (
+                                    <span class="truncate text-11-regular font-mono text-text-subtle max-w-[200px]" title={remoteUrl()}>
+                                      {remoteUrl()}
+                                    </span>
+                                  )}
+                                </Show>
+                              </div>
+
+                              {/* 右侧：单仓库操作按钮组 */}
+                              <div class="flex shrink-0 items-center gap-0.5">
+                                <IconButton
+                                  icon="download"
+                                  size="small"
+                                  variant="ghost"
+                                  title={language.t("dialog.skills.cloud.update")}
+                                  disabled={!!store.action || !repo.configured}
+                                  onClick={() => void handleUpdate(repo.name)}
+                                />
+                                <IconButton
+                                  icon="cloud-upload"
+                                  size="small"
+                                  variant="ghost"
+                                  title={language.t("dialog.skills.cloud.sync")}
+                                  disabled={!!store.action || !repo.configured}
+                                  onClick={() => void handleSync(repo.name)}
+                                />
+                                <IconButton
+                                  icon="edit-small-2"
+                                  size="small"
+                                  variant="ghost"
+                                  title={language.t("dialog.skills.cloud.edit")}
+                                  disabled={!!store.action}
+                                  onClick={() => startEdit(repo)}
+                                />
+                                <IconButton
+                                  icon="trash"
+                                  size="small"
+                                  variant="ghost"
+                                  title={language.t("dialog.skills.cloud.delete.title")}
+                                  disabled={!!store.action}
+                                  onClick={() => void handleRemove(repo.name)}
+                                />
+                              </div>
+                            </div>
+                          )
+                        }}
+                      </For>
+                    </div>
+                  </Show>
                 </Show>
-              </div>
-            </Show>
+              </Show>
+            </div>
+          </Show>
 
             <div class="flex flex-1 min-h-0">
               <div

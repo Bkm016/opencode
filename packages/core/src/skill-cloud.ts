@@ -207,15 +207,20 @@ const layer = Layer.effect(
         })
       }
 
-      const origin = yield* run(dir, ["remote", "get-url", "origin"])
-      const repository = origin.exitCode === 0 ? origin.stdout.trim() || undefined : undefined
-      const branchResult = yield* run(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"])
-      const branch = branchResult.exitCode === 0 ? branchResult.stdout.trim() || undefined : undefined
-      const headResult = yield* run(dir, ["rev-parse", "--verify", "HEAD"])
-      const head = headResult.exitCode === 0 ? headResult.stdout.trim() || undefined : undefined
-      const changesResult = yield* requireSuccess(
-        yield* run(dir, ["status", "--porcelain=v1", "--untracked-files=all", "-z", "--", "."]),
+      const [origin, branchResult, headResult, changesResultRaw] = yield* Effect.all(
+        [
+          run(dir, ["remote", "get-url", "origin"]),
+          run(dir, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+          run(dir, ["rev-parse", "--verify", "HEAD"]),
+          run(dir, ["status", "--porcelain=v1", "--untracked-files=all", "-z", "--", "."]),
+        ],
+        { concurrency: 4 },
       )
+
+      const repository = origin.exitCode === 0 ? origin.stdout.trim() || undefined : undefined
+      const branch = branchResult.exitCode === 0 ? branchResult.stdout.trim() || undefined : undefined
+      const head = headResult.exitCode === 0 ? headResult.stdout.trim() || undefined : undefined
+      const changesResult = yield* requireSuccess(changesResultRaw)
       const changes = changesResult.stdout.split("\0").filter(Boolean).length
       const tracking = branch && (yield* remoteBranchExists(dir, branch))
       const counts = tracking
@@ -249,10 +254,10 @@ const layer = Layer.effect(
     })
 
     const listRepos = Effect.fnUntraced(function* () {
-      const results: Status[] = []
+      const targets: { dir: string; name: string }[] = []
       const legacyGit = path.join(cloudRoot, ".git")
       if (yield* fs.isDir(legacyGit)) {
-        results.push(yield* inspectRepo(cloudRoot, "default"))
+        targets.push({ dir: cloudRoot, name: "default" })
       }
 
       if (yield* fs.isDir(cloudRoot)) {
@@ -262,11 +267,16 @@ const layer = Layer.effect(
           if (entryName === ".git") continue
           const subDir = path.join(cloudRoot, entryName)
           if (yield* fs.isDir(path.join(subDir, ".git"))) {
-            if (results.some((r) => r.name === entryName)) continue
-            results.push(yield* inspectRepo(subDir, entryName))
+            if (targets.some((t) => t.name === entryName)) continue
+            targets.push({ dir: subDir, name: entryName })
           }
         }
       }
+
+      const results = yield* Effect.all(
+        targets.map((t) => inspectRepo(t.dir, t.name)),
+        { concurrency: 8 },
+      )
 
       return results.sort((a, b) => a.name.localeCompare(b.name))
     })

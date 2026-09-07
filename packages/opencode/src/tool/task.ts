@@ -1,16 +1,13 @@
 import * as Tool from "./tool"
 import DESCRIPTION from "./task.txt"
-import PROJECT_TASK_DESCRIPTION from "./project-task.txt"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
-import {
-  deriveSubagentSessionPermission,
-  ORCHESTRATION_TOOLS,
-} from "../agent/subagent-permissions"
+import { Permission } from "../permission"
+import { canDelegateTasks, deriveSubagentSessionPermission, ORCHESTRATION_TOOLS } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
@@ -18,14 +15,16 @@ import { EffectBridge } from "@/effect/bridge"
 import { Database } from "@opencode-ai/core/database/database"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceStore } from "@/project/instance-store"
-import type { InstanceContext } from "@/project/instance-context"
 import { createBatchID, registerBatch, registerTask } from "./task-registry"
-import path from "node:path"
+import { TaskContext } from "./task-context"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
   prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts>
+  /** 立即持久化并释放可中断等待，执行仍由既有 Runner 在安全边界推进。 */
+  admit(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts>
+  resume(sessionID: SessionID): Effect.Effect<SessionV1.WithParts>
 }
 
 const id = "task"
@@ -41,7 +40,7 @@ const BACKGROUND_STARTED = [
 ].join("\n")
 
 const BACKGROUND_UPDATED = [
-  "Additional context sent to the running background task.",
+  "Correction durably admitted to the running background task. It becomes visible at the next safe provider-turn boundary; already executed tools are not undone.",
   "The task is still working in the background. You will be notified automatically when it finishes.",
   "DO NOT sleep, poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
   "Work on non-overlapping tasks, or briefly tell the user what you sent and end your response.",
@@ -64,7 +63,8 @@ export const TaskEntry = Schema.Struct({
     description: "When true, prepend recent parent transcript into the child prompt. Default false",
   }),
   allow_nested_tasks: Schema.optional(Schema.Boolean).annotate({
-    description: "When true, allow the child to call task tools. Default false",
+    description:
+      "Allow nested delegation for a new child only when authorized by the user. Default false; inherited denies still apply.",
   }),
 })
 
@@ -76,7 +76,8 @@ export const Parameters = Schema.Struct({
     description: "The task for the agent to perform (required unless tasks is set)",
   }),
   subagent_type: Schema.optional(Schema.String).annotate({
-    description: "The type of specialized agent to use (required unless set per tasks entry)",
+    description:
+      "The agent to use for a new task. On resume, omit or repeat the existing child agent; switching is rejected.",
   }),
   agent: Schema.optional(Schema.String).annotate({
     description: "Alias for subagent_type",
@@ -93,7 +94,8 @@ export const Parameters = Schema.Struct({
     description: "When true, prepend recent parent transcript into the child prompt. Default false",
   }),
   allow_nested_tasks: Schema.optional(Schema.Boolean).annotate({
-    description: "When true, allow the child to call task tools. Default false",
+    description:
+      "Allow nested delegation for a new child only when authorized by the user. Default false; resumes keep existing permissions.",
   }),
   wait: Schema.optional(Schema.Boolean).annotate({
     description:
@@ -124,7 +126,17 @@ type ResolvedEntry = {
   command?: string
   inherit_context: boolean
   allow_nested_tasks: boolean
-  task_id?: string
+}
+
+export function taskModel(input: { session?: Session.Info; agent: Agent.Info; parent: SessionV1.Assistant }) {
+  // 续跑以子会话持久化的选择为准，不能随父会话切模或代理配置变化漂移。
+  // default 显式保留未选择变体的状态，避免 prompt 再套用代理的新默认值。
+  if (input.session?.model) return { ...input.session.model, variant: input.session.model.variant ?? "default" }
+  return {
+    id: input.agent.model?.modelID ?? input.parent.modelID,
+    providerID: input.agent.model?.providerID ?? input.parent.providerID,
+    variant: input.agent.model ? input.agent.variant : input.parent.variant,
+  }
 }
 
 export function renderOutput(input: {
@@ -178,12 +190,12 @@ function formatContextMessage(entry: SessionV1.WithParts) {
 }
 
 export function loadInheritedContext(messages: SessionV1.WithParts[]) {
-  const context = messages
-    .slice(-CONTEXT_MESSAGE_LIMIT)
-    .map(formatContextMessage)
-    .filter(Boolean)
-    .join("\n\n")
-  return context ? clip(context, CONTEXT_CHAR_LIMIT) : undefined
+  const context = messages.slice(-CONTEXT_MESSAGE_LIMIT).map(formatContextMessage).filter(Boolean).join("\n\n")
+  if (!context) return undefined
+  if (context.length <= CONTEXT_CHAR_LIMIT) return context
+  // 背景预算优先留最新消息；原始用户要求由独立来源块传递，不参与这里的截断。
+  const omitted = "[Earlier parent transcript omitted]\n"
+  return omitted + context.slice(-(CONTEXT_CHAR_LIMIT - omitted.length))
 }
 
 export function taskPromptWithContext(input: {
@@ -195,7 +207,7 @@ export function taskPromptWithContext(input: {
   const body = input.command ? `Triggered by command: ${input.command}\n\n${input.prompt}` : input.prompt
   const delegation = input.allowNestedTasks
     ? "Nested delegation is enabled for this task. You may use task when independent work should be delegated; wait for and integrate child results before finishing."
-    : "Nested delegation is disabled for this task. Complete the work yourself and do not attempt to call task/task_async/project_task."
+    : "Nested delegation is disabled for this task. Complete the work yourself and do not attempt to call task."
   if (!input.inheritedContext) return [delegation, body].join("\n\n")
   return [
     delegation,
@@ -207,56 +219,6 @@ export function taskPromptWithContext(input: {
     "Task:",
     body,
   ].join("\n\n")
-}
-
-export function resolveOpenedProject(
-  selector: string,
-  loaded: readonly InstanceContext[],
-  openProjectDirectories?: readonly string[],
-) {
-  const value = selector.trim()
-  if (!value) throw new Error("project_task requires a non-empty project selector")
-
-  // InstanceStore 只补充项目元数据，开放状态必须完全来自 Desktop。
-  const eligible = filterByOpenDirectories(loaded, openProjectDirectories ?? [])
-
-  const exact = eligible.filter((ctx) => sameDirectory(ctx.directory, value))
-  if (exact.length === 1) return exact[0]!
-
-  const normalized = value.toLowerCase()
-  const matches = eligible.filter((ctx) =>
-    [path.basename(ctx.directory), path.basename(ctx.worktree), ctx.project.name]
-      .filter((candidate): candidate is string => Boolean(candidate))
-      .some((candidate) => candidate.toLowerCase() === normalized),
-  )
-  if (matches.length === 1) return matches[0]!
-
-  const candidates = eligible.map((ctx) => `${ctx.project.name ?? path.basename(ctx.directory)} (${ctx.directory})`)
-  if (matches.length > 1) {
-    throw new Error(`project_task selector is ambiguous: ${selector}. Matches: ${matches.map((ctx) => ctx.directory).join(", ")}`)
-  }
-  throw new Error(
-    `project_task can only use projects currently open in OpenCode Desktop. No open project matches: ${selector}.${candidates.length > 0 ? ` Open projects: ${candidates.join(", ")}` : " No projects are currently open in Desktop."}`,
-  )
-}
-
-function filterByOpenDirectories(
-  loaded: readonly InstanceContext[],
-  openProjectDirectories: readonly string[],
-): readonly InstanceContext[] {
-  const open = new Set(
-    openProjectDirectories.map((dir) => {
-      const resolved = FSUtil.resolve(dir)
-      return process.platform === "win32" ? resolved.toLowerCase() : resolved
-    }),
-  )
-  return loaded.filter((ctx) => {
-    const directories = [ctx.directory, ctx.worktree].map((dir) => {
-      const resolved = FSUtil.resolve(dir)
-      return process.platform === "win32" ? resolved.toLowerCase() : resolved
-    })
-    return directories.some((dir) => open.has(dir))
-  })
 }
 
 function sameDirectory(a: string, b: string) {
@@ -278,6 +240,7 @@ function shouldWait(params: TaskParams) {
 
 function resolveEntries(params: TaskParams): ResolvedEntry[] {
   if (params.tasks && params.tasks.length > 0) {
+    if (params.task_id) throw new Error("task_id cannot be combined with tasks; resume one child at a time")
     if (params.tasks.length > MAX_BATCH) {
       throw new Error(`tasks supports at most ${MAX_BATCH} entries`)
     }
@@ -320,45 +283,10 @@ function resolveEntry(entry: TaskEntryParams, params: TaskParams, single: boolea
     command: entry.command ?? (single ? params.command : undefined),
     inherit_context: entry.inherit_context ?? params.inherit_context ?? false,
     allow_nested_tasks: entry.allow_nested_tasks ?? params.allow_nested_tasks ?? false,
-    task_id: single ? params.task_id : undefined,
   }
-}
-
-function childToolDenies(input: {
-  subagent: Agent.Info
-  allowNestedTasks: boolean
-  primaryTools?: string[]
-}) {
-  const denies: { permission: string; pattern: "*"; action: "deny" }[] = []
-  if (!input.subagent.permission.some((rule) => rule.permission === "todowrite")) {
-    denies.push({ permission: "todowrite", pattern: "*", action: "deny" })
-  }
-  if (!input.allowNestedTasks) {
-    for (const permission of ORCHESTRATION_TOOLS) {
-      if (input.subagent.permission.some((rule) => rule.permission === permission)) continue
-      denies.push({ permission, pattern: "*", action: "deny" })
-    }
-  }
-  for (const permission of input.primaryTools ?? []) {
-    denies.push({ permission, pattern: "*", action: "deny" })
-  }
-  return denies
-}
-
-function filterNestedTaskDenies(
-  rules: ReturnType<typeof deriveSubagentSessionPermission>,
-  allowNestedTasks: boolean,
-) {
-  if (!allowNestedTasks) return rules
-  return rules.filter(
-    (rule) =>
-      !(rule.action === "deny" && ORCHESTRATION_TOOLS.includes(rule.permission as (typeof ORCHESTRATION_TOOLS)[number])),
-  )
 }
 
 type TaskRunOptions = {
-  /** 指定时仅从 OpenCode 当前已打开的项目中解析，并在该项目运行子代理。 */
-  projectSelector?: string
   permission: string
   toolId: string
 }
@@ -381,15 +309,17 @@ function makeTaskExecutor(input: {
     entry: ResolvedEntry
     ctx: Tool.Context
     parent: Session.Info
+    existing?: Session.Info
     cfg: ConfigShape
     variant: string | undefined
     inheritedContext: string | undefined
+    context: TaskContext.Packet
     wait: boolean
     batchId?: string
     projectDirectory?: string
     toolId: string
   }) {
-    const { entry, ctx, parent, cfg, variant, wait, batchId, projectDirectory, toolId } = input
+    const { entry, ctx, parent, existing, cfg, variant, wait, batchId, projectDirectory, toolId } = input
     const openProjectDirectories = ctx.extra?.openProjectDirectories as readonly string[] | undefined
 
     const next = yield* inProject(projectDirectory, agent.get(entry.subagent_type))
@@ -397,30 +327,12 @@ function makeTaskExecutor(input: {
       return yield* Effect.fail(new Error(`Unknown agent type: ${entry.subagent_type} is not a valid agent type`))
     }
 
-    const existing = entry.task_id
-      ? yield* sessions.get(SessionID.make(entry.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-      : undefined
-
-    if (existing && projectDirectory && !sameDirectory(existing.directory, projectDirectory)) {
-      return yield* Effect.fail(
-        new Error(
-          `task_id ${entry.task_id} belongs to directory ${existing.directory}, not target ${projectDirectory}`,
-        ),
-      )
-    }
-
-    const childPermission = filterNestedTaskDenies(
-      deriveSubagentSessionPermission({
-        parentSessionPermission: parent.permission ?? [],
-        subagent: next,
-      }),
-      entry.allow_nested_tasks,
+    const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+      Effect.provideService(Database.Service, database),
+      Effect.orDie,
     )
-    const denies = childToolDenies({
-      subagent: next,
-      allowNestedTasks: entry.allow_nested_tasks,
-      primaryTools: cfg.experimental?.primary_tools,
-    })
+    if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
+    const resolvedModel = taskModel({ session: existing, agent: next, parent: msg.info })
     const nextSession =
       existing ??
       (yield* inProject(
@@ -429,36 +341,24 @@ function makeTaskExecutor(input: {
           parentID: ctx.sessionID,
           title: entry.title + ` (@${next.name} subagent)`,
           agent: next.name,
-          permission: [
-            ...childPermission,
-            ...denies.filter(
-              (deny) =>
-                !childPermission.some(
-                  (rule) =>
-                    rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
-                ),
-            ),
-          ],
+          model: resolvedModel,
+          permission: deriveSubagentSessionPermission({
+            parentSessionPermission: parent.permission ?? [],
+            subagent: next,
+            allowNestedTasks: entry.allow_nested_tasks,
+            primaryTools: cfg.experimental?.primary_tools,
+          }),
         }),
       ))
-
-    const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
-      Effect.provideService(Database.Service, database),
-      Effect.orDie,
-    )
-    if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
-    const resolvedModel = next.model ?? {
-      modelID: msg.info.modelID,
-      providerID: msg.info.providerID,
-    }
 
     const metadata: Record<string, unknown> = {
       parentSessionId: ctx.sessionID,
       sessionId: nextSession.id,
-      model: resolvedModel,
+      model: { modelID: resolvedModel.id, providerID: resolvedModel.providerID },
       agent: next.name,
       title: entry.description,
       description: entry.description,
+      context: input.context.summary,
     }
     if (projectDirectory) metadata.directory = projectDirectory
     if (!wait) metadata.background = true
@@ -479,37 +379,44 @@ function makeTaskExecutor(input: {
       prompt: entry.prompt,
       command: entry.command,
       inheritedContext: entry.inherit_context ? input.inheritedContext : undefined,
-      allowNestedTasks: entry.allow_nested_tasks,
+      allowNestedTasks: canDelegateTasks(next, nextSession.permission ?? []),
     })
+
+    const promptInput = {
+      messageID: MessageID.ascending(),
+      sessionID: nextSession.id,
+      model: { modelID: resolvedModel.id, providerID: resolvedModel.providerID },
+      variant: resolvedModel.variant,
+      agent: next.name,
+      parts: TaskContext.attach(yield* inProject(projectDirectory, ops.resolvePromptParts(promptText)), input.context),
+      openProjectDirectories,
+    }
+    const running = existing && (yield* background.get(existing.id))?.status === "running"
+    // 纠偏先入历史，再排入已有 job 的收尾链；不能等旧任务结束才让模型看见新要求。
+    const admitted = existing ? yield* inProject(projectDirectory, ops.admit(promptInput)) : undefined
+    if (admitted)
+      metadata.delivery = {
+        type: running ? "steer" : "followup",
+        state: "admitted",
+        messageID: admitted.info.id,
+      }
 
     // 提示词解析与模型执行必须共用目标项目上下文，避免只切换子会话目录。
     const runTask = Effect.fn("TaskTool.runTask")(function* () {
       return yield* inProject(
         projectDirectory,
         Effect.gen(function* () {
-          const parts = yield* ops.resolvePromptParts(promptText)
-          const result = yield* ops.prompt({
-            messageID: MessageID.ascending(),
-            sessionID: nextSession.id,
-            model: {
-              modelID: resolvedModel.modelID,
-              providerID: resolvedModel.providerID,
-            },
-            variant: next.model ? undefined : variant,
-            agent: next.name,
-            parts,
-            openProjectDirectories,
-          })
-          return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+          const result = yield* admitted ? ops.resume(nextSession.id) : ops.prompt(promptInput)
+          return result.parts
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n\n")
         }),
       )
     })
 
     // 完成通知仍回到来源项目，不能随子代理上下文写入目标项目会话。
-    const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
-      state: "completed" | "error",
-      text: string,
-    ) {
+    const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (state: "completed" | "error", text: string) {
       const currentParent = yield* sessions.get(ctx.sessionID)
       yield* ops
         .prompt({
@@ -627,14 +534,24 @@ function makeTaskExecutor(input: {
             background.waitForPromotion(nextSession.id),
           )
           if (result?.metadata?.background === true) return backgroundResult()
-          if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
-          if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+          const error =
+            result?.status === "error"
+              ? (result.error ?? "Task failed")
+              : result?.status === "cancelled"
+                ? "Task cancelled"
+                : undefined
+          // 批次保留每个子任务的失败与成功结果，单任务仍沿用工具错误语义。
+          if (error !== undefined && !batchId) return yield* Effect.fail(new Error(error))
           return {
             title: entry.description,
             agent: next.name,
             sessionID: nextSession.id,
             metadata,
-            output: renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
+            output: renderOutput({
+              sessionID: nextSession.id,
+              state: error === undefined ? "completed" : "error",
+              text: error ?? result?.output ?? "",
+            }),
             async: false as const,
           }
         }),
@@ -652,22 +569,36 @@ function makeTaskExecutor(input: {
     )
   })
 
-  const run = Effect.fn("TaskTool.execute")(function* (
-    params: TaskParams,
-    ctx: Tool.Context,
-    options: TaskRunOptions,
-  ) {
+  const run = Effect.fn("TaskTool.execute")(function* (params: TaskParams, ctx: Tool.Context, options: TaskRunOptions) {
     const openProjectDirectories = ctx.extra?.openProjectDirectories as readonly string[] | undefined
-    const projectDirectory = options.projectSelector
-      ? resolveOpenedProject(options.projectSelector, yield* store.listLoaded(), openProjectDirectories).directory
-      : undefined
+    const projectDirectory: string | undefined = undefined
 
     // 深度和父会话属于来源项目，子代理配置则由目标项目决定。
     const cfg = (yield* inProject(projectDirectory, config.get())) as ConfigShape
     const wait = shouldWait(params)
-    const entries = resolveEntries(params)
-
     const parent = yield* sessions.get(ctx.sessionID)
+    // 无效 ID 必须失败，不能把一次续跑静默变成新的委派。
+    const existing = params.task_id ? yield* sessions.get(SessionID.make(params.task_id)) : undefined
+    if (existing && existing.parentID !== parent.id) {
+      return yield* Effect.fail(new Error("task_id is not a child of the current session"))
+    }
+    if (existing && !sameDirectory(existing.directory, projectDirectory ?? parent.directory)) {
+      return yield* Effect.fail(
+        new Error(
+          `task_id ${params.task_id} belongs to directory ${existing.directory}, not target ${projectDirectory ?? parent.directory}; cross-project resumes are not supported`,
+        ),
+      )
+    }
+    if (existing && !existing.agent) {
+      return yield* Effect.fail(new Error("Cannot resume a child without a recorded agent"))
+    }
+    const entries = resolveEntries({
+      ...params,
+      subagent_type: params.subagent_type ?? params.agent ?? existing?.agent,
+    })
+    if (existing && entries.some((entry) => entry.subagent_type !== existing.agent)) {
+      return yield* Effect.fail(new Error(`Cannot switch task agent from ${existing.agent}; create a new task instead`))
+    }
     let current = parent
     let depth = 0
     while (current.parentID) {
@@ -680,6 +611,18 @@ function makeTaskExecutor(input: {
           `Subagent depth limit reached (${cfg.subagent_depth ?? 1}). Increase "subagent_depth" to allow nested subagents.`,
         ),
       )
+    }
+
+    // 即使用户显式选择代理而跳过普通确认，也不能绕过会话持久化的委派禁令。
+    for (const entry of entries) {
+      const patterns = projectDirectory ? [projectDirectory, entry.subagent_type] : [entry.subagent_type]
+      if (
+        patterns.some(
+          (pattern) => Permission.evaluate(options.permission, pattern, parent.permission ?? []).action === "deny",
+        )
+      ) {
+        return yield* Effect.fail(new Error(`Session permission denies ${options.permission}: ${entry.subagent_type}`))
+      }
     }
 
     if (!ctx.extra?.bypassAgentCheck) {
@@ -722,6 +665,7 @@ function makeTaskExecutor(input: {
 
     const needsContext = entries.some((entry) => entry.inherit_context)
     const inheritedContext = needsContext ? loadInheritedContext(ctx.messages) : undefined
+    const context = yield* TaskContext.prepare(sessions, ctx)
 
     const isBatch = Boolean(params.tasks && params.tasks.length > 0) || entries.length > 1
 
@@ -736,6 +680,7 @@ function makeTaskExecutor(input: {
             cfg,
             variant,
             inheritedContext,
+            context,
             wait,
             batchId: batchID,
             projectDirectory,
@@ -753,6 +698,7 @@ function makeTaskExecutor(input: {
         title: item.title,
         agent: item.agent,
       }))
+      const background = launched.some((item) => item.async)
       const meta: Record<string, unknown> = {
         batchID,
         count: launched.length,
@@ -760,7 +706,7 @@ function makeTaskExecutor(input: {
         tasks,
         // Primary child for single-click; batch UI prefers tasks[].
         sessionId: launched[0]?.sessionID,
-        background: !wait,
+        background,
       }
       if (projectDirectory) meta.directory = projectDirectory
       yield* ctx.metadata({
@@ -778,8 +724,13 @@ function makeTaskExecutor(input: {
           (item, index) =>
             `${index + 1}. ${item.sessionID} | session ${item.sessionID} | ${item.title} (${item.agent})`,
         ),
-        wait ? "status: completed (waited)" : "status: accepted (async)",
-        "You will be notified when async tasks finish. Use batch_id with task_async_status / task_async_wait when available.",
+        background ? "status: accepted (async)" : "status: settled (waited; see per-task results)",
+        ...(background
+          ? [
+              "You will be notified when async tasks finish. Use batch_id with task_status / task_wait when available.",
+            ]
+          : []),
+        ...(wait ? launched.map((item) => item.output) : []),
       ]
       return {
         title: `task: ${launched.length} sessions`,
@@ -805,9 +756,11 @@ function makeTaskExecutor(input: {
       entry,
       ctx,
       parent,
+      existing,
       cfg,
       variant,
       inheritedContext,
+      context,
       wait,
       projectDirectory,
       toolId: options.toolId,
@@ -826,8 +779,9 @@ function makeTaskExecutor(input: {
 export const TaskTool = Tool.define(
   id,
   Effect.gen(function* () {
+    const agent = yield* Agent.Service
     const executor = makeTaskExecutor({
-      agent: yield* Agent.Service,
+      agent,
       background: yield* BackgroundJob.Service,
       config: yield* Config.Service,
       sessions: yield* Session.Service,
@@ -835,7 +789,6 @@ export const TaskTool = Tool.define(
       database: yield* Database.Service,
       store: yield* InstanceStore.Service,
     })
-
     return {
       description: DESCRIPTION,
       parameters: Parameters,
@@ -843,59 +796,6 @@ export const TaskTool = Tool.define(
         executor
           .run(params, ctx, { permission: id, toolId: id })
           .pipe(Effect.orDie) as Effect.Effect<Tool.ExecuteResult>,
-    }
-  }),
-)
-
-export const ProjectTaskParameters = Schema.Struct({
-  project: Schema.String.annotate({
-    description:
-      "An OpenCode project currently open in Desktop. Accepts its directory path, directory name, or project name.",
-  }),
-  description: Parameters.fields.description,
-  prompt: Parameters.fields.prompt,
-  subagent_type: Parameters.fields.subagent_type,
-  agent: Parameters.fields.agent,
-  title: Parameters.fields.title,
-  task_id: Parameters.fields.task_id,
-  command: Parameters.fields.command,
-  inherit_context: Parameters.fields.inherit_context,
-  allow_nested_tasks: Parameters.fields.allow_nested_tasks,
-  wait: Parameters.fields.wait,
-  background: Parameters.fields.background,
-  tasks: Parameters.fields.tasks,
-})
-
-type ProjectTaskParams = Schema.Schema.Type<typeof ProjectTaskParameters>
-
-const PROJECT_TASK_ID = "project_task"
-
-export const ProjectTaskTool = Tool.define(
-  PROJECT_TASK_ID,
-  Effect.gen(function* () {
-    const executor = makeTaskExecutor({
-      agent: yield* Agent.Service,
-      background: yield* BackgroundJob.Service,
-      config: yield* Config.Service,
-      sessions: yield* Session.Service,
-      scope: yield* Scope.Scope,
-      database: yield* Database.Service,
-      store: yield* InstanceStore.Service,
-    })
-
-    return {
-      description: PROJECT_TASK_DESCRIPTION,
-      parameters: ProjectTaskParameters,
-      execute: (params: ProjectTaskParams, ctx: Tool.Context) => {
-        const { project, ...taskParams } = params
-        return executor
-          .run(taskParams, ctx, {
-            projectSelector: project,
-            permission: PROJECT_TASK_ID,
-            toolId: PROJECT_TASK_ID,
-          })
-          .pipe(Effect.orDie) as Effect.Effect<Tool.ExecuteResult>
-      },
     }
   }),
 )

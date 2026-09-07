@@ -1,6 +1,6 @@
 /**
  * Process-local registry for async child-session tasks.
- * task.ts calls registerTask / registerBatch on launch; task_async_* tools
+ * task.ts calls registerTask / registerBatch on launch; task_status / task_wait / task_abort / task_followup
  * read getBatch / getTaskMeta for status, wait, and followup.
  */
 

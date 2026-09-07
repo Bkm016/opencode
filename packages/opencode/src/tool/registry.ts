@@ -14,12 +14,12 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ListDirTool } from "./list-dir"
 import { ReadTool } from "./read"
-import { ProjectTaskTool, TaskTool } from "./task"
+import { TaskTool } from "./task"
 import {
-  TaskAsyncStatusTool,
-  TaskAsyncWaitTool,
-  TaskAsyncAbortTool,
-  TaskAsyncFollowupTool,
+  TaskStatusTool,
+  TaskWaitTool,
+  TaskAbortTool,
+  TaskFollowupTool,
 } from "./task-async"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
@@ -113,11 +113,10 @@ const layer = Layer.effect(
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
-    const projectTask = yield* ProjectTaskTool
-    const taskAsyncStatus = yield* TaskAsyncStatusTool
-    const taskAsyncWait = yield* TaskAsyncWaitTool
-    const taskAsyncAbort = yield* TaskAsyncAbortTool
-    const taskAsyncFollowup = yield* TaskAsyncFollowupTool
+    const taskStatus = yield* TaskStatusTool
+    const taskWait = yield* TaskWaitTool
+    const taskAbort = yield* TaskAbortTool
+    const taskFollowup = yield* TaskFollowupTool
     const read = yield* ReadTool
     const listDir = yield* ListDirTool
     const question = yield* QuestionTool
@@ -242,11 +241,10 @@ const layer = Layer.effect(
           multiedit: Tool.init(multiEdit),
           write: Tool.init(writetool),
           task: Tool.init(task),
-          projectTask: Tool.init(projectTask),
-          taskAsyncStatus: Tool.init(taskAsyncStatus),
-          taskAsyncWait: Tool.init(taskAsyncWait),
-          taskAsyncAbort: Tool.init(taskAsyncAbort),
-          taskAsyncFollowup: Tool.init(taskAsyncFollowup),
+          taskStatus: Tool.init(taskStatus),
+          taskWait: Tool.init(taskWait),
+          taskAbort: Tool.init(taskAbort),
+          taskFollowup: Tool.init(taskFollowup),
           fetch: Tool.init(webfetch),
           python: Tool.init(python),
           todo: Tool.init(todo),
@@ -278,13 +276,10 @@ const layer = Layer.effect(
             tool.multiedit,
             tool.write,
             tool.task,
-            tool.projectTask,
-            // Alias for models / plugins that call task_async; same launcher as task.
-            { ...tool.task, id: "task_async" },
-            tool.taskAsyncStatus,
-            tool.taskAsyncWait,
-            tool.taskAsyncAbort,
-            tool.taskAsyncFollowup,
+            tool.taskStatus,
+            tool.taskWait,
+            tool.taskAbort,
+            tool.taskFollowup,
             tool.fetch,
             tool.todo,
             tool.search,
@@ -392,9 +387,7 @@ const layer = Layer.effect(
             id: tool.id,
             description: [
               output.description,
-              tool.id === TaskTool.id || tool.id === ProjectTaskTool.id
-                ? yield* describeTask(input.agent)
-                : undefined,
+              tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
               tool.id === "execute" ? codeModeDescription : undefined,
             ]
               .filter(Boolean)

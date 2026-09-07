@@ -127,6 +127,7 @@ it.effect("subagent self permissions are preserved", () =>
       deriveSubagentSessionPermission({
         parentSessionPermission: [],
         subagent: executor,
+        allowNestedTasks: true,
       }),
     )
 
@@ -150,11 +151,13 @@ it.effect("subagent inherits parent session deny rules as hard runtime ceilings"
     const effective = Permission.merge(
       executor.permission,
       deriveSubagentSessionPermission({
-        parentSessionPermission: Permission.fromConfig({ bash: "deny" }),
+        parentSessionPermission: Permission.fromConfig({ bash: "deny", task: { worker: "deny" } }),
         subagent: executor,
+        allowNestedTasks: true,
       }),
     )
 
     expect(Permission.evaluate("bash", "git status", effective).action).toBe("deny")
+    expect(Permission.evaluate("task", "worker", effective).action).toBe("deny")
   }),
 )

@@ -197,6 +197,8 @@ const layer = Layer.effect(
                 "*": "deny",
                 grep: "allow",
                 glob: "allow",
+                history_grep: "allow",
+                history_list: "allow",
                 list: "allow",
                 bash: "allow",
                 webfetch: "allow",

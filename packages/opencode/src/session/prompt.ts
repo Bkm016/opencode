@@ -164,6 +164,8 @@ const layer = Layer.effect(
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => promptImpl(input, false).pipe(Effect.catch(Effect.die)),
+        admit: (input: PromptInput) => promptImpl(input, true, true).pipe(Effect.catch(Effect.die)),
+        resume: (sessionID: SessionID) => loop({ sessionID }),
       } satisfies TaskPromptOps
     })
 
@@ -1095,6 +1097,7 @@ const layer = Layer.effect(
     const promptImpl = Effect.fn("SessionPrompt.promptImpl")(function* (
       input: PromptInput,
       promoteWaitingTask: boolean,
+      admitOnly = false,
     ) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
@@ -1123,7 +1126,7 @@ const layer = Layer.effect(
                 msgs.flatMap((msg) =>
                   msg.parts.flatMap((part) => {
                     if (part.type !== "tool") return []
-                    if (part.tool !== "task_async_wait" && part.tool !== ShellID.ToolID) return []
+                    if (part.tool !== "task_wait" && part.tool !== ShellID.ToolID) return []
                     if (part.state.status !== "running" || !part.callID) return []
                     return [part.callID]
                   }),
@@ -1135,6 +1138,8 @@ const layer = Layer.effect(
         )
         yield* state.onUserPrompt(input.sessionID, runningWaitCallIDs)
       }
+      // 工具纠偏在这里确认持久化；现有 drain 立即可见，调用方另行跟踪 resume 的完成。
+      if (admitOnly) return message
       return yield* loop({ sessionID: input.sessionID })
     })
 
@@ -1550,12 +1555,13 @@ const layer = Layer.effect(
             lastAssistant?.summary === true && lastAssistantIndex >= 0 && lastAssistantIndex < lastUserIndex
 
           // 安全边界：last assistant 普通完成且无待处理 tool calls
+          // 完成边界取实际引用的 user；assistant ID 较晚分配不代表期间新入库的纠偏已被消费。
           const assistantNormallyFinished =
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
             !compactionSummaryPrecedesLastUser &&
-            lastUser.id < lastAssistant.id
+            lastUser.id <= lastAssistant.parentID
 
           if (assistantNormallyFinished) {
             // 检查是否有 pending 真实用户消息（非 synthetic）
@@ -1563,7 +1569,7 @@ const layer = Layer.effect(
             const hasPendingRealUser =
               lastUserMsg &&
               lastUserMsg.parts.some((p) => p.type === "text" && !("synthetic" in p && p.synthetic)) &&
-              lastUserMsg.info.id > lastAssistant.id
+              lastUserMsg.info.id > lastAssistant.parentID
 
             if (!hasPendingRealUser) {
               const goalForContinuation = yield* state.admit(sessionID, Effect.gen(function* () {
@@ -1805,7 +1811,7 @@ const layer = Layer.effect(
                   system,
                   userSystem: lastUser.system,
                   prompts: cfg.prompts,
-                })
+                }).join("\n")
                 const toolDefinitions = Object.fromEntries(
                   Object.entries(tools).map(([name, item]) => [
                     name,

@@ -2203,6 +2203,107 @@ it.instance("prompt submitted during an active run is included in the next LLM i
   }),
 )
 
+it.instance("a later assistant ID cannot settle a correction it did not consume", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Admission race" })
+    const previous = yield* seed(chat.id, { finish: "stop" })
+    const correction = yield* user(chat.id, "UNCONSUMED_CORRECTION: report only")
+    // 模拟旧轮已选中 U0，U1 入库后才创建并完成旧 assistant 的真实持久化顺序。
+    const stale = yield* sessions.updateMessage({ ...previous.assistant, id: MessageID.ascending() })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: stale.id,
+      sessionID: chat.id,
+      type: "text",
+      text: "reply to the old prompt only",
+    })
+    yield* llm.text("correction handled")
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    if (result.info.role !== "assistant") throw new Error("missing correction response")
+    expect(result.info.parentID).toBe(correction.id)
+    expect(result.parts.some((part) => part.type === "text" && part.text === "correction handled")).toBe(true)
+    expect(JSON.stringify(yield* llm.inputs)).toContain("UNCONSUMED_CORRECTION: report only")
+  }),
+)
+
+it.instance("task follow-up reaches the active child's next provider turn without restarting its current turn", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const gate = yield* Deferred.make<void>()
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const background = yield* BackgroundJob.Service
+    const chat = yield* sessions.create({
+      title: "Task steering",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* llm.tool("task", {
+      description: "inspect",
+      prompt: "CHILD_ORIGINAL_TASK: inspect only",
+      subagent_type: "general",
+      wait: true,
+    })
+    yield* llm.hold("child before correction", deferredAsPromise(gate))
+    const initial = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "Start a read-only investigation" }],
+    }).pipe(Effect.forkChild)
+    yield* llm.wait(2)
+    const child = yield* pollWithTimeout(
+      background.list().pipe(Effect.map((jobs) =>
+        jobs.find((job) => job.metadata?.parentSessionId === chat.id && job.status === "running"),
+      )),
+      "child did not start",
+    )
+    yield* llm.tool("task_async_followup", { task_id: child.id, prompt: "CORRECTION_PERSIST: report risks only" })
+    yield* llm.text("parent acknowledged correction")
+    yield* awaitWithTimeout(
+      prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "Send the running child a report-only correction now" }],
+      }),
+      "correction blocked behind the child's current turn",
+    )
+    const parentMessages = yield* sessions.messages({ sessionID: chat.id })
+    const followup = parentMessages.flatMap((message) => message.parts)
+      .findLast((part) => part.type === "tool" && part.tool === "task_async_followup")
+    if (followup?.type !== "tool" || followup.state.status !== "completed") {
+      throw new Error("follow-up did not complete admission")
+    }
+    const delivery = followup.state.metadata.delivery as { type: string; state: string; messageID: string }
+    expect(delivery.type).toBe("steer")
+    expect(delivery.state).toBe("admitted")
+    const before = yield* sessions.messages({ sessionID: SessionID.make(child.id) })
+    expect(before.some((message) => message.info.role === "user" && message.info.id === delivery.messageID)).toBe(true)
+    expect(before.filter((message) => message.info.role === "assistant")).toHaveLength(1)
+    expect((yield* background.get(child.id))?.status).toBe("running")
+    yield* llm.text("child corrected report")
+    yield* llm.text("parent summarized report")
+    yield* Deferred.succeed(gate, undefined)
+    yield* awaitWithTimeout(background.wait({ id: child.id }), "corrected child did not finish")
+    yield* Fiber.await(initial)
+    const after = yield* sessions.messages({ sessionID: SessionID.make(child.id) })
+    const final = after.findLast((message) => message.info.role === "assistant")
+    if (final?.info.role !== "assistant") throw new Error("missing corrected assistant")
+    expect(final.info.parentID).toBe(delivery.messageID)
+    expect(final.parts.some((part) => part.type === "text" && part.text === "child corrected report")).toBe(true)
+    const inputs = yield* llm.inputs
+    const childInputs = inputs.filter((input) => Array.isArray(input.messages) && input.messages.some((message) =>
+      message.role === "user" && JSON.stringify(message.content).includes("CHILD_ORIGINAL_TASK"),
+    ))
+    expect(childInputs).toHaveLength(2)
+    expect(JSON.stringify(childInputs[1].messages)).toContain("CORRECTION_PERSIST: report risks only")
+  }),
+  20_000,
+)
+
 it.instance("assertNotBusy fails with BusyError when loop running", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

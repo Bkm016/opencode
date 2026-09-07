@@ -5,10 +5,14 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
+import { canDelegateTasks } from "../agent/subagent-permissions"
+import { InstanceStore } from "@/project/instance-store"
+import { Permission } from "../permission"
 import { Database } from "@opencode-ai/core/database/database"
 import { Deferred, Effect, Option, Schema, Scope } from "effect"
 import { getBatch, getTaskMeta, registerBatch, registerTask, type TaskMeta } from "./task-registry"
-import type { TaskPromptOps } from "./task"
+import { taskModel, taskPromptWithContext, type TaskPromptOps } from "./task"
+import { TaskContext } from "./task-context"
 import type { SessionV1 } from "@opencode-ai/core/v1/session"
 
 const TASK_RESULT_LIMIT = 6000
@@ -58,7 +62,7 @@ const AbortParameters = Schema.Struct({
 
 const FollowupParameters = Schema.Struct({
   task_id: Schema.String.annotate({
-    description: "Child session id to resume with a new prompt (must be idle)",
+    description: "Owned child session to continue or steer while running. The correction is admitted immediately.",
   }),
   prompt: Schema.String.annotate({
     description: "Follow-up instruction for the existing child session",
@@ -67,7 +71,7 @@ const FollowupParameters = Schema.Struct({
     description: "Short title for this follow-up run",
   }),
   agent: Schema.optional(Schema.String).annotate({
-    description: "Agent name override; defaults to the child session agent",
+    description: "Omit or repeat the child session agent. Switching agents on a follow-up is rejected.",
   }),
   allow_nested_tasks: Schema.optional(Schema.Boolean).annotate({
     description: "Reserved; nested task permission is owned by session rules",
@@ -103,7 +107,7 @@ function isPendingState(state: string) {
 
 function requirePromptOps(ctx: Tool.Context) {
   const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
-  if (!ops) return Effect.fail(new Error("task_async tools require promptOps in ctx.extra"))
+  if (!ops) return Effect.fail(new Error("task management tools require promptOps in ctx.extra"))
   return Effect.succeed(ops)
 }
 
@@ -111,10 +115,7 @@ function resolveSessionID(taskId: string) {
   return SessionID.make(taskId)
 }
 
-function resolveTargets(params: {
-  task_id?: string
-  task_ids?: readonly string[]
-}) {
+function resolveTargets(params: { task_id?: string; task_ids?: readonly string[] }) {
   if (params.task_ids && params.task_ids.length > 0) return [...params.task_ids]
   if (params.task_id) return [params.task_id]
   return [] as string[]
@@ -134,10 +135,7 @@ const resolveBatchTargets = Effect.fnUntraced(function* (
     ...new Set(
       messages.flatMap((message) =>
         message.parts.flatMap((part) => {
-          if (
-            part.type !== "tool" ||
-            (part.tool !== "task" && part.tool !== "task_async" && part.tool !== "project_task")
-          ) {
+            if (part.type !== "tool" || part.tool !== "task") {
             return []
           }
           if (!("metadata" in part.state) || part.state.metadata?.batchID !== batchId) return []
@@ -183,7 +181,7 @@ function formatWaitSummary(completed: WaitRow[], pending: WaitRow[], timedOut: b
     ...(released
       ? [
           "wait stopped: a new user message arrived while tasks were still running",
-          "tasks continue in the background; use task_async_status / task_async_wait again if needed",
+          "tasks continue in the background; use task_status / task_wait again if needed",
         ]
       : []),
     ...completed.map((row) => `done ${row.id} | ${row.status} | ${row.title}`),
@@ -195,8 +193,8 @@ function result(title: string, output: string, metadata: Record<string, unknown>
   return { title, output, metadata }
 }
 
-export const TaskAsyncStatusTool = Tool.define(
-  "task_async_status",
+export const TaskStatusTool = Tool.define(
+  "task_status",
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const sessions = yield* Session.Service
@@ -206,7 +204,7 @@ export const TaskAsyncStatusTool = Tool.define(
         "Read async child-session task status.",
         "Pass task_id for one task (optional last assistant output), batch_id for a registered batch,",
         "or omit both to list Session.children of the current session with BackgroundJob status.",
-        "Launch work with the native task tool (async by default); use task_async_wait / abort / followup to manage it.",
+        "Launch work with the native task tool (async by default); use task_wait / abort / followup to manage it.",
       ].join(" "),
       parameters: StatusParameters,
       execute: (params: Schema.Schema.Type<typeof StatusParameters>, ctx: Tool.Context) =>
@@ -214,11 +212,10 @@ export const TaskAsyncStatusTool = Tool.define(
           if (params.batch_id) {
             const ids = yield* resolveBatchTargets(params.batch_id, ctx.sessionID, sessions)
             if (ids.length === 0) {
-              return result(
-                `batch ${params.batch_id}`,
-                `No async tasks found for batch_id: ${params.batch_id}`,
-                { batch_id: params.batch_id, count: 0 },
-              )
+              return result(`batch ${params.batch_id}`, `No async tasks found for batch_id: ${params.batch_id}`, {
+                batch_id: params.batch_id,
+                count: 0,
+              })
             }
 
             const lines = yield* Effect.forEach(ids, (id) =>
@@ -291,15 +288,15 @@ export const TaskAsyncStatusTool = Tool.define(
   }),
 )
 
-export const TaskAsyncWaitTool = Tool.define(
-  "task_async_wait",
+export const TaskWaitTool = Tool.define(
+  "task_wait",
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const sessions = yield* Session.Service
     const runState = yield* SessionRunState.Service
 
     // 统一终态快照：仅仍 running 的行可标 released/timedOut，避免 completed+pending 矛盾。
-    const snapshotRow = Effect.fn("TaskAsyncWait.snapshotRow")(function* (
+    const snapshotRow = Effect.fn("TaskWait.snapshotRow")(function* (
       id: string,
       includeOutput: boolean,
       flags?: { timedOut?: boolean; released?: boolean },
@@ -344,7 +341,7 @@ export const TaskAsyncWaitTool = Tool.define(
     })
 
     // 单任务完成 effect：不参与 release race；all/any 外层只 race 一次会话 release。
-    const awaitJobDone = Effect.fn("TaskAsyncWait.awaitJobDone")(function* (id: string) {
+    const awaitJobDone = Effect.fn("TaskWait.awaitJobDone")(function* (id: string) {
       const job = yield* background.get(id)
       if (!job || job.status !== "running") return
       yield* background.wait({ id }).pipe(Effect.asVoid)
@@ -368,9 +365,9 @@ export const TaskAsyncWaitTool = Tool.define(
           }
 
           for (const id of targets) {
-            const session = yield* sessions.get(resolveSessionID(id)).pipe(
-              Effect.catchCause(() => Effect.succeed(undefined)),
-            )
+            const session = yield* sessions
+              .get(resolveSessionID(id))
+              .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
             if (session?.parentID && session.parentID !== ctx.sessionID) {
               return yield* Effect.fail(new Error(`task_id ${id} is not a child of the current session`))
             }
@@ -405,9 +402,7 @@ export const TaskAsyncWaitTool = Tool.define(
               Effect.timeoutOption(timeoutMs),
               Effect.map((opt): WaitKind => (Option.isNone(opt) ? "timeout" : opt.value)),
             )
-          }).pipe(
-            Effect.ensuring(runState.unregisterWait(ctx.sessionID, registration.token)),
-          )
+          }).pipe(Effect.ensuring(runState.unregisterWait(ctx.sessionID, registration.token)))
 
           const completed: WaitRow[] = []
           const pending: WaitRow[] = []
@@ -444,11 +439,12 @@ export const TaskAsyncWaitTool = Tool.define(
   }),
 )
 
-export const TaskAsyncAbortTool = Tool.define(
-  "task_async_abort",
+export const TaskAbortTool = Tool.define(
+  "task_abort",
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const sessions = yield* Session.Service
+    const store = yield* InstanceStore.Service
 
     return {
       description:
@@ -458,12 +454,12 @@ export const TaskAsyncAbortTool = Tool.define(
         Effect.gen(function* () {
           const sessionID = resolveSessionID(params.task_id)
           const session = yield* sessions.get(sessionID)
-          if (session.parentID && session.parentID !== ctx.sessionID) {
+          if (session.parentID !== ctx.sessionID) {
             return yield* Effect.fail(new Error("task_id is not a child of the current session"))
           }
           const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
           yield* background.cancel(params.task_id)
-          if (ops) yield* ops.cancel(sessionID)
+          if (ops) yield* store.provide({ directory: session.directory }, ops.cancel(sessionID))
           return result(`abort ${params.task_id}`, `Aborted async task: ${params.task_id}`, {
             task_id: params.task_id,
             session_id: session.id,
@@ -473,20 +469,21 @@ export const TaskAsyncAbortTool = Tool.define(
   }),
 )
 
-export const TaskAsyncFollowupTool = Tool.define(
-  "task_async_followup",
+export const TaskFollowupTool = Tool.define(
+  "task_followup",
   Effect.gen(function* () {
     const agent = yield* Agent.Service
     const background = yield* BackgroundJob.Service
     const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
     const database = yield* Database.Service
+    const store = yield* InstanceStore.Service
 
     return {
       description: [
         "Continue an existing async child session without clearing its context.",
-        "Session must be idle (no running BackgroundJob). Launches in the background and returns immediately;",
-        "use task_async_wait or task_async_status for the result. Same task_id / session is reused.",
+        "Running tasks receive the correction immediately for the next safe provider-turn boundary; idle tasks resume in the background.",
+        "use task_wait or task_status for the result. Keeps the child's agent, model, project, and permissions; agent overrides are rejected.",
       ].join(" "),
       parameters: FollowupParameters,
       execute: (params: Schema.Schema.Type<typeof FollowupParameters>, ctx: Tool.Context) =>
@@ -494,22 +491,26 @@ export const TaskAsyncFollowupTool = Tool.define(
           const ops = yield* requirePromptOps(ctx)
           const sessionID = resolveSessionID(params.task_id)
           const child = yield* sessions.get(sessionID)
-          if (child.parentID && child.parentID !== ctx.sessionID) {
+          if (child.parentID !== ctx.sessionID) {
             return yield* Effect.fail(new Error("task_id is not a child of the current session"))
+          }
+          const parent = yield* sessions.get(ctx.sessionID)
+          if (
+            Permission.evaluate("task_followup", child.agent ?? "*", parent.permission ?? []).action === "deny"
+          ) {
+            return yield* Effect.fail(new Error("Session permission denies task_followup"))
           }
 
           const existingJob = yield* background.get(params.task_id)
-          if (existingJob?.status === "running") {
+
+          const agentName = child.agent
+          if (!agentName) return yield* Effect.fail(new Error("Follow-up requires an agent name"))
+          if (params.agent && params.agent !== agentName) {
             return yield* Effect.fail(
-              new Error(
-                "Async task session is still running; wait for completion or abort it before sending a follow-up",
-              ),
+              new Error(`Cannot switch task agent from ${agentName}; create a new task instead`),
             )
           }
-
-          const agentName = params.agent ?? child.agent
-          if (!agentName) return yield* Effect.fail(new Error("Follow-up requires an agent name"))
-          const next = yield* agent.get(agentName)
+          const next = yield* store.provide({ directory: child.directory }, agent.get(agentName))
           if (!next) return yield* Effect.fail(new Error(`Unknown agent type: ${agentName}`))
 
           const title = params.title?.trim() || `follow-up: ${child.title}`
@@ -519,19 +520,44 @@ export const TaskAsyncFollowupTool = Tool.define(
           )
           if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
-          const model = next.model ?? {
-            modelID: msg.info.modelID,
-            providerID: msg.info.providerID,
-          }
+          const model = taskModel({ session: child, agent: next, parent: msg.info })
           const variant = msg.info.variant
-          const promptText = params.system ? `${params.system}\n\n${params.prompt}` : params.prompt
+          const openProjectDirectories = ctx.extra?.openProjectDirectories as readonly string[] | undefined
+          const promptText = taskPromptWithContext({
+            prompt: params.system ? `${params.system}\n\n${params.prompt}` : params.prompt,
+            allowNestedTasks: canDelegateTasks(next, child.permission ?? []),
+          })
+          const context = yield* TaskContext.prepare(sessions, ctx)
+          const admitted = yield* store.provide(
+            { directory: child.directory },
+            Effect.gen(function* () {
+              const parts = yield* ops.resolvePromptParts(promptText)
+              return yield* ops.admit({
+                messageID: MessageID.ascending(),
+                sessionID: child.id,
+                model: { modelID: model.id, providerID: model.providerID },
+                variant: model.variant,
+                agent: next.name,
+                parts: TaskContext.attach(parts, context),
+                openProjectDirectories,
+              })
+            }),
+          )
 
           const metadata = {
             parentSessionId: ctx.sessionID,
             sessionId: child.id,
-            model,
+            model: { modelID: model.id, providerID: model.providerID },
+            agent: next.name,
+            directory: child.directory,
             background: true,
             followup: true,
+            context: context.summary,
+            delivery: {
+              type: existingJob?.status === "running" ? "steer" : "followup",
+              state: "admitted",
+              messageID: admitted.info.id,
+            },
           }
 
           yield* ctx.metadata({
@@ -539,29 +565,28 @@ export const TaskAsyncFollowupTool = Tool.define(
             metadata,
           })
 
-          const runTask = Effect.fn("TaskAsyncFollowup.runTask")(function* () {
-            const parts = yield* ops.resolvePromptParts(promptText)
-            const resultText = yield* ops.prompt({
-              messageID: MessageID.ascending(),
-              sessionID: child.id,
-              model: {
-                modelID: model.modelID,
-                providerID: model.providerID,
-              },
-              variant: next.model ? undefined : variant,
-              agent: next.name,
-              parts,
-            })
-            return resultText.parts.findLast((item) => item.type === "text")?.text ?? ""
+          // 续跑必须重建子项目上下文，不能借父项目的代理配置或文件权限执行。
+          const runTask = Effect.fn("TaskFollowup.runTask")(function* () {
+            return yield* store.provide(
+              { directory: child.directory },
+              Effect.gen(function* () {
+                const resultText = yield* ops.resume(child.id)
+                return resultText.parts
+                  .filter((item) => item.type === "text")
+                  .map((item) => item.text)
+                  .join("\n\n")
+              }),
+            )
           })
 
-          const inject = Effect.fn("TaskAsyncFollowup.inject")(function* (state: "completed" | "error", text: string) {
+          const inject = Effect.fn("TaskFollowup.inject")(function* (state: "completed" | "error", text: string) {
             const currentParent = yield* sessions.get(ctx.sessionID)
             yield* ops
               .prompt({
                 sessionID: ctx.sessionID,
                 agent: currentParent.agent ?? ctx.agent,
                 variant,
+                openProjectDirectories,
                 parts: [
                   {
                     type: "text",
@@ -580,7 +605,7 @@ export const TaskAsyncFollowupTool = Tool.define(
               .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
           })
 
-          const notify = Effect.fn("TaskAsyncFollowup.notify")(function* (jobID: string) {
+          const notify = Effect.fn("TaskFollowup.notify")(function* (jobID: string) {
             yield* background.wait({ id: jobID }).pipe(
               Effect.flatMap((waited) => {
                 if (waited.info?.status === "completed") return inject("completed", waited.info.output ?? "")
@@ -615,6 +640,13 @@ export const TaskAsyncFollowupTool = Tool.define(
             )
           }
 
+          if (yield* background.extend({ id: child.id, run: runTask() })) {
+            return {
+              title,
+              metadata,
+              output: `Correction admitted to task_id: ${child.id}\nmessage_id: ${admitted.info.id}\nApplies at the next safe provider-turn boundary. Already executed tools are not undone. The existing task will notify on completion.`,
+            }
+          }
           const info = yield* background.start({
             id: child.id,
             type: "task",
@@ -627,7 +659,9 @@ export const TaskAsyncFollowupTool = Tool.define(
               }),
               notify(child.id),
             ]),
-            run: runTask().pipe(Effect.onInterrupt(() => ops.cancel(child.id))),
+            run: runTask().pipe(
+              Effect.onInterrupt(() => store.provide({ directory: child.directory }, ops.cancel(child.id))),
+            ),
           })
 
           yield* notify(info.id)

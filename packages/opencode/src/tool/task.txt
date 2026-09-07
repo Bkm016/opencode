@@ -13,7 +13,24 @@ Usage notes:
 2. Launch independent work in parallel via tasks: [{ description, prompt, subagent_type, ... }] (max 20), or a single description+prompt+subagent_type. Batch launches return a batch_id and one line per task.
 3. Give each task a concise, specific title (or description) suitable for the session list; avoid generic names like "Analyze task".
 4. Once delegated, do not duplicate that work. Continue non-overlapping tasks, or end your turn and wait for notification.
-5. Each fresh child starts with empty context unless inherit_context=true (prepends recent parent transcript, clipped). Use task_id to resume the same child session.
-6. Nested task tools are denied in the child by default. Set allow_nested_tasks=true only when the child itself must spawn further tasks.
+5. Every child receives runtime-provided original user requirements and authorized ancestor evidence references, separately from your handoff. inherit_context=true additionally includes a bounded recent parent transcript, preserving its newest messages. Use history_grep/history_list with source=task to recover the authorized originals and evidence.
+   Use task_id to resume or steer an owned child with its existing agent, model, and permissions; omit subagent_type or repeat its agent. Invalid IDs and agent switches fail instead of creating or rerouting work. Running corrections are persisted immediately for the next safe provider-turn boundary, not queued behind the whole task; the receipt means admitted, not yet applied, and does not undo completed tools.
+6. A user-named agent should do the assigned work itself. Nested task tools are denied by default, even if the agent normally has them. Set allow_nested_tasks=true only for a new child when the user authorizes further delegation; it never overrides inherited denies or changes an existing child's permissions. Do not pass the entire assignment through to another worker.
 7. The result returned by a completed agent is not visible to the user; summarize it yourself when needed.
 8. Clearly tell the agent whether to write code or only research, and how to verify work when possible.
+9. wait=true batches return each settled child's result or error; promoted background children remain running and notify later. Execution completion is not verification of the child's claims.
+
+Delegation guide — decide whether to delegate, then which agent, then whether to run concurrently. Do not reverse-engineer a task just to use an available agent.
+
+WHEN to delegate. Only consider it when the scope can be stated clearly AND at least one holds:
+1. Real parallelism. There is an independently deliverable unit, and you already have other substantive work that does not depend on its result. You must be able to state both what the child does and what you advance meanwhile. Handing off the only currently-advanceable step and then waiting is not parallelism.
+2. Context isolation. The subtask needs to read or process a lot of material, but you only need evidence-backed conclusions, code locations, or a change summary. Do not outsource context you must understand yourself to keep making key judgments.
+3. Specific independent review or a capability you lack. There is a concrete risk, conflicting evidence, or a capability gap. Name the conclusion to verify, the failure mode to chase, or the capability to supply — not just "complex", "important", or "one more agent is safer".
+
+If the cost of briefing, syncing context, and reviewing the result approaches or exceeds doing it yourself, handle it directly. When you cannot name a concrete benefit, keep going yourself; do not re-plan just to decide whether to delegate.
+
+Investigations and root-cause work that cross-check runtime state, logs, databases, or live behavior to build a causal chain stay on the main thread. A child agent may at most take a clearly-scoped pure code-location slice of it.
+
+Available agents and their responsibilities are defined in the user's configuration. Choose by the work's nature, not by difficulty alone. Naming an agent means it does the assigned work itself; do not pass the whole assignment through to another worker.
+
+CONCURRENCY. Only launch units simultaneously that can advance independently with no mutual waiting. Multiple agents may share read-only material, but their write scopes must not overlap; for shared interfaces or implementations, fix the contract and ownership first. Keep order-dependent steps serial. Do not re-dispatch the same scope of exploration or implementation; when there is a concrete risk you may arrange an independent review, but state the conclusion to verify and the angle.

@@ -100,17 +100,19 @@ function previewText(text: string, maxTokens: number, maxChars = Infinity) {
 }
 
 /** 为模型保留长用户文本的首尾证据，并给出可回查原文的稳定引用。 */
-export function projectUserText(messageID: string, partID: string, text: string) {
+export function projectUserText(messageID: string, partID: string, text: string, source?: "task") {
   const tokens = estimateTokens(text)
   if (tokens <= LONG_USER_TEXT_THRESHOLD_TOKENS) return text
   const bytes = new TextEncoder().encode(text).length
   const lines = text.split("\n").length
   const header = [
     `<user-text-reference message_id="${messageID}" part_id="${partID}">`,
-    "The complete original user text is preserved in this session but is too large to include here.",
+    source === "task"
+      ? 'The complete original text is authorized task evidence. Use history tools with source="task" and these message_id / part_id values.'
+      : "The complete original user text is preserved in this session but is too large to include here.",
     `size: ${bytes} bytes, ${lines} lines, approximately ${tokens} tokens`,
-    `Use history_list with message_id="${messageID}" and part_id="${partID}" to read it by line range.`,
-    `Use history_grep with message_id="${messageID}" and part_id="${partID}" to search it.`,
+    `Use history_list with ${source ? 'source="task" and ' : ""}message_id="${messageID}" and part_id="${partID}" to read it by line range.`,
+    `Use history_grep with ${source ? 'source="task" and ' : ""}message_id="${messageID}" and part_id="${partID}" to search it.`,
   ].join("\n")
   const footer = "</user-text-reference>"
   const budget = LONG_USER_TEXT_THRESHOLD_TOKENS - estimateTokens(`${header}\n\n${footer}`)
@@ -551,11 +553,20 @@ function normalize(text: string) {
   return text.replace(/\r\n/g, "\n")
 }
 
-function pushLines(entries: TranscriptEntry[], chunk: Chunk, source: TranscriptEntry["source"], text: string) {
-  const normalized = normalize(text)
-  for (const line of normalized.split("\n")) {
-    entries.push({ line: entries.length, chunk, source, text: line })
+/** chunk 历史和授权任务证据共用同一片段投影，不暴露隐藏推理或 provider 元数据。 */
+export function partTranscript(role: SessionV1.Info["role"], part: SessionV1.Part) {
+  const blocks: { source: TranscriptEntry["source"]; text: string }[] = []
+  if (role === "user" && part.type === "text" && !part.synthetic && !part.ignored) {
+    blocks.push({ source: "USER", text: part.text })
   }
+  if (role === "assistant") {
+    if (part.type === "text") blocks.push({ source: "ASSISTANT", text: part.text })
+    if (part.type === "patch") blocks.push({ source: "PATCH", text: part.files.join("\n") })
+    if (part.type === "tool") blocks.push(...toolTranscript(part))
+  }
+  return blocks
+    .flatMap((block) => normalize(block.text).split("\n").map((text) => ({ source: block.source, text })))
+    .map((entry, line) => ({ ...entry, line }))
 }
 
 /**
@@ -578,20 +589,9 @@ export function transcript(input: {
     // 行号属于 chunk，不随检索范围或更早历史的行数变化。
     const local: TranscriptEntry[] = []
     for (const item of region) {
-      if (item.info.role === "user") {
-        for (const part of textParts(item)) {
-          if (part.synthetic || part.ignored) continue
-          pushLines(local, chunk, "USER", part.text)
-        }
-        continue
-      }
-      if (item.info.role === "assistant") {
-        for (const part of item.parts) {
-          if (part.type === "text") pushLines(local, chunk, "ASSISTANT", part.text)
-          if (part.type === "patch") pushLines(local, chunk, "PATCH", part.files.join("\n"))
-          if (part.type === "tool") {
-            for (const entry of toolTranscript(part)) pushLines(local, chunk, entry.source, entry.text)
-          }
+      for (const part of item.parts) {
+        for (const entry of partTranscript(item.info.role, part)) {
+          local.push({ ...entry, chunk, line: local.length })
         }
       }
     }

@@ -16,6 +16,7 @@ import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
 import { ToolNameAlias } from "@/tool/name-alias"
+import IMAGE_GENERATION_DESCRIPTION from "../../tool/image-generation.txt"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -67,11 +68,8 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     prompts: cfg.prompts,
   })
   const tools = resolveTools(input)
-  if (tools.image_generation?.type === "provider") {
-    system.push(
-      "For requests to generate or edit images, call the image_generation tool directly. Do not substitute Canvas, HTML, SVG, Python, or image-design skills unless the user explicitly requests a code-generated artifact.",
-    )
-  }
+  // Responses 托管工具不接受 description，通过请求指令补充简短能力说明，完整流程留在技能中。
+  if (tools.image_generation?.type === "provider") system.push(IMAGE_GENERATION_DESCRIPTION)
 
   const header = system[0]
   yield* input.plugin.trigger(

@@ -8,14 +8,32 @@ import { AbsolutePath } from "../schema"
 import { SkillV2 } from "../skill"
 import customizeOpencodeContent from "./skill/customize-opencode.md" with { type: "text" }
 import manageCloudSkillsContent from "./skill/manage-cloud-skills.md" with { type: "text" }
+import imagegenContent from "./skill/imagegen.md" with { type: "text" }
 
 export const CustomizeOpencodeContent = customizeOpencodeContent
 export const ManageCloudSkillsContent = manageCloudSkillsContent
+
+// 两条技能注册路径共用描述和正文，避免按需加载的行为指引漂移。
+export const ImagegenSkill = {
+  name: "imagegen",
+  description:
+    "Use when the user asks to generate or edit images, including photos, illustrations, textures, sprites, mockups, reference-based variants, or transparent-background cutouts. Do not use when the user explicitly requests code-generated or vector artifacts, or edits to existing code-native assets.",
+  content: imagegenContent,
+}
 
 export const Plugin = define({
   id: "skill",
   effect: Effect.fn(function* (ctx) {
     yield* ctx.skill.transform((draft) => {
+      draft.source(
+        SkillV2.EmbeddedSource.make({
+          type: "embedded",
+          skill: SkillV2.Info.make({
+            ...ImagegenSkill,
+            location: AbsolutePath.make("/builtin/imagegen.md"),
+          }),
+        }),
+      )
       draft.source(
         SkillV2.EmbeddedSource.make({
           type: "embedded",

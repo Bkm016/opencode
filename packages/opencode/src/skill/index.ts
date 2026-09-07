@@ -291,6 +291,10 @@ const layer = Layer.effect(
           location: "<built-in>",
           content: MANAGE_CLOUD_SKILLS_BODY,
         }
+        s.skills[SkillPlugin.ImagegenSkill.name] = {
+          ...SkillPlugin.ImagegenSkill,
+          location: "<built-in>",
+        }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),

@@ -135,6 +135,7 @@
     "electron"
   ],
   "overrides": {
+    "@electron/get": "3.1.0",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",
@@ -155,5 +156,6 @@
     "effect@4.0.0-beta.83": "patches/effect@4.0.0-beta.83.patch",
     "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch",
     "@solidjs/router@0.15.4": "patches/@solidjs%2Frouter@0.15.4.patch"
-  }
+  },
+  "version": "0.0.0-prod-202609060850"
 }

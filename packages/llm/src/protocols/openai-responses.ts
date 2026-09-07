@@ -200,6 +200,7 @@ const OpenAIResponsesStreamItem = Schema.Struct({
   // call's typed input portion and round-trip the full result payload without
   // hand-rolling a per-tool schema.
   status: Schema.optional(Schema.String),
+  prompt: Schema.optional(Schema.String),
   action: Schema.optional(Schema.Unknown),
   queries: Schema.optional(Schema.Unknown),
   results: Schema.optional(Schema.Unknown),
@@ -594,7 +595,18 @@ const HOSTED_TOOLS = {
     input: (item) => ({ code: item.code, container_id: item.container_id }),
   },
   computer_use_call: { name: "computer_use", input: (item) => item.action ?? {} },
-  image_generation_call: { name: "image_generation", input: () => ({}) },
+  image_generation_call: {
+    name: "image_generation",
+    input: (item) => {
+      const prompt =
+        typeof item.prompt === "string"
+          ? item.prompt
+          : isRecord(item.action) && typeof item.action.prompt === "string"
+            ? item.action.prompt
+            : undefined
+      return prompt ? { prompt } : {}
+    },
+  },
   mcp_call: {
     name: "mcp",
     input: (item) => ({ server_label: item.server_label, name: item.name, arguments: item.arguments }),
@@ -885,7 +897,14 @@ const onOutputItemDone = Effect.fn("OpenAIResponses.onOutputItemDone")(function*
     const events: LLMEvent[] = []
     const lifecycle = Lifecycle.stepStart(state.lifecycle, events)
     events.push(...hostedToolEvents(item))
-    return [{ ...state, lifecycle }, events] satisfies StepResult
+    return [
+      {
+        ...state,
+        lifecycle,
+        hasFunctionCall: true,
+      },
+      events,
+    ] satisfies StepResult
   }
 
   if (isReasoningItem(item)) {

@@ -1297,6 +1297,7 @@ describe("OpenAI Responses route", () => {
         type: "image_generation_call",
         id: "image_1",
         status: "completed",
+        prompt: "a cute cat",
         result: "aW1hZ2U=",
       }
       const body = sseEvents(
@@ -1310,7 +1311,7 @@ describe("OpenAI Responses route", () => {
           type: "tool-call",
           id: "image_1",
           name: "image_generation",
-          input: {},
+          input: { prompt: "a cute cat" },
           providerExecuted: true,
           providerMetadata: { openai: { itemId: "image_1" } },
         },
@@ -1323,6 +1324,8 @@ describe("OpenAI Responses route", () => {
           providerMetadata: { openai: { itemId: "image_1" } },
         },
       ])
+      const finish = response.events.find((event) => event.type === "finish")
+      expect(finish?.reason).toBe("tool-calls")
     }),
   )
 

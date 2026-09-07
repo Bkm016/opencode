@@ -655,6 +655,91 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("moves provider-executed image tool media into a separate user message for OpenAI models", async () => {
+    const userID = "m-user"
+    const assistantID = "m-assistant"
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1"),
+            type: "text",
+            text: "generate image",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1-image-gen"),
+            type: "tool",
+            callID: "call-image-1",
+            tool: "image_generation",
+            metadata: { providerExecuted: true },
+            state: {
+              status: "completed",
+              input: { prompt: "cat" },
+              output: "Image generated successfully",
+              title: "image_generation",
+              metadata: {},
+              time: { start: 0, end: 1 },
+              attachments: [
+                {
+                  ...basePart(assistantID, "file-image-1"),
+                  type: "file",
+                  mime: "image/png",
+                  filename: "generated.png",
+                  url: `data:image/png;base64,${png}`,
+                },
+              ],
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "generate image" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-image-1",
+            toolName: "image_generation",
+            input: { prompt: "cat" },
+            providerExecuted: true,
+          },
+          {
+            type: "tool-result",
+            toolCallId: "call-image-1",
+            toolName: "image_generation",
+            output: { type: "text", value: "Image generated successfully" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Attached media from tool result:" },
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "generated.png",
+            data: `data:image/png;base64,${png}`,
+          },
+        ],
+      },
+    ])
+  })
+
   test("omits provider metadata when assistant model differs", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

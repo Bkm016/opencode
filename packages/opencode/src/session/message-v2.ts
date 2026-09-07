@@ -302,13 +302,21 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
 
             // For providers that don't support media in tool results, extract media files
-            // (images, PDFs) to be sent as a separate user message
+            // (images, PDFs) to be sent as a separate user message.
+            // Provider-executed tools (like OpenAI image_generation) are omitted from
+            // tool-result blocks by lowerMessages, so extract their media unconditionally
+            // to ensure the model sees the generated images in subsequent turns.
             const mediaAttachments = attachments.filter((a) => isMedia(a.mime))
-            const extractedMedia = mediaAttachments.filter((a) => !supportsMediaInToolResult(a))
+            const isProviderExecuted = Boolean(part.metadata?.providerExecuted)
+            const extractedMedia = isProviderExecuted
+              ? mediaAttachments
+              : mediaAttachments.filter((a) => !supportsMediaInToolResult(a))
             if (extractedMedia.length > 0) {
               media.push(...extractedMedia)
             }
-            const finalAttachments = attachments.filter((a) => !isMedia(a.mime) || supportsMediaInToolResult(a))
+            const finalAttachments = isProviderExecuted
+              ? attachments.filter((a) => !isMedia(a.mime))
+              : attachments.filter((a) => !isMedia(a.mime) || supportsMediaInToolResult(a))
 
             const output =
               finalAttachments.length > 0
@@ -590,7 +598,7 @@ export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (i
   chunk?: { target_tokens?: number; hard_tokens?: number }
 }) {
   const streamed = yield* stream(input.sessionID)
-  if (input.strategy !== "chunk") return filterCompacted(streamed)
+  if (input.strategy !== "chunk") return { messages: filterCompacted(streamed), chunk: undefined }
   const messages = [...streamed].reverse()
   const compaction = messages.findLast((msg) =>
     msg.parts.some((part): part is CompactionPart => part.type === "compaction" && part.chunks !== undefined),
@@ -600,15 +608,19 @@ export const projectHistory = Effect.fn("MessageV2.projectHistory")(function* (i
   )
   // 首次发送时必须把用户原文直传给 provider；checkpoint 落库后才允许
   // 把 active tail 的长文本替换成可回查引用。
-  if (!part) return filterCompacted(streamed)
+  if (!part) return { messages: filterCompacted(streamed), chunk: undefined }
   const chunks = part.chunks ?? []
   // 空 checkpoint 仍保留 summary scaffold 的消息顺序，确保流式中断的 assistant
   // 可以续接；只替换 active tail 中导致 overflow 的超长用户文本。
-  if (chunks.length === 0) return SessionChunk.projectLongUserText(filterCompacted(streamed))
+  if (chunks.length === 0) return { messages: SessionChunk.projectLongUserText(filterCompacted(streamed)), chunk: undefined }
   const targetTokens = input.chunk?.target_tokens ?? DEFAULT_CHUNK_TARGET_TOKENS
   const hardTokens = input.chunk?.hard_tokens ?? DEFAULT_CHUNK_HARD_TOKENS
   const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens, hardTokens })
-  return SessionChunk.project({ messages, selection, targetTokens, hardTokens })
+  // 请求预检沿用同一份选择结果，裁剪正文时同步更新 checkpoint，而不是解析显示文本。
+  return {
+    messages: SessionChunk.project({ messages, selection, targetTokens, hardTokens }),
+    chunk: { selection, targetTokens, hardTokens },
+  }
 })
 
 // filterCompacted reorders messages for model consumption

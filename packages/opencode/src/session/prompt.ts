@@ -1216,14 +1216,14 @@ const layer = Layer.effect(
     const systemPrompt = Effect.fn("SessionPrompt.systemPrompt")(function* (sessionID: SessionID) {
       const session = yield* sessions.get(sessionID)
       const cfgForProjection = yield* config.get()
-      const msgs = yield* MessageV2.projectHistory({
+      const history = yield* MessageV2.projectHistory({
         sessionID,
         strategy: cfgForProjection.compaction?.strategy,
         chunk: cfgForProjection.compaction?.chunk,
       }).pipe(
         Effect.provideService(Database.Service, database),
       )
-      const lastUser = MessageV2.latest(msgs).user
+      const lastUser = MessageV2.latest(history.messages).user
       const agentName = lastUser?.agent ?? session.agent
       const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!agent) {
@@ -1523,13 +1523,14 @@ const layer = Layer.effect(
           yield* Effect.logInfo("loop", { "session.id": sessionID, step })
 
           const cfgForProjection = yield* config.get()
-          let msgs = yield* MessageV2.projectHistory({
+          const history = yield* MessageV2.projectHistory({
             sessionID,
             strategy: cfgForProjection.compaction?.strategy,
             chunk: cfgForProjection.compaction?.chunk,
           }).pipe(
             Effect.provideService(Database.Service, database),
           )
+          let msgs = history.messages
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
@@ -1788,6 +1789,9 @@ const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(providerMsgs, model),
             ])
             let modelMsgs = initialModelMsgs
+            const suffix = isLastStep
+              ? [{ role: "assistant" as const, content: PromptCatalog.resolve("runtime.max_steps", cfg.prompts) }]
+              : []
             if (cfg.compaction?.strategy === "chunk") {
               const maxInputTokens = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
               if (maxInputTokens > 0) {
@@ -1808,22 +1812,31 @@ const layer = Layer.effect(
                     { description: item.description, inputSchema: item.inputSchema },
                   ]),
                 )
-                let requestTokens = SessionChunk.estimateTokens(
-                  JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
+                // system/tools 在本轮裁剪中不变，只计算一次；空数组的少量开销保守保留。
+                const fixedTokens = SessionChunk.estimateTokens(
+                  JSON.stringify({ system: fullSystem, messages: [], tools: toolDefinitions }),
                 )
+                let requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
+                let selection = history.chunk?.selection
                 while (requestTokens > requestLimit) {
-                  const chunkInput = providerMsgs.find((message) => String(message.info.id).startsWith("chunk-input-"))
-                  if (!chunkInput) break
-                  const displayID = String(chunkInput.info.id).slice("chunk-input-".length)
-                  providerMsgs = providerMsgs.filter(
-                    (message) =>
-                      String(message.info.id) !== `chunk-input-${displayID}` &&
-                      String(message.info.id) !== `chunk-summary-${displayID}`,
-                  )
+                  const chunk = selection?.visible[0]
+                  if (!chunk || !selection || !history.chunk) break
+                  // 投影沿用持久化边界 ID，只有 assistant 的块也能整体裁剪；插件修改的其余消息保持不变。
+                  selection = {
+                    ...selection,
+                    visible: selection.visible.slice(1),
+                    archived: [...selection.archived, chunk],
+                    tokens: selection.tokens - selection.content.get(chunk.display_id)!.tokens,
+                  }
+                  const checkpoint = SessionChunk.checkpointText({ ...history.chunk, selection })
+                  providerMsgs = providerMsgs
+                    .filter((message) => message.info.id !== chunk.start_message_id && message.info.id !== chunk.end_message_id)
+                    .map((message) => message.info.id !== SessionChunk.CHECKPOINT_ID ? message : {
+                      ...message,
+                      parts: message.parts.map((part) => part.type === "text" ? { ...part, text: checkpoint } : part),
+                    })
                   modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model)
-                  requestTokens = SessionChunk.estimateTokens(
-                    JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
-                  )
+                  requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
                 }
                 if (requestTokens > requestLimit) {
                   // 没有可见历史可移除时，再压低 active tail 的媒体与 tool output；
@@ -1835,9 +1848,7 @@ const layer = Layer.effect(
                     preserveMediaForMessageID: lastUser.id,
                     toolOutputMaxChars: 4_000,
                   })
-                  requestTokens = SessionChunk.estimateTokens(
-                    JSON.stringify({ system: fullSystem, messages: modelMsgs, tools: toolDefinitions }),
-                  )
+                  requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
                 }
               }
             }
@@ -1849,17 +1860,7 @@ const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [
-                ...modelMsgs,
-                ...(isLastStep
-                  ? [
-                      {
-                        role: "assistant" as const,
-                        content: PromptCatalog.resolve("runtime.max_steps", cfg.prompts),
-                      },
-                    ]
-                  : []),
-              ],
+              messages: [...modelMsgs, ...suffix],
               tools,
               model,
               // final turn 强制无工具

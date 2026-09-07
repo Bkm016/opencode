@@ -1,5 +1,6 @@
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ulid } from "ulid"
+import { PartID } from "./schema"
 
 /**
  * Chunk 压缩策略的核心数据结构与纯函数。
@@ -16,9 +17,10 @@ export * as SessionChunk from "./chunk"
 
 export type Chunk = SessionV1.ChunkMeta
 
-export const TRANSCRIPT_VERSION = 2
+export const TRANSCRIPT_VERSION = 3
 export const COMPACTION_REPLAY = "chunk_compaction_replay"
 export const COMPACTION_RECOVERY = "chunk_compaction_recovery"
+export const CHECKPOINT_ID = "checkpoint" as SessionV1.WithParts["info"]["id"]
 
 const DISPLAY_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789"
 
@@ -69,30 +71,53 @@ export function estimateMessages(msgs: { role: string; text: string }[]) {
 }
 
 const LONG_USER_TEXT_THRESHOLD_TOKENS = 2_000
-const LONG_USER_TEXT_PREVIEW_CHARS = 2_000
 const USER_TEXT_ENTRY_MAX_CHARS = 2_000
+
+/** 首尾共享总预算，标记也计入成本；探测范围有界，避免扫描巨型文本的每个候选前缀。 */
+function previewText(text: string, maxTokens: number, maxChars = Infinity) {
+  if (estimateTokens(text) <= maxTokens && text.length <= maxChars) return text
+  const marker = "\n[... omitted; use history tools for the full text ...]\n"
+  const budget = Math.floor((maxTokens - estimateTokens(marker)) / 2)
+  if (budget <= 0) return ""
+  return [false, true]
+    .map((tail) => {
+      let low = 0
+      let high = Math.max(0, Math.min(text.length, budget * 4, Math.floor((maxChars - marker.length) / 2)))
+      while (low < high) {
+        const size = Math.ceil((low + high) / 2)
+        const part = tail ? text.slice(-size) : text.slice(0, size)
+        if (estimateTokens(part) <= budget) {
+          low = size
+          continue
+        }
+        high = size - 1
+      }
+      if (low === 0) return ""
+      // UTF-16 切片不能留下半个代理对；移除边界残片只会进一步降低成本。
+      return tail ? text.slice(-low).replace(/^[\uDC00-\uDFFF]/, "") : text.slice(0, low).replace(/[\uD800-\uDBFF]$/, "")
+    })
+    .join(marker)
+}
 
 /** 为模型保留长用户文本的首尾证据，并给出可回查原文的稳定引用。 */
 export function projectUserText(messageID: string, partID: string, text: string) {
-  if (estimateTokens(text) <= LONG_USER_TEXT_THRESHOLD_TOKENS) return text
-  const head = text.slice(0, LONG_USER_TEXT_PREVIEW_CHARS)
-  const tail = text.slice(-LONG_USER_TEXT_PREVIEW_CHARS)
+  const tokens = estimateTokens(text)
+  if (tokens <= LONG_USER_TEXT_THRESHOLD_TOKENS) return text
   const bytes = new TextEncoder().encode(text).length
   const lines = text.split("\n").length
-  return [
+  const header = [
     `<user-text-reference message_id="${messageID}" part_id="${partID}">`,
     "The complete original user text is preserved in this session but is too large to include here.",
-    `size: ${bytes} bytes, ${lines} lines, approximately ${estimateTokens(text)} tokens`,
+    `size: ${bytes} bytes, ${lines} lines, approximately ${tokens} tokens`,
     `Use history_list with message_id="${messageID}" and part_id="${partID}" to read it by line range.`,
     `Use history_grep with message_id="${messageID}" and part_id="${partID}" to search it.`,
-    "<head>",
-    head,
-    "</head>",
-    "<tail>",
-    tail,
-    "</tail>",
-    "</user-text-reference>",
   ].join("\n")
+  const footer = "</user-text-reference>"
+  const budget = LONG_USER_TEXT_THRESHOLD_TOKENS - estimateTokens(`${header}\n\n${footer}`)
+  if (budget <= 0) return text
+  const projected = `${header}\n${previewText(text, budget, text.length - header.length - footer.length - 3)}\n${footer}`
+  // 包装后仍低于触发阈值，重复投影自然保持不变；短而高密度的原文也不能被放大。
+  return projected.length < text.length && estimateTokens(projected) < tokens ? projected : text
 }
 
 /** 只替换 provider 投影中的长 user text，原始 Session 消息保持不变。 */
@@ -101,11 +126,13 @@ export function projectLongUserText(messages: SessionV1.WithParts[]) {
     if (msg.info.role !== "user") return msg
     let changed = false
     const parts = msg.parts.map((part) => {
-      if (part.type !== "text" || part.synthetic || estimateTokens(part.text) <= LONG_USER_TEXT_THRESHOLD_TOKENS) return part
+      if (part.type !== "text" || part.synthetic || part.ignored) return part
+      const text = projectUserText(String(msg.info.id), String(part.id), part.text)
+      if (text === part.text) return part
       changed = true
       return {
         ...part,
-        text: projectUserText(String(msg.info.id), String(part.id), part.text),
+        text,
       }
     })
     return changed ? { ...msg, parts } : msg
@@ -122,7 +149,7 @@ export function userTexts(msgs: SessionV1.WithParts[]) {
   for (const msg of msgs) {
     if (msg.info.role !== "user") continue
     for (const part of textParts(msg)) {
-      if (part.synthetic) continue
+      if (part.synthetic || part.ignored) continue
       if (part.text.trim() === "") continue
       texts.push(part.text)
     }
@@ -155,12 +182,13 @@ export function userTextTranscript(input: {
   for (const msg of input.messages) {
     if (msg.info.role !== "user" || (input.messageID && String(msg.info.id) !== input.messageID)) continue
     for (const part of textParts(msg)) {
-      if (part.synthetic || part.text.trim() === "" || (input.partID && String(part.id) !== input.partID)) continue
+      if (part.synthetic || part.ignored || part.text.trim() === "" || (input.partID && String(part.id) !== input.partID)) continue
+      const start = entries.length
       for (const line of normalize(part.text).split("\n")) {
         // 单行 JSON 或压缩日志也必须可分页，避免 history_list 一次返回整行。
         for (let offset = 0; offset < Math.max(line.length, 1); offset += USER_TEXT_ENTRY_MAX_CHARS) {
           entries.push({
-            line: entries.length,
+            line: entries.length - start,
             messageID: String(msg.info.id),
             partID: String(part.id),
             text: line.slice(offset, offset + USER_TEXT_ENTRY_MAX_CHARS),
@@ -263,25 +291,64 @@ export function closeChunk(input: {
   }
 }
 
-function chunkRegion(messages: SessionV1.WithParts[], chunk: Chunk) {
-  const start = messages.findIndex((msg) => msg.info.id === chunk.start_message_id)
-  const end = messages.findIndex((msg) => msg.info.id === chunk.end_message_id)
-  if (start < 0 || end < 0 || end < start) return [] as SessionV1.WithParts[]
+function chunkRegion(messages: SessionV1.WithParts[], chunk: Chunk, positions: Map<SessionV1.WithParts["info"]["id"], number>) {
+  const start = positions.get(chunk.start_message_id)
+  const end = positions.get(chunk.end_message_id)
+  if (start === undefined || end === undefined || end < start) return [] as SessionV1.WithParts[]
   return messages.slice(start, end + 1)
 }
 
 /** chunk 的模型可见文本：全部 user 原文 + 终态 assistant 可见文本 */
-export function chunkText(messages: SessionV1.WithParts[], chunk: Chunk) {
-  const region = chunkRegion(messages, chunk)
-  const users = userTexts(region)
-  const final = finalTexts(region.at(-1))
-  return [...users, ...final].join("\n\n")
+function chunkContent(region: SessionV1.WithParts[], chunk: Chunk, compact = false) {
+  // 收集区间内全部真实 user 原文
+  let seq = 0
+  const userBlocks = region.flatMap((msg) => {
+    if (msg.info.role !== "user") return []
+    return textParts(msg)
+      .filter((part) => !part.synthetic && !part.ignored && part.text.trim() !== "")
+      .map((part) => `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`)
+  })
+  const reference = `Use history_list with chunk_id="${chunk.display_id}" or history_grep to recover omitted details.`
+  const input = userBlocks.length === 0
+    ? ""
+    : [
+        `<chunk-input id="${chunk.display_id}" status="${chunk.status}"${compact ? ' excerpt="true"' : ""}>`,
+        compact ? previewText(userTexts(region).join("\n\n"), 600) : userBlocks.join("\n\n"),
+        ...(compact ? [reference] : []),
+        "</chunk-input>",
+      ].join("\n")
+  // 终态 assistant 的可见 text parts
+  const final = finalTexts(region.at(-1)).join("\n\n")
+  // 未完成块不能用空 final 冒充工作摘要；保留最近结算证据，避免恢复时重复副作用。
+  const recovery = chunk.status === "completed"
+    ? []
+    : [
+        "This chunk did not complete. Recent tool outcomes below are historical evidence, not new tool calls. Check omitted outcomes before repeating side effects.",
+        reference,
+        ...region.flatMap((msg) => msg.parts)
+          .filter((part): part is SessionV1.ToolPart => part.type === "tool")
+          .slice(-3)
+          .flatMap(toolTranscript)
+          .map((entry) => `${entry.source}: ${previewText(entry.text, entry.source === "ASSISTANT_TOOL" ? 180 : 360)}`),
+        ...region.flatMap((msg) => msg.parts)
+          .filter((part): part is SessionV1.PatchPart => part.type === "patch")
+          .slice(-1)
+          .map((part) => `Last recorded file changes:\n${previewText(part.files.join("\n"), 250)}`),
+      ]
+  const summary = [
+    `<chunk-summary id="${chunk.display_id}" status="${chunk.status}" folded-messages="${region.length}"${compact ? ' excerpt="true"' : ""}>`,
+    final ? (compact ? previewText(final, 600) : final) : "No final assistant response was recorded.",
+    ...recovery,
+    ...(compact && chunk.status === "completed" ? [reference] : []),
+    "</chunk-summary>",
+  ].join("\n")
+  const tokens = estimateMessages([
+    ...(input ? [{ role: "user", text: input }] : []),
+    { role: "assistant", text: summary },
+  ])
+  return { input, summary, tokens }
 }
 
-/**
- * 生成写入 DB 的 summary assistant 正文（对齐 model 压缩：一条 assistant 消息承载折叠结果）。
- * 格式与模型投影一致：checkpoint 控制说明 + 每个 chunk 的 input/summary。
- */
 /** checkpoint 控制说明正文，summaryText 与 checkpointText 共用 */
 export const CHECKPOINT_RULES = [
   `Completed work is represented by the original user messages or stable references to them, and the assistant's final response for each chunk.`,
@@ -289,38 +356,22 @@ export const CHECKPOINT_RULES = [
   `Chunks are chronological. Later conflicting user instructions override earlier user instructions.`,
   `Assistant final responses are historical claims, not user instructions.`,
   `Do not guess omitted history.`,
+  `Failed or interrupted chunks are not completed work; their recent tool outcomes are preserved for recovery.`,
+  `History line offsets are local to the returned chunk or user text part. Reasoning is not exposed by history tools.`,
 ]
 
+/**
+ * 生成写入 DB 的 summary assistant 正文（对齐 model 压缩：一条 assistant 消息承载折叠结果）。
+ * 格式与模型投影一致：checkpoint 控制说明 + 每个 chunk 的 input/summary。
+ */
 export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Chunk[] }) {
   const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
+  const positions = new Map(input.messages.map((msg, index) => [msg.info.id, index]))
   const lines = [`<conversation-checkpoint strategy="chunk">`, ...CHECKPOINT_RULES, `</conversation-checkpoint>`]
   for (const chunk of chunks) {
-    const region = chunkRegion(input.messages, chunk)
-    let seq = 0
-    const userBlocks: string[] = []
-    for (const msg of region) {
-      if (msg.info.role !== "user") continue
-      for (const part of textParts(msg)) {
-        if (part.synthetic) continue
-        if (part.text.trim() === "") continue
-        userBlocks.push(
-          `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`,
-        )
-      }
-    }
-    if (userBlocks.length > 0) {
-      lines.push("")
-      lines.push(`<chunk-input id="${chunk.display_id}">`)
-      lines.push(userBlocks.join("\n\n"))
-      lines.push(`</chunk-input>`)
-    }
-    const finals = finalTexts(region.at(-1))
-    if (finals.length > 0) {
-      lines.push("")
-      lines.push(`<chunk-summary id="${chunk.display_id}" folded-messages="${region.length}">`)
-      lines.push(finals.join("\n\n"))
-      lines.push(`</chunk-summary>`)
-    }
+    const content = chunkContent(chunkRegion(input.messages, chunk, positions), chunk)
+    if (content.input) lines.push("", content.input)
+    lines.push("", content.summary)
   }
   return lines.join("\n")
 }
@@ -329,12 +380,14 @@ export type Selection = {
   visible: Chunk[]
   archived: Chunk[]
   tokens: number
+  content: Map<string, ReturnType<typeof chunkContent>>
 }
 
 /**
  * 从最新向最旧选择连续最新后缀，加入后超过 target 即停止。
  * final response 过大导致单 chunk 超 hard 时，该 chunk 整体移出可见集，
  * 由调用方决定 fallback 或折叠指针。
+ * 先尝试有界摘录与回查指针；只有降级后仍无法容纳，才整体归档并停止后缀选择。
  */
 export function selectVisible(input: {
   messages: SessionV1.WithParts[]
@@ -343,23 +396,25 @@ export function selectVisible(input: {
   hardTokens: number
 }): Selection {
   const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
-  const messages = projectLongUserText(input.messages)
+  const positions = new Map(input.messages.map((msg, index) => [msg.info.id, index]))
   const visible: Chunk[] = []
+  const content: Selection["content"] = new Map()
+  const limit = Math.min(input.targetTokens, input.hardTokens)
   let total = 0
   for (let i = chunks.length - 1; i >= 0; i--) {
     const chunk = chunks[i]!
-    const region = chunkRegion(messages, chunk)
-    const userTokens = estimateMessages(userTexts(region).map((text) => ({ role: "user", text })))
-    const final = finalTexts(region.at(-1))
-    const finalTokens = estimateMessages(final.map((text) => ({ role: "assistant", text })))
+    const region = chunkRegion(input.messages, chunk, positions)
+    const full = chunkContent(region, chunk)
+    const selected = full.tokens > limit ? chunkContent(region, chunk, true) : full
     // final response 过大导致整 chunk 超硬上限：整 chunk 不可见，继续更早 chunk 无意义（规则 6 禁止跳大挑小）
-    if (userTokens + finalTokens > input.hardTokens) break
-    if (total + userTokens + finalTokens > input.targetTokens) break
-    total += userTokens + finalTokens
+    if (selected.tokens > input.hardTokens) break
+    if (total + selected.tokens > limit) break
+    total += selected.tokens
     visible.unshift(chunk)
+    content.set(chunk.display_id, selected)
   }
-  const archived = chunks.filter((chunk) => !visible.includes(chunk))
-  return { visible, archived, tokens: total }
+  const archived = chunks.slice(0, chunks.length - visible.length)
+  return { visible, archived, tokens: total, content }
 }
 
 /**
@@ -378,64 +433,48 @@ export function project(input: {
   const { selection, targetTokens, hardTokens } = input
   const messages = input.messages
   const result: SessionV1.WithParts[] = []
-  const sessionID = messages[0]?.info.sessionID ?? ("" as SessionV1.WithParts["info"]["sessionID"])
+  const user = messages.find((msg) => msg.info.role === "user")
+  if (user?.info.role !== "user") return messages
+  const sessionID = user.info.sessionID
+  const positions = new Map(messages.map((msg, index) => [msg.info.id, index]))
 
   // checkpoint 控制说明作为第一条 user 消息注入，不是 system context
-  const checkpoint = checkpointText({ chunks: selection.visible, selection, targetTokens, hardTokens })
+  const checkpoint = checkpointText({ selection, targetTokens, hardTokens })
   result.push({
-    info: {
-      id: "checkpoint" as any,
-      role: "user",
-      sessionID,
-      agent: "build",
-      model: { providerID: "chunk" as any, modelID: "chunk" as any },
-      time: { created: 0 },
-    } as any,
-    parts: [{ id: "checkpoint" as any, messageID: "checkpoint" as any, sessionID, type: "text", text: checkpoint } as any],
-  } as SessionV1.WithParts)
+    info: { ...user.info, id: CHECKPOINT_ID, time: { created: 0 } },
+    parts: [{ id: PartID.make("prt_chunk_checkpoint"), messageID: CHECKPOINT_ID, sessionID, type: "text", text: checkpoint, synthetic: true }],
+  })
 
   for (const chunk of selection.visible) {
-    const region = chunkRegion(messages, chunk)
-    // 收集区间内全部真实 user 原文
-    const userTexts: string[] = []
-    let seq = 0
-    for (const msg of region) {
-      if (msg.info.role !== "user") continue
-      for (const part of msg.parts) {
-        if (part.type !== "text" || part.synthetic || part.text.trim() === "") continue
-        userTexts.push(
-          `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`,
-        )
-      }
-    }
-    if (userTexts.length > 0) {
-      const inputID = `chunk-input-${chunk.display_id}` as any
+    const content = selection.content.get(chunk.display_id)!
+    const chunkUser = chunkRegion(messages, chunk, positions).findLast((msg) => msg.info.role === "user")
+    if (content.input) {
       result.push({
-        info: { ...messages[0]!.info, id: inputID, role: "user" } as any,
+        info: { ...(chunkUser?.info.role === "user" ? chunkUser.info : user.info), id: chunk.start_message_id },
         parts: [{
-          id: inputID,
-          messageID: inputID,
+          id: PartID.make(`prt_chunk_${chunk.display_id}_input`),
+          messageID: chunk.start_message_id,
           sessionID,
           type: "text",
-          text: `<chunk-input id="${chunk.display_id}">\n${userTexts.join("\n\n")}\n</chunk-input>`,
-        } as any],
-      } as SessionV1.WithParts)
+          text: content.input,
+          synthetic: true,
+        }],
+      })
     }
-    // 终态 assistant 的可见 text parts
-    const finalMsg = region.at(-1)
-    const finalTextParts = finalMsg ? finalTexts(finalMsg) : []
-    if (finalTextParts.length > 0) {
-      const summaryID = `chunk-summary-${chunk.display_id}` as any
+    const finalMsg = messages[positions.get(chunk.end_message_id)!]
+    if (finalMsg?.info.role === "assistant") {
       result.push({
-        info: { ...finalMsg!.info, id: summaryID, role: "assistant" } as any,
+        // 原始失败状态保留在 DB 和正文中，不能让 provider 转换器丢弃这条恢复投影。
+        info: { ...finalMsg.info, error: undefined },
         parts: [{
-          id: summaryID,
-          messageID: summaryID,
+          id: PartID.make(`prt_chunk_${chunk.display_id}_summary`),
+          messageID: chunk.end_message_id,
           sessionID,
           type: "text",
-          text: `<chunk-summary id="${chunk.display_id}" folded-messages="${region.length}">\n${finalTextParts.join("\n\n")}\n</chunk-summary>`,
-        } as any],
-      } as SessionV1.WithParts)
+          text: content.summary,
+          synthetic: true,
+        }],
+      })
     }
   }
   // active tail 永远从最后一个已关闭 chunk 之后开始；即使可见预算为 0，也不能
@@ -464,12 +503,11 @@ export function project(input: {
  * 模型不应把 checkpoint 当用户指令。
  */
 export function checkpointText(input: {
-  chunks: Chunk[]
   selection: Selection
   targetTokens: number
   hardTokens: number
 }) {
-  const { chunks, selection } = input
+  const { selection } = input
   const visibleSeq = selection.visible.map((chunk) => chunk.sequence)
   const archivedIDs = selection.archived.map((chunk) => chunk.display_id)
   const lines = [
@@ -493,7 +531,7 @@ export function checkpointText(input: {
 export type TranscriptEntry = {
   line: number
   chunk: Chunk
-  source: "USER" | "ASSISTANT" | "ASSISTANT_TOOL" | "TOOL_OUTPUT" | "TOOL_ERROR" | "SHELL"
+  source: "USER" | "ASSISTANT" | "ASSISTANT_TOOL" | "TOOL_OUTPUT" | "TOOL_ERROR" | "PATCH" | "SHELL"
   text: string
 }
 
@@ -509,10 +547,8 @@ export function formatTranscript(entries: TranscriptEntry[], indent = "") {
 }
 
 function normalize(text: string) {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/[－]/g, "-")
-    .replace(/\\/g, "/")
+  // 只统一换行；路径、转义和标点属于原文证据，不能在读取时改写。
+  return text.replace(/\r\n/g, "\n")
 }
 
 function pushLines(entries: TranscriptEntry[], chunk: Chunk, source: TranscriptEntry["source"], text: string) {
@@ -531,35 +567,53 @@ export function transcript(input: {
   chunks: Chunk[]
 }): TranscriptEntry[] {
   const entries: TranscriptEntry[] = []
+  const positions = new Map(input.messages.map((msg, index) => [msg.info.id, index]))
   const byID = new Map(input.chunks.map((chunk) => [chunk.start_message_id, chunk]))
   for (let i = 0; i < input.messages.length; i++) {
     const msg = input.messages[i]!
     const chunk = byID.get(msg.info.id)
     if (!chunk) continue
-    const region = chunkRegion(input.messages, chunk)
+    const region = chunkRegion(input.messages, chunk, positions)
+    if (region.length === 0) continue
+    // 行号属于 chunk，不随检索范围或更早历史的行数变化。
+    const local: TranscriptEntry[] = []
     for (const item of region) {
       if (item.info.role === "user") {
         for (const part of textParts(item)) {
-          if (part.synthetic) continue
-          pushLines(entries, chunk, "USER", part.text)
+          if (part.synthetic || part.ignored) continue
+          pushLines(local, chunk, "USER", part.text)
         }
         continue
       }
       if (item.info.role === "assistant") {
         for (const part of item.parts) {
-          if (part.type === "text") pushLines(entries, chunk, "ASSISTANT", part.text)
+          if (part.type === "text") pushLines(local, chunk, "ASSISTANT", part.text)
+          if (part.type === "patch") pushLines(local, chunk, "PATCH", part.files.join("\n"))
           if (part.type === "tool") {
-            const inputText = safeJSON(part.state.input)
-            pushLines(entries, chunk, "ASSISTANT_TOOL", `${part.tool}(${inputText})`)
-            if (part.state.status === "completed") pushLines(entries, chunk, "TOOL_OUTPUT", part.state.output)
-            if (part.state.status === "error") pushLines(entries, chunk, "TOOL_ERROR", part.state.error)
+            for (const entry of toolTranscript(part)) pushLines(local, chunk, entry.source, entry.text)
           }
         }
       }
     }
+    for (const entry of local) entries.push(entry)
     i += region.length - 1
   }
-  return entries.map((entry, index) => ({ ...entry, line: index }))
+  return entries
+}
+
+/** 恢复摘录与历史检索共用工具事实，失败前已产生的部分输出也必须可回查。 */
+function toolTranscript(part: SessionV1.ToolPart) {
+  const entries: { source: TranscriptEntry["source"]; text: string }[] = [{
+    source: "ASSISTANT_TOOL",
+    text: `${part.tool}(${safeJSON(part.state.input)}) [${part.state.status}, call=${part.callID}]`,
+  }]
+  if (part.state.status === "completed") entries.push({ source: "TOOL_OUTPUT", text: part.state.output })
+  if (part.state.status === "error") {
+    const output = part.state.output ?? (part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined)
+    if (typeof output === "string" && output.length > 0) entries.push({ source: "TOOL_OUTPUT", text: output })
+    entries.push({ source: "TOOL_ERROR", text: part.state.error })
+  }
+  return entries
 }
 
 function safeJSON(value: unknown) {
@@ -580,13 +634,16 @@ export function grep(input: {
 }) {
   const needle = input.caseSensitive ? input.pattern : input.pattern.toLowerCase()
   const hits: (TranscriptEntry & { context: TranscriptEntry[] })[] = []
-  const entries = transcript({ messages: input.messages, chunks: input.chunks })
-  const filtered = input.chunkID ? entries.filter((entry) => entry.chunk.display_id === input.chunkID) : entries
-  for (const entry of filtered) {
+  const entries = transcript({
+    messages: input.messages,
+    chunks: input.chunkID ? input.chunks.filter((chunk) => chunk.display_id === input.chunkID) : input.chunks,
+  })
+  for (const [index, entry] of entries.entries()) {
     const haystack = input.caseSensitive ? entry.text : entry.text.toLowerCase()
     if (!haystack.includes(needle)) continue
-    const start = Math.max(0, entry.line - 2)
-    const context = [...entries.slice(start, entry.line), ...entries.slice(entry.line + 1, entry.line + 3)]
+    const start = Math.max(0, index - 2)
+    const context = [...entries.slice(start, index), ...entries.slice(index + 1, index + 3)]
+      .filter((neighbor) => neighbor.chunk.display_id === entry.chunk.display_id)
     hits.push({ ...entry, context })
     if (hits.length >= (input.headLimit ?? 20)) break
   }

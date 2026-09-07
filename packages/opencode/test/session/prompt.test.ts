@@ -597,6 +597,77 @@ it.instance("chunk compaction archives an overflowing prompt before retrying", (
   }),
 )
 
+it.instance("chunk overflow recovery retains tool outcomes when no final answer was produced", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Recovery evidence" })
+    const active = yield* seed(chat.id, { finish: "tool-calls", text: "" })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: active.assistant.id,
+      sessionID: chat.id,
+      type: "tool",
+      tool: "edit",
+      callID: "edit-before-overflow",
+      state: {
+        status: "completed",
+        input: { filePath: "/tmp/cache.ts", oldString: "old", newString: "new" },
+        output: "Updated cache.ts; this edit has already been applied.",
+        title: "edit cache",
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: active.assistant.id,
+      sessionID: chat.id,
+      type: "tool",
+      tool: "bash",
+      callID: "check-before-overflow",
+      state: {
+        status: "error",
+        input: { command: "check cache" },
+        output: "cache check reached migration 3",
+        error: "check interrupted before completion",
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: active.assistant.id,
+      sessionID: chat.id,
+      type: "patch",
+      hash: "patch-before-overflow",
+      files: ["/tmp/cache.ts"],
+    })
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.text("continued from preserved results")
+
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    const retry = JSON.stringify(hits[1]?.body.messages)
+    expect(retry).toContain("Updated cache.ts; this edit has already been applied.")
+    expect(retry).toContain("cache check reached migration 3")
+    expect(retry).toContain("check interrupted before completion")
+    expect(retry).toContain("This chunk did not complete.")
+    expect(retry).toContain("No final assistant response was recorded.")
+    expect(retry).toContain("Last recorded file changes:")
+    expect(retry).not.toContain('"tool_calls"')
+    const persisted = yield* sessions.messages({ sessionID: chat.id })
+    expect(persisted.find((message) => message.info.id === active.assistant.id)?.parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "tool", callID: "edit-before-overflow" })]),
+    )
+  }),
+)
+
 it.instance("compactAt places the compaction divider before the boundary message", () =>
   Effect.gen(function* () {
     yield* useServerConfig((url) => ({
@@ -628,7 +699,7 @@ it.instance("compactAt places the compaction divider before the boundary message
   }),
 )
 
-it.instance("chunk compaction fits the complete request before calling the provider", () =>
+it.instance("chunk preflight archives assistant-only chunks and reports the final selection", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => {
       const config = providerCfg(url)
@@ -654,9 +725,21 @@ it.instance("chunk compaction fits the complete request before calling the provi
     const compaction = yield* SessionCompaction.Service
     const sessions = yield* Session.Service
     const chat = yield* sessions.create({ title: "Pinned" })
-    yield* seed(chat.id, { finish: "stop", text: "x".repeat(60_000) })
+    yield* seed(chat.id, { finish: "stop", text: "earlier history" })
+    const oversized = yield* seed(chat.id, { finish: "stop", text: "x".repeat(60_000) })
+    const raw = yield* sessions.messages({ sessionID: chat.id })
+    const synthetic = raw.find((message) => message.info.id === oversized.user.id)?.parts.find(
+      (part): part is SessionV1.TextPart => part.type === "text",
+    )
+    if (!synthetic) throw new Error("Missing continuation input")
+    yield* sessions.updatePart({ ...synthetic, synthetic: true })
     yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
     yield* prompt.loop({ sessionID: chat.id })
+    const compacted = yield* sessions.messages({ sessionID: chat.id })
+    const checkpoint = compacted.flatMap((message) => message.parts).find(
+      (part): part is SessionV1.CompactionPart => part.type === "compaction",
+    )
+    expect(checkpoint?.chunks).toHaveLength(2)
     yield* llm.text("continued within budget")
     yield* prompt.prompt({
       sessionID: chat.id,
@@ -670,7 +753,11 @@ it.instance("chunk compaction fits the complete request before calling the provi
 
     expect(hits).toHaveLength(1)
     expect(JSON.stringify(hits[0]?.body.messages)).not.toContain("x".repeat(10_000))
-    expect(JSON.stringify(hits[0]?.body.messages)).toContain("archived chunk IDs:")
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("visible chunks: 0")
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("archived chunks: 2")
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain(`archived chunk IDs: ${checkpoint!.chunks!.map((chunk) => chunk.display_id).join(", ")}`)
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("history budget: 0/")
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain("continue safely")
     expect(result.parts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "text", text: "continued within budget" })]),
     )

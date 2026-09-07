@@ -354,8 +354,8 @@ describe("selectVisible", () => {
     const selection = SessionChunk.selectVisible({
       messages,
       chunks,
-      targetTokens: 100,
-      hardTokens: 200,
+      targetTokens: 250,
+      hardTokens: 300,
     })
     expect(selection.visible.length).toBeGreaterThan(0)
     expect(selection.visible.length).toBeLessThan(5)
@@ -386,7 +386,7 @@ describe("selectVisible", () => {
     expect(persistedSummary).not.toContain(bigUser)
   })
 
-  test("oversize final response excludes whole chunk and stops suffix", () => {
+  test("oversize final response is excerpted before excluding the whole chunk", () => {
     const messages: SessionV1.WithParts[] = []
     const chunks: SessionChunk.Chunk[] = []
     const u1 = user("small")
@@ -394,7 +394,8 @@ describe("selectVisible", () => {
     messages.push(u1, a1)
     chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
     const u2 = user("small 2")
-    const a2 = assistant(u2.info.id, "汉".repeat(30_000), { finish: "stop" })
+    const final = `answer start\n${"汉".repeat(30_000)}\nanswer end`
+    const a2 = assistant(u2.info.id, final, { finish: "stop" })
     messages.push(u2, a2)
     chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
 
@@ -404,8 +405,19 @@ describe("selectVisible", () => {
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
+    expect(selection.visible).toEqual(chunks)
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const summary = projected.find((message) => message.info.id === a2.info.id)!
+    const text = (summary.parts[0] as SessionV1.TextPart).text
+    expect(text).toContain("answer start")
+    expect(text).toContain("answer end")
+    expect(text).toContain(`chunk_id="${chunks[1]!.display_id}"`)
+    expect(text).not.toContain(final)
+    expect((a2.parts[0] as SessionV1.TextPart).text).toBe(final)
+
     // 最新 chunk 整 chunk 超 hard，停止，不跳过它选更早的小 chunk
-    expect(selection.visible).toHaveLength(0)
+    // 仅在摘录也无法容纳时整体归档，仍然保持连续后缀约束。
+    expect(SessionChunk.selectVisible({ messages, chunks, targetTokens: 250, hardTokens: 300 }).visible).toHaveLength(0)
   })
 
   test("mixed CJK and ASCII estimation is conservative", () => {
@@ -419,6 +431,25 @@ describe("selectVisible", () => {
 })
 
 describe("project", () => {
+  test.each([
+    "头部证据" + "汉".repeat(2_001) + "尾部证据",
+    "head evidence " + "a".repeat(8_001) + " tail evidence",
+    "head evidence " + "汉\u{20000}abc".repeat(2_000) + " tail evidence",
+  ])("bounds a long user preview without overlap or nested references: %#", (text) => {
+    const message = user(text)
+    const projected = SessionChunk.projectLongUserText([message])
+    const preview = (projected[0]!.parts[0] as SessionV1.TextPart).text
+
+    expect(preview).toContain("<user-text-reference")
+    expect(preview).toContain(text.slice(0, 4))
+    expect(preview).toContain(text.slice(-4))
+    expect(preview.length).toBeLessThan(text.length)
+    expect(SessionChunk.estimateTokens(preview)).toBeLessThanOrEqual(2_000)
+    expect(preview.isWellFormed()).toBe(true)
+    expect(SessionChunk.projectLongUserText(projected)).toEqual(projected)
+    expect((message.parts[0] as SessionV1.TextPart).text).toBe(text)
+  })
+
   test("projection keeps user texts and final assistant text only", () => {
     const u1 = user("first question")
     const mid1 = assistant(u1.info.id, "thinking out loud", { finish: "tool-calls", tool: true })
@@ -448,6 +479,13 @@ describe("project", () => {
     expect(summaryText).toContain("final answer")
     // 中间 assistant 被折叠
     expect(projected.some((m) => m.info.id === mid1.info.id)).toBe(false)
+    // 包装与实际发送正文共用预算，不能只计算裸 user/final 文本。
+    const visible = projected.slice(1).map((message) => ({
+      role: message.info.role,
+      text: message.parts.filter((part): part is SessionV1.TextPart => part.type === "text").map((part) => part.text).join("\n"),
+    }))
+    expect(selection.tokens).toBe(SessionChunk.estimateMessages(visible))
+    expect(SessionChunk.projectLongUserText(projected)).toEqual(projected)
   })
 
   test("active tail is preserved verbatim", () => {
@@ -469,6 +507,34 @@ describe("project", () => {
     expect(tailPart.some((m) => m.info.id === u2.info.id)).toBe(true)
     expect(tailPart.some((m) => m.info.id === mid.info.id)).toBe(true)
     expect(tailPart.at(-1)!.parts.some((p) => p.type === "tool")).toBe(true)
+  })
+
+  test("interrupted chunks expose bounded recovery evidence without changing stored errors", () => {
+    const u = user("finish updating the cache")
+    const failed = assistant(u.info.id, "partial answer", {
+      finish: "stop",
+      error: new SessionV1.AbortedError({ message: "cancelled" }).toObject(),
+      tool: true,
+    })
+    const tool = failed.parts.find((part): part is SessionV1.ToolPart => part.type === "tool")!
+    if (tool.state.status !== "completed") throw new Error("Expected settled tool")
+    tool.state.output = `output start\n${"汉".repeat(30_000)}\noutput end`
+    const messages = [u, failed]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    const selection = SessionChunk.selectVisible({ messages, chunks: [chunk], targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const summary = projected.find((message) => message.info.id === failed.info.id)!
+    const text = (summary.parts[0] as SessionV1.TextPart).text
+    expect(text).toContain('status="interrupted"')
+    expect(text).toContain("partial answer")
+    expect(text).toContain("output start")
+    expect(text).toContain("output end")
+    expect(text).toContain(`chunk_id="${chunk.display_id}"`)
+    expect(text).not.toContain(tool.state.output)
+    if (summary.info.role !== "assistant" || failed.info.role !== "assistant") throw new Error("Expected assistants")
+    expect(summary.info.error).toBeUndefined()
+    expect(failed.info.error).toBeDefined()
+    expect(SessionChunk.transcript({ messages, chunks: [chunk] }).some((entry) => entry.text === "汉".repeat(30_000))).toBe(true)
   })
 
   test("projects a long active user text as a reference without dropping the active message", () => {
@@ -529,7 +595,7 @@ describe("project", () => {
     const messages = [u1, a1, holder, summary, u2, active]
     const projected = SessionChunk.project({
       messages,
-      selection: { visible: [], archived: [chunk], tokens: 0 },
+      selection: { visible: [], archived: [chunk], tokens: 0, content: new Map() },
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
@@ -667,7 +733,6 @@ describe("checkpointText", () => {
       hardTokens: 24_000,
     })
     const text = SessionChunk.checkpointText({
-      chunks: [chunk],
       selection,
       targetTokens: 20_000,
       hardTokens: 24_000,

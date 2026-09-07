@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { Session } from "@/session/session"
 import { SessionChunk } from "@/session/chunk"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import * as Tool from "./tool"
+import { Tool } from "./tool"
 
 /**
  * 历史检索工具。chunk 历史通过 display ID 定位，超长 user text 通过 message/part
@@ -24,7 +24,9 @@ const ListParameters = Schema.Struct({
   chunk_id: Schema.optional(Schema.String).annotate({ description: "8-character chunk display ID" }),
   message_id: Schema.optional(Schema.String).annotate({ description: "User message ID for reading an unbounded text part" }),
   part_id: Schema.optional(Schema.String).annotate({ description: "Text part ID, used with message_id" }),
-  offset: Schema.optional(Schema.Number).annotate({ description: "Transcript line offset (default 0)" }),
+  offset: Schema.optional(Schema.Number).annotate({
+    description: "Line offset within the selected chunk or text part (default 0). Without part_id, offset pages across the message's text parts.",
+  }),
   limit: Schema.optional(Schema.Number).annotate({ description: "Lines to return (default 80, maximum 80)" }),
 })
 
@@ -73,7 +75,7 @@ export const HistoryGrepTool = Tool.define(
     const sessions = yield* Session.Service
     return {
       description:
-        "Search folded conversation history or a referenced original user text by fixed string. Use message_id and part_id from a user-text-reference to search text that is too large for the model context.",
+        "Search folded conversation history or a referenced original user text by fixed string. Returned line offsets are local to the returned chunk_id or message_id/part_id and can be passed directly to history_list. Use message_id and part_id from a user-text-reference to search text that is too large for the model context.",
       parameters: GrepParameters,
       execute: (params: Schema.Schema.Type<typeof GrepParameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<GrepMeta>> =>
         loadHistoryCtx(sessions, ctx.sessionID).pipe(
@@ -111,7 +113,8 @@ export const HistoryGrepTool = Tool.define(
                 if (!haystack.includes(needle)) return []
                 return [{
                   ...entry,
-                  context: [...entries.slice(Math.max(0, index - 2), index), ...entries.slice(index + 1, index + 3)],
+                  context: [...entries.slice(Math.max(0, index - 2), index), ...entries.slice(index + 1, index + 3)]
+                    .filter((neighbor) => neighbor.messageID === entry.messageID && neighbor.partID === entry.partID),
                 }]
               }).slice(0, Math.min(Math.max(Math.trunc(params.head_limit ?? 20), 1), 20))
               if (hits.length === 0) {

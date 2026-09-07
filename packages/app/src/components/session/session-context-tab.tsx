@@ -131,7 +131,7 @@ function shareLabel(
   row: SessionContextShare,
   t: (key: string, vars?: Record<string, string>) => string,
 ) {
-  if (row.kind === "system") return t("context.breakdown.system")
+  if (row.kind === "system") return systemSectionLabel(row.name, t)
   if (row.kind === "tool") return row.name ?? "tool"
   if (row.kind === "agent") return t("context.breakdown.share.agent")
   if (row.kind === "user") return t("context.breakdown.share.user")
@@ -141,6 +141,23 @@ function shareLabel(
   if (row.kind === "assistant") return t("context.breakdown.share.assistant")
   if (row.kind === "reasoning") return t("context.breakdown.share.reasoning")
   return t("context.breakdown.share.overhead")
+}
+
+// 系统提示词按装配部分分块后，行/块名是服务端数组索引对应的语义 key（见 session-context-breakdown.ts）
+function systemSectionLabel(
+  name: string | undefined,
+  t: (key: string, vars?: Record<string, string>) => string,
+) {
+  const key = name ?? "system"
+  if (key === "system") return t("context.breakdown.system")
+  const base = key.replace(/ \d+$/, "")
+  if (base.startsWith("instruction:")) {
+    return t("context.breakdown.share.system.instruction", { name: base.slice("instruction:".length) })
+  }
+  if (base === "env" || base === "references" || base === "mcp" || base === "skills" || base === "todo" || base === "base") {
+    return t(`context.breakdown.share.system.${base}` as Parameters<typeof t>[0])
+  }
+  return key
 }
 
 function shareFactLabel(

@@ -73,7 +73,7 @@ describe("estimateSessionContextBreakdown", () => {
     expect(output.segments.every((segment) => segment.width <= 100)).toBeTrue()
   })
 
-  test("aggregates every system block into one prompt row", () => {
+  test("splits every system block into its own prompt row", () => {
     const output = estimateSessionContextBreakdown({
       messages: [],
       parts: {},
@@ -81,7 +81,7 @@ describe("estimateSessionContextBreakdown", () => {
       systemPrompts: ["first paragraph\n\nsecond paragraph", "separate developer block"],
     })
 
-    expect(output.prompts.filter((row) => row.kind === "system")).toHaveLength(1)
+    expect(output.prompts.filter((row) => row.kind === "system")).toHaveLength(2)
   })
 
   test("exposes tool ranking and reasoning details", () => {
@@ -158,14 +158,7 @@ describe("estimateSessionContextBreakdown", () => {
     expect(output.tools.some((row) => row.name === "read")).toBeTrue()
   })
 
-  test("aggregates system blocks into one prompt row and separates synthetic user text", () => {
-    const systemPrompt = [
-      "You are a coding agent.",
-      "Here is some useful information about the environment you are running in:\n<env>\n  Working directory: /tmp\n</env>",
-      "Today's date: Sun Jul 19 2026",
-      "Instructions from: AGENTS.md\n- be concise",
-    ].join("\n\n")
-
+  test("names system blocks by their assembly part and separates synthetic user text", () => {
     const messages = [user("u1")]
     const parts = {
       u1: [
@@ -178,11 +171,19 @@ describe("estimateSessionContextBreakdown", () => {
       messages,
       parts,
       input: 500,
-      systemPrompts: [systemPrompt],
+      // 服务端预览按装配部分返回数组，每块独立成行
+      systemPrompts: [
+        "You are a coding agent.",
+        "Here is some useful information about the environment you are running in:\n<env>\n  Working directory: /tmp\n</env>",
+        "Instructions from: C:\\Users\\sky\\AGENTS.md\n- be concise",
+        "<todo-list>\n[]\n</todo-list>",
+      ],
     })
 
-    // 实现按单块聚合 system 提示词；合成用户文本独立成行。
-    expect(output.prompts.filter((row) => row.kind === "system")).toHaveLength(1)
+    const systems = output.prompts.filter((row) => row.kind === "system")
+    expect(systems.map((row) => row.name).toSorted()).toEqual(["base", "env", "instruction:AGENTS.md", "todo"])
+    // 每块独立成行后，行 facts 直接携带该块全文预览，详情弹窗平铺展示
+    expect(systems.every((row) => row.facts.some((fact) => fact.kind === "preview"))).toBeTrue()
     expect(output.prompts.some((row) => row.kind === "user")).toBeTrue()
     expect(output.prompts.some((row) => row.kind === "synthetic")).toBeTrue()
   })

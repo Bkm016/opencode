@@ -227,11 +227,35 @@ const addAssistantPart = (assistant: Bucket, tool: Bucket, messageID: string, pa
   tool.tools.set(part.tool, current)
 }
 
+// 服务端 systemPrompt 预览按装配部分返回数组（内置模板 / env+references / 每条 Instructions from / MCP / 技能 / todo）。
+// 这里按部分分块并从文本里识别来源标签，让分布列表与详情弹窗能逐块展开而不是一整块平铺。
+const systemSectionName = (block: string) => {
+  if (block.startsWith("Instructions from:")) {
+    const source = block.slice("Instructions from:".length).split("\n", 1)[0]?.trim() ?? ""
+    const name = source.split(/[\\/]/).filter(Boolean).pop()
+    if (name) return { kind: "instruction" as const, name }
+  }
+  if (block.startsWith("<todo-list>")) return { kind: "todo" as const }
+  if (block.startsWith("<mcp_instructions>")) return { kind: "mcp" as const }
+  if (block.startsWith("Skills provide specialized instructions")) return { kind: "skills" as const }
+  if (block.startsWith("Here is some useful information about the environment")) return { kind: "env" as const }
+  if (block.startsWith("Project references provide additional")) return { kind: "references" as const }
+  return { kind: "base" as const }
+}
+
 const systemPromptSections = (prompts: string[]) => {
   const blocks = prompts.map((block) => block.trim()).filter(Boolean)
   if (blocks.length === 0) return [] as { key: string; chars: number; preview: string }[]
-  const text = blocks.join("\n")
-  return [{ key: "system", chars: text.length, preview: previewText(text) }]
+  const counts = new Map<string, number>()
+  return blocks.map((text, index) => {
+    const base = systemSectionName(text)
+    const key = base.kind === "instruction" ? `instruction:${base.name}` : base.kind
+    const seen = counts.get(key) ?? 0
+    counts.set(key, seen + 1)
+    // 同类部分出现多次时追加序号，保证行 id 唯一
+    const suffix = seen === 0 ? "" : ` ${seen + 1}`
+    return { key: `${key}${suffix}`, chars: text.length, preview: previewText(text) }
+  })
 }
 
 const factsFromContent = (acc: ContentAcc, scale: number): SessionContextShareFact[] => {

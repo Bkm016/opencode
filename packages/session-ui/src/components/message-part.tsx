@@ -523,15 +523,34 @@ export function getToolInfo(
     case "history_grep":
       return {
         icon: "archive",
-        title: i18n.t("ui.tool.historyGrep"),
-        subtitle: input.pattern,
+        title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
+        subtitle:
+          input.source === "task"
+            ? input.pattern
+              ? `${input.pattern} · ${i18n.t("ui.historyTool.source.taskEvidence")}`
+              : i18n.t("ui.historyTool.source.taskEvidence")
+            : input.pattern,
       }
-    case "history_list":
+    case "history_list": {
+      const ref =
+        typeof input.chunk_id === "string" && input.chunk_id
+          ? input.chunk_id
+          : typeof input.message_id === "string" && input.message_id
+            ? input.part_id
+              ? `${input.message_id}:${input.part_id}`
+              : input.message_id
+            : undefined
       return {
         icon: "archive",
-        title: i18n.t("ui.tool.historyList"),
-        subtitle: input.chunk_id,
+        title: input.source === "task" ? i18n.t("ui.historyTool.list.evidenceDone") : i18n.t("ui.tool.historyList"),
+        subtitle:
+          input.source === "task"
+            ? ref
+              ? `${ref} · ${i18n.t("ui.historyTool.source.taskEvidence")}`
+              : i18n.t("ui.historyTool.source.taskEvidence")
+            : ref,
       }
+    }
     case "webfetch":
       return {
         icon: "window-cursor",
@@ -1027,20 +1046,35 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
     }
     case "history_grep": {
       const args: string[] = []
+      if (input.source === "task") args.push("source=task")
       if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
+      if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
+      if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
       return {
-        title: i18n.t("ui.tool.historyGrep"),
+        title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
         subtitle: typeof input.pattern === "string" ? input.pattern : "",
         args,
       }
     }
     case "history_list": {
       const args: string[] = []
+      if (input.source === "task") args.push("source=task")
+      if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
+      if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
+      if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
       if (typeof input.offset === "number") args.push("offset=" + input.offset)
       if (typeof input.limit === "number") args.push("limit=" + input.limit)
+      const ref =
+        typeof input.chunk_id === "string" && input.chunk_id
+          ? input.chunk_id
+          : typeof input.message_id === "string" && input.message_id
+            ? input.part_id
+              ? `${input.message_id}:${input.part_id}`
+              : input.message_id
+            : ""
       return {
-        title: i18n.t("ui.tool.historyList"),
-        subtitle: typeof input.chunk_id === "string" ? input.chunk_id : "",
+        title: input.source === "task" ? i18n.t("ui.historyTool.list.evidenceDone") : i18n.t("ui.tool.historyList"),
+        subtitle: ref,
         args,
       }
     }
@@ -2447,15 +2481,21 @@ type HistoryLine = {
   source?: HistorySource
   text: string
   hit?: boolean
+  reference?: string
+  messageID?: string
+  partID?: string
 }
 
 type HistoryGrepHit = {
-  chunk: string
+  chunk?: string
   sequence?: number
   source?: HistorySource
   line?: number
   text: string
   context: HistoryLine[]
+  reference?: string
+  messageID?: string
+  partID?: string
 }
 
 function historySourceLabel(source: HistorySource | undefined, i18n: ReturnType<typeof useI18n>) {
@@ -2480,6 +2520,19 @@ function parseHistoryLine(raw: string, previousSource?: HistorySource): HistoryL
       text: match[3] ?? "",
     }
   }
+  const userTextMatch = trimmed.match(/^(\d+)\s+([A-Z_]+)\s+message=(\S+)\s+part=(\S+):\s?(.*)$/)
+  if (userTextMatch) {
+    const source = userTextMatch[2]!
+    if (!HISTORY_SOURCE_RE.test(source)) return { text: trimmed }
+    return {
+      line: Number(userTextMatch[1]),
+      source: source as HistorySource,
+      reference: `${userTextMatch[3]}:${userTextMatch[4]}`,
+      messageID: userTextMatch[3],
+      partID: userTextMatch[4],
+      text: userTextMatch[5] ?? "",
+    }
+  }
   const compact = previousSource ? trimmed.match(/^(\d+):\s?(.*)$/) : undefined
   if (compact) return { line: Number(compact[1]), source: previousSource, text: compact[2] ?? "" }
   return { text: trimmed }
@@ -2497,8 +2550,57 @@ function parseHistoryLines(rows: string[]) {
   return lines
 }
 
+function parseTaskEvidenceHeader(row: string) {
+  const match = row.match(/^message_id=(\S+)\s+part_id=(\S+)\s+line=(\d+)\s+([A-Z_]+):?$/)
+  if (!match) return
+  return {
+    messageID: match[1],
+    partID: match[2],
+    reference: `${match[1]}:${match[2]}`,
+    line: Number(match[3]),
+    source: match[4] && HISTORY_SOURCE_RE.test(match[4]) ? (match[4] as HistorySource) : undefined,
+  }
+}
+
 function parseHistoryListOutput(output: string | undefined): HistoryLine[] | undefined {
   if (!output) return
+  if (output.includes("message_id=")) {
+    if (/message_id=\S+\s+part_id=\S+\s+line=\d+/.test(output)) {
+      const blocks = output.split(/\n\n+/).map((block) => block.trim()).filter(Boolean)
+      const lines: HistoryLine[] = []
+      for (const block of blocks) {
+        const rows = block.split("\n")
+        const header = parseTaskEvidenceHeader(rows[0] ?? "")
+        if (header) {
+          lines.push({
+            ...header,
+            text: rows.slice(1).join("\n"),
+          })
+        }
+      }
+      if (lines.length > 0) return lines
+    }
+
+    const rows = output.split("\n")
+    const lines: HistoryLine[] = []
+    for (const raw of rows) {
+      const trimmed = raw.trim()
+      if (!trimmed) continue
+      const match = trimmed.match(/^message_id=(\S+)\s+part_id=(\S+)(?:\s+(.*))?$/)
+      if (match) {
+        lines.push({
+          messageID: match[1],
+          partID: match[2],
+          reference: `${match[1]}:${match[2]}`,
+          text: match[3] ?? "",
+        })
+      } else {
+        lines.push({ text: trimmed })
+      }
+    }
+    if (lines.length > 0) return lines
+    return undefined
+  }
   const lines = parseHistoryLines(output.split("\n"))
   return lines.length > 0 ? lines : undefined
 }
@@ -2509,23 +2611,47 @@ function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | 
   const hits: HistoryGrepHit[] = []
   for (const block of blocks) {
     const rows = block.split("\n")
-    const header = rows[0]?.match(/^chunk\s+(\S+)(?:\s+\(sequence\s+(\d+)\))?\s+([A-Z_]+)?\s+line\s+(\d+):?$/)
-    if (!header) continue
-    const source = header[3] && HISTORY_SOURCE_RE.test(header[3]) ? (header[3] as HistorySource) : undefined
-    const hitText = (rows[1] ?? "").replace(/^\s+/, "")
+    const headerRow = rows[0] ?? ""
+    const hitText = rows[1] ?? ""
     const contextStart = rows.findIndex((row) => row.trim() === "context:")
-    const context =
-      contextStart >= 0
-        ? parseHistoryLines(rows.slice(contextStart + 1))
-        : []
-    hits.push({
-      chunk: header[1]!,
-      sequence: header[2] ? Number(header[2]) : undefined,
-      source,
-      line: header[4] ? Number(header[4]) : undefined,
-      text: hitText,
-      context,
-    })
+    const context = contextStart >= 0 ? parseHistoryLines(rows.slice(contextStart + 1)) : []
+    const taskHeader = parseTaskEvidenceHeader(headerRow)
+    if (taskHeader) {
+      hits.push({
+        ...taskHeader,
+        text: hitText,
+        context,
+      })
+      continue
+    }
+
+    const userTextMatch = headerRow.match(/^message\s+(\S+)\s+part\s+(\S+)\s+([A-Z_]+)\s+line\s+(\d+):?$/)
+    if (userTextMatch) {
+      const source = userTextMatch[3] && HISTORY_SOURCE_RE.test(userTextMatch[3]) ? (userTextMatch[3] as HistorySource) : undefined
+      hits.push({
+        messageID: userTextMatch[1],
+        partID: userTextMatch[2],
+        reference: `${userTextMatch[1]}:${userTextMatch[2]}`,
+        line: Number(userTextMatch[4]),
+        source,
+        text: hitText.replace(/^\s+/, ""),
+        context,
+      })
+      continue
+    }
+
+    const chunkMatch = headerRow.match(/^chunk\s+(\S+)(?:\s+\(sequence\s+(\d+)\))?\s+([A-Z_]+)?\s+line\s+(\d+):?$/)
+    if (chunkMatch) {
+      const source = chunkMatch[3] && HISTORY_SOURCE_RE.test(chunkMatch[3]) ? (chunkMatch[3] as HistorySource) : undefined
+      hits.push({
+        chunk: chunkMatch[1]!,
+        sequence: chunkMatch[2] ? Number(chunkMatch[2]) : undefined,
+        source,
+        line: chunkMatch[4] ? Number(chunkMatch[4]) : undefined,
+        text: hitText.replace(/^\s+/, ""),
+        context,
+      })
+    }
   }
   return hits.length > 0 ? hits : undefined
 }
@@ -2539,7 +2665,14 @@ function HistoryTranscriptLine(props: { entry: HistoryLine; i18n: ReturnType<typ
     >
       <span data-slot="history-line-no">{props.entry.line ?? ""}</span>
       <span data-slot="history-source">{historySourceLabel(props.entry.source, props.i18n)}</span>
-      <span data-slot="history-text">{props.entry.text}</span>
+      <span data-slot="history-text">
+        <Show when={props.entry.reference}>
+          <span data-slot="history-meta" style={{ "margin-right": "8px" }}>
+            {props.entry.reference}
+          </span>
+        </Show>
+        {props.entry.text}
+      </span>
     </div>
   )
 }
@@ -2623,7 +2756,10 @@ ToolRegistry.register({
     const hits = createMemo(() => parseHistoryGrepOutput(props.output))
     const args = createMemo(() => {
       const list: string[] = []
+      if (props.input.source === "task") list.push("source=task")
       if (props.input.chunk_id) list.push("chunk=" + props.input.chunk_id)
+      if (props.input.message_id) list.push("message=" + props.input.message_id)
+      if (props.input.part_id) list.push("part=" + props.input.part_id)
       if (props.input.case_sensitive) list.push("case=true")
       if (props.input.head_limit != null) list.push("limit=" + props.input.head_limit)
       if (!pending() && matches() != null) list.push(i18n.t("ui.historyTool.matches", { count: matches()! }))
@@ -2642,13 +2778,27 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <ToolStatusTitle
                   active={pending()}
-                  activeText={i18n.t("ui.historyTool.grep.running")}
-                  doneText={i18n.t("ui.historyTool.grep.done")}
+                  activeText={
+                    props.input.source === "task"
+                      ? i18n.t("ui.historyTool.grep.evidenceRunning")
+                      : i18n.t("ui.historyTool.grep.running")
+                  }
+                  doneText={
+                    props.input.source === "task"
+                      ? i18n.t("ui.historyTool.grep.evidenceDone")
+                      : i18n.t("ui.historyTool.grep.done")
+                  }
                   split={false}
                 />
               </span>
-              <Show when={!pending() && pattern()}>
-                <span data-slot="basic-tool-tool-subtitle">{pattern()}</span>
+              <Show when={!pending() && (pattern() || props.input.source === "task")}>
+                <span data-slot="basic-tool-tool-subtitle">
+                  {props.input.source === "task"
+                    ? pattern()
+                      ? `${pattern()} · ${i18n.t("ui.historyTool.source.taskEvidence")}`
+                      : i18n.t("ui.historyTool.source.taskEvidence")
+                    : pattern()}
+                </span>
               </Show>
               <Show when={!pending() && args().length}>
                 <For each={args()}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
@@ -2665,7 +2815,12 @@ ToolRegistry.register({
                   {(hit) => (
                     <div data-slot="history-hit">
                       <div data-slot="history-hit-header">
-                        <span data-slot="history-chunk">{hit.chunk}</span>
+                        <Show when={hit.chunk}>
+                          <span data-slot="history-chunk">{hit.chunk}</span>
+                        </Show>
+                        <Show when={hit.reference}>
+                          <span data-slot="history-chunk">{hit.reference}</span>
+                        </Show>
                         <Show when={hit.sequence != null}>
                           <span data-slot="history-meta">
                             {i18n.t("ui.historyTool.sequence", { sequence: hit.sequence! })}
@@ -2733,6 +2888,10 @@ ToolRegistry.register({
     const entries = createMemo(() => parseHistoryListOutput(props.output))
     const args = createMemo(() => {
       const list: string[] = []
+      if (props.input.source === "task") list.push("source=task")
+      if (props.input.chunk_id) list.push("chunk=" + props.input.chunk_id)
+      if (props.input.message_id) list.push("message=" + props.input.message_id)
+      if (props.input.part_id) list.push("part=" + props.input.part_id)
       if (props.input.offset != null) list.push("offset=" + props.input.offset)
       if (props.input.limit != null) list.push("limit=" + props.input.limit)
       if (!pending() && lines() != null && total() != null) {
@@ -2743,6 +2902,11 @@ ToolRegistry.register({
       return list
     })
     const chunk = createMemo(() => (typeof props.input.chunk_id === "string" ? props.input.chunk_id : ""))
+    const messageRef = createMemo(() => {
+      if (typeof props.input.message_id !== "string" || !props.input.message_id) return ""
+      return props.input.part_id ? `${props.input.message_id}:${props.input.part_id}` : props.input.message_id
+    })
+    const targetRef = createMemo(() => chunk() || messageRef())
     const empty = createMemo(() => !pending() && !!props.output && !entries())
 
     return (
@@ -2755,13 +2919,27 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <ToolStatusTitle
                   active={pending()}
-                  activeText={i18n.t("ui.historyTool.list.running")}
-                  doneText={i18n.t("ui.historyTool.list.done")}
+                  activeText={
+                    props.input.source === "task"
+                      ? i18n.t("ui.historyTool.list.evidenceRunning")
+                      : i18n.t("ui.historyTool.list.running")
+                  }
+                  doneText={
+                    props.input.source === "task"
+                      ? i18n.t("ui.historyTool.list.evidenceDone")
+                      : i18n.t("ui.historyTool.list.done")
+                  }
                   split={false}
                 />
               </span>
-              <Show when={!pending() && chunk()}>
-                <span data-slot="basic-tool-tool-subtitle">{chunk()}</span>
+              <Show when={!pending() && (targetRef() || props.input.source === "task")}>
+                <span data-slot="basic-tool-tool-subtitle">
+                  {props.input.source === "task"
+                    ? targetRef()
+                      ? `${targetRef()} · ${i18n.t("ui.historyTool.source.taskEvidence")}`
+                      : i18n.t("ui.historyTool.source.taskEvidence")
+                    : targetRef()}
+                </span>
               </Show>
               <Show when={!pending() && args().length}>
                 <For each={args()}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
@@ -2864,6 +3042,14 @@ ToolRegistry.register({
 function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
   // project_task 通过 metadata 携带目标项目目录。
   const directory = typeof metadata.directory === "string" ? metadata.directory : undefined
+  const delivery =
+    metadata.delivery && typeof metadata.delivery === "object"
+      ? (metadata.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
+      : undefined
+  const context =
+    metadata.context && typeof metadata.context === "object"
+      ? (metadata.context as { originals?: number; evidence?: number })
+      : undefined
   const metaTasks = Array.isArray(metadata.tasks) ? metadata.tasks : undefined
   if (metaTasks && metaTasks.length > 0) {
     return metaTasks.flatMap((item, index) => {
@@ -2875,6 +3061,18 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
         (Array.isArray(metadata.taskIDs) && typeof metadata.taskIDs[index] === "string"
           ? metadata.taskIDs[index]
           : undefined)
+      const rowDelivery =
+        row.delivery && typeof row.delivery === "object"
+          ? (row.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
+          : metaTasks.length === 1
+            ? delivery
+            : undefined
+      const rowContext =
+        row.context && typeof row.context === "object"
+          ? (row.context as { originals?: number; evidence?: number })
+          : metaTasks.length === 1
+            ? context
+            : undefined
       return [
         {
           sessionId,
@@ -2887,6 +3085,8 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
             (typeof row.description === "string" && row.description) ||
             undefined,
           directory,
+          delivery: rowDelivery,
+          context: rowContext,
         },
       ]
     })
@@ -2902,6 +3102,18 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
         (Array.isArray(metadata.taskIDs) && typeof metadata.taskIDs[index] === "string"
           ? metadata.taskIDs[index]
           : undefined)
+      const rowDelivery =
+        row.delivery && typeof row.delivery === "object"
+          ? (row.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
+          : inputTasks.length === 1
+            ? delivery
+            : undefined
+      const rowContext =
+        row.context && typeof row.context === "object"
+          ? (row.context as { originals?: number; evidence?: number })
+          : inputTasks.length === 1
+            ? context
+            : undefined
       return [
         {
           sessionId,
@@ -2914,6 +3126,8 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
             (typeof row.title === "string" && row.title) ||
             undefined,
           directory,
+          delivery: rowDelivery,
+          context: rowContext,
         },
       ]
     })
@@ -2933,6 +3147,8 @@ function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
         (typeof metadata.title === "string" && metadata.title) ||
         undefined,
       directory,
+      delivery,
+      context,
     },
   ]
 }
@@ -2951,11 +3167,21 @@ function TaskCard(props: {
   followup?: boolean
   fallbackInput?: Record<string, any>
   directory?: string
+  delivery?: {
+    type?: "steer" | "followup"
+    state?: string
+    messageID?: string
+  }
+  context?: {
+    originals?: number
+    evidence?: number
+  }
 }) {
   const data = useData()
   const i18n = useI18n()
   const location = useLocation()
   const running = createMemo(() => props.status === "pending" || props.status === "running")
+  const isError = createMemo(() => props.status === "error")
   const childSessionId = createMemo(() => {
     if (props.sessionId) return props.sessionId
     if (!props.fallbackInput) return
@@ -2970,39 +3196,136 @@ function TaskCard(props: {
     if (id && data.store.session_status[id]) return data.store.session_status[id].type !== "idle"
     return running()
   })
-  const activity = createMemo(() => {
+
+  const delivery = createMemo(() => props.delivery)
+  const isDelivery = createMemo(
+    () => !!(props.delivery || props.followup || props.fallbackInput?.task_id || props.fallbackInput?.task_ids),
+  )
+  const turnStarted = createMemo(() => {
+    const d = delivery()
+    if (!d?.messageID) return false
     const id = childSessionId()
-    if (!id) return
+    if (!id) return false
+    const messages = data.store.message[id]
+    if (!messages || messages.length === 0) return false
+    return messages.some((m) => m.role === "assistant" && m.parentID === d.messageID)
+  })
+
+  const deliveryStatusText = createMemo(() => {
+    if (isError()) return undefined
+    if (running()) {
+      if (isDelivery()) return i18n.t("ui.taskCard.delivery.sending")
+      return undefined
+    }
+    const d = delivery()
+    // 只有持久化回执能证明接收；旧任务或缺失 metadata 不能靠 followup 类型推断成功。
+    if (d?.state !== "admitted" || !d.messageID) return undefined
+    if (turnStarted()) {
+      return i18n.t("ui.taskCard.delivery.turnStarted")
+    }
+    if (d?.type === "followup" || (props.followup && d?.type !== "steer")) {
+      return i18n.t("ui.taskCard.delivery.followupAdmitted")
+    }
+    return i18n.t("ui.taskCard.delivery.steerAdmitted")
+  })
+
+  const contextText = createMemo(() => {
+    const ctx = props.context
+    if (!ctx) return undefined
+    const originals = typeof ctx.originals === "number" ? ctx.originals : undefined
+    const evidence = typeof ctx.evidence === "number" ? ctx.evidence : undefined
+    if (originals != null && evidence != null && (originals > 0 || evidence > 0)) {
+      return i18n.t("ui.taskCard.context.full", { originals, evidence })
+    }
+    if (originals != null && originals > 0) {
+      return i18n.t("ui.taskCard.context.originals", { count: originals })
+    }
+    if (evidence != null && evidence > 0) {
+      return i18n.t("ui.taskCard.context.evidence", { count: evidence })
+    }
+    return undefined
+  })
+
+  const activity = createMemo(() => {
+    if (isError()) return undefined
+    const dText = deliveryStatusText()
+    const cText = contextText()
+    const id = childSessionId()
+
+    if (dText && (running() || !turnStarted() || !id)) {
+      return {
+        key: `delivery:${running() ? "sending" : delivery()?.messageID}`,
+        text: [dText, cText].filter(Boolean).join(" · "),
+      }
+    }
+
+    if (!id) return undefined
+
     const messages = data.store.message[id] ?? []
-    const part = messages
+    const d = delivery()
+    const turnMessages = d?.messageID
+      ? messages.filter((m) => m.role === "assistant" && m.parentID === d.messageID)
+      : messages
+
+    const targetMessages = turnMessages.length > 0 ? turnMessages : messages
+    const part = targetMessages
       .flatMap((message) => data.store.part[message.id] ?? [])
       .findLast((part) => {
         if (part.type === "tool") return true
         if (part.type !== "text" && part.type !== "reasoning") return false
         return !!readPartText(data.store.part_text_accum_delta, part)
       })
-    if (!part) return
-    if (part.type !== "tool") {
-      const value = stripAnsi(readPartText(data.store.part_text_accum_delta, part)).replace(/\s+/g, " ").trim()
-      return {
-        key: part.id,
-        text: value.slice(-240),
+
+    let childDetail: { key: string; text: string } | undefined
+    if (part) {
+      if (part.type !== "tool") {
+        const value = stripAnsi(readPartText(data.store.part_text_accum_delta, part)).replace(/\s+/g, " ").trim()
+        if (value) {
+          childDetail = {
+            key: part.id,
+            text: value.slice(-240),
+          }
+        }
+      } else {
+        const state = part.state
+        const detail =
+          state.status === "completed"
+            ? state.output
+            : state.status === "error"
+              ? state.error
+              : state.status === "running"
+                ? state.title
+                : undefined
+        const value = typeof detail === "string" ? stripAnsi(detail).replace(/\s+/g, " ").trim() : ""
+        childDetail = {
+          key: `${part.id}:${state.status}`,
+          text: value ? `${part.tool} · ${value.slice(-240)}` : part.tool,
+        }
       }
     }
-    const state = part.state
-    const detail =
-      state.status === "completed"
-        ? state.output
-        : state.status === "error"
-          ? state.error
-          : state.status === "running"
-            ? state.title
-            : undefined
-    const value = typeof detail === "string" ? stripAnsi(detail).replace(/\s+/g, " ").trim() : ""
-    return {
-      key: `${part.id}:${state.status}`,
-      text: value ? `${part.tool} · ${value.slice(-240)}` : part.tool,
+
+    if (dText && turnStarted()) {
+      const prefix = cText ? `${dText} · ${cText}` : dText
+      const fullText = childDetail ? `${prefix} · ${childDetail.text}` : prefix
+      return {
+        key: `delivery:started:${d?.messageID}:${childDetail?.key ?? "start"}`,
+        text: fullText,
+      }
     }
+
+    if (childDetail) {
+      const fullText = cText ? `${cText} · ${childDetail.text}` : childDetail.text
+      return {
+        key: childDetail.key,
+        text: fullText,
+      }
+    }
+
+    if (cText) {
+      return { key: "context", text: cText }
+    }
+
+    return undefined
   })
   const activityKey = createMemo(() => activity()?.key)
   const subtitle = createMemo(() => {
@@ -3042,7 +3365,7 @@ function TaskCard(props: {
   const trigger = () => (
     <div
       data-component="task-tool-card"
-      data-kind={props.followup ? "followup" : "launch"}
+      data-kind={props.followup || props.delivery ? "followup" : "launch"}
       style={{
         "--task-agent-color": v2Tone(),
         "--task-agent-legacy-color": tone(),
@@ -3055,7 +3378,7 @@ function TaskCard(props: {
               when={childRunning()}
               fallback={
                 <span data-component="task-tool-icon">
-                  <Icon name={props.followup ? "enter" : "subagent"} size="small" />
+                  <Icon name={props.followup || props.delivery ? "enter" : "subagent"} size="small" />
                 </span>
               }
             >
@@ -3120,6 +3443,8 @@ function TaskToolRender(props: ToolProps) {
             sessionId={card.sessionId}
             directory={card.directory}
             background={background()}
+            delivery={card.delivery}
+            context={card.context}
             fallbackInput={
               single()
                 ? {
@@ -3187,6 +3512,19 @@ function TaskFollowupToolRender(props: ToolProps) {
       undefined,
   )
   const background = createMemo(() => props.metadata.background !== false)
+  const delivery = createMemo(
+    () =>
+      props.metadata.delivery && typeof props.metadata.delivery === "object"
+        ? (props.metadata.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
+        : undefined,
+  )
+  const context = createMemo(
+    () =>
+      props.metadata.context && typeof props.metadata.context === "object"
+        ? (props.metadata.context as { originals?: number; evidence?: number })
+        : undefined,
+  )
+  const directory = createMemo(() => (typeof props.metadata.directory === "string" ? props.metadata.directory : undefined))
 
   return (
     <div data-component="task-tool-list">
@@ -3195,7 +3533,10 @@ function TaskFollowupToolRender(props: ToolProps) {
         agent={agent()}
         description={description()}
         sessionId={sessionId()}
+        directory={directory()}
         background={background()}
+        delivery={delivery()}
+        context={context()}
         followup
       />
     </div>

@@ -1,32 +1,17 @@
-Use this tool for ordinary terminal commands and short scripts. For complex scripts, prefer the `python` tool and pass the source through its `code` parameter.
-To run a command on a remote machine, do not invoke `ssh` directly in the command; pass the target via the `host` parameter instead (e.g. host="user@ip" or an SSH config alias). This keeps stdin/stdout handling and escaping correct.
+Run terminal commands and short scripts. Use python for complex scripts. Communicate directly, not through shell output.
+Do not use shell commands as substitutes for dedicated file tools: use glob for filenames, grep for content searches, read for file contents, and the available editing/writing tools for changes.
 
-${intro}
+Local environment: ${os}, ${shell}.
+- workdir defaults to the current directory; set it instead of changing directories in command. Temporary directory (already exists): `${tmp}`.
+- For SSH, set host to an SSH config alias or user@ip; do not invoke ssh in command. Remote scripts are fed through stdin to `bash -s` without a PTY; use bash syntax, not local shell quoting, and workdir refers to the remote directory. Account for the script input when running commands that read stdin. Key-based authentication is required; no interactive password, and unavailable hosts fail fast.
+- Quote paths containing spaces and verify the parent directory before creating files/directories.
+- Run independent commands in parallel; sequence dependencies using the shell rules below. Do not use newlines as command separators (quoted strings may contain newlines).
+- Dependencies also apply across tools: wait for a prerequisite to succeed before starting any call that consumes its result. Do not place a file edit and a command that uses the edited file in the same parallel batch.
+${shellNotes}
+- timeout is in milliseconds (default ${defaultTimeoutMs}). Output beyond ${maxLines} lines or ${maxBytes} bytes is truncated with full output retained in a file. Use read with offset/limit or the grep tool on that file; do not pre-truncate output with shell commands.
 
-Be aware: OS: ${os}, Shell: ${shell}
-
-${workdirSection}
-
-# Remote execution over SSH
-- Set the optional `host` parameter to an SSH config alias (from ~/.ssh/config) or `user@ip` to run the command on that remote machine instead of locally.
-- In remote mode the command is fed to a remote `bash` shell through stdin, so the local shell listed above and its escaping/quoting rules do not apply — write the command as plain bash.
-- Remote mode requires key-based SSH authentication already set up on this machine (no interactive password). A missing or unreachable host fails fast.
-- The `workdir` parameter also applies remotely: it is the directory on the remote host.
-
-Use `${tmp}` for temporary work inside the current project. This directory has already been created and exists.
-
-IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
-
-For complex script logic, prefer the `python` tool; use this shell for simple commands and short shell snippets.
-
-${commandSection}
-
-# Git and GitHub
+Git and GitHub:
 - Only commit, amend, push, or create PRs when explicitly requested.
-- Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.
-- Write a concise commit message that matches the repo style.
-- Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.
-- If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.
-- Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.
-- Review all commits included in the PR, not just the latest commit.
-- Use `gh` for GitHub tasks, including PRs, issues, checks, and releases; return the PR URL when done.
+- Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files, never secrets. Match the repo's commit-message style.
+- Do not change git config, skip hooks, use interactive -i, force-push, or create empty commits without explicit authorization. If a commit fails, fix the issue and create a new commit rather than amending.
+- Before a PR, inspect status, diff, remote tracking, and all included commits and changes against the base branch. Use gh for GitHub operations and return the PR URL.

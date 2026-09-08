@@ -1,10 +1,5 @@
-Performs safe string replacements in files while preserving changes made by earlier edits.
+Replace oldString with newString in a file, preserving other edits. Read the file first; omit read's line-number prefixes from replacement text.
 
-Usage:
-- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. 
-- When editing text from Read tool output, never include the line number prefix in oldString or newString. The tool tolerates line-ending and indentation differences, but unchanged surrounding lines still help identify a unique match.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
-- The edit will FAIL if it cannot find a safe unique match for `oldString`. Re-read the current file before retrying instead of using shell commands to bypass matching.
-- The edit will FAIL if `oldString` is found multiple times in the file with an error "Found multiple matches for oldString. Provide more surrounding lines in oldString to identify the correct match." Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`. 
-- Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
+- oldString must match safely and uniquely. Line-ending/indentation differences are tolerated; include surrounding context to disambiguate, or use replaceAll for every occurrence.
+- On matching failure, re-read before retrying; do not bypass safeguards with shell writes.
+- Prefer existing files; create files only when required. Add emojis only if requested.

@@ -106,6 +106,7 @@ export const PythonTool = Tool.define(
               exit: result.exitCode,
               interpreter: interpreter.path,
               workdir: cwd,
+              host: "localhost",
             },
             output,
           }

@@ -64,8 +64,9 @@ import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
-import { isContextGroupTool } from "./message-part-groups"
+import { isContextGroupTool, isComputerUseGroupTool } from "./message-part-groups"
 import { ImageGenerationTool } from "./image-generation-tool"
+import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
 import type { CanvasReference } from "../context/canvas"
 import { writeClipboardImage } from "./clipboard-image"
@@ -822,6 +823,12 @@ export function getToolInfo(
         title: i18n.t("ui.tool.python"),
         subtitle: pythonSubtitle(input.code),
       }
+    case "computer_use":
+      return {
+        icon: "window-cursor",
+        title: i18n.t("ui.tool.computerUse"),
+        subtitle: input.action,
+      }
     case "edit":
       return {
         icon: "code-lines",
@@ -949,7 +956,7 @@ export type PartGroup =
     }
   | {
       key: string
-      type: "context"
+      type: "context" | "computerUse"
       refs: PartRef[]
     }
 
@@ -965,7 +972,7 @@ function sameGroup(a: PartGroup, b: PartGroup) {
     if (b.type !== "part") return false
     return sameRef(a.ref, b.ref)
   }
-  if (b.type !== "context") return false
+  if (b.type === "part") return false
   if (a.refs.length !== b.refs.length) return false
   return a.refs.every((ref, i) => sameRef(ref, b.refs[i]!))
 }
@@ -980,6 +987,7 @@ export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly Part
 export function groupParts(parts: { messageID: string; part: PartType }[]) {
   const result: PartGroup[] = []
   let start = -1
+  let computerStart = -1
 
   const flush = (end: number) => {
     if (start < 0) return
@@ -1000,13 +1008,39 @@ export function groupParts(parts: { messageID: string; part: PartType }[]) {
     start = -1
   }
 
+  const flushComputer = (end: number) => {
+    if (computerStart < 0) return
+    const first = parts[computerStart]
+    const last = parts[end]
+    if (!first || !last) {
+      computerStart = -1
+      return
+    }
+    result.push({
+      key: `computerUse:${first.part.id}`,
+      type: "computerUse",
+      refs: parts.slice(computerStart, end + 1).map((item) => ({
+        messageID: item.messageID,
+        partID: item.part.id,
+      })),
+    })
+    computerStart = -1
+  }
+
   parts.forEach((item, index) => {
     if (isContextGroupTool(item.part)) {
+      flushComputer(index - 1)
       if (start < 0) start = index
+      return
+    }
+    if (isComputerUseGroupTool(item.part)) {
+      flush(index - 1)
+      if (computerStart < 0) computerStart = index
       return
     }
 
     flush(index - 1)
+    flushComputer(index - 1)
     result.push({
       key: `part:${item.messageID}:${item.part.id}`,
       type: "part",
@@ -1018,6 +1052,7 @@ export function groupParts(parts: { messageID: string; part: PartType }[]) {
   })
 
   flush(parts.length - 1)
+  flushComputer(parts.length - 1)
   return result
 }
 
@@ -1045,7 +1080,7 @@ export function isProcessPart(part: PartType) {
 }
 
 export function isProcessGroup(group: PartGroup, resolve: (ref: PartRef) => PartType | undefined) {
-  if (group.type === "context") return true
+  if (group.type === "context" || group.type === "computerUse") return true
   const part = resolve(group.ref)
   return !!part && isProcessPart(part)
 }
@@ -1123,6 +1158,28 @@ export function AssistantParts(props: {
                 return (
                   <Show when={parts().length > 0}>
                     <ContextToolGroup parts={parts()} busy={busy()} />
+                  </Show>
+                )
+              })()}
+            </Match>
+            <Match when={entryType() === "computerUse"}>
+              {(() => {
+                const parts = createMemo(
+                  () => {
+                    const entry = entryAccessor()
+                    if (entry.type !== "computerUse") return emptyTools
+                    return entry.refs
+                      .map((ref) => part().get(ref.messageID)?.get(ref.partID))
+                      .filter((part): part is ToolPart => !!part && isComputerUseGroupTool(part))
+                  },
+                  emptyTools,
+                  { equals: same },
+                )
+                const busy = createMemo(() => props.working && last() === entryAccessor().key)
+
+                return (
+                  <Show when={parts().length > 0}>
+                    <ComputerUseToolGroup parts={parts()} busy={busy()} />
                   </Show>
                 )
               })()}
@@ -1372,6 +1429,27 @@ export function AssistantMessageDisplay(props: {
                 return (
                   <Show when={parts().length > 0}>
                     <ContextToolGroup parts={parts()} />
+                  </Show>
+                )
+              })()}
+            </Match>
+            <Match when={entryType() === "computerUse"}>
+              {(() => {
+                const parts = createMemo(
+                  () => {
+                    const entry = entryAccessor()
+                    if (entry.type !== "computerUse") return emptyTools
+                    return entry.refs
+                      .map((ref) => part().get(ref.partID))
+                      .filter((part): part is ToolPart => !!part && isComputerUseGroupTool(part))
+                  },
+                  emptyTools,
+                  { equals: same },
+                )
+
+                return (
+                  <Show when={parts().length > 0}>
+                    <ComputerUseToolGroup parts={parts()} />
                   </Show>
                 )
               })()}
@@ -1845,6 +1923,7 @@ export const ToolRegistry = {
 }
 
 ToolRegistry.register({ name: "canvas", render: CanvasTool })
+ToolRegistry.register({ name: "computer_use", render: ComputerUseTool })
 
 // 在 edit/write/apply_patch 折叠态 trigger 上显示的「打开文件」按钮，点击用系统默认编辑器打开源文件
 function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) => void }) {
@@ -1983,6 +2062,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               part().tool !== "bash" &&
               part().tool !== "python" &&
               part().tool !== "canvas" &&
+              part().tool !== "computer_use" &&
               part().tool !== "image_generation"
             }
           >
@@ -3841,24 +3921,71 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
-    const sawPending = pending()
-    const text = createMemo(() => {
+    const errored = () => props.status === "error"
+    const errorText = createMemo(() => {
+      if (!errored()) return ""
+      const meta = props.metadata
+      if (meta.interrupted === true) return i18n.t("ui.message.interrupted")
+      const raw = meta.error
+      return typeof raw === "string" ? raw.replace(/^Error:\s*/, "").trim() : ""
+    })
+    const remote = createMemo(() => {
+      const value = props.input.host ?? props.metadata.host
+      return typeof value === "string" && value ? value : undefined
+    })
+    const host = createMemo(() => remote() ?? "localhost")
+    const workdir = createMemo(() => {
+      const value = props.input.workdir ?? props.metadata.workdir
+      return typeof value === "string" && value ? value : undefined
+    })
+    const code = createMemo(() => {
       // 展示完整脚本而不是首行，方便核对实际执行的内容。
       const raw = typeof props.input.code === "string" ? props.input.code : (props.metadata.code ?? "")
-      const code = String(raw).replace(/\r\n?/g, "\n").trimEnd()
-      const rawOut = props.output ?? props.metadata.output
-      const out = stripAnsi(typeof rawOut === "string" ? rawOut : "").replace(/\r\n?/g, "\n")
-      const script = code
-        .split("\n")
-        .map((line, index) => (index === 0 ? `>>> ${line}` : `... ${line}`))
-        .join("\n")
-      return `${script}${out ? "\n\n" + out : ""}`
+      return String(raw).replace(/\r\n?/g, "\n").trimEnd()
+    })
+    // 折叠态把多行脚本压成单行预览：首行 + 行数提示，与终端命令预览保持一致风格。
+    const codePreview = createMemo(() => {
+      const lines = code().split("\n")
+      const first = lines.find((line: string) => line.trim()) ?? ""
+      const extra = lines.length - 1
+      return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
+    })
+    const output = createMemo(() => {
+      const raw = props.output ?? props.metadata.output
+      const text = typeof raw === "string" ? raw : ""
+      return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
+    })
+    const exit = createMemo(() => {
+      const code = props.metadata.exit
+      return typeof code === "number" ? code : undefined
+    })
+    const failed = createMemo(() => exit() !== undefined && exit() !== 0)
+    const location = createMemo(() => {
+      const parts: string[] = []
+      if (host()) parts.push(host()!)
+      if (workdir()) parts.push(workdir()!)
+      return parts.join(" · ")
     })
     const [copied, setCopied] = createSignal(false)
+    let scrollRef: HTMLDivElement | undefined
+
+    const scrollToEnd = () => {
+      const el = scrollRef
+      if (!el) return
+      // 等内容渲染和 max-height 约束生效后再滚，rAF 保证拿到真实的 scrollHeight。
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+      })
+    }
+
+    // 输出流式增长时保持定位在末尾。
+    createEffect(() => {
+      output()
+      scrollToEnd()
+    })
 
     const handleCopy = async () => {
-      const content = text()
-      if (!content) return
+      const content = `${code()}${output() ? "\n\n" + output() : ""}`
       if (await writeClipboard(content)) {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
@@ -3872,30 +3999,65 @@ ToolRegistry.register({
         // 运行中的 python 也展开输出，让长脚本的进度可以实时观察。
         forceOpen={pending()}
         trigger={(open) => (
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <span data-slot="basic-tool-tool-title">
-                <TextShimmer text={i18n.t("ui.tool.python")} active={pending()} />
+          <div data-slot="bash-trigger" data-open={open() ? "true" : undefined}>
+            <div data-slot="bash-trigger-main">
+              <span data-slot="bash-trigger-prompt">python</span>
+              <span data-slot="bash-trigger-cmd">
+                <TextShimmer text={codePreview()} active={pending()} />
               </span>
-              <Show when={!pending() && !open() && props.input.code}>
-                <ShellSubmessage text={pythonSubtitle(props.input.code)} animate={sawPending} />
+              <Show when={!pending() && location()}>
+                <span data-slot="bash-trigger-location">{location()}</span>
               </Show>
             </div>
+            <Show when={!pending() && failed()}>
+              <span data-slot="bash-trigger-exit" data-exit="fail">
+                {i18n.t("ui.tool.shell.exit")} {exit()}
+              </span>
+            </Show>
+            <Show when={errored()}>
+              <span data-slot="bash-trigger-exit" data-exit="fail">
+                {errorText() || i18n.t("ui.message.interrupted")}
+              </span>
+            </Show>
           </div>
         )}
       >
         <div data-component="bash-output">
-          <div data-slot="bash-copy">
-            <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-              <IconButtonV2
-                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                size="normal"
-                variant="ghost-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCopy}
-                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-              />
-            </TooltipV2>
+          <div data-slot="bash-header">
+            <Show when={host()}>
+              <span data-slot="bash-meta">
+                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.host")}</span>
+                <span data-slot="bash-meta-value" data-accent>
+                  {host()}
+                </span>
+              </span>
+            </Show>
+            <Show when={workdir()}>
+              <span data-slot="bash-meta">
+                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.workdir")}</span>
+                <span data-slot="bash-meta-value">{workdir()}</span>
+              </span>
+            </Show>
+            <span data-slot="bash-header-tail">
+              <Show when={exit() !== undefined}>
+                <span data-slot="bash-meta">
+                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.exit")}</span>
+                  <span data-slot="bash-meta-value" data-exit={exit() === 0 ? "ok" : "fail"}>
+                    {exit()}
+                  </span>
+                </span>
+              </Show>
+              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+                <IconButtonV2
+                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                  size="normal"
+                  variant="ghost-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleCopy}
+                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                />
+              </TooltipV2>
+            </span>
           </div>
           <div
             data-slot="bash-scroll"
@@ -3903,10 +4065,24 @@ ToolRegistry.register({
             tabIndex={0}
             role="region"
             aria-label={i18n.t("ui.scrollView.ariaLabel")}
+            ref={(el) => {
+              scrollRef = el
+              scrollToEnd()
+            }}
           >
-            <pre data-slot="bash-pre">
-              <code>{text()}</code>
+            <pre data-slot="bash-pre" data-section="command">
+              <code>{code()}</code>
             </pre>
+            <Show when={output()}>
+              <pre data-slot="bash-pre" data-section="output">
+                <code>{output()}</code>
+              </pre>
+            </Show>
+            <Show when={errored() && errorText()}>
+              <pre data-slot="bash-pre" data-section="error">
+                <code>{errorText()}</code>
+              </pre>
+            </Show>
           </div>
         </div>
       </BasicTool>

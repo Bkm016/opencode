@@ -107,6 +107,7 @@ export const SessionPaths = {
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
+  canvas: `${root}/:sessionID/canvas/:partID`,
 } as const
 
 export const SessionApi = HttpApi.make("session")
@@ -495,6 +496,25 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "part.update",
             description: "Update a part in a message.",
+          }),
+        ),
+        HttpApiEndpoint.get("canvas", SessionPaths.canvas, {
+          params: { sessionID: SessionID, partID: PartID },
+          query: WorkspaceRoutingQuery,
+          success: described(
+            Schema.Struct({
+              path: Schema.String,
+              title: Schema.String,
+              content: Schema.String,
+            }),
+            "Canvas document content",
+          ),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.canvas",
+            summary: "Get canvas content",
+            description: "Get the current content of a canvas tool part for live rendering.",
           }),
         ),
       )

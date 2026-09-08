@@ -25,6 +25,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
+import { CanvasTool } from "./canvas"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import { GoalUpdateTool } from "./goal-update"
@@ -129,6 +130,7 @@ const layer = Layer.effect(
     const python = yield* PythonTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
+    const canvas = yield* CanvasTool
     const edit = yield* EditTool
     const multiEdit = yield* MultiEditTool
     const greptool = yield* GrepTool
@@ -240,6 +242,7 @@ const layer = Layer.effect(
           edit: Tool.init(edit),
           multiedit: Tool.init(multiEdit),
           write: Tool.init(writetool),
+          canvas: Tool.init(canvas),
           task: Tool.init(task),
           taskStatus: Tool.init(taskStatus),
           taskWait: Tool.init(taskWait),
@@ -275,6 +278,7 @@ const layer = Layer.effect(
             tool.edit,
             tool.multiedit,
             tool.write,
+            tool.canvas,
             tool.task,
             tool.taskStatus,
             tool.taskWait,

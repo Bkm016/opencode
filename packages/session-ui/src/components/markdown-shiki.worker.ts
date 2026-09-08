@@ -2,13 +2,13 @@
 
 import { ShikiStreamTokenizer } from "@shikijs/stream"
 import {
-  bundledLanguages,
   createHighlighter,
   getTokenStyleObject,
   stringifyTokenStyle,
   type BundledLanguage,
   type ThemedToken,
 } from "shiki"
+import { markdownLanguage, markdownLanguages } from "@opencode-ai/ui/context/markdown-language"
 import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
 import { createLatestWorkerQueue } from "./markdown-worker-queue"
 
@@ -43,9 +43,9 @@ async function highlight(request: Extract<MarkdownWorkerRequest, { type: "highli
   try {
     const instance = await highlighter
     if (!instance) throw new Error("Shiki worker is not initialized")
-    const language = request.language in bundledLanguages ? request.language : "text"
-    if (!instance.getLoadedLanguages().includes(language))
-      await instance.loadLanguage(bundledLanguages[language as BundledLanguage])
+    const language = markdownLanguage(request.language)
+    if (language !== "text" && !instance.getLoadedLanguages().includes(language))
+      await instance.loadLanguage(markdownLanguages[language])
 
     if (request.complete) {
       const result = instance.codeToTokens(request.text, { lang: language as BundledLanguage, theme: "OpenCode" })

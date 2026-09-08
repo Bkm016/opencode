@@ -28,6 +28,7 @@ import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Tool } from "@/tool/tool"
 import { InputAlias } from "@/tool/input-aliases"
 import { ToolNameAlias } from "@/tool/name-alias"
+import { parseJSON } from "partial-json"
 
 const DOOM_LOOP_THRESHOLD = 3
 const REPETITION_RETRY_PROMPT =
@@ -67,6 +68,7 @@ type ToolCall = {
   messageID: SessionV1.ToolPart["messageID"]
   sessionID: SessionV1.ToolPart["sessionID"]
   done: Deferred.Deferred<void>
+  preview?: { raw: string; published: number; length: number }
 }
 
 interface ProcessorContext extends Input {
@@ -131,6 +133,43 @@ const layer = Layer.effect(
           providerID: input.model.providerID,
           aborted,
         })
+
+      const toolInput = (toolName: string, value: unknown) => {
+        // Canonicalize input aliases before transcript write so UI only sees registered names.
+        const raw = isRecord(value) ? value : { value }
+        const input = Tool.applyInputAliases(raw, ToolNameAlias.inputAliasesFromTools(activeTools)?.[toolName]) as typeof raw
+        if (toolName !== "multiedit" || !Array.isArray(input.edits)) return input
+        return {
+          ...input,
+          edits: input.edits.map((entry) => Tool.applyInputAliases(entry, InputAlias.multiEditEntry)),
+        }
+      }
+
+      const publishToolInput = Effect.fnUntraced(function* (id: string, force = false) {
+        const preview = ctx.toolcalls[id]?.preview
+        if (!preview || preview.length === preview.raw.length) return
+        // 合并高频参数分片；预览只写 pending 状态，绝不能覆盖已经开始执行的完整参数。
+        const now = Date.now()
+        if (!force && now - preview.published < 150) return
+        preview.published = now
+        // 分片可能停在转义符中间；解析失败只保留上次预览，不影响真实工具调用。
+        const value: unknown = yield* Effect.try({
+          try: () => parseJSON(preview.raw),
+          catch: (error) => error,
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        yield* updateToolCall(id, (part) => {
+          if (part.state.status !== "pending") return part
+          return {
+            ...part,
+            state: {
+              ...part.state,
+              raw: preview.raw,
+              input: isRecord(value) ? toolInput(part.tool, value) : part.state.input,
+            },
+          }
+        })
+        preview.length = preview.raw.length
+      })
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
         const done = ctx.toolcalls[toolCallID]?.done
@@ -418,12 +457,19 @@ const layer = Layer.effect(
             })
             return
 
-          case "tool-input-delta":
-            yield* ensureToolCall(value)
+          case "tool-input-delta": {
+            if (!ctx.toolcalls[value.id]) yield* ensureToolCall(value)
+            const call = ctx.toolcalls[value.id]
+            if (!call || !value.text) return
+            const preview = (call.preview ??= { raw: "", published: 0, length: 0 })
+            preview.raw += value.text
+            yield* publishToolInput(value.id)
             return
+          }
 
           case "tool-input-end": {
             yield* ensureToolCall(value)
+            yield* publishToolInput(value.id, true)
             return
           }
 
@@ -439,18 +485,7 @@ const layer = Layer.effect(
                 ToolNameAlias.fromTools(activeTools),
               ) ?? value.name
             yield* ensureToolCall({ ...value, name: toolName })
-            // Canonicalize input aliases before transcript write so UI only sees registered names.
-            const raw = isRecord(value.input) ? value.input : { value: value.input }
-            let input = Tool.applyInputAliases(
-              raw,
-              ToolNameAlias.inputAliasesFromTools(activeTools)?.[toolName],
-            ) as typeof raw
-            if (toolName === "multiedit" && isRecord(input) && Array.isArray(input.edits)) {
-              input = {
-                ...input,
-                edits: input.edits.map((entry) => Tool.applyInputAliases(entry, InputAlias.multiEditEntry)),
-              }
-            }
+            const input = toolInput(toolName, value.input)
             yield* updateToolCall(value.id, (match) => ({
               ...match,
               tool: toolName,
@@ -466,6 +501,8 @@ const layer = Layer.effect(
                 ? { ...value.providerMetadata, providerExecuted: true }
                 : value.providerMetadata,
             }))
+
+            if (ctx.toolcalls[value.id]) delete ctx.toolcalls[value.id].preview
 
             // 跨 provider turn 汇总最近 assistant parts，避免每轮新建消息重置 doom-loop 计数。
             const recentParts = (yield* session.messages({
@@ -711,6 +748,7 @@ const layer = Layer.effect(
         )
 
         for (const toolCallID of Object.keys(ctx.toolcalls)) {
+          yield* publishToolInput(toolCallID, true)
           const match = yield* readToolCall(toolCallID)
           if (!match) continue
           const part = match.part

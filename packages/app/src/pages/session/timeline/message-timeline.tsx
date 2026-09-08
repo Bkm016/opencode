@@ -36,6 +36,7 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { SessionRetry } from "@opencode-ai/session-ui/session-retry"
+import { CanvasSummary } from "@opencode-ai/session-ui/canvas-tool"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
@@ -1175,6 +1176,7 @@ export function MessageTimeline(props: {
   const renderPartGroup = (input: {
     userMessageID: string
     group: PartGroup
+    canvases?: TimelineRowMap["AssistantPart"]["canvases"]
     onSizeChange?: () => void
   }) => {
     if (input.group.type === "context") {
@@ -1241,6 +1243,7 @@ export function MessageTimeline(props: {
                 virtualizeDiff={false}
                 onContentRendered={input.onSizeChange}
                 onViewFile={onViewFile}
+                canvases={input.canvases}
               />
             )}
           </Show>
@@ -1253,6 +1256,9 @@ export function MessageTimeline(props: {
     renderPartGroup({
       userMessageID: row().userMessageID,
       group: row().group,
+      get canvases() {
+        return row().canvases
+      },
       onSizeChange,
     })
 
@@ -1417,6 +1423,16 @@ export function MessageTimeline(props: {
                   void sdk().client.session.retry({ sessionID: id }).catch(() => {})
                 }}
               />
+            </div>
+          </TimelineRowFrame>
+        )
+      }
+      case "CanvasSummary": {
+        const canvasSummaryRow = row as Accessor<TimelineRowByTag<"CanvasSummary">>
+        return (
+          <TimelineRowFrame row={canvasSummaryRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <CanvasSummary sessionID={canvasSummaryRow().sessionID} canvases={canvasSummaryRow().canvases} />
             </div>
           </TimelineRowFrame>
         )

@@ -1,0 +1,365 @@
+[data-component="canvas-document"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--surface-raised-stronger-non-alpha, #ffffff);
+  color: var(--text-strong);
+  font-family: var(--font-family-sans);
+  font-size: 14px;
+  line-height: 1.8;
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* 错误提示条 */
+  [data-slot="canvas-document-error"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    flex-shrink: 0;
+    margin: 16px 36px 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-weak);
+    font-size: 13px;
+    overflow-wrap: break-word;
+
+    &[data-hidden] {
+      display: none;
+    }
+
+    @media (max-width: 640px) {
+      margin-inline: 16px;
+    }
+  }
+
+  [data-slot="canvas-document-error-text"] {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+
+  [data-slot="canvas-document-fix"] {
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-strong);
+    font: inherit;
+    cursor: pointer;
+    text-underline-offset: 3px;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  /* 外层滚动区域 */
+  [data-slot="canvas-document-scroll"] {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  /* 文档纸张卡片底面：精致技术讲解文档单独底面，适度边框/圆角/留白 */
+  /* 当前采用无描边、无投影样式，仅保留底色与留白。 */
+  /* 当前改为单一纸面，外层负责底色，不再叠放带圆角的文档卡片。 */
+  [data-slot="canvas-document-body"] {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 36px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-sizing: border-box;
+
+    @media (max-width: 640px) {
+      padding: 20px 16px;
+      border-radius: 0;
+    }
+  }
+
+  /* 正式文档 h1 fallback：仅在正文无 h1 时展示，与正文主标题层级视觉一致 */
+  /* 正文内容已包含 h1 时，由组件隐藏 fallback 标题，避免标题重复。 */
+  [data-slot="canvas-document-title"] {
+    flex-shrink: 0;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 0;
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text-strong);
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+    overflow-wrap: break-word;
+  }
+}
+
+/* 画布正文排版：延续 markdown 阅读面板语汇，作用域限定在组件内 */
+[data-component="canvas-document"] .canvas-markdown {
+  min-width: 0;
+  overflow-wrap: break-word;
+  font-size: 14px;
+  line-height: 1.8;
+
+  /* 清除首尾元素外边距，适配嵌套 content 容器 */
+  > *:first-child,
+  [data-slot="canvas-document-content"] > *:first-child {
+    margin-top: 0;
+  }
+  > *:last-child,
+  [data-slot="canvas-document-content"] > *:last-child {
+    margin-bottom: 0;
+  }
+
+  h1 {
+    font-size: 24px;
+    color: var(--text-strong);
+    font-weight: 500;
+    margin: 32px 0 16px;
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+    padding-bottom: 8px;
+    border-bottom: 0;
+  }
+
+  h2 {
+    font-size: 17px;
+    color: var(--text-strong);
+    font-weight: 500;
+    margin: 32px 0 12px;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+  }
+
+  h3 {
+    font-size: 15px;
+    color: var(--text-strong);
+    font-weight: 500;
+    margin: 20px 0 8px;
+    line-height: 1.5;
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-size: 14px;
+    color: var(--text-strong);
+    font-weight: 600;
+    margin: 16px 0 6px;
+    line-height: 1.5;
+  }
+
+  strong,
+  b {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+
+  p {
+    margin: 0 0 16px;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  a {
+    color: var(--text-interactive-base);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  ul,
+  ol {
+    margin: 8px 0 16px;
+    padding-left: 28px;
+    list-style-position: outside;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+    padding-left: 1.75rem;
+  }
+
+  li {
+    margin-bottom: 6px;
+    line-height: 1.8;
+  }
+
+  li::marker {
+    color: var(--text-base);
+  }
+
+  li > ul,
+  li > ol {
+    margin: 4px 0;
+    padding-left: 1rem;
+  }
+
+  li > ol {
+    padding-left: 1.5rem;
+  }
+
+  /* 引用块：高对比清晰可读，采用克制蓝青强调边框与浅底衬面，避免发灰不可见 */
+  /* 取消强调边框，以浅底衬面区分引用。 */
+  blockquote {
+    border: 0;
+    margin: 16px 0;
+    padding: 10px 16px;
+    background: var(--surface-base);
+    border-radius: 6px;
+    color: var(--text-strong);
+    font-size: 14px;
+    line-height: 1.8;
+
+    p {
+      margin: 0;
+    }
+    p + p {
+      margin-top: 8px;
+    }
+  }
+
+  hr {
+    border: none;
+    height: 0;
+    margin: 28px 0;
+  }
+
+  pre {
+    margin: 16px 0 20px;
+    padding: 14px 16px;
+    overflow: auto;
+    border: 0;
+    border-radius: 6px;
+    background: var(--background-stronger);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  pre code {
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+  }
+
+  :not(pre) > code {
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    color: var(--text-strong);
+    font-weight: 500;
+    font-size: 0.88em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--surface-base);
+    border: 0;
+  }
+
+  /* 表格整体横滚，宽表不挤压正文列宽 */
+  table {
+    font-variant-numeric: tabular-nums;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 20px 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  thead {
+    background: var(--surface-base);
+  }
+
+  th {
+    background: var(--surface-base);
+    color: var(--text-strong);
+    font-weight: 600;
+    font-size: 13px;
+    padding: 10px 14px;
+    text-align: left;
+    border: 0;
+  }
+
+  td {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-strong);
+    border: 0;
+    vertical-align: top;
+  }
+
+  tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--surface-base) 45%, transparent);
+  }
+
+  tbody tr:hover {
+    background: var(--surface-base-hover);
+  }
+
+  /* 图卡片：独立底面 + 边框，与正文阅读节奏分开 */
+  /* 当前仅保留独立底面，不绘制卡片边框。 */
+  /* 图表作为正文内容直接落在文档纸面上：无套层底色、无边框、无圆角、无阴影， */
+  /* SVG 背景由宿主主题设为纸面色，保证图表与正文无缝衔接。 */
+  .canvas-diagram {
+    margin: 24px 0 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  /* 数据图保留原始字号，窄屏横向查看，不把坐标和图例缩成无法阅读的小字。 */
+  /* 当前改为所有图表等比适应可用宽度，不设内部滚动区；细节查看交由画布缩放。 */
+  .canvas-diagram img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+
+  /* 公式沿用聊天的 KaTeX 字体资源，独立公式不附加卡片底色，导出时保持相同排版。 */
+  .katex {
+    color: inherit;
+    font-size: 1.05em;
+  }
+
+  .katex-display {
+    margin: 20px 0;
+    padding: 4px 0;
+    overflow: visible;
+  }
+}

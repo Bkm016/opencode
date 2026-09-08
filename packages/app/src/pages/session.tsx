@@ -70,6 +70,7 @@ import {
   sessionPanelWidthMax,
 } from "@/pages/session/session-panel-width"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { SessionCanvasProvider } from "@/pages/session/session-canvas-provider"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -300,7 +301,9 @@ function SessionProviders(props: ParentProps) {
   return (
     <TerminalProvider>
       <PromptProvider>
-        <CommentsProvider>{props.children}</CommentsProvider>
+        <CommentsProvider>
+          <SessionCanvasProvider>{props.children}</SessionCanvasProvider>
+        </CommentsProvider>
       </PromptProvider>
     </TerminalProvider>
   )
@@ -372,6 +375,7 @@ export default function Page() {
   const desktopSidePanelOpen = desktopTabsOpen
   // 侧栏目前只有 context 面板；桌面与移动端共用 reviewPanel.opened 判定，
   // 不再引用已移除的 tabs().active 状态。
+  // Canvas 与 context 共用此开关，具体内容由侧栏内部切换。
   const mobileContextOpen = createMemo(() => !isDesktop() && view().reviewPanel.opened())
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()

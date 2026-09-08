@@ -22,25 +22,38 @@ export interface FileUpdate {
   readonly bom: boolean
 }
 
-export function parse(patchText: string): ReadonlyArray<Hunk> {
-  const lines = stripHeredoc(patchText.trim()).split("\n")
+export function parse(patchText: string, options?: { readonly partial?: boolean }): ReadonlyArray<Hunk> {
+  const partial = options?.partial ?? false
+  // partial 模式下不 trim 尾部，保留正在生成的新增内容末尾空白
+  const text = partial ? stripHeredoc(patchText.trimStart()) : stripHeredoc(patchText.trim())
+  const lines = text.split("\n")
   const begin = lines.findIndex((line) => line.trim() === "*** Begin Patch")
   const end = lines.findIndex((line) => line.trim() === "*** End Patch")
-  if (begin === -1 || end === -1 || begin >= end) throw new Error("Invalid patch format: missing Begin/End markers")
 
+  if (!partial) {
+    if (begin === -1 || end === -1 || begin >= end) throw new Error("Invalid patch format: missing Begin/End markers")
+  } else {
+    // partial 模式下尚未收到 Begin marker 则直接返回空
+    if (begin === -1 || (end !== -1 && begin >= end)) return []
+  }
+
+  const effectiveEnd = partial && end === -1 ? lines.length : end
   const hunks: Hunk[] = []
   let index = begin + 1
-  while (index < end) {
+  while (index < effectiveEnd) {
     const line = lines[index]!
     if (line.startsWith("*** Add File:")) {
+      // 尾部未完成的文件头（无后续换行）先不产出
+      if (partial && index === lines.length - 1) break
       const path = line.slice("*** Add File:".length).trim()
       if (!path) throw new Error("Invalid add file path")
-      const parsed = parseAdd(lines, index + 1)
+      const parsed = parseAdd(lines, index + 1, partial)
       hunks.push({ type: "add", path, contents: parsed.content })
       index = parsed.next
       continue
     }
     if (line.startsWith("*** Delete File:")) {
+      if (partial && index === lines.length - 1) break
       const path = line.slice("*** Delete File:".length).trim()
       if (!path) throw new Error("Invalid delete file path")
       hunks.push({ type: "delete", path })
@@ -48,20 +61,30 @@ export function parse(patchText: string): ReadonlyArray<Hunk> {
       continue
     }
     if (line.startsWith("*** Update File:")) {
+      if (partial && index === lines.length - 1) break
       const path = line.slice("*** Update File:".length).trim()
       if (!path) throw new Error("Invalid update file path")
       let next = index + 1
       let movePath: string | undefined
       if (lines[next]?.startsWith("*** Move to:")) {
+        if (partial && next === lines.length - 1) break
         movePath = lines[next]!.slice("*** Move to:".length).trim()
         if (!movePath) throw new Error("Invalid move file path")
         next++
       }
-      const parsed = parseUpdate(lines, next)
-      if (parsed.chunks.length === 0) throw new Error(`Invalid update hunk for ${path}: expected at least one @@ chunk`)
+      const parsed = parseUpdate(lines, next, partial)
+      if (parsed.chunks.length === 0) {
+        if (!partial) throw new Error(`Invalid update hunk for ${path}: expected at least one @@ chunk`)
+        index = parsed.next
+        continue
+      }
       hunks.push({ type: "update", path, movePath, chunks: parsed.chunks })
       index = parsed.next
       continue
+    }
+    // partial 模式下遇到尾部未完成的协议行或 End marker 结束解析
+    if (partial && (line.trim() === "*** End Patch" || isTrailingIncomplete(lines, index))) {
+      break
     }
     throw new Error(`Invalid patch line: ${line}`)
   }
@@ -85,22 +108,33 @@ export function joinBom(text: string, bom: boolean) {
   return bom ? `\uFEFF${stripped}` : stripped
 }
 
-function parseAdd(lines: ReadonlyArray<string>, start: number) {
+function parseAdd(lines: ReadonlyArray<string>, start: number, partial = false) {
   const content: string[] = []
   let index = start
   while (index < lines.length && !lines[index]!.startsWith("***")) {
-    if (!lines[index]!.startsWith("+")) throw new Error(`Invalid add file line: ${lines[index]}`)
-    content.push(lines[index]!.slice(1))
+    const line = lines[index]!
+    // partial 模式下，遇到后续协议行或尾部空行结束内容收集，不将协议文本注入内容
+    if (partial && (line.startsWith("*") || line.startsWith("@") || (line === "" && isTrailingIncomplete(lines, index)))) {
+      break
+    }
+    if (!line.startsWith("+")) throw new Error(`Invalid add file line: ${line}`)
+    content.push(line.slice(1))
     index++
   }
   return { content: content.join("\n"), next: index }
 }
 
-function parseUpdate(lines: ReadonlyArray<string>, start: number) {
+function parseUpdate(lines: ReadonlyArray<string>, start: number, partial = false) {
   const chunks: UpdateFileChunk[] = []
   let index = start
   while (index < lines.length && !lines[index]!.startsWith("***")) {
+    if (partial && (lines[index]!.startsWith("*") || (lines[index] === "" && isTrailingIncomplete(lines, index)))) {
+      break
+    }
     if (!lines[index]!.startsWith("@@")) {
+      if (partial && lines[index]!.startsWith("@") && isTrailingIncomplete(lines, index)) {
+        break
+      }
       throw new Error(`Invalid update file line: ${lines[index]}`)
     }
     const changeContext = lines[index]!.slice(2).trim() || undefined
@@ -116,6 +150,14 @@ function parseUpdate(lines: ReadonlyArray<string>, start: number) {
         break
       }
       if (line.startsWith("***")) break
+      if (
+        partial &&
+        (line.startsWith("*") ||
+          (line.startsWith("@") && isTrailingIncomplete(lines, index)) ||
+          (line === "" && isTrailingIncomplete(lines, index)))
+      ) {
+        break
+      }
       if (line.startsWith(" ")) {
         oldLines.push(line.slice(1))
         newLines.push(line.slice(1))
@@ -124,9 +166,20 @@ function parseUpdate(lines: ReadonlyArray<string>, start: number) {
       else throw new Error(`Invalid update chunk line: ${line}`)
       index++
     }
-    chunks.push({ oldLines, newLines, changeContext, endOfFile: endOfFile || undefined })
+    // partial 模式下仅当收集到有效行或遇到 EOF 时产出 chunk，避免产出空 chunk
+    if (!partial || oldLines.length > 0 || newLines.length > 0 || endOfFile) {
+      chunks.push({ oldLines, newLines, changeContext, endOfFile: endOfFile || undefined })
+    }
   }
   return { chunks, next: index }
+}
+
+function isTrailingIncomplete(lines: ReadonlyArray<string>, start: number) {
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i]!
+    if (line !== "" && !line.startsWith("*") && !line.startsWith("@")) return false
+  }
+  return true
 }
 
 function computeReplacements(lines: ReadonlyArray<string>, path: string, chunks: ReadonlyArray<UpdateFileChunk>) {

@@ -11153,6 +11153,45 @@ export type PartUpdateResponses = {
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
 
+export type SessionCanvasData = {
+  body?: never
+  path: {
+    sessionID: string
+    partID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/canvas/{partID}"
+}
+
+export type SessionCanvasErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionCanvasError = SessionCanvasErrors[keyof SessionCanvasErrors]
+
+export type SessionCanvasResponses = {
+  /**
+   * Canvas document content
+   */
+  200: {
+    path: string
+    title: string
+    content: string
+  }
+}
+
+export type SessionCanvasResponse = SessionCanvasResponses[keyof SessionCanvasResponses]
+
 export type GoalClearData = {
   body?: never
   path: {

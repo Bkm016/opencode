@@ -1,0 +1,35 @@
+Display a Markdown document on the interactive canvas.
+
+Use it to explain relationships and behavior visually when prose alone is unclear. The desktop app provides a consistent reading layout and diagram theme; no plugin or additional server is needed.
+
+Desktop chat also renders closed mermaid and vega-lite Markdown code fences directly using the same chart engine, theme, and restrictions described below. Use inline fenced diagrams for explanations that belong in the reply; use the canvas tool for a separate, file-backed document. Markdown tables and LaTeX formulas render directly in chat too. Do not call canvas or create a file solely to display a diagram in a reply. Always close the code fence; incomplete diagrams remain source text while streaming.
+
+First create or edit a .md or .markdown file inside the project workspace using write, edit, or apply_patch, then call canvas with its path. Once opened, subsequent edits to the file automatically refresh the desktop canvas in real time without needing extra canvas calls.
+
+The desktop automatically displays clickable canvas references after the turn completes. Do not construct canvas links in your response; explain the result normally.
+
+Supported content:
+- LaTeX math using $...$, $$...$$, or \(...\), rendered with the same KaTeX support as chat. Use aligned environments to split long display equations into readable lines.
+- Standard Markdown syntax (headings, lists, tables, bold, italic, code blocks, blockquotes).
+- Mermaid diagrams inside ```mermaid code blocks. Supported diagram types: flowchart, sequenceDiagram, stateDiagram-v2, erDiagram.
+- Data charts inside ```vega-lite code blocks containing a Vega-Lite JSON specification. Use these for bars, lines, areas, scatter plots, pie/donut charts, and layered comparisons. Charts share the desktop theme and are included when copying the canvas as an image.
+
+Strict constraints:
+- DO NOT use raw HTML tags or elements (e.g. <div>, <span>, <script>, <iframe>, <style>).
+- DO NOT use custom CSS.
+- In Mermaid diagrams: DO NOT use %%{init:...}%% directives, YAML frontmatter, style, classDef, class assignments, linkStyle, colored rect blocks, or click bindings/callbacks. Avoid HTML labels and @{...} node attributes; use ordinary nodes, relationships, and plain text. OpenCode owns all visual styling.
+- The path must point to an existing .md or .markdown file within the current project (max 256 KB).
+
+For data charts, use inline data.values containing flat records, mark, and encoding. Use color.field to group series, not custom colors. Include meaningful field types, labels and units. Layered marks may share the root data. Do not use remote URLs, named datasets, transforms, expressions, parameters, selections, HTML, image marks, or custom config/styles. Precompute derived data before writing the document. The host controls chart dimensions and visual styling.
+
+Example data chart:
+```vega-lite
+{
+  "data": {"values": [{"month": "Jan", "revenue": 120}, {"month": "Feb", "revenue": 180}, {"month": "Mar", "revenue": 150}]},
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "month", "type": "ordinal", "sort": ["Jan", "Feb", "Mar"], "title": "Month"},
+    "y": {"field": "revenue", "type": "quantitative", "title": "Revenue (thousands)"}
+  }
+}
+```

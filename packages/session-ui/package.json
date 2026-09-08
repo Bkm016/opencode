@@ -61,6 +61,7 @@
     "marked": "catalog:",
     "marked-katex-extension": "5.1.6",
     "marked-shiki": "catalog:",
+    "mermaid": "11.17.2",
     "morphdom": "2.7.8",
     "motion": "12.34.5",
     "remeda": "catalog:",
@@ -68,6 +69,9 @@
     "shiki": "catalog:",
     "solid-js": "catalog:",
     "solid-list": "catalog:",
-    "strip-ansi": "7.1.2"
+    "strip-ansi": "7.1.2",
+    "vega": "6.4.0",
+    "vega-lite": "6.4.3",
+    "vega-interpreter": "2.3.2"
   }
 }

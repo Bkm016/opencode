@@ -58,7 +58,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Card, CardDescription, CardTitle } from "@opencode-ai/ui/card"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
-import { patchFiles } from "./apply-patch-file"
+import { patchFiles, pendingPatchFiles } from "./apply-patch-file"
 import { parseTaskNotification, TaskNotificationCard } from "./task-notification"
 import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
@@ -66,7 +66,9 @@ import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
 import { isContextGroupTool } from "./message-part-groups"
 import { ImageGenerationTool } from "./image-generation-tool"
-import { CanvasTool } from "./canvas-tool"
+import { CanvasTool, CanvasSummary } from "./canvas-tool"
+import type { CanvasReference } from "../context/canvas"
+import { writeClipboardImage } from "./clipboard-image"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -90,38 +92,6 @@ async function writeClipboard(text: string): Promise<boolean> {
     () => true,
     () => false,
   )
-}
-
-async function writeClipboardImage(blob: Blob): Promise<boolean> {
-  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-  if (clipboard?.write && typeof ClipboardItem !== "undefined") {
-    try {
-      await clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-      return true
-    } catch {
-      // 浏览器权限受限或焦点丢失时尝试客户端扩展接口
-    }
-  }
-
-  const api =
-    typeof window !== "undefined"
-      ? (window as unknown as { api?: { writeClipboardImage?: (dataUrl: string) => Promise<boolean> } }).api
-      : undefined
-  if (api?.writeClipboardImage) {
-    try {
-      const reader = new FileReader()
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      })
-      return await api.writeClipboardImage(dataUrl)
-    } catch {
-      return false
-    }
-  }
-
-  return false
 }
 
 async function copyAsImageCard(options: {
@@ -402,6 +372,8 @@ export interface MessagePartProps {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   onViewFile?: (file: string) => void
+  /** 自动产物引用放在正文之后、操作栏之前，不进入模型正文或复制文本。 */
+  canvases?: CanvasReference[]
   /** 在该条 assistant 文本处触发「从中间压缩」，由 app 层注入真实调用 */
   onCompactHere?: (messageID: string) => void
   /** 压缩按钮的可见性与可用性（策略 / 会话空闲由调用方决定） */
@@ -1814,6 +1786,7 @@ export function Part(props: MessagePartProps) {
           showAssistantCopyPartID={props.showAssistantCopyPartID}
           turnDurationMs={props.turnDurationMs}
           onViewFile={props.onViewFile}
+          canvases={props.canvases}
           onCompactHere={props.onCompactHere}
           compactHere={props.compactHere}
         />
@@ -1897,16 +1870,17 @@ function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) =
 }
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
-  const value = createMemo(() => props.path || "tool-file")
+  // 同一文件的路径从生成中到服务端规范化后可能改变，不能因此丢失展开状态。
+  const value = "tool-file"
 
   return (
     <Accordion
       multiple
       data-scope="apply-patch"
       style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
-      defaultValue={[value()]}
+      defaultValue={[value]}
     >
-      <Accordion.Item value={value()}>
+      <Accordion.Item value={value}>
         <StickyAccordionHeader>
           <Accordion.Trigger>
             <div data-slot="apply-patch-trigger-content">
@@ -2007,9 +1981,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               part().state.status === "error" &&
               (part().state as any).error &&
               part().tool !== "bash" &&
-               part().tool !== "python" &&
-               part().tool !== "canvas" &&
-               part().tool !== "image_generation"
+              part().tool !== "python" &&
+              part().tool !== "canvas" &&
+              part().tool !== "image_generation"
             }
           >
             {(error) => {
@@ -2466,6 +2440,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                 <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
               </Show>
             </div>
+            <Show when={props.canvases?.length}>
+              <CanvasSummary sessionID={props.message.sessionID} canvases={props.canvases!} />
+            </Show>
             <Show when={showCopy()}>
               <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
                 <MessageActionButton
@@ -4165,6 +4142,8 @@ ToolRegistry.register({
       <div data-component="edit-tool">
         <BasicTool
           {...props}
+          allowPendingDetails
+          defaultOpen={pending() || props.defaultOpen}
           icon="code-lines"
           defer={props.deferContent !== false}
           trigger={
@@ -4174,11 +4153,11 @@ ToolRegistry.register({
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
                   </span>
-                  <Show when={!pending()}>
+                  <Show when={filename()}>
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
                   </div>
@@ -4207,6 +4186,7 @@ ToolRegistry.register({
                   component={fileComponent}
                   mode="diff"
                   virtualize={props.virtualizeDiff}
+                  streaming={pending()}
                   onRendered={props.onContentRendered}
                   {...fileCompProps()}
                 />
@@ -4233,6 +4213,8 @@ ToolRegistry.register({
       <div data-component="write-tool">
         <BasicTool
           {...props}
+          allowPendingDetails
+          defaultOpen={pending() || props.defaultOpen}
           icon="code-lines"
           defer={props.deferContent !== false}
           trigger={
@@ -4242,11 +4224,11 @@ ToolRegistry.register({
                   <span data-slot="message-part-title-text">
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
                   </span>
-                  <Show when={!pending()}>
+                  <Show when={filename()}>
                     <span data-slot="message-part-title-filename">{filename()}</span>
                   </Show>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <Show when={props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
                     <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
                   </div>
@@ -4265,6 +4247,7 @@ ToolRegistry.register({
                 <Dynamic
                   component={fileComponent}
                   mode="text"
+                  streaming={pending()}
                   file={{
                     name: props.input.filePath,
                     contents: props.input.content,
@@ -4286,22 +4269,29 @@ ToolRegistry.register({
 function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
   const i18n = useI18n()
   const fileComponent = useFileComponent()
-  const files = createMemo(() => patchFiles(props.metadata.files))
   const pending = createMemo(() => props.status === "pending" || props.status === "running")
+  const files = createMemo<ReturnType<typeof patchFiles>>((previous) => {
+    const actual = patchFiles(props.metadata.files)
+    if (actual.length || !pending()) return actual
+    const preview = pendingPatchFiles(props.tool ?? "", props.input)
+    return preview.length ? preview : (previous ?? [])
+  })
   const single = createMemo(() => {
     const list = files()
     if (list.length !== 1) return
     return list[0]
   })
   const [expanded, setExpanded] = createSignal<string[]>([])
-  let seeded = false
+  const [open, setOpen] = createSignal(pending() || props.defaultOpen || false)
+  let seeded = 0
 
   createEffect(() => {
     const list = files()
-    if (list.length === 0) return
-    if (seeded) return
-    seeded = true
-    setExpanded(list.filter((f) => f.type !== "delete").map((f) => f.filePath))
+    if (list.length <= seeded) return
+    // 按流内文件顺序保留折叠状态；最终绝对路径替换预览路径时不重挂卡片。
+    const added = list.flatMap((file, index) => (index >= seeded && file.type !== "delete" ? [String(index)] : []))
+    seeded = list.length
+    setExpanded((value) => [...value, ...added])
   })
 
   const subtitle = createMemo(() => {
@@ -4311,178 +4301,138 @@ function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
   })
 
   return (
-    <Show
-      when={single()}
-      fallback={
-        <div data-component="apply-patch-tool">
-          <BasicTool
-            {...props}
-            icon="code-lines"
-            defer={props.deferContent !== false}
-            trigger={{
+    <div data-component="apply-patch-tool">
+      <BasicTool
+        {...props}
+        allowPendingDetails
+        open={props.open ?? open()}
+        onOpenChange={(value) => {
+          setOpen(value)
+          props.onOpenChange?.(value)
+        }}
+        icon="code-lines"
+        defer={props.deferContent !== false}
+        trigger={
+          single() ? (
+            <div data-component="edit-trigger">
+              <div data-slot="message-part-title-area">
+                <div data-slot="message-part-title">
+                  <span data-slot="message-part-title-text">
+                    <TextShimmer text={i18n.t(props.titleKey)} active={pending()} />
+                  </span>
+                  <span data-slot="message-part-title-filename">{getFilename(single()?.relativePath)}</span>
+                </div>
+                <Show when={single()?.relativePath.includes("/")}>
+                  <div data-slot="message-part-path">
+                    <span data-slot="message-part-directory">{getDirectory(single()?.relativePath)}</span>
+                  </div>
+                </Show>
+              </div>
+              <div data-slot="message-part-actions">
+                <DiffChanges changes={{ additions: single()?.additions ?? 0, deletions: single()?.deletions ?? 0 }} />
+                <OpenFileButton filePath={single()?.filePath ?? ""} onViewFile={props.onViewFile} />
+              </div>
+            </div>
+          ) : (
+            {
               title: i18n.t(props.titleKey),
               subtitle: subtitle(),
-            }}
-          >
-              <Show when={files().length > 0}>
-                <Accordion
-                  multiple
-                  data-scope="apply-patch"
-                  style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
-                  value={expanded()}
-                  onChange={(value) => setExpanded(Array.isArray(value) ? value : value ? [value] : [])}
-                >
-                  <For each={files()}>
-                    {(file) => {
-                      const active = createMemo(() => expanded().includes(file.filePath))
-                      const [visible, setVisible] = createSignal(false)
-
-                      createEffect(() => {
-                        if (!active()) {
-                          setVisible(false)
-                          return
-                        }
-
-                        requestAnimationFrame(() => {
-                          if (!active()) return
-                          setVisible(true)
-                        })
-                      })
-
-                      return (
-                        <Accordion.Item value={file.filePath} data-type={file.type}>
-                          <StickyAccordionHeader>
-                            <Accordion.Trigger>
-                              <div data-slot="apply-patch-trigger-content">
-                                <div data-slot="apply-patch-file-info">
-                                  <FileIcon node={{ path: file.relativePath, type: "file" }} />
-                                  <div data-slot="apply-patch-file-name-container">
-                                    <Show when={file.relativePath.includes("/")}>
-                                      <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.relativePath)}\u202C`}</span>
-                                    </Show>
-                                    <span data-slot="apply-patch-filename">{getFilename(file.relativePath)}</span>
-                                  </div>
-                                </div>
-                                <div data-slot="apply-patch-trigger-actions">
-                                  <Switch>
-                                    <Match when={file.type === "add"}>
-                                      <span data-slot="apply-patch-change" data-type="added">
-                                        {i18n.t("ui.patch.action.created")}
-                                      </span>
-                                    </Match>
-                                    <Match when={file.type === "delete"}>
-                                      <span data-slot="apply-patch-change" data-type="removed">
-                                        {i18n.t("ui.patch.action.deleted")}
-                                      </span>
-                                    </Match>
-                                    <Match when={file.type === "move"}>
-                                      <span data-slot="apply-patch-change" data-type="modified">
-                                        {i18n.t("ui.patch.action.moved")}
-                                      </span>
-                                    </Match>
-                                    <Match when={true}>
-                                      <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
-                                    </Match>
-                                  </Switch>
-                                  <Icon name="chevron-grabber-vertical" size="small" />
-                                </div>
-                              </div>
-                            </Accordion.Trigger>
-                          </StickyAccordionHeader>
-                          <Accordion.Content>
-                            <Show when={props.deferContent === false || visible()}>
-                              <div data-component="apply-patch-file-diff">
-                                <Dynamic
-                                  component={fileComponent}
-                                  mode="diff"
-                                  virtualize={props.virtualizeDiff}
-                                  fileDiff={file.view.fileDiff}
-                                  hunkSeparators={file.view.fileDiff.isPartial ? "simple" : "line-info-basic"}
-                                  onRendered={props.onContentRendered}
-                                />
-                              </div>
-                            </Show>
-                          </Accordion.Content>
-                        </Accordion.Item>
-                      )
-                    }}
-                  </For>
-                </Accordion>
-              </Show>
-            </BasicTool>
-          </div>
+            }
+          )
         }
       >
-        <div data-component="apply-patch-tool">
-          <BasicTool
-            {...props}
-            icon="code-lines"
-            defer={props.deferContent !== false}
-            trigger={
-              <div data-component="edit-trigger">
-                <div data-slot="message-part-title-area">
-                  <div data-slot="message-part-title">
-                    <span data-slot="message-part-title-text">
-                      <TextShimmer text={i18n.t(props.titleKey)} active={pending()} />
-                    </span>
-                    <Show when={!pending()}>
-                      <span data-slot="message-part-title-filename">{getFilename(single()!.relativePath)}</span>
-                    </Show>
-                  </div>
-                  <Show when={!pending() && single()!.relativePath.includes("/")}>
-                    <div data-slot="message-part-path">
-                      <span data-slot="message-part-directory">{getDirectory(single()!.relativePath)}</span>
-                    </div>
-                  </Show>
-                </div>
-                <div data-slot="message-part-actions">
-                  <Show when={!pending()}>
-                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
-                  </Show>
-                  <OpenFileButton filePath={single()!.filePath} onViewFile={props.onViewFile} />
-                </div>
-              </div>
-            }
+        <Show when={files().length > 0}>
+          <Accordion
+            multiple
+            data-scope="apply-patch"
+            style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
+            value={expanded()}
+            onChange={(value) => setExpanded(Array.isArray(value) ? value : value ? [value] : [])}
           >
-            <ToolFileAccordion
-              path={single()!.relativePath}
-              actions={
-                <Switch>
-                  <Match when={single()!.type === "add"}>
-                    <span data-slot="apply-patch-change" data-type="added">
-                      {i18n.t("ui.patch.action.created")}
-                    </span>
-                  </Match>
-                  <Match when={single()!.type === "delete"}>
-                    <span data-slot="apply-patch-change" data-type="removed">
-                      {i18n.t("ui.patch.action.deleted")}
-                    </span>
-                  </Match>
-                  <Match when={single()!.type === "move"}>
-                    <span data-slot="apply-patch-change" data-type="modified">
-                      {i18n.t("ui.patch.action.moved")}
-                    </span>
-                  </Match>
-                  <Match when={true}>
-                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
-                  </Match>
-                </Switch>
-              }
-            >
-              <div data-component="apply-patch-file-diff">
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  fileDiff={single()!.view.fileDiff}
-                  onRendered={props.onContentRendered}
-                />
-              </div>
-            </ToolFileAccordion>
-          </BasicTool>
-        </div>
-      </Show>
-    )
+            <Index each={files()}>
+              {(file, index) => {
+                const active = createMemo(() => expanded().includes(String(index)))
+                const [visible, setVisible] = createSignal(false)
+
+                createEffect(() => {
+                  if (!active()) {
+                    setVisible(false)
+                    return
+                  }
+
+                  requestAnimationFrame(() => {
+                    if (!active()) return
+                    setVisible(true)
+                  })
+                })
+
+                return (
+                  <Accordion.Item value={String(index)} data-type={file().type}>
+                    <StickyAccordionHeader>
+                      <Accordion.Trigger>
+                        <div data-slot="apply-patch-trigger-content">
+                          <div data-slot="apply-patch-file-info">
+                            <FileIcon node={{ path: file().relativePath, type: "file" }} />
+                            <div data-slot="apply-patch-file-name-container">
+                              <Show when={file().relativePath.includes("/")}>
+                                <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file().relativePath)}\u202C`}</span>
+                              </Show>
+                              <span data-slot="apply-patch-filename">{getFilename(file().relativePath)}</span>
+                            </div>
+                          </div>
+                          <div data-slot="apply-patch-trigger-actions">
+                            <Switch>
+                              <Match when={pending()}>
+                                <DiffChanges changes={{ additions: file().additions, deletions: file().deletions }} />
+                              </Match>
+                              <Match when={file().type === "add"}>
+                                <span data-slot="apply-patch-change" data-type="added">
+                                  {i18n.t("ui.patch.action.created")}
+                                </span>
+                              </Match>
+                              <Match when={file().type === "delete"}>
+                                <span data-slot="apply-patch-change" data-type="removed">
+                                  {i18n.t("ui.patch.action.deleted")}
+                                </span>
+                              </Match>
+                              <Match when={file().type === "move"}>
+                                <span data-slot="apply-patch-change" data-type="modified">
+                                  {i18n.t("ui.patch.action.moved")}
+                                </span>
+                              </Match>
+                              <Match when={true}>
+                                <DiffChanges changes={{ additions: file().additions, deletions: file().deletions }} />
+                              </Match>
+                            </Switch>
+                            <Icon name="chevron-grabber-vertical" size="small" />
+                          </div>
+                        </div>
+                      </Accordion.Trigger>
+                    </StickyAccordionHeader>
+                    <Accordion.Content>
+                      <Show when={props.deferContent === false || visible()}>
+                        <div data-component="apply-patch-file-diff">
+                          <Dynamic
+                            component={fileComponent}
+                            mode="diff"
+                            virtualize={props.virtualizeDiff}
+                            streaming={pending()}
+                            fileDiff={file().view.fileDiff}
+                            hunkSeparators={file().view.fileDiff.isPartial ? "simple" : "line-info-basic"}
+                            onRendered={props.onContentRendered}
+                          />
+                        </div>
+                      </Show>
+                    </Accordion.Content>
+                  </Accordion.Item>
+                )
+              }}
+            </Index>
+          </Accordion>
+        </Show>
+      </BasicTool>
+    </div>
+  )
 }
 
 ToolRegistry.register({

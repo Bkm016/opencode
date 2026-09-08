@@ -1,4 +1,6 @@
 import { Show, createMemo } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 
@@ -9,6 +11,7 @@ import { gsapEnter } from "@/utils/gsap-motion"
 import { SIDE_PANEL_WIDTH_MIN } from "@/pages/session/session-panel-width"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import type { Sizing } from "@/pages/session/helpers"
+import { SessionCanvasPanel } from "./session-canvas-panel"
 
 export function SessionSidePanel(props: {
   size: Sizing
@@ -23,7 +26,12 @@ export function SessionSidePanel(props: {
 }) {
   const layout = useLayout()
   const language = useLanguage()
-  const { view } = useSessionLayout()
+  const i18n = useI18n()
+  const { view, sessionKey } = useSessionLayout()
+  const canvasKey = createMemo(() => {
+    const canvas = view().canvas.get()
+    return canvas && view().canvas.active() ? `${sessionKey()}:${canvas.partID}` : undefined
+  })
   const open = createMemo(() => view().reviewPanel.opened())
   const desktopResize = createMemo(() => {
     if (!open()) return false
@@ -61,7 +69,7 @@ export function SessionSidePanel(props: {
     <Show when={open()}>
       <aside
         id="session-context-panel"
-        aria-label={language.t("session.tab.context")}
+        aria-label={view().canvas.active() ? i18n.t("ui.canvas.title") : language.t("session.tab.context")}
         aria-hidden={!open()}
         inert={!open()}
         class="relative min-w-0 flex overflow-hidden bg-background-base"
@@ -88,14 +96,30 @@ export function SessionSidePanel(props: {
           </div>
         </Show>
         <Show when={open()}>
-          <div
-            class="size-full min-w-0 flex"
-            ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}
-          >
+          <div class="size-full min-w-0 flex" ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}>
             <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden bg-background-base">
               <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 min-w-0">
-                <div class="text-14-medium text-text-strong truncate min-w-0">
-                  {language.t("session.tab.context")}
+                <div class="flex min-w-0 items-center gap-1">
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    aria-pressed={!view().canvas.active()}
+                    onClick={() => view().canvas.showContext()}
+                  >
+                    {language.t("session.tab.context")}
+                  </Button>
+                  <Show when={view().canvas.get()}>
+                    {(canvas) => (
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        aria-pressed={view().canvas.active()}
+                        onClick={() => view().canvas.open(canvas())}
+                      >
+                        {i18n.t("ui.canvas.title")}
+                      </Button>
+                    )}
+                  </Show>
                 </div>
                 <IconButton
                   icon="close-small"
@@ -108,7 +132,12 @@ export function SessionSidePanel(props: {
                 />
               </div>
               <div class="flex-1 min-h-0 min-w-0 overflow-hidden">
-                <SessionContextTab />
+                <Show when={canvasKey()} keyed fallback={<SessionContextTab />}>
+                  {(_key) => {
+                    const canvas = { ...view().canvas.get()! }
+                    return <SessionCanvasPanel canvas={canvas} />
+                  }}
+                </Show>
               </div>
             </div>
           </div>

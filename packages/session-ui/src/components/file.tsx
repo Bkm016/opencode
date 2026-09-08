@@ -25,6 +25,7 @@ import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
+import { bindFileStreamMotion } from "../pierre/file-stream-motion"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -61,6 +62,7 @@ type SharedProps<T> = {
   commentedLines?: SelectedLineRange[]
   onLineNumberSelectionEnd?: (selection: SelectedLineRange | null) => void
   onRendered?: () => void
+  streaming?: boolean
   class?: string
   classList?: ComponentProps<"div">["classList"]
   media?: FileMediaOptions
@@ -122,6 +124,7 @@ const sharedKeys = [
   "onLineSelectionEnd",
   "onLineNumberSelectionEnd",
   "onRendered",
+  "streaming",
   "preloadedDiff",
 ] as const
 
@@ -665,10 +668,23 @@ function diffSelectionSide(node: Node | null) {
 
 function ViewerShell(props: {
   mode: "text" | "diff"
+  streaming?: boolean
   viewer: ReturnType<typeof useFileViewer>
   class: string | undefined
   classList: ComponentProps<"div">["classList"] | undefined
 }) {
+  let motionRoot: ShadowRoot | undefined
+  let stopMotion: VoidFunction | undefined
+  createEffect(() => {
+    props.viewer.rendered()
+    const root = props.streaming ? props.viewer.getRoot() : undefined
+    if (root === motionRoot) return
+    stopMotion?.()
+    motionRoot = root
+    stopMotion = root ? bindFileStreamMotion(root) : undefined
+  })
+  onCleanup(() => stopMotion?.())
+
   return (
     <div
       data-component="file"
@@ -918,7 +934,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     virtuals.cleanup()
   })
 
-  return <ViewerShell mode="text" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="text" streaming={local.streaming} viewer={viewer} class={local.class} classList={local.classList} />
 }
 
 // ---------------------------------------------------------------------------
@@ -1186,7 +1202,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     dragEndSide = undefined
   })
 
-  return <ViewerShell mode="diff" viewer={viewer} class={local.class} classList={local.classList} />
+  return <ViewerShell mode="diff" streaming={local.streaming} viewer={viewer} class={local.class} classList={local.classList} />
 }
 
 // ---------------------------------------------------------------------------

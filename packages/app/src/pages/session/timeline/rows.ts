@@ -3,6 +3,7 @@ import { AssistantMessage, Part, SessionStatus, UserMessage } from "@opencode-ai
 import { groupParts, isProcessGroup, renderable, type PartGroup } from "@opencode-ai/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
+import type { CanvasReference } from "@opencode-ai/session-ui/context/canvas"
 
 export { TimelineRow, type SummaryDiff } from "./timeline-row"
 
@@ -23,6 +24,7 @@ export type TimelineRowMap = {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    canvases?: CanvasReference[]
   }
   ProcessSummary: {
     userMessageID: string
@@ -33,6 +35,7 @@ export type TimelineRowMap = {
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
+  CanvasSummary: { userMessageID: string; sessionID: string; canvases: CanvasReference[] }
   Error: { userMessageID: string; text: string }
 }
 
@@ -202,6 +205,41 @@ export namespace Timeline {
             label: "compaction",
           }),
         )
+      }
+    }
+
+    // 由已落盘的成功调用生成入口，不依赖模型正文；流式处理中仍使用原工具卡片。
+    if (turnComplete) {
+      const canvases = new Map<string, CanvasReference>()
+      for (const { part } of assistantPartRefs) {
+        if (part.sessionID !== userMessage.sessionID || part.type !== "tool" || part.tool !== "canvas") continue
+        if (part.state.status !== "completed") continue
+        const meta = part.state.metadata
+        if (typeof meta.path !== "string" || !meta.path || typeof meta.title !== "string") continue
+        canvases.set(meta.path, {
+          partID: part.id,
+          messageID: part.messageID,
+          path: meta.path,
+          title: meta.title,
+        })
+      }
+      if (canvases.size > 0) {
+        // 有最终正文时随正文渲染，置于操作栏和模型信息之前；无正文才使用独立产物行。
+        const answerIndex = rows.findLastIndex(
+          (row) =>
+            row._tag === "AssistantPart" && row.group.type === "part" && resolvePart(row.group.ref)?.type === "text",
+        )
+        const answer = rows[answerIndex]
+        if (answer?._tag === "AssistantPart") {
+          rows[answerIndex] = new TimelineRow.AssistantPart({ ...answer, canvases: [...canvases.values()] })
+        } else
+          rows.push(
+            new TimelineRow.CanvasSummary({
+              userMessageID: userMessage.id,
+              sessionID: userMessage.sessionID,
+              canvases: [...canvases.values()],
+            }),
+          )
       }
     }
 

@@ -18,6 +18,7 @@ import { migrateLegacySessionStateKeys, ServerScope, SessionStateKey } from "@/u
 import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout-helpers"
 import { requireServerKey } from "@/utils/session-route"
 import { type DraftTab, useTabs } from "./tabs"
+import type { CanvasReference } from "@opencode-ai/session-ui/context/canvas"
 
 export { createSessionKeyReader, ensureSessionKey, pruneSessionKeys }
 
@@ -53,6 +54,8 @@ type SessionView = {
   pendingMessage?: string
   pendingMessageAt?: number
   todoCollapsed?: boolean
+  canvas?: CanvasReference
+  sidePanel?: "context" | "canvas"
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
@@ -686,6 +689,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             opened: reviewPanelOpened,
             source: reviewPanelSource,
             open(source: ReviewPanelSource = "other") {
+              if (source === "context-button") {
+                const session = key()
+                setStore("sessionView", session, {
+                  ...store.sessionView[session],
+                  scroll: s().scroll,
+                  sidePanel: "context",
+                })
+              }
               setReviewPanelOpened(true, source)
             },
             close() {
@@ -693,6 +704,30 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             },
             toggle() {
               setReviewPanelOpened(!reviewPanelOpened(), "other")
+            },
+          },
+          canvas: {
+            get: () => s().canvas,
+            active: () => s().sidePanel === "canvas" && !!s().canvas,
+            open(canvas: CanvasReference) {
+              const session = key()
+              batch(() => {
+                setStore("sessionView", session, {
+                  ...store.sessionView[session],
+                  scroll: s().scroll,
+                  canvas,
+                  sidePanel: "canvas",
+                })
+                setReviewPanelOpened(true, "other")
+              })
+            },
+            showContext() {
+              const session = key()
+              setStore("sessionView", session, {
+                ...store.sessionView[session],
+                scroll: s().scroll,
+                sidePanel: "context",
+              })
             },
           },
         }

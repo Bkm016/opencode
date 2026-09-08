@@ -27,6 +27,7 @@ export interface BasicToolProps {
   trigger: TriggerTitle | JSX.Element | ((open: Accessor<boolean>) => JSX.Element)
   children?: JSX.Element
   status?: string
+  allowPendingDetails?: boolean
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -176,7 +177,7 @@ export function BasicTool(props: BasicToolProps) {
   })
 
   const handleOpenChange = (value: boolean) => {
-    if (pending()) return
+    if (pending() && !props.allowPendingDetails) return
     if (props.locked && !value) return
     setOpen(value)
   }
@@ -203,7 +204,7 @@ export function BasicTool(props: BasicToolProps) {
                     >
                       <TextShimmer text={title().title} active={pending()} />
                     </span>
-                    <Show when={!pending()}>
+                    <Show when={!pending() || props.allowPendingDetails}>
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"
@@ -247,7 +248,7 @@ export function BasicTool(props: BasicToolProps) {
           </Switch>
         </div>
       </div>
-      <Show when={hasChildren() && !props.hideDetails && !props.locked && !pending()}>
+      <Show when={hasChildren() && !props.hideDetails && !props.locked && (!pending() || props.allowPendingDetails)}>
         <Collapsible.Arrow />
       </Show>
     </div>

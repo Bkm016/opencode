@@ -9,6 +9,7 @@ import path from "path"
 import z from "zod"
 import type { Agent } from "../../src/agent/agent"
 import { Provider } from "@/provider/provider"
+import { Config } from "@/config/config"
 
 import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
@@ -170,6 +171,7 @@ const root = LayerNode.group([
   Session.node,
   SessionProjector.node,
   Provider.node,
+  Config.node,
   Database.node,
   EventV2Bridge.node,
   SessionStatus.node,
@@ -209,8 +211,7 @@ const providerErrorLLM = Layer.succeed(
 const providerErrorEnv = LayerNode.compile(root, [...replacements, [LLM.node, providerErrorLLM]])
 const itProviderError = testEffect(providerErrorEnv)
 
-const generatedPng =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+const generatedPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
 const imageGenerationLLM = Layer.succeed(
   LLM.Service,
   LLM.Service.of({
@@ -1262,6 +1263,135 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
   ),
 )
 
+for (const name of ["write", "apply_patch"] as const) {
+  for (const interrupt of [false, true]) {
+    it.live(
+      `session.processor previews incomplete ${name} input before ${interrupt ? "interruption" : "execution"}`,
+      () =>
+        provideTmpdirServer(
+          ({ dir, llm }) =>
+            Effect.gen(function* () {
+              const database = yield* Database.Service
+              const { processors, session, provider } = yield* boot()
+              const gate = defer<void>()
+              const executed: unknown[] = []
+              const field = name === "write" ? "content" : "patchText"
+              const text = name === "write" ? 'first\n"quoted"' : "*** Begin Patch\n*** Add File: example.ts\n+first"
+              const ending = name === "write" ? "\nlast" : "\n+last\n*** End Patch"
+              const previewInput = { ...(name === "write" ? { filePath: "example.ts" } : {}), [field]: text }
+              const expected = { ...previewInput, [field]: text + ending }
+              const prefix = JSON.stringify(previewInput).slice(0, -2)
+              yield* llm.push(
+                raw({
+                  head: [
+                    {
+                      id: "chatcmpl-test",
+                      object: "chat.completion.chunk",
+                      choices: [
+                        {
+                          delta: {
+                            role: "assistant",
+                            tool_calls: [
+                              { index: 0, id: "call_1", type: "function", function: { name, arguments: prefix } },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                  wait: gate.promise,
+                  tail: [
+                    toolArgsChunk(JSON.stringify(ending).slice(1) + "}"),
+                    {
+                      id: "chatcmpl-test",
+                      object: "chat.completion.chunk",
+                      choices: [{ delta: {}, finish_reason: "tool_calls" }],
+                    },
+                  ],
+                }),
+              )
+              const chat = yield* session.create({})
+              const parent = yield* user(chat.id, "write")
+              const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+              const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+              const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+              const run = yield* handle
+                .process({
+                  user: parent,
+                  sessionID: chat.id,
+                  model: mdl,
+                  agent: agent(),
+                  system: [],
+                  messages: [{ role: "user", content: "write" }],
+                  tools: {
+                    [name]: tool({
+                      description: "Write a file",
+                      inputSchema: z.object({
+                        ...(name === "write" ? { filePath: z.string() } : {}),
+                        [field]: z.string(),
+                      }),
+                      execute: async (input) => {
+                        executed.push(input)
+                        return { title: "Write", output: "written", metadata: {} }
+                      },
+                    }),
+                  },
+                })
+                .pipe(Effect.forkChild)
+              yield* Effect.gen(function* () {
+                yield* Effect.raceFirst(
+                  llm.wait(1),
+                  Fiber.await(run).pipe(
+                    Effect.flatMap((exit) =>
+                      Effect.fail(
+                        new Error(
+                          `Processor stopped before request: ${JSON.stringify({ exit, error: handle.message.error })}`,
+                        ),
+                      ),
+                    ),
+                  ),
+                ).pipe(Effect.timeout("5 seconds"))
+                const preview = yield* waitFor(
+                  MessageV2.parts(msg.id).pipe(
+                    Effect.map((parts) =>
+                      parts.find(
+                        (part): part is SessionV1.ToolPart =>
+                          part.type === "tool" &&
+                          part.state.status === "pending" &&
+                          part.state.input[field] !== undefined,
+                      ),
+                    ),
+                    Effect.provideService(Database.Service, database),
+                  ),
+                  "tool input was not visible while the provider was still generating",
+                )
+                expect(preview.state.status).toBe("pending")
+                expect(preview.state.input).toEqual(previewInput)
+                expect(executed).toEqual([])
+                if (interrupt) yield* Fiber.interrupt(run)
+              }).pipe(Effect.ensuring(Effect.sync(() => gate.resolve())))
+              const exit = yield* Fiber.await(run)
+              const call = (yield* MessageV2.parts(msg.id)).find(
+                (part): part is SessionV1.ToolPart => part.type === "tool",
+              )
+              expect(handle.message.time.completed).toBeDefined()
+              if (interrupt) {
+                expect(call?.state.status).toBe("error")
+                expect(call?.state.input).toEqual(previewInput)
+                expect(executed).toEqual([])
+                return
+              }
+              expect(Exit.isSuccess(exit)).toBe(true)
+              expect(call?.state.status).toBe("completed")
+              expect(call?.state.input).toEqual(expected)
+              expect(executed).toEqual([call?.state.input])
+            }),
+          { config: (url) => providerCfg(url) },
+        ),
+    )
+  }
+}
+
 const REPEAT_SENTENCE = "The quick brown fox jumps over the lazy dog near the riverbank now."
 
 function repeatingReply() {
@@ -1292,9 +1422,7 @@ function repeatingToolReply() {
         choices: [
           {
             delta: {
-              tool_calls: [
-                { index: 0, id: "call_1", type: "function", function: { name: "edit", arguments: "" } },
-              ],
+              tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "edit", arguments: "" } }],
             },
           },
         ],

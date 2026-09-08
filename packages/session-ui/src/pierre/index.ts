@@ -19,6 +19,12 @@ const unsafeCSS = `
   --diffs-bg: var(--opencode-diffs-bg, var(--color-background-stronger));
 }
 
+/* 隐藏末尾换行提示及其行号栏占位，不改动真实文件内容。 */
+[data-diff] [data-no-newline],
+[data-diff] [data-gutter-buffer="metadata"] {
+  display: none;
+}
+
 [data-diff],
 [data-file] {
   /* Pierre 1.2 mixes these override targets at 12% in light mode and 20% in dark mode. */

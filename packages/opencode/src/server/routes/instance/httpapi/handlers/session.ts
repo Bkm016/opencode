@@ -37,8 +37,14 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { ApiNotFoundError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
+import { Database } from "@opencode-ai/core/database/database"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { MessageTable, PartTable } from "@opencode-ai/core/session/sql"
+import { and, eq } from "drizzle-orm"
+import { CanvasBoundaryError, CanvasMetadata, readCanvasFile } from "@/tool/canvas"
+import path from "path"
 
 const tryParseJson = (text: string) =>
   Effect.try({
@@ -61,6 +67,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
+    const database = yield* Database.Service
+    const fs = yield* FSUtil.Service
     const scope = yield* Scope.Scope
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
@@ -445,6 +453,79 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* session.updatePart(payload)
     })
 
+    const decodeCanvasMetadata = Schema.decodeUnknownEffect(CanvasMetadata)
+
+    const canvas = Effect.fn("SessionHttpApi.canvas")(function* (ctx: {
+      params: { sessionID: SessionID; partID: PartID }
+    }) {
+      const sessionInfo = yield* requireSession(ctx.params.sessionID)
+      const ins = yield* InstanceState.context
+
+      // 查询对应 part，确认其属于当前会话
+      const row = yield* database.db
+        .select()
+        .from(PartTable)
+        .where(and(eq(PartTable.session_id, ctx.params.sessionID), eq(PartTable.id, ctx.params.partID)))
+        .get()
+        .pipe(Effect.orDie)
+
+      if (!row) {
+        return yield* new ApiNotFoundError({ message: `Part not found: ${ctx.params.partID}` })
+      }
+
+      // 正常类型 narrowing，无需手写类型转换
+      if (row.data.type !== "tool" || row.data.tool !== "canvas" || row.data.state.status !== "completed") {
+        return yield* new HttpApiError.BadRequest({})
+      }
+
+      // 使用 Schema 解码与校验已存储的快照元数据
+      const metadata = yield* decodeCanvasMetadata(row.data.state.metadata).pipe(
+        Effect.catch(() => Effect.fail(new HttpApiError.BadRequest({}))),
+      )
+
+      // 综合计算发出 canvas 工具的 assistant agent 权限规则集，防止会话切换 agent 后变更此前工具授权
+      const messageRow = yield* database.db
+        .select()
+        .from(MessageTable)
+        .where(and(eq(MessageTable.id, row.message_id), eq(MessageTable.session_id, ctx.params.sessionID)))
+        .get()
+        .pipe(Effect.orDie)
+
+      if (messageRow?.data.role !== "assistant") return yield* new HttpApiError.BadRequest({})
+      const agentInfo = yield* agentSvc.get(messageRow.data.agent)
+      const ruleset = Permission.merge(agentInfo.permission, sessionInfo.permission ?? [])
+
+      // 实时安全读取最新文件内容（在打开文件前通过 authorize 回调校验权限，fail-closed）
+      // 若读取或校验失败，按规范直接抛出声明的错误，不静默返回历史快照（前端有 metadata 兜底）
+      const live = yield* readCanvasFile(fs, ins, metadata.path, {
+        title: metadata.title,
+        expectedCanonicalPath: metadata.canonicalPath,
+        authorize: ({ filepath, canonicalPath }) => {
+          const relPath = path.relative(ins.worktree, filepath)
+          const relCanonical = path.relative(ins.worktree, canonicalPath)
+          if (
+            Permission.evaluate("read", relPath, ruleset).action === "deny" ||
+            Permission.evaluate("read", relCanonical, ruleset).action === "deny"
+          ) {
+            return Effect.fail(
+              new CanvasBoundaryError({
+                message: `Permission denied for canvas path: ${filepath}`,
+              }),
+            )
+          }
+          return Effect.void
+        },
+      }).pipe(
+        Effect.catch(() => Effect.fail(new HttpApiError.BadRequest({}))),
+      )
+
+      return {
+        path: live.filepath,
+        title: live.title,
+        content: live.content,
+      }
+    })
+
     return handlers
       .handle("list", list)
       .handle("status", status)
@@ -477,5 +558,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("deleteMessage", deleteMessage)
       .handle("deletePart", deletePart)
       .handle("updatePart", updatePart)
+      .handle("canvas", canvas)
   }),
 )

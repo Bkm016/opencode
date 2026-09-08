@@ -1,4 +1,6 @@
 import { normalize, type ViewDiff } from "./session-diff"
+import { Patch } from "@opencode-ai/core/patch"
+import { diffLines } from "diff"
 
 type Kind = "add" | "update" | "delete" | "move"
 
@@ -75,4 +77,52 @@ export function patchFile(raw: unknown): ApplyPatchFile | undefined {
 export function patchFiles(raw: unknown) {
   if (!Array.isArray(raw)) return []
   return raw.map(patchFile).filter((file): file is ApplyPatchFile => !!file)
+}
+
+export function pendingPatchFiles(tool: string, input: Record<string, unknown>) {
+  const files: Raw[] = []
+  if (tool === "apply_patch" && typeof input.patchText === "string") {
+    // 预览复用补丁语法，但只投影已收到的内容，不读取或修改磁盘文件。
+    try {
+      for (const hunk of Patch.parse(input.patchText, { partial: true })) {
+        files.push({
+          filePath: hunk.path,
+          type: hunk.type === "update" && hunk.movePath ? "move" : hunk.type,
+          movePath: hunk.type === "update" ? hunk.movePath : undefined,
+          before: hunk.type === "update" ? hunk.chunks.flatMap((chunk) => chunk.oldLines).join("\n") : "",
+          after:
+            hunk.type === "add"
+              ? hunk.contents
+              : hunk.type === "update"
+                ? hunk.chunks.flatMap((chunk) => chunk.newLines).join("\n")
+                : "",
+        })
+      }
+    } catch {
+      // 尚不能构成合法片段时保持空卡片；正式工具执行仍负责严格校验。
+    }
+  }
+  if (tool === "multiedit" && Array.isArray(input.edits)) {
+    for (const edit of input.edits) {
+      if (!edit || typeof edit !== "object" || typeof edit.filePath !== "string") continue
+      files.push({
+        filePath: edit.filePath,
+        type: "update",
+        before: typeof edit.oldString === "string" ? edit.oldString : "",
+        after: typeof edit.newString === "string" ? edit.newString : "",
+      })
+    }
+  }
+  return files.flatMap((file) => {
+    const changes = diffLines(file.before ?? "", file.after ?? "")
+    const projected = patchFile({
+      ...file,
+      additions: changes.reduce((count, change) => count + (change.added ? change.count : 0), 0),
+      deletions: changes.reduce((count, change) => count + (change.removed ? change.count : 0), 0),
+    })
+    if (!projected) return []
+    // 更新类参数只有变更片段，不冒充完整文件；完成后由服务端的真实 Diff 接管。
+    if (file.type !== "add") projected.view.fileDiff = { ...projected.view.fileDiff, isPartial: true }
+    return [projected]
+  })
 }

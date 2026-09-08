@@ -18,7 +18,7 @@ import { isServer, render } from "solid-js/web"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { bundledLanguages } from "shiki"
+import { markdownLanguage } from "@opencode-ai/ui/context/markdown-language"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -30,6 +30,7 @@ import {
 import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol"
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
+import { decorateMarkdownDiagrams, disposeMarkdownDiagrams } from "./markdown-diagram"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -66,7 +67,7 @@ function fallback(markdown: string) {
 }
 
 async function code(text: string, language: string | undefined, key: string, complete = false) {
-  const name = language && language in bundledLanguages ? language : "text"
+  const name = markdownLanguage(language)
   try {
     const result = await highlightStreamingCode(key, text, name, complete)
     return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
@@ -148,6 +149,7 @@ function disposeCopyButton(host: HTMLElement) {
 }
 
 function disposeCopyButtons(root: Element) {
+  disposeMarkdownDiagrams(root)
   const hosts = [
     ...(root instanceof HTMLElement && root.getAttribute("data-slot") === "markdown-copy-button" ? [root] : []),
     ...Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]')).filter(
@@ -384,6 +386,9 @@ export function Markdown(
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
+      loading: i18n.t("ui.canvas.loading"),
+      source: i18n.t("ui.diagram.source"),
+      preview: i18n.t("ui.diagram.preview"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -396,7 +401,34 @@ export function Markdown(
       [...container.children].filter(
         (node): node is HTMLElement => node instanceof HTMLElement && node.dataset.markdownBlock !== undefined,
       )
-    content.forEach((block, index) => updateBlock(container, blocks()[index], block, labels))
+    content.forEach((block, index) => {
+      const current = blocks()[index]
+      // 已完成的图表 DOM 自主管理异步结果；正文继续流式增长时不反复重建图表。
+      const unchanged =
+        current?.dataset.diagramSource === block.raw && current.querySelector('[data-component="markdown-diagram"]')
+      if (unchanged) {
+        // 图表可能先于 Worker 高亮完成挂载；复用预览时仍须补入源码颜色。
+        if (block.mode === "code") updateCodeBlock(container, current, block, labels)
+        return
+      }
+      // 源码被编辑或重新进入流式状态时撤销旧图，不让旧成功图冒充当前未完成内容。
+      if (current?.dataset.diagramSource !== undefined) {
+        disposeCopyButtons(current)
+        current.replaceChildren()
+        delete current.dataset.diagramSource
+        delete current.dataset.markdownHash
+        renderedCodeTokens.delete(current)
+      }
+      updateBlock(container, current, block, labels)
+      const updated = blocks()[index]
+      if (!updated || (block.mode === "code" && !block.complete)) return
+      decorateMarkdownDiagrams(updated, block.raw, {
+        loading: labels.loading,
+        source: labels.source,
+        preview: labels.preview,
+      })
+      if (updated.querySelector('[data-component="markdown-diagram"]')) updated.dataset.diagramSource = block.raw
+    })
     blocks()
       .slice(content.length)
       .forEach((node) => {
@@ -444,7 +476,9 @@ function streamCaretHost(container: HTMLElement) {
   // Prefer the deepest last text-bearing element so the caret sits inline
   // after the current stream end, not on the next layout line.
   const skip = "script, style, [data-slot='markdown-copy-button'], [data-slot='markdown-stream-caret']"
-  const candidates = last.querySelectorAll<HTMLElement>("p, li, td, th, h1, h2, h3, h4, h5, h6, pre code, code, span, a, em, strong, blockquote")
+  const candidates = last.querySelectorAll<HTMLElement>(
+    "p, li, td, th, h1, h2, h3, h4, h5, h6, pre code, code, span, a, em, strong, blockquote",
+  )
   for (let i = candidates.length - 1; i >= 0; i--) {
     const el = candidates[i]
     if (!el || el.matches(skip) || el.closest(skip)) continue

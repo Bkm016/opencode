@@ -1,7 +1,7 @@
 import { marked, type MarkedExtension, type Tokens } from "marked"
 import markedShiki from "marked-shiki"
 import katex from "katex"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import { markdownLanguage, markdownLanguages } from "./markdown-language"
 import { createSimpleContext } from "./helper"
 import { markedCodeSpanBoundary } from "./marked-code-span"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
@@ -436,7 +436,7 @@ const inlineDoubleDollarRegex = /^\$\$((?:\\.|[\s\S])+?)\$\$/
 const inlineDollarRegex = /^\$(?!\s)((?:\\.|[^\n\\$])*?(?<!\s))\$(?![0-9a-zA-Z$])/
 const inlineParenRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
 
-const katexExtension: MarkedExtension = {
+export const katexExtension: MarkedExtension = {
   extensions: [
     {
       name: "blockKatex",
@@ -519,7 +519,7 @@ const katexExtension: MarkedExtension = {
   ],
 }
 
-function renderKatexToken(token: Tokens.Generic) {
+export function renderKatexToken(token: Tokens.Generic) {
   return katex.renderToString(cleanMath(typeof token.text === "string" ? token.text : ""), {
     displayMode: token.displayMode === true,
     throwOnError: false,
@@ -562,12 +562,9 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
-    let language = lang || "text"
-    if (!(language in bundledLanguages)) {
-      language = "text"
-    }
-    if (!highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(language as BundledLanguage)
+    const language = markdownLanguage(lang)
+    if (language !== "text" && !highlighter.getLoadedLanguages().includes(language)) {
+      await highlighter.loadLanguage(markdownLanguages[language])
     }
 
     const highlighted = highlighter.codeToHtml(code, {
@@ -602,14 +599,12 @@ export function createMarkdownParser(props: { nativeParser?: NativeMarkdownParse
           langs: [],
           preferredHighlighter: "shiki-wasm",
         })
-        if (!(lang in bundledLanguages)) {
-          lang = "text"
-        }
-        if (!highlighter.getLoadedLanguages().includes(lang)) {
-          await highlighter.loadLanguage(lang as BundledLanguage)
+        const language = markdownLanguage(lang)
+        if (language !== "text" && !highlighter.getLoadedLanguages().includes(language)) {
+          await highlighter.loadLanguage(markdownLanguages[language])
         }
         return highlighter.codeToHtml(code, {
-          lang: lang || "text",
+          lang: language,
           theme: "OpenCode",
           tabindex: false,
         })

@@ -1,5 +1,6 @@
 import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { PartGroup } from "@opencode-ai/session-ui/message-part"
+import type { CanvasReference } from "@opencode-ai/session-ui/context/canvas"
 import { Data, Equal } from "effect"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
@@ -23,6 +24,7 @@ export namespace TimelineRow {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    canvases?: CanvasReference[]
   }> {}
   /** One virtual row: collapsed header + optional in-row process groups (tools/tasks). */
   export class ProcessSummary extends Data.TaggedClass("ProcessSummary")<{
@@ -39,6 +41,12 @@ export namespace TimelineRow {
   export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
     userMessageID: string
     diffs: SummaryDiff[]
+  }> {}
+  /** 已完成画布的独立入口，不受过程折叠状态影响。 */
+  export class CanvasSummary extends Data.TaggedClass("CanvasSummary")<{
+    userMessageID: string
+    sessionID: string
+    canvases: CanvasReference[]
   }> {}
   export class Error extends Data.TaggedClass("Error")<{
     userMessageID: string
@@ -57,6 +65,7 @@ export namespace TimelineRow {
     | ProcessSummary
     | Thinking
     | DiffSummary
+    | CanvasSummary
     | Error
     | Retry
 
@@ -78,6 +87,8 @@ export namespace TimelineRow {
         return `thinking:${row.userMessageID}`
       case "DiffSummary":
         return `diff-summary:${row.userMessageID}`
+      case "CanvasSummary":
+        return `canvas-summary:${row.userMessageID}`
       case "Error":
         return `error:${row.userMessageID}`
       case "Retry":

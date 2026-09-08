@@ -597,6 +597,59 @@ it.instance("chunk compaction archives an overflowing prompt before retrying", (
   }),
 )
 
+it.instance("successive chunk overflows persist a new divider before each continuation", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Overflow dividers" })
+
+    for (const index of [0, 1]) {
+      const before = yield* sessions.messages({ sessionID: chat.id })
+      const previous = before.filter((message) => message.parts.some((part) => part.type === "compaction"))
+      yield* llm.error(413, { error: { message: "request entity too large" } })
+      yield* llm.text(`recovered ${index}`)
+      const input = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: `work item ${index}` }],
+      })
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const holders = messages.filter((message) => message.parts.some((part) => part.type === "compaction"))
+      expect(holders).toHaveLength(index + 1)
+      expect(holders.slice(0, -1)).toEqual(previous)
+      const holder = holders.at(-1)!
+      const part = holder.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")!
+      expect(part.auto).toBe(true)
+      expect(part.chunks?.some((chunk) => chunk.start_message_id === input.info.id)).toBe(true)
+      if (index > 0) {
+        const prior = previous.at(-1)!.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")!
+        expect(part.chunks?.slice(0, prior.chunks!.length)).toEqual(prior.chunks)
+      }
+      const summary = messages.find(
+        (message) => message.info.role === "assistant" && message.info.summary && message.info.parentID === holder.info.id,
+      )
+      expect(summary?.info.role).toBe("assistant")
+      if (summary?.info.role !== "assistant") throw new Error("Missing compaction summary")
+      expect(summary.info.finish).toBe("stop")
+      if (result.info.role !== "assistant") throw new Error("Missing recovered assistant")
+      expect(input.info.id < holder.info.id).toBe(true)
+      expect(holder.info.id < summary.info.id).toBe(true)
+      expect(summary.info.id < result.info.parentID).toBe(true)
+      expect(result.parts).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: "text", text: `recovered ${index}` })]),
+      )
+    }
+    expect(yield* llm.hits).toHaveLength(4)
+  }),
+)
+
 it.instance("chunk overflow recovery retains tool outcomes when no final answer was produced", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({

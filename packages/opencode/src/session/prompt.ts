@@ -1420,7 +1420,8 @@ const layer = Layer.effect(
           chunks: allChunks,
           tail_start_id: tailStart,
         })
-      } else if (compactionMsgWithChunks && compactionPartWithChunks) {
+      } else if (compactionMsgWithChunks && compactionPartWithChunks && !options?.force) {
+        // 原位更新仅用于非强制的边界维护；实际压缩必须新建 holder，保留本次压缩的时间线标记。
         // 自动 chunk checkpoint 始终原位更新，避免每次 overflow 都在 Timeline
         // 追加一组「会话已压缩」holder / summary。
         holderID = compactionMsgWithChunks.info.id

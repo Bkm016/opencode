@@ -226,6 +226,8 @@ export const dict = {
   "ui.message.replayMessage": "重放",
   "ui.message.revertMessage": "重設至此點",
   "ui.message.copyResponse": "複製回覆",
+  "ui.message.copyImage": "複製為圖片",
+  "ui.message.copiedImage": "已複製圖片！",
   "ui.message.copied": "已複製！",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",

@@ -91,6 +91,208 @@ async function writeClipboard(text: string): Promise<boolean> {
   )
 }
 
+async function writeClipboardImage(blob: Blob): Promise<boolean> {
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+  if (clipboard?.write && typeof ClipboardItem !== "undefined") {
+    try {
+      await clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+      return true
+    } catch {
+      // 浏览器权限受限或焦点丢失时尝试客户端扩展接口
+    }
+  }
+
+  const api =
+    typeof window !== "undefined"
+      ? (window as unknown as { api?: { writeClipboardImage?: (dataUrl: string) => Promise<boolean> } }).api
+      : undefined
+  if (api?.writeClipboardImage) {
+    try {
+      const reader = new FileReader()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+      return await api.writeClipboardImage(dataUrl)
+    } catch {
+      return false
+    }
+  }
+
+  return false
+}
+
+async function copyAsImageCard(options: {
+  element: HTMLElement
+  meta?: string
+  agent?: string
+}): Promise<boolean> {
+  const { element, meta, agent } = options
+  if (!element) return false
+
+  const doc = element.ownerDocument || document
+  const win = doc.defaultView || window
+
+  const comp = win.getComputedStyle(element)
+  const textColor = comp.color || "rgba(255, 255, 255, 0.9)"
+  const fontFamily = comp.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+
+  // 沿 DOM 树向上递归提取实际生效的非透明背景色
+  let bg = comp.backgroundColor
+  let cur: HTMLElement | null = element
+  while ((!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") && cur) {
+    bg = win.getComputedStyle(cur).backgroundColor
+    cur = cur.parentElement
+  }
+  if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
+    bg = win.getComputedStyle(doc.body).backgroundColor
+  }
+  if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
+    bg = "#18181b"
+  }
+
+  // 通过亮度判定亮色或暗色主题
+  const rgbMatch = bg.match(/\d+/g)
+  let isDark = true
+  if (rgbMatch && rgbMatch.length >= 3) {
+    const r = parseInt(rgbMatch[0], 10)
+    const g = parseInt(rgbMatch[1], 10)
+    const b = parseInt(rgbMatch[2], 10)
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000
+    isDark = brightness < 128
+  }
+
+  const cardBorder = isDark ? "1px solid rgba(255, 255, 255, 0.12)" : "1px solid rgba(0, 0, 0, 0.1)"
+  const cardBg = bg
+  const mutedText = isDark ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)"
+  const dividerColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)"
+
+  const container = doc.createElement("div")
+  container.style.position = "fixed"
+  container.style.left = "-99999px"
+  container.style.top = "0"
+  container.style.opacity = "0"
+  container.style.pointerEvents = "none"
+  container.style.zIndex = "-9999"
+
+  if (element.parentElement) {
+    container.className = element.parentElement.className
+  }
+
+  // 包装分享视图（无圆角与边框，平铺直角纯色底）
+  const card = doc.createElement("div")
+  card.style.display = "flex"
+  card.style.flexDirection = "column"
+  card.style.boxSizing = "border-box"
+  card.style.width = Math.min(Math.max(element.offsetWidth + 56, 560), 840) + "px"
+  card.style.padding = "24px 28px"
+  card.style.borderRadius = "0"
+  card.style.backgroundColor = cardBg
+  card.style.color = textColor
+  card.style.fontFamily = fontFamily
+  card.style.border = "none"
+  card.style.boxShadow = "none"
+
+  // 顶部 Header
+  const header = doc.createElement("div")
+  header.style.display = "flex"
+  header.style.alignItems = "center"
+  header.style.justifyContent = "space-between"
+  header.style.paddingBottom = "12px"
+  header.style.marginBottom = "14px"
+  header.style.borderBottom = "none"
+
+  const headerLeft = doc.createElement("div")
+  headerLeft.style.display = "flex"
+  headerLeft.style.alignItems = "center"
+  headerLeft.style.gap = "8px"
+
+  const logoDot = doc.createElement("div")
+  logoDot.style.width = "8px"
+  logoDot.style.height = "8px"
+  logoDot.style.borderRadius = "50%"
+  logoDot.style.backgroundColor = isDark ? "#60a5fa" : "#2563eb"
+
+  const title = doc.createElement("span")
+  title.style.fontSize = "13px"
+  title.style.fontWeight = "600"
+  title.style.letterSpacing = "0.02em"
+  title.style.color = textColor
+  title.textContent = "OpenCode"
+
+  headerLeft.appendChild(logoDot)
+  headerLeft.appendChild(title)
+  header.appendChild(headerLeft)
+
+  if (agent) {
+    const headerRight = doc.createElement("span")
+    headerRight.style.fontSize = "12px"
+    headerRight.style.color = mutedText
+    headerRight.textContent = agent
+    header.appendChild(headerRight)
+  }
+
+  card.appendChild(header)
+
+  // 克隆消息正文主体，保留高亮代码块与 Markdown 排版
+  const bodyClone = element.cloneNode(true) as HTMLElement
+  bodyClone.style.margin = "0"
+  bodyClone.style.maxWidth = "100%"
+  bodyClone.style.overflow = "visible"
+  card.appendChild(bodyClone)
+
+  // 底部元信息栏
+  if (meta) {
+    const footer = doc.createElement("div")
+    footer.style.display = "flex"
+    footer.style.alignItems = "center"
+    footer.style.justifyContent = "space-between"
+    footer.style.paddingTop = "12px"
+    footer.style.marginTop = "16px"
+    footer.style.borderTop = "none"
+    footer.style.fontSize = "12px"
+    footer.style.color = mutedText
+
+    const metaSpan = doc.createElement("span")
+    metaSpan.textContent = meta
+    footer.appendChild(metaSpan)
+
+    card.appendChild(footer)
+  }
+
+  container.appendChild(card)
+  doc.body.appendChild(container)
+
+  try {
+    const { toBlob } = await import("html-to-image")
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    let blob: Blob | null = null
+    try {
+      blob = await toBlob(card, {
+        pixelRatio: 2,
+        backgroundColor: cardBg,
+        cacheBust: true,
+      })
+    } catch {
+      blob = await toBlob(card, {
+        pixelRatio: 2,
+        backgroundColor: cardBg,
+        skipFonts: true,
+      })
+    }
+
+    if (!blob) return false
+    return await writeClipboardImage(blob)
+  } catch (err) {
+    console.error("Failed to copy image:", err)
+    return false
+  } finally {
+    container.remove()
+  }
+}
+
 function firstLine(text: unknown) {
   if (typeof text !== "string") return undefined
   return text.split("\n", 1)[0] || undefined
@@ -207,7 +409,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "arrow-up" | "check" | "copy" | "reset" | "archive"
+    icon: "arrow-up" | "check" | "copy" | "reset" | "archive" | "photo"
     label: JSX.Element
   },
 ) {
@@ -2214,6 +2416,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
+  const [copiedImage, setCopiedImage] = createSignal(false)
+  const [copyingImage, setCopyingImage] = createSignal(false)
+  let bodyRef: HTMLDivElement | undefined
 
   const handleCopy = async () => {
     const content = text()
@@ -2224,13 +2429,34 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     }
   }
 
+  const handleCopyImage = async () => {
+    if (copyingImage() || !bodyRef) return
+    setCopyingImage(true)
+    try {
+      const ok = await copyAsImageCard({
+        element: bodyRef,
+        meta: meta(),
+        agent:
+          props.message.role === "assistant" && (props.message as AssistantMessage).agent
+            ? (props.message as AssistantMessage).agent
+            : undefined,
+      })
+      if (ok) {
+        setCopiedImage(true)
+        setTimeout(() => setCopiedImage(false), 2000)
+      }
+    } finally {
+      setCopyingImage(false)
+    }
+  }
+
   return (
     <Show when={text()}>
       <Show
         when={chunkSummary()}
         fallback={
           <div data-component="text-part" data-timeline-part-id={part().id}>
-            <div data-slot="text-part-body">
+            <div data-slot="text-part-body" ref={bodyRef}>
               <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
                 <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
               </Show>
@@ -2243,6 +2469,14 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={handleCopy}
                   aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                />
+                <MessageActionButton
+                  icon={copiedImage() ? "check" : "photo"}
+                  label={copiedImage() ? i18n.t("ui.message.copiedImage") : i18n.t("ui.message.copyImage")}
+                  disabled={copyingImage()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={handleCopyImage}
+                  aria-label={copiedImage() ? i18n.t("ui.message.copiedImage") : i18n.t("ui.message.copyImage")}
                 />
                 <Show when={props.onCompactHere && props.compactHere?.visible !== false && !chunkSummary()}>
                   <MessageActionButton

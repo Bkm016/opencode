@@ -213,6 +213,8 @@ export const dict = {
   "ui.message.replayMessage": "重放",
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
+  "ui.message.copyImage": "复制为图片",
+  "ui.message.copiedImage": "已复制图片！",
   "ui.message.copied": "已复制！",
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",

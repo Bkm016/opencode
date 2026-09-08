@@ -295,6 +295,10 @@ const layer = Layer.effect(
           ...SkillPlugin.ImagegenSkill,
           location: "<built-in>",
         }
+        s.skills[SkillPlugin.ComputerUseSkill.name] = {
+          ...SkillPlugin.ComputerUseSkill,
+          location: "<built-in>",
+        }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),

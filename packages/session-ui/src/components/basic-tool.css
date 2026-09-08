@@ -116,6 +116,11 @@
     letter-spacing: var(--letter-spacing-normal);
     color: var(--v2-text-text-muted);
 
+    /* 电脑操作副标题自带动作短语与目标应用，直接空格相连，不叠加工具名后的间隔点 */
+    &[data-separator="none"]::before {
+      content: none;
+    }
+
     &.clickable {
       cursor: pointer;
       text-decoration: underline;

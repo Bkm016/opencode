@@ -9,6 +9,7 @@ import { SkillV2 } from "../skill"
 import customizeOpencodeContent from "./skill/customize-opencode.md" with { type: "text" }
 import manageCloudSkillsContent from "./skill/manage-cloud-skills.md" with { type: "text" }
 import imagegenContent from "./skill/imagegen.md" with { type: "text" }
+import computerUseContent from "./skill/computer-use.md" with { type: "text" }
 
 export const CustomizeOpencodeContent = customizeOpencodeContent
 export const ManageCloudSkillsContent = manageCloudSkillsContent
@@ -21,10 +22,26 @@ export const ImagegenSkill = {
   content: imagegenContent,
 }
 
+export const ComputerUseSkill = {
+  name: "computer-use",
+  description:
+    "Use when the user asks to inspect or interact with Windows desktop applications through the computer_use tool, including window screenshots, accessibility controls, clicking, typing, scrolling, or dragging. Also use when computer_use reports stale state, minimized windows, approval failures, or interrupted actions.",
+  content: computerUseContent,
+}
+
 export const Plugin = define({
   id: "skill",
   effect: Effect.fn(function* (ctx) {
     yield* ctx.skill.transform((draft) => {
+      draft.source(
+        SkillV2.EmbeddedSource.make({
+          type: "embedded",
+          skill: SkillV2.Info.make({
+            ...ComputerUseSkill,
+            location: AbsolutePath.make("/builtin/computer-use.md"),
+          }),
+        }),
+      )
       draft.source(
         SkillV2.EmbeddedSource.make({
           type: "embedded",

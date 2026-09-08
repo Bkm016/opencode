@@ -382,6 +382,9 @@ export const dict = {
   "dialog.skills.cloud.toast.configured": "Cloud skill repository connected",
   "dialog.skills.cloud.toast.updated": "Cloud skills updated",
   "dialog.skills.cloud.toast.synced": "Cloud skills synced",
+  "dialog.skills.openFile": "Open in editor",
+  "dialog.skills.openError": "Failed to open skill file",
+  "dialog.skills.builtinCannotEdit": "Built-in skills cannot be edited directly",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in opencode.json",

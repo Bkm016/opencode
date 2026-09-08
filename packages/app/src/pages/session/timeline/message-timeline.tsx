@@ -27,6 +27,7 @@ import {
   partDefaultOpen,
   type UserActions,
 } from "@opencode-ai/session-ui/message-part"
+import { ComputerUseToolGroup } from "@opencode-ai/session-ui/computer-use-tool"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -1193,6 +1194,26 @@ export function MessageTimeline(props: {
           parts={parts()}
           open={toolOpen[contextOpenKey] === true}
           onOpenChange={(value) => setToolOpen(contextOpenKey, value)}
+          busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
+          onSizeChange={input.onSizeChange}
+        />
+      )
+    }
+
+    if (input.group.type === "computerUse") {
+      const parts = createMemo(() =>
+        input.group.type === "computerUse"
+          ? input.group.refs
+              .map((ref) => getMsgPart(ref.messageID, ref.partID))
+              .filter((part): part is ToolPart => part?.type === "tool")
+          : emptyTools,
+      )
+      const computerUseOpenKey = `computerUse:${input.group.key}`
+      return (
+        <ComputerUseToolGroup
+          parts={parts()}
+          open={toolOpen[computerUseOpenKey] === true}
+          onOpenChange={(value) => setToolOpen(computerUseOpenKey, value)}
           busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
           onSizeChange={input.onSizeChange}
         />

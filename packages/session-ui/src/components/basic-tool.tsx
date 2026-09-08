@@ -208,6 +208,7 @@ export function BasicTool(props: BasicToolProps) {
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"
+                          data-separator={title().subtitleClass?.includes("computer-use-subtitle") ? "none" : undefined}
                           classList={{
                             [title().subtitleClass ?? ""]: !!title().subtitleClass,
                             clickable: !!props.onSubtitleClick,

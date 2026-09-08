@@ -395,6 +395,9 @@ export const dict = {
   "dialog.skills.cloud.toast.configured": "云端 Skill 仓库已连接",
   "dialog.skills.cloud.toast.updated": "云端 Skills 已更新",
   "dialog.skills.cloud.toast.synced": "云端 Skills 已同步",
+  "dialog.skills.openFile": "在编辑器中打开",
+  "dialog.skills.openError": "打开技能文件失败",
+  "dialog.skills.builtinCannotEdit": "内置技能不可直接编辑",
 
   "dialog.mcp.empty": "未配置 MCPs",
 

@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
+import { filesystem, httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
@@ -8,6 +8,7 @@ import { SessionStatus } from "@/session/status"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { PythonTool } from "./python"
+import { ComputerUseTool } from "./computer-use"
 import { EditTool } from "./edit"
 import { MultiEditTool } from "./multiedit"
 import { GlobTool } from "./glob"
@@ -128,6 +129,7 @@ const layer = Layer.effect(
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
     const python = yield* PythonTool
+    const computerUse = yield* ComputerUseTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
     const canvas = yield* CanvasTool
@@ -250,6 +252,7 @@ const layer = Layer.effect(
           taskFollowup: Tool.init(taskFollowup),
           fetch: Tool.init(webfetch),
           python: Tool.init(python),
+          computer_use: Tool.init(computerUse),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
@@ -270,6 +273,7 @@ const layer = Layer.effect(
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
             tool.python,
+            ...(process.platform === "win32" ? [tool.computer_use] : []),
             tool.shell,
             tool.read,
             tool.list_dir,
@@ -324,7 +328,7 @@ const layer = Layer.effect(
             `- ${item.name}: ${item.description ?? "This subagent should only be called manually by the user."}`,
         )
         .join("\n")
-      return ["Available agent types and the tools they have access to:", description].join("\n")
+      return ["Configured agent responsibilities (selection reference, not delegation triggers):", description].join("\n")
     })
 
     const describeCodeMode = Effect.fn("ToolRegistry.describeCodeMode")(function* (input: {
@@ -514,6 +518,7 @@ export const node = LayerNode.make({
     FSUtil.node,
     EventV2Bridge.node,
     httpClient,
+    filesystem,
     CrossSpawnSpawner.node,
     AppProcess.node,
     Format.node,

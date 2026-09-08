@@ -1272,6 +1272,144 @@
   word-break: break-word;
 }
 
+/* 展开正文与 bash/python 一致：一个带边框的卡片包住所有内容，内部由 ScrollView 自定义拇指滚动 */
+[data-component="computer-use-tool-output"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  margin-top: 4px;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 6px;
+
+  /* 滚动统一交给 ScrollView 的 viewport（自定义拇指），<pre>/<ul> 本身不再原生滚动 */
+  [data-slot="computer-use-windows-scroll"],
+  [data-slot="computer-use-tree-scroll"],
+  [data-slot="computer-use-document-scroll"],
+  [data-slot="computer-use-fallback-scroll"] {
+    max-height: 280px;
+
+    /* 自定义拇指覆盖在右侧 12px 轨道上，viewport 预留右内边距避免内容被拇指遮挡 */
+    .scroll-view__viewport {
+      padding-right: 14px;
+    }
+  }
+
+  pre {
+    margin: 0;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-small);
+  }
+
+  [role="alert"] {
+    color: var(--icon-critical-base);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="computer-use-screenshot"] {
+    width: min(520px, 100%);
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: transparent;
+    cursor: zoom-in;
+  }
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  [data-slot="computer-use-windows"] {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-large);
+
+    /* 每行一条窗口：标题占据剩余宽度，应用名与 ID 作为次级信息靠右 */
+    [data-slot="computer-use-window"] {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+      padding: 1px 0;
+    }
+  }
+
+  [data-slot="computer-use-window-summary"] {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-large);
+  }
+
+  [data-slot="computer-use-window-title"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--v2-text-text-base);
+  }
+
+  /* 完整进程路径只放在 title 提示里，行内仅展示 basename，避免长路径撑爆布局 */
+  [data-slot="computer-use-window-app"] {
+    flex-shrink: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="computer-use-window-id"] {
+    flex-shrink: 0;
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="computer-use-tree"] {
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  [data-slot="computer-use-focused"],
+  [data-slot="computer-use-selected"],
+  [data-slot="computer-use-document"] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    font-size: var(--font-size-small);
+  }
+
+  [data-slot="computer-use-label"] {
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="computer-use-value"] {
+    font-family: var(--font-family-mono);
+    color: var(--v2-text-text-base);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
 [data-component="todos"] {
   padding: 10px 0 24px 0;
   display: flex;
@@ -1323,6 +1461,41 @@
   gap: 4px;
 
   [data-slot="context-tool-group-item"] {
+    min-width: 0;
+    padding: 0;
+  }
+}
+
+[data-component="computer-use-group-trigger"] {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0px;
+  cursor: default;
+
+  [data-slot="computer-use-group-title"] {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  [data-slot="collapsible-arrow"] {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
+}
+
+[data-component="computer-use-group-list"] {
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  [data-slot="computer-use-group-item"] {
     min-width: 0;
     padding: 0;
   }

@@ -11,6 +11,8 @@ import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { createMemo, createResource, For, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { isPathInside } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
@@ -18,6 +20,14 @@ import { showToast } from "@/utils/toast"
 function isProjectSkill(skill: SkillV2Info, directory: string) {
   if (skill.location === "<built-in>") return false
   return isPathInside(directory, skill.location)
+}
+
+// 内置技能（<built-in>）永久置顶，同层级按名称字母顺序排序
+function compareSkills(a: SkillV2Info, b: SkillV2Info) {
+  const aBuiltin = a.location === "<built-in>"
+  const bBuiltin = b.location === "<built-in>"
+  if (aBuiltin !== bBuiltin) return aBuiltin ? -1 : 1
+  return a.name.localeCompare(b.name)
 }
 
 function skillKey(skill: SkillV2Info) {
@@ -39,6 +49,8 @@ function errorMessage(error: unknown, fallback: string) {
 export function DialogSkills(props: { directory: string }) {
   const language = useLanguage()
   const serverSDK = useServerSDK()
+  const platform = usePlatform()
+  const server = useServer()
   const [store, setStore] = createStore({
     tab: "project",
     selected: undefined as string | undefined,
@@ -56,7 +68,7 @@ export function DialogSkills(props: { directory: string }) {
     async (directory) => {
       const result = await serverSDK().client.app.skills({ directory })
       if (result.error) throw new Error(language.t("dialog.skills.loadError"))
-      return (result.data ?? []).sort((a, b) => a.name.localeCompare(b.name))
+      return (result.data ?? []).sort(compareSkills)
     },
   )
 
@@ -289,6 +301,31 @@ export function DialogSkills(props: { directory: string }) {
     })
   }
 
+  // 仅桌面端且连接本地服务时支持调用系统外部编辑器打开技能文件
+  const canOpenFile = createMemo(() => !!platform.openPath && server.isLocal())
+
+  // 双击或点击按钮在本地编辑器中打开技能源文件，内置技能提示不可编辑
+  const handleOpenSkill = async (skill: SkillV2Info) => {
+    setStore("selected", skillKey(skill))
+    if (skill.location === "<built-in>") {
+      showToast({
+        title: language.t("dialog.skills.builtinCannotEdit"),
+      })
+      return
+    }
+    if (!canOpenFile() || !platform.openPath) return
+
+    try {
+      await platform.openPath(skill.location)
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("dialog.skills.openError"),
+        description: errorMessage(error, language.t("dialog.skills.openError")),
+      })
+    }
+  }
+
   const list = (items: Accessor<SkillV2Info[]>, emptyMessage: string, showRepoTag = false) => (
     <List
       class="h-full px-3 pb-3"
@@ -300,14 +337,27 @@ export function DialogSkills(props: { directory: string }) {
       key={skillKey}
       items={items}
       filterKeys={["name", "description", "location"]}
+      sortBy={compareSkills}
       onSelect={(skill) => setStore("selected", skill ? skillKey(skill) : undefined)}
+      onDblClick={(skill) => void handleOpenSkill(skill)}
     >
       {(skill) => {
         const repo = showRepoTag ? skillRepo(skill) : undefined
         return (
-          <div class="flex flex-col gap-0.5 min-w-0 w-full py-1 text-left">
+          <div
+            class="flex flex-col gap-0.5 min-w-0 w-full py-1 text-left"
+            onDblClick={(event) => {
+              event.stopPropagation()
+              void handleOpenSkill(skill)
+            }}
+          >
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="truncate text-14-medium text-text-strong">{skill.name}</span>
+              <Show when={skill.location === "<built-in>"}>
+                <span class="shrink-0 text-10-regular font-mono text-text-subtle px-1 rounded bg-surface-base border border-border-weak-base/50">
+                  built-in
+                </span>
+              </Show>
               <Show when={repo}>
                 <span class="shrink-0 text-10-regular font-mono text-text-subtle px-1 rounded bg-surface-base border border-border-weak-base/50">
                   {repo!.name}
@@ -661,6 +711,17 @@ export function DialogSkills(props: { directory: string }) {
                           {(description) => <span class="text-13-regular text-text-base">{description()}</span>}
                         </Show>
                       </div>
+                      <Show when={skill.location !== "<built-in>" && canOpenFile()}>
+                        <Button
+                          variant="ghost"
+                          size="small"
+                          class="shrink-0 flex items-center gap-1.5"
+                          onClick={() => void handleOpenSkill(skill)}
+                        >
+                          <Icon name="edit" class="w-3.5 h-3.5" />
+                          <span>{language.t("dialog.skills.openFile")}</span>
+                        </Button>
+                      </Show>
                     </div>
                     <div class="flex flex-col gap-5 px-5 py-4">
                       <div class="flex flex-col gap-1.5">

@@ -115,6 +115,8 @@ const layer = Layer.effect(
         const defaults = Permission.fromConfig({
           "*": "allow",
           doom_loop: "ask",
+          // 桌面操作超出项目文件边界，默认逐次确认，由用户显式授权。
+          computer_use: "ask",
           external_directory: {
             "*": "ask",
             ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
@@ -158,6 +160,7 @@ const layer = Layer.effect(
               Permission.fromConfig({
                 question: "allow",
                 plan_exit: "allow",
+                computer_use: "deny",
                 task: {
                   general: "deny",
                 },
@@ -177,7 +180,7 @@ const layer = Layer.effect(
           },
           general: {
             name: "general",
-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
+            description: `General-purpose agent for substantial, bounded research or implementation assignments that already meet the task tool's delegation criteria. Multi-step work or task difficulty alone is not a reason to delegate.`,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
@@ -208,7 +211,7 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
+            description: `Code-location agent for bounded, broad exploration that already meets the task tool's delegation criteria. Returns file locations, call relationships, and supporting evidence; does not own runtime investigations or root-cause decisions. Use read/glob/grep yourself for known paths, symbols, or a few targeted searches. Specify thoroughness: "quick", "medium", or "very thorough".`,
             prompt: PromptCatalog.resolve("agent.explore", cfg.prompts),
             options: {},
             mode: "subagent",

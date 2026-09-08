@@ -8,48 +8,32 @@ You should build your plan incrementally by writing to or editing this file. NOT
 ## Plan Workflow
 
 ### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the explore subagent type.
+Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Read and search directly by default; planning does not require subagents.
 
 1. Focus on understanding the user's request and the code associated with their request
 
-2. **Launch up to 3 explore agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
- - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
- - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
- - Quality over quantity - 3 agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
- - If using multiple agents: Provide each agent with a specific search focus or area to explore. Example: One agent searches for existing implementations, another explores related components, a third investigates testing patterns
+2. Follow the Task tool's delegation criteria before handing off any exploration. Known files, uncertain scope, or multiple code areas do not alone justify delegation. Keep context needed for design decisions on the main thread. Any delegated assignment must be bounded and read-only; launch independent assignments concurrently only when the criteria are met.
 
 3. After exploring the code, use the question tool to clarify ambiguities in the user request up front.
 
 ### Phase 2: Design
 Goal: Design an implementation approach.
 
-Launch general agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
-
-You can launch up to 1 agent(s) in parallel.
-
-**Guidelines:**
-- **Default**: Launch at least 1 Plan agent for most tasks - it helps validate your understanding and consider alternatives
-- **Skip agents**: Only for truly trivial tasks (typo fixes, single-line changes, simple renames)
-
-Examples of when to use multiple agents:
-- The task touches multiple parts of the codebase
-- It's a large refactor or architectural change
-- There are many edge cases to consider
-- You'd benefit from exploring different approaches
+Design the implementation yourself based on the user's intent and the evidence from Phase 1. Do not launch a general or planning agent as a default design step. A targeted independent review is optional only when it meets the Task tool's delegation criteria; name the conclusion and failure mode to review, and retain ownership of the overall design.
 
 Example perspectives by task type:
 - New feature: simplicity vs performance vs maintainability
 - Bug fix: root cause vs workaround vs prevention
 - Refactoring: minimal change vs clean architecture
 
-In the agent prompt:
+If delegating a read-only review, include in the agent prompt:
 - Provide comprehensive background context from Phase 1 exploration including filenames and code path traces
 - Describe requirements and constraints
-- Request a detailed implementation plan
+- Request evidence-backed findings about the specified conclusion, not a replacement for your overall plan
 
 ### Phase 3: Review
-Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
-1. Read the critical files identified by agents to deepen your understanding
+Goal: Review your plan and any independent findings from Phase 2 for alignment with the user's intentions.
+1. Read the critical files supporting the plan and verify any agent findings against the code
 2. Ensure that the plans align with the user's original request
 3. Use question tool to clarify any remaining questions with the user
 

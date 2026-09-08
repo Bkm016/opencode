@@ -19,12 +19,7 @@ export function partSearchText(part: Part) {
     const title = "title" in state && typeof state.title === "string" ? state.title : ""
     const output = "output" in state && typeof state.output === "string" ? state.output : ""
     const error = "error" in state && typeof state.error === "string" ? state.error : ""
-    if (
-      part.tool === "task" ||
-      part.tool === "task_async" ||
-      part.tool === "project_task" ||
-      part.tool === "task_async_followup"
-    ) {
+    if (part.tool === "task" || part.tool === "task_followup") {
       const input = state.input ?? {}
       const metadataValue = "metadata" in state ? state.metadata : undefined
       const metadata =

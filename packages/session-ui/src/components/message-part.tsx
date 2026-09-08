@@ -66,6 +66,7 @@ import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
 import { isContextGroupTool } from "./message-part-groups"
 import { ImageGenerationTool } from "./image-generation-tool"
+import { CanvasTool } from "./canvas-tool"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -765,8 +766,7 @@ export function getToolInfo(
         title: webSearchProviderLabel(metadata?.provider),
         subtitle: input.query,
       }
-    case "task":
-    case "task_async": {
+    case "task": {
       const metaTasks = Array.isArray(metadata?.tasks) ? metadata.tasks : undefined
       const inputTasks = Array.isArray(input.tasks) ? input.tasks : undefined
       const batch = (metaTasks?.length ? metaTasks : inputTasks) as unknown[] | undefined
@@ -801,25 +801,25 @@ export function getToolInfo(
                 : undefined,
       }
     }
-    case "task_async_status":
+    case "task_status":
       return {
         icon: "task",
         title: i18n.t("ui.tool.task.status"),
         subtitle: taskManageSubtitle(input, metadata),
       }
-    case "task_async_wait":
+    case "task_wait":
       return {
         icon: "task",
         title: i18n.t("ui.tool.task.wait"),
         subtitle: taskManageSubtitle(input, metadata),
       }
-    case "task_async_abort":
+    case "task_abort":
       return {
         icon: "task",
         title: i18n.t("ui.tool.task.abort"),
         subtitle: taskManageSubtitle(input, metadata),
       }
-    case "task_async_followup": {
+    case "task_followup": {
       const rawType =
         (typeof input.agent === "string" && input.agent) ||
         (typeof metadata?.agent === "string" && metadata.agent) ||
@@ -1827,6 +1827,8 @@ export interface ToolProps {
   metadata: Record<string, any>
   tool: string
   sessionID?: string
+  partID?: string
+  messageID?: string
   output?: string
   status?: string
   /** 完成态工具产出的附件（如原生生图工具的图片），由 ToolPartDisplay 从 completed state 透传 */
@@ -1868,6 +1870,8 @@ export const ToolRegistry = {
   register: registerTool,
   render: getTool,
 }
+
+ToolRegistry.register({ name: "canvas", render: CanvasTool })
 
 // 在 edit/write/apply_patch 折叠态 trigger 上显示的「打开文件」按钮，点击用系统默认编辑器打开源文件
 function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) => void }) {
@@ -1944,9 +1948,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const input = () => part().state?.input ?? emptyInput
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
-  const isTaskTool = createMemo(
-    () => part().tool === "task" || part().tool === "task_async" || part().tool === "project_task",
-  )
+  const isTaskTool = createMemo(() => part().tool === "task")
   const taskId = createMemo(() => {
     if (!isTaskTool()) return
     const meta = partMetadata()
@@ -2005,8 +2007,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               part().state.status === "error" &&
               (part().state as any).error &&
               part().tool !== "bash" &&
-              part().tool !== "python" &&
-              part().tool !== "image_generation"
+               part().tool !== "python" &&
+               part().tool !== "canvas" &&
+               part().tool !== "image_generation"
             }
           >
             {(error) => {
@@ -2040,6 +2043,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               input={input()}
               tool={part().tool}
               sessionID={part().sessionID}
+              partID={part().id}
+              messageID={part().messageID}
               metadata={partMetadata()}
               // @ts-expect-error
               output={part().state.output}
@@ -3274,7 +3279,7 @@ ToolRegistry.register({
 })
 
 function taskCards(input: Record<string, any>, metadata: Record<string, any>) {
-  // project_task 通过 metadata 携带目标项目目录。
+  // 跨项目任务通过 metadata 携带目标项目目录。
   const directory = typeof metadata.directory === "string" ? metadata.directory : undefined
   const delivery =
     metadata.delivery && typeof metadata.delivery === "object"
@@ -3702,26 +3707,10 @@ ToolRegistry.register({
   },
 })
 
-// Alias used by models / plugins that call task_async instead of task.
-ToolRegistry.register({
-  name: "task_async",
-  render(props) {
-    return <TaskToolRender {...props} />
-  },
-})
-
-// 跨项目委派复用任务卡，并由 metadata.directory 决定子会话路由。
-ToolRegistry.register({
-  name: "project_task",
-  render(props) {
-    return <TaskToolRender {...props} />
-  },
-})
-
 function taskManageTitleKey(tool: string) {
-  if (tool === "task_async_status") return "ui.tool.task.status"
-  if (tool === "task_async_wait") return "ui.tool.task.wait"
-  if (tool === "task_async_abort") return "ui.tool.task.abort"
+  if (tool === "task_status") return "ui.tool.task.status"
+  if (tool === "task_wait") return "ui.tool.task.wait"
+  if (tool === "task_abort") return "ui.tool.task.abort"
   return "ui.tool.task.followup"
 }
 
@@ -3855,13 +3844,13 @@ function TaskManageToolRender(props: ToolProps) {
 }
 
 ToolRegistry.register({
-  name: "task_async_followup",
+  name: "task_followup",
   render(props) {
     return <TaskFollowupToolRender {...props} />
   },
 })
 
-for (const name of ["task_async_status", "task_async_wait", "task_async_abort"] as const) {
+for (const name of ["task_status", "task_wait", "task_abort"] as const) {
   ToolRegistry.register({
     name,
     render(props) {

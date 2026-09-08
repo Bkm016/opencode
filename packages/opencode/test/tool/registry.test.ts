@@ -174,11 +174,10 @@ describe("tool.registry", () => {
       const task = tools.find((tool) => tool.id === "task")
 
       expect(ids).toContain("task")
-      expect(ids).toContain("task_async")
-      expect(ids).toContain("task_async_status")
-      expect(ids).toContain("task_async_wait")
-      expect(ids).toContain("task_async_abort")
-      expect(ids).toContain("task_async_followup")
+      expect(ids).toContain("task_status")
+      expect(ids).toContain("task_wait")
+      expect(ids).toContain("task_abort")
+      expect(ids).toContain("task_followup")
       expect(task?.description).toContain("wait=true")
       // Full parameter schema is exposed (no experimental gate on wait/background).
       expect(task?.jsonSchema).toBeUndefined()

@@ -21,7 +21,7 @@ const taskMetaFromPart = (
   out: Map<string, { description?: string; agent?: string }>,
 ) => {
   if (part.type !== "tool") return
-  if (part.tool !== "task" && part.tool !== "task_async" && part.tool !== "task_async_followup") return
+  if (part.tool !== "task" && part.tool !== "task_followup") return
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
   if (!metadata || typeof metadata !== "object") return
 

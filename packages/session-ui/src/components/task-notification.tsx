@@ -7,7 +7,7 @@ import { Markdown } from "./markdown"
 
 /**
  * 后台子代理任务结束时注入主会话的 <task> 信封解析结果
- * 由 task / task_async 工具在后台任务完成或失败时以 synthetic 用户消息写入。
+ * 由 task 工具在后台任务完成或失败时以 synthetic 用户消息写入。
  */
 export interface TaskNotification {
   /** 子代理会话 ID */

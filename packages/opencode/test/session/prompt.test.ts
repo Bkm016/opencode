@@ -1637,7 +1637,7 @@ it.instance(
 )
 
 it.instance(
-  "new prompt releases task_async_wait without aborting the parent or child job",
+  "new prompt releases task_wait without aborting the parent or child job",
   () =>
     Effect.gen(function* () {
       const { llm } = yield* useServerConfig(providerCfg)
@@ -1663,7 +1663,7 @@ it.instance(
         run: Deferred.await(childDone).pipe(Effect.as("child done")),
       })
 
-      yield* llm.tool("task_async_wait", { task_id: child.id })
+      yield* llm.tool("task_wait", { task_id: child.id })
       yield* llm.text("user interrupted wait")
 
       const waiting = yield* prompt
@@ -1680,11 +1680,11 @@ it.instance(
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
           const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
           const tool = assistant?.parts.find(
-            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_async_wait",
+            (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_wait",
           )
           if (tool?.state.status === "running" && tool.state.metadata?.registered === true) return true as const
         }),
-        "timed out waiting for task_async_wait registration",
+        "timed out waiting for task_wait registration",
       )
 
       const second = yield* awaitWithTimeout(
@@ -1694,7 +1694,7 @@ it.instance(
           model: ref,
           parts: [{ type: "text", text: "stop waiting and answer now" }],
         }),
-        "new prompt did not start while task_async_wait was blocked",
+        "new prompt did not start while task_wait was blocked",
       )
 
       expect(second.parts.some((part) => part.type === "text" && part.text === "user interrupted wait")).toBe(true)
@@ -1710,10 +1710,10 @@ it.instance(
       const waitMessage = messages.find(
         (message) =>
           message.info.role === "assistant" &&
-          message.parts.some((part) => part.type === "tool" && part.tool === "task_async_wait"),
+          message.parts.some((part) => part.type === "tool" && part.tool === "task_wait"),
       )
       const waitPart = waitMessage?.parts.find(
-        (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_async_wait",
+        (part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "task_wait",
       )
       expect(waitPart?.state.status).toBe("completed")
       if (waitPart?.state.status === "completed") {
@@ -2260,7 +2260,7 @@ it.instance("task follow-up reaches the active child's next provider turn withou
       )),
       "child did not start",
     )
-    yield* llm.tool("task_async_followup", { task_id: child.id, prompt: "CORRECTION_PERSIST: report risks only" })
+    yield* llm.tool("task_followup", { task_id: child.id, prompt: "CORRECTION_PERSIST: report risks only" })
     yield* llm.text("parent acknowledged correction")
     yield* awaitWithTimeout(
       prompt.prompt({
@@ -2273,7 +2273,7 @@ it.instance("task follow-up reaches the active child's next provider turn withou
     )
     const parentMessages = yield* sessions.messages({ sessionID: chat.id })
     const followup = parentMessages.flatMap((message) => message.parts)
-      .findLast((part) => part.type === "tool" && part.tool === "task_async_followup")
+      .findLast((part) => part.type === "tool" && part.tool === "task_followup")
     if (followup?.type !== "tool" || followup.state.status !== "completed") {
       throw new Error("follow-up did not complete admission")
     }

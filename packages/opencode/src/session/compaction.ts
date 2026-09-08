@@ -10,6 +10,7 @@ import { SessionProcessor } from "./processor"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
+import { mediaBudget } from "@/util/media"
 import { NotFoundError } from "@/storage/storage"
 
 import { Effect, Layer, Context } from "effect"
@@ -238,7 +239,12 @@ const layer = Layer.effect(
       messages: SessionV1.WithParts[]
       model: Provider.Model
     }) {
-      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+      // 估算必须和实际发送保持一致，否则 auto-compaction 会按一个永远发不出去的
+      // 体积做判断。
+      const cfg = yield* config.get()
+      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model, {
+        mediaBudgetBytes: mediaBudget(cfg.attachment),
+      })
       return Token.estimate(JSON.stringify(msgs))
     })
 

@@ -16,10 +16,18 @@ export const Image = Schema.Struct({
   max_base64_bytes: Schema.optional(PositiveInt).annotate({
     description: "Maximum base64 payload bytes for an image attachment (default: 5242880)",
   }),
+  compress_over_base64_bytes: Schema.optional(PositiveInt).annotate({
+    description:
+      "Warning threshold: re-encode (and downscale if needed) an image once its base64 payload exceeds this many bytes, even when it is still below max_base64_bytes (default: 409600)",
+  }),
 }).annotate({ identifier: "ImageAttachmentConfig" })
 export type Image = Schema.Schema.Type<typeof Image>
 
 export const Info = Schema.Struct({
   image: Schema.optional(Image).annotate({ description: "Image attachment configuration" }),
+  max_total_base64_bytes: Schema.optional(PositiveInt).annotate({
+    description:
+      "Maximum combined base64 payload bytes for all attachments sent in a single model request; the oldest ones are replaced with a placeholder first (default: 8388608)",
+  }),
 }).annotate({ identifier: "AttachmentConfig" })
 export type Info = Schema.Schema.Type<typeof Info>

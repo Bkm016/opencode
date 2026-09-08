@@ -319,6 +319,132 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("elides the oldest user media once the aggregate media budget is exceeded", async () => {
+    const oldID = "msg-old"
+    const currentID = "msg-current"
+    const old = "A".repeat(100)
+    const current = "B".repeat(100)
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(oldID),
+        parts: [
+          {
+            ...basePart(oldID, "old-image"),
+            type: "file",
+            mime: "image/png",
+            filename: "old.png",
+            url: `data:image/png;base64,${old}`,
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: userInfo(currentID),
+        parts: [
+          {
+            ...basePart(currentID, "current-image"),
+            type: "file",
+            mime: "image/png",
+            filename: "current.png",
+            url: `data:image/png;base64,${current}`,
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    // Only one of the two images fits, and the newest one wins.
+    expect(await MessageV2.toModelMessages(input, model, { mediaBudgetBytes: 150 })).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "[Attached image/png: old.png]" }],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "current.png",
+            data: `data:image/png;base64,${current}`,
+          },
+        ],
+      },
+    ])
+  })
+
+  test("keeps all media when the aggregate budget is large enough", async () => {
+    const messageID = "msg-fits"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(messageID),
+        parts: [
+          {
+            ...basePart(messageID, "image"),
+            type: "file",
+            mime: "image/png",
+            filename: "fits.png",
+            url: "data:image/png;base64,Zm9v",
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model, { mediaBudgetBytes: 1024 })).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "file", mediaType: "image/png", filename: "fits.png", data: "data:image/png;base64,Zm9v" }],
+      },
+    ])
+  })
+
+  test("elides tool result attachments beyond the media budget and says so in the output", async () => {
+    const userID = "m-user-budget"
+    const assistantID = "m-assistant-budget"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "u1b"), type: "text", text: "read it" }] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1b"),
+            type: "tool",
+            callID: "call-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "shot.png" },
+              output: "Image read successfully",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+              attachments: [
+                {
+                  ...basePart(assistantID, "file-1b"),
+                  type: "file",
+                  mime: "image/png",
+                  filename: "shot.png",
+                  url: `data:image/png;base64,${"C".repeat(200)}`,
+                },
+              ],
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model, { mediaBudgetBytes: 10 })
+    const tool = result.at(-1) as { role: string; content: Array<{ output: { type: string; value: unknown } }> }
+
+    expect(tool.role).toBe("tool")
+    expect(tool.content[0]!.output).toStrictEqual({
+      type: "text",
+      value:
+        "Image read successfully\n\n[1 attachment omitted: older media beyond this request's media budget. Re-read the file if you need it again.]",
+    })
+  })
+
   test("strips historical user media while preserving the current user attachment", async () => {
     const oldID = "msg-old"
     const currentID = "msg-current"

@@ -1152,6 +1152,129 @@ it.instance("legacy prompt emits message events without session.next events", ()
   }),
 )
 
+it.instance("image result continuation preserves media and keeps tools available", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      compaction: { strategy: "chunk" },
+      provider: {
+        test: {
+          ...providerCfg(url).provider.test,
+          npm: "@ai-sdk/openai",
+          models: {
+            "test-model": {
+              ...cfg.provider.test.models["test-model"],
+              id: "gpt-5",
+              attachment: true,
+              modalities: { input: ["text", "image"], output: ["text"] },
+            },
+          },
+        },
+      },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    // 对应真实响应：生图已完成，正文为空，供应商 finish 为 stop。
+    const history = yield* seed(chat.id, { finish: "stop", text: "" })
+    // 大体积传输夹具用于验证预算不按 Base64 字符计数；请求编码不负责图片解码。
+    const png = Buffer.alloc(1_600_000).toString("base64")
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: history.assistant.id,
+      sessionID: chat.id,
+      type: "tool",
+      tool: "image_generation",
+      callID: "ig_completed",
+      metadata: { providerExecuted: true },
+      state: {
+        status: "completed",
+        input: {},
+        output: "Image generated successfully",
+        title: "image_generation",
+        metadata: {},
+        time: { start: Date.now(), end: Date.now() },
+        attachments: [
+          {
+            id: PartID.ascending(),
+            messageID: history.assistant.id,
+            sessionID: chat.id,
+            type: "file",
+            mime: "image/png",
+            filename: "generated.png",
+            url: `data:image/png;base64,${png}`,
+          },
+        ],
+      },
+    })
+    // 模型消费图片后仍可继续执行工具，结果回传不能通过限制工具能力来掩盖问题。
+    yield* llm.push(
+      reply().tool("todowrite", { todos: [{ content: "Review the generated image", status: "completed", priority: "medium" }] }),
+      reply().text("The image is ready.").stop(),
+    )
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    for (const hit of hits) {
+      const tools = hit.body.tools
+      if (!Array.isArray(tools)) throw new Error("Expected Responses tools")
+      expect(tools.some((tool) => tool.type === "image_generation")).toBe(true)
+      expect(tools.some((tool) => tool.type === "function")).toBe(true)
+    }
+    expect(hits[0]!.body.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "function_call",
+          call_id: "ig_completed",
+          name: "image_generation",
+        }),
+      ]),
+    )
+    const input = hits[0]!.body.input
+    if (!Array.isArray(input)) throw new Error("Expected Responses input items")
+    expect(input.some((item) => item.type === "image_generation_call")).toBe(false)
+    expect(input.find((item) => item.type === "function_call_output")).toEqual({
+      type: "function_call_output",
+      call_id: "ig_completed",
+      output: [
+        { type: "input_text", text: "Image generated successfully" },
+        { type: "input_image", image_url: `data:image/png;base64,${png}` },
+      ],
+    })
+    expect(input.filter((item) => item.role === "user")).toEqual([
+      { role: "user", content: [{ type: "input_text", text: "hello" }] },
+    ])
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(messages.flatMap((message) => message.parts)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool",
+          tool: "todowrite",
+          state: expect.objectContaining({ status: "completed" }),
+        }),
+      ]),
+    )
+    expect(messages.at(-1)?.parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "text", text: "The image is ready." })]),
+    )
+    // 已消费结果后的正常完成回复，不得再触发一次生图续跑。
+    yield* prompt.loop({ sessionID: chat.id })
+    expect(yield* llm.hits).toHaveLength(2)
+    // 新输入同样保留生图能力。
+    yield* llm.push(reply().text("New image request received.").stop())
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "Change the apple to green." }],
+    })
+    const next = yield* llm.hits
+    expect(next).toHaveLength(3)
+    const nextTools = next[2]!.body.tools
+    if (!Array.isArray(nextTools)) throw new Error("Expected Responses tools for new input")
+    expect(nextTools.some((tool) => tool.type === "image_generation")).toBe(true)
+  }),
+)
+
 it.instance("loop surfaces content-filter finishes as session errors", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

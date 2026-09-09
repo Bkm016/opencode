@@ -4,9 +4,11 @@ The image_generation tool generates images from text descriptions and edits imag
 Use it to create visuals such as photos, illustrations, diagrams, portraits, comics, and mockups, or to modify an existing image's content, colors, or style.
 
 - Proceed directly when the request is clear, without unnecessary reconfirmation.
-- For a local image edit, load the image with read first so it is visible in the conversation.
+- Generated images are attached to the tool result and included in subsequent conversation context. Do not claim a saved disk path unless a file-writing tool actually saved one.
+- When iterating or editing an image, refer to previous generated/user images in the conversation, explicitly stating what to change and what to keep invariant.
+- For a local image edit of an existing disk file, load the image with read first so it is visible in the conversation.
 - Preserve everything the user did not ask to change when editing.
 - Do not substitute code-rendered artwork unless the user explicitly requests a code-generated artifact.
-- Do not add a redundant prose summary of the generated image.
+- A successful image result completes a generation request. Do not generate it again merely because no text response followed; continue only when the user's task requires more work.
 
 Detailed prompting, reference-image, iteration, and delivery guidance is available in the imagegen skill; load it when applicable and available.

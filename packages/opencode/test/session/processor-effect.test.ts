@@ -633,53 +633,68 @@ it.live("session.processor effect tests retry recognized structured json errors"
   ),
 )
 
-it.live("session.processor effect tests retry empty 0-token stream ends", () =>
-  provideTmpdirServer(
-    ({ dir, llm }) =>
-      Effect.gen(function* () {
-        const { processors, session, provider } = yield* boot()
+for (const scenario of [
+  { name: "recovers after a zero-token empty stream", tokens: [0], calls: 2, recovered: true, failed: false },
+  { name: "accepts an empty stop with output tokens", tokens: [91], calls: 1, recovered: false, failed: false },
+  { name: "stops retrying after three empty streams", tokens: [0, 0, 0], calls: 3, recovered: false, failed: true },
+]) {
+  it.live(`session.processor ${scenario.name}`, () =>
+    provideTmpdirServer(
+      ({ dir, llm }) =>
+        Effect.gen(function* () {
+          const { processors, session, provider } = yield* boot()
 
-        // First attempt: role + stop, no content (quiet drop / 0-token finish).
-        yield* llm.push(reply().stop().item())
-        yield* llm.text("recovered")
+          // First attempt: role + stop, no content (quiet drop / 0-token finish).
+          // 同时覆盖有用量的正常空回复与连续空流，防止两者混为同一种重试。
+          for (const output of scenario.tokens) {
+            yield* llm.push(reply().usage({ input: 10, output }).stop().item())
+          }
+          yield* llm.text("recovered")
 
-        const chat = yield* session.create({})
-        const parent = yield* user(chat.id, "empty stream")
-        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
-        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
-        const handle = yield* processors.create({
-          assistantMessage: msg,
-          sessionID: chat.id,
-          model: mdl,
-        })
-
-        const value = yield* handle.process({
-          user: {
-            id: parent.id,
+          const chat = yield* session.create({})
+          const parent = yield* user(chat.id, "empty stream")
+          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+          const handle = yield* processors.create({
+            assistantMessage: msg,
             sessionID: chat.id,
-            role: "user",
-            time: parent.time,
-            agent: parent.agent,
-            model: { providerID: ref.providerID, modelID: ref.modelID },
-          } satisfies SessionV1.User,
-          sessionID: chat.id,
-          model: mdl,
-          agent: agent(),
-          system: [],
-          messages: [{ role: "user", content: "empty stream" }],
-          tools: {},
-        })
+            model: mdl,
+          })
 
-        const parts = yield* MessageV2.parts(msg.id)
+          const value = yield* handle.process({
+            user: {
+              id: parent.id,
+              sessionID: chat.id,
+              role: "user",
+              time: parent.time,
+              agent: parent.agent,
+              model: { providerID: ref.providerID, modelID: ref.modelID },
+            } satisfies SessionV1.User,
+            sessionID: chat.id,
+            model: mdl,
+            agent: agent(),
+            system: [],
+            messages: [{ role: "user", content: "empty stream" }],
+            tools: {},
+          })
 
-        expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(2)
-        expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(true)
-        expect(handle.message.error).toBeUndefined()
-      }),
-    { config: (url) => providerCfg(url) },
-  ),
-)
+          const parts = yield* MessageV2.parts(msg.id)
+
+          expect(value).toBe(scenario.failed ? "stop" : "continue")
+          expect(yield* llm.calls).toBe(scenario.calls)
+          expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(scenario.recovered)
+          if (scenario.failed) {
+            expect(handle.message.error).toMatchObject({
+              name: "APIError",
+              data: { message: "Provider stream ended without output", isRetryable: false },
+            })
+          } else expect(handle.message.error).toBeUndefined()
+        }),
+      { config: (url) => providerCfg(url) },
+    ),
+    15_000,
+  )
+}
 
 it.live("session.processor effect tests publish retry status updates", () =>
   provideTmpdirServer(
@@ -1195,13 +1210,17 @@ itImageGeneration.live("session.processor stores OpenAI generated images as tool
         expect(call?.metadata?.providerExecuted).toBe(true)
         expect(call?.state.status).toBe("completed")
         if (call?.state.status !== "completed") return
-        expect(call.state.output).toBe("Image generated successfully")
+        const filepath = call.state.attachments?.[0]?.filename
+        expect(filepath).toBe(path.join(path.resolve(dir), ".opencode", "images", `${call.state.attachments?.[0]?.id}.png`))
+        expect(call.state.output).toBe(`Image generated successfully\nImage saved to: ${filepath}`)
+        const bytes = yield* Effect.promise(() => Bun.file(filepath!).bytes())
+        expect(Buffer.from(bytes).toString("base64")).toBe(generatedPng)
         expect(call.state.metadata).toEqual({})
         expect(call.state.attachments).toHaveLength(1)
         expect(call.state.attachments?.[0]).toMatchObject({
           type: "file",
           mime: "image/png",
-          filename: "generated-image-image-1.png",
+          filename: filepath,
           url: `data:image/png;base64,${generatedPng}`,
         })
         expect(JSON.stringify(call.state)).not.toContain('"result"')

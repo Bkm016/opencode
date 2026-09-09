@@ -83,6 +83,12 @@ const OpenAIResponsesInputItem = Schema.Union([
   OpenAIResponsesReasoningItem,
   OpenAIResponsesItemReference,
   Schema.Struct({
+    type: Schema.tag("image_generation_call"),
+    id: Schema.String,
+    status: Schema.Literals(["completed", "failed"]),
+    result: Schema.NullOr(Schema.String),
+  }),
+  Schema.Struct({
     type: Schema.tag("function_call"),
     call_id: Schema.String,
     name: Schema.String,
@@ -461,6 +467,16 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
         }
         if (part.type === "tool-result" && part.providerExecuted === true) {
           flushText()
+          // 原生生图续传使用原 item，而非用户附件或 function_call_output。
+          if (part.name === "image_generation" && part.result.type === "json" && isRecord(part.result.value)) {
+            input.push({
+              type: "image_generation_call",
+              id: part.id,
+              status: part.result.value.status === "failed" ? "failed" : "completed",
+              result: typeof part.result.value.result === "string" ? part.result.value.result : null,
+            })
+            continue
+          }
           const itemID = hostedToolItemID(part)
           if (store !== false && itemID && !hostedToolReferences.has(itemID))
             input.push({ type: "item_reference", id: itemID })
@@ -901,7 +917,8 @@ const onOutputItemDone = Effect.fn("OpenAIResponses.onOutputItemDone")(function*
       {
         ...state,
         lifecycle,
-        hasFunctionCall: true,
+        // 托管生图已交付结果，不应把正常结束改成客户端工具续跑。
+        hasFunctionCall: state.hasFunctionCall || item.type !== "image_generation_call",
       },
       events,
     ] satisfies StepResult

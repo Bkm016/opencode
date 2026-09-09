@@ -1,0 +1,112 @@
+diff --git a/dist/index.js b/dist/index.js
+index d3ff1b846ec75b49094de64396e1d947ca280150..33486f2a931d5927d0bdcf5e9f8a665b9f84b211 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3280,6 +3280,14 @@ async function convertToOpenAIResponsesInput({
+                 }
+                 break;
+               }
++              // 无存储续传必须重放原生生图结果，不能丢弃或转换成函数输出。
++              if (resolvedResultToolName === "image_generation" && part.output.type === "json") {
++                const image = part.output.value;
++                if (image !== null && typeof image === "object" && !Array.isArray(image) && "result" in image) {
++                  input.push({ type: "image_generation_call", id: part.toolCallId, status: image.status === "failed" ? "failed" : "completed", result: typeof image.result === "string" ? image.result : null });
++                  break;
++                }
++              }
+               if (hasShellTool && resolvedResultToolName === "shell") {
+                 if (part.output.type === "json") {
+                   const parsedOutput = await (0, import_provider_utils26.validateTypes)({
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 26440439553af2fd793f78cee475e81e6cb84a0e..bc04706082fd7446c35fbcc0217ebd8a6166d7af 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -3375,6 +3375,14 @@ async function convertToOpenAIResponsesInput({
+                 }
+                 break;
+               }
++              // 无存储续传必须重放原生生图结果，不能丢弃或转换成函数输出。
++              if (resolvedResultToolName === "image_generation" && part.output.type === "json") {
++                const image = part.output.value;
++                if (image !== null && typeof image === "object" && !Array.isArray(image) && "result" in image) {
++                  input.push({ type: "image_generation_call", id: part.toolCallId, status: image.status === "failed" ? "failed" : "completed", result: typeof image.result === "string" ? image.result : null });
++                  break;
++                }
++              }
+               if (hasShellTool && resolvedResultToolName === "shell") {
+                 if (part.output.type === "json") {
+                   const parsedOutput = await validateTypes({
+diff --git a/dist/internal/index.js b/dist/internal/index.js
+index aedcfc72b8940ac92af5feff79a653e618518024..facca152dc30bb3356f7c906cb8bd8059afe8743 100644
+--- a/dist/internal/index.js
++++ b/dist/internal/index.js
+@@ -3228,6 +3228,14 @@ async function convertToOpenAIResponsesInput({
+                 }
+                 break;
+               }
++              // 无存储续传必须重放原生生图结果，不能丢弃或转换成函数输出。
++              if (resolvedResultToolName === "image_generation" && part.output.type === "json") {
++                const image = part.output.value;
++                if (image !== null && typeof image === "object" && !Array.isArray(image) && "result" in image) {
++                  input.push({ type: "image_generation_call", id: part.toolCallId, status: image.status === "failed" ? "failed" : "completed", result: typeof image.result === "string" ? image.result : null });
++                  break;
++                }
++              }
+               if (hasShellTool && resolvedResultToolName === "shell") {
+                 if (part.output.type === "json") {
+                   const parsedOutput = await (0, import_provider_utils24.validateTypes)({
+diff --git a/dist/internal/index.mjs b/dist/internal/index.mjs
+index 40d83eb3937b98c01476685ee43fa0ac38cd7434..d07716dfd1ad519192c0c5a35926a34147c3dfc5 100644
+--- a/dist/internal/index.mjs
++++ b/dist/internal/index.mjs
+@@ -3271,6 +3271,14 @@ async function convertToOpenAIResponsesInput({
+                 }
+                 break;
+               }
++              // 无存储续传必须重放原生生图结果，不能丢弃或转换成函数输出。
++              if (resolvedResultToolName === "image_generation" && part.output.type === "json") {
++                const image = part.output.value;
++                if (image !== null && typeof image === "object" && !Array.isArray(image) && "result" in image) {
++                  input.push({ type: "image_generation_call", id: part.toolCallId, status: image.status === "failed" ? "failed" : "completed", result: typeof image.result === "string" ? image.result : null });
++                  break;
++                }
++              }
+               if (hasShellTool && resolvedResultToolName === "shell") {
+                 if (part.output.type === "json") {
+                   const parsedOutput = await validateTypes({
+diff --git a/src/responses/convert-to-openai-responses-input.ts b/src/responses/convert-to-openai-responses-input.ts
+index 9d393ee0af10ee50cf75ad52c3ecf57036783feb..4f033599bb4b138a9149365f5871873f8221b01b 100644
+--- a/src/responses/convert-to-openai-responses-input.ts
++++ b/src/responses/convert-to-openai-responses-input.ts
+@@ -517,6 +517,19 @@ export async function convertToOpenAIResponsesInput({
+                * callProviderMetadata, we reconstruct the full shell_call_output
+                * instead of using an item_reference with the wrong ID.
+                */
++              // 无存储续传必须重放原生生图结果，不能丢弃或转换成函数输出。
++              if (resolvedResultToolName === 'image_generation' && part.output.type === 'json') {
++                const image = part.output.value;
++                if (image !== null && typeof image === 'object' && !Array.isArray(image) && 'result' in image) {
++                  input.push({
++                    type: 'image_generation_call',
++                    id: part.toolCallId,
++                    status: image.status === 'failed' ? 'failed' : 'completed',
++                    result: typeof image.result === 'string' ? image.result : null,
++                  });
++                  break;
++                }
++              }
+               if (hasShellTool && resolvedResultToolName === 'shell') {
+                 if (part.output.type === 'json') {
+                   const parsedOutput = await validateTypes({
+diff --git a/src/responses/openai-responses-api.ts b/src/responses/openai-responses-api.ts
+index 9ab482d7417c2e547398846b2e44e305d095ef25..a2731b246931830fef2576de4e3036f3f42405ec 100644
+--- a/src/responses/openai-responses-api.ts
++++ b/src/responses/openai-responses-api.ts
+@@ -20,6 +20,7 @@ const jsonValueSchema: z.ZodType<JSONValue> = z.lazy(() =>
+ export type OpenAIResponsesInput = Array<OpenAIResponsesInputItem>;
+ 
+ export type OpenAIResponsesInputItem =
++  | { type: 'image_generation_call'; id: string; status: 'completed' | 'failed'; result: string | null }
+   | OpenAIResponsesSystemMessage
+   | OpenAIResponsesUserMessage
+   | OpenAIResponsesAssistantMessage

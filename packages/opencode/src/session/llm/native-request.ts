@@ -114,7 +114,10 @@ const messages = (input: readonly ModelMessage[]) => {
     return [
       Message.make({
         role: message.role,
-        content: content(message.content),
+        // AI SDK 的 assistant 工具结果隐含托管语义，不一定单独携带 providerExecuted 字段。
+        content: content(message.content).map((part) =>
+          message.role === "assistant" && part.type === "tool-result" ? { ...part, providerExecuted: true } : part,
+        ),
         native: isRecord(message.providerOptions) ? { providerOptions: message.providerOptions } : undefined,
       }),
     ]

@@ -169,6 +169,19 @@ export async function convertToOpenAIResponsesInput({
 
             // assistant tool result parts are from provider-executed tools:
             case "tool-result": {
+              // 原生生图结果独立于 store 重放，保留工具身份与图片内容。
+              if (part.toolName === "image_generation" && part.output.type === "json") {
+                const image = part.output.value
+                if (image !== null && typeof image === "object" && !Array.isArray(image) && "result" in image) {
+                  input.push({
+                    type: "image_generation_call",
+                    id: part.toolCallId,
+                    status: image.status === "failed" ? "failed" : "completed",
+                    result: typeof image.result === "string" ? image.result : null,
+                  })
+                  break
+                }
+              }
               if (store) {
                 // use item references to refer to tool results from built-in tools
                 input.push({ type: "item_reference", id: part.toolCallId })

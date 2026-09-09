@@ -104,6 +104,7 @@ const imageGenerationCallItem = z.object({
   type: z.literal("image_generation_call"),
   id: z.string(),
   result: z.string(),
+  prompt: z.string().optional(),
 })
 
 /**
@@ -536,11 +537,12 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
         }
 
         case "image_generation_call": {
+          // 生图已由供应商执行完成，不构成本地待执行函数，保留正常结束语义。
           content.push({
             type: "tool-call",
             toolCallId: part.id,
             toolName: "image_generation",
-            input: "{}",
+            input: JSON.stringify(part.prompt ? { prompt: part.prompt } : {}),
             providerExecuted: true,
           })
 
@@ -944,7 +946,7 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
                   type: "tool-call",
                   toolCallId: value.item.id,
                   toolName: "image_generation",
-                  input: "{}",
+                  input: JSON.stringify(value.item.prompt ? { prompt: value.item.prompt } : {}),
                   providerExecuted: true,
                 })
               } else if (value.item.type === "message") {
@@ -1077,6 +1079,8 @@ export class OpenAIResponsesLanguageModel implements LanguageModelV3 {
                   } satisfies z.infer<typeof codeInterpreterOutputSchema>,
                 })
               } else if (value.item.type === "image_generation_call") {
+                ongoingToolCalls[value.output_index] = undefined
+                // 生图结果已结算，不因缺少文字而强制发起下一轮请求。
                 controller.enqueue({
                   type: "tool-result",
                   toolCallId: value.item.id,
@@ -1438,6 +1442,7 @@ const responseOutputItemAddedSchema = z.object({
     z.object({
       type: z.literal("image_generation_call"),
       id: z.string(),
+      prompt: z.string().optional(),
     }),
     z.object({
       type: z.literal("code_interpreter_call"),

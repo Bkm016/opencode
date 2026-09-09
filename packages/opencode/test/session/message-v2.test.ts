@@ -781,7 +781,7 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
-  test("moves provider-executed image tool media into a separate user message for OpenAI models", async () => {
+  test("preserves completed image tool results when their media is stripped", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -828,11 +828,9 @@ describe("session.message-v2.toModelMessage", () => {
       },
     ]
 
-    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
-      {
-        role: "user",
-        content: [{ type: "text", text: "generate image" }],
-      },
+    // 不允许把已清除图片变成仅靠供应商存储解析的 ID 引用。
+    expect(await MessageV2.toModelMessages(input, model, { stripMedia: true })).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "generate image" }] },
       {
         role: "assistant",
         content: [
@@ -841,29 +839,60 @@ describe("session.message-v2.toModelMessage", () => {
             toolCallId: "call-image-1",
             toolName: "image_generation",
             input: { prompt: "cat" },
-            providerExecuted: true,
-          },
-          {
-            type: "tool-result",
-            toolCallId: "call-image-1",
-            toolName: "image_generation",
-            output: { type: "text", value: "Image generated successfully" },
+            providerExecuted: undefined,
           },
         ],
       },
       {
-        role: "user",
+        role: "tool",
         content: [
-          { type: "text", text: "Attached media from tool result:" },
           {
-            type: "file",
-            mediaType: "image/png",
-            filename: "generated.png",
-            data: `data:image/png;base64,${png}`,
+            type: "tool-result",
+            toolCallId: "call-image-1",
+            toolName: "image_generation",
+            output: { type: "content", value: [{ type: "text", text: "Image generated successfully" }] },
           },
         ],
       },
     ])
+  })
+
+  test("places a settled hosted image result before the same-turn answer", async () => {
+    const input: SessionV1.WithParts[] = [{
+      info: assistantInfo("m-assistant", "m-user"),
+      parts: [
+        {
+          ...basePart("m-assistant", "image-tool"),
+          type: "tool",
+          tool: "image_generation",
+          callID: "ig_order",
+          metadata: { providerExecuted: true },
+          state: {
+            status: "completed",
+            input: {},
+            output: "Image generated successfully",
+            title: "image_generation",
+            metadata: {},
+            time: { start: 0, end: 1 },
+          },
+        },
+        { ...basePart("m-assistant", "answer"), type: "text", text: "The generated image is ready." },
+      ],
+    }]
+    const messages = await MessageV2.toModelMessages(input, model)
+    expect(messages.map((message) => message.role)).toEqual(["assistant", "tool", "assistant"])
+    expect(messages[0]?.content).toEqual([
+      { type: "tool-call", toolCallId: "ig_order", toolName: "image_generation", input: {}, providerExecuted: undefined },
+    ])
+    expect(messages[1]?.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "ig_order",
+        toolName: "image_generation",
+        output: { type: "content", value: [{ type: "text", text: "Image generated successfully" }] },
+      },
+    ])
+    expect(messages[2]?.content).toEqual([{ type: "text", text: "The generated image is ready." }])
   })
 
   test("omits provider metadata when assistant model differs", async () => {

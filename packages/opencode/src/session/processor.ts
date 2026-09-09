@@ -29,6 +29,7 @@ import { Tool } from "@/tool/tool"
 import { InputAlias } from "@/tool/input-aliases"
 import { ToolNameAlias } from "@/tool/name-alias"
 import { parseJSON } from "partial-json"
+import path from "node:path"
 
 const DOOM_LOOP_THRESHOLD = 3
 const REPETITION_RETRY_PROMPT =
@@ -359,29 +360,39 @@ const layer = Layer.effect(
 
       const toolResultOutput = (
         value: Extract<StreamEvent, { type: "tool-result" }>,
-      ): { title: string; metadata: Record<string, any>; output: string; attachments?: SessionV1.FilePart[] } => {
-        if (
-          value.name === "image_generation" &&
-          isRecord(value.result.value) &&
-          typeof value.result.value.result === "string" &&
-          value.result.value.result.length > 0
-        ) {
-          // OpenAI 将原生生图结果作为 provider tool 的 Base64 字段返回；转成附件，避免写入工具文本和 metadata。
-          return {
-            title: value.name,
-            metadata: {},
-            output: "Image generated successfully",
-            attachments: [
-              {
-                id: PartID.ascending(),
-                messageID: ctx.assistantMessage.id,
-                sessionID: ctx.assistantMessage.sessionID,
-                type: "file",
-                mime: "image/png",
-                filename: `generated-image-${value.id}.png`,
-                url: `data:image/png;base64,${value.result.value.result}`,
-              },
-            ],
+      ): {
+        title: string
+        metadata: Record<string, any>
+        output: string
+        attachments?: SessionV1.FilePart[]
+      } => {
+        if (value.name === "image_generation") {
+          const rawResult = value.result.value
+          const base64Data =
+            isRecord(rawResult) && typeof rawResult.result === "string" && rawResult.result.length > 0
+              ? rawResult.result
+              : typeof rawResult === "string" && rawResult.length > 0
+                ? rawResult
+                : undefined
+
+          if (base64Data) {
+            // OpenAI 将原生生图结果作为 provider tool 的 Base64 字段返回；转成附件，避免写入工具文本和 metadata。
+            return {
+              title: value.name,
+              metadata: {},
+              output: "Image generated successfully",
+              attachments: [
+                {
+                  id: PartID.ascending(),
+                  messageID: ctx.assistantMessage.id,
+                  sessionID: ctx.assistantMessage.sessionID,
+                  type: "file" as const,
+                  mime: "image/png",
+                  filename: `generated-image-${value.id}.png`,
+                  url: `data:image/png;base64,${base64Data}`,
+                },
+              ],
+            }
           }
         }
         if (isRecord(value.result.value) && typeof value.result.value.output === "string") {
@@ -497,9 +508,10 @@ const layer = Layer.effect(
                       input,
                       time: { start: Date.now() },
                     },
-              metadata: match.metadata?.providerExecuted
-                ? { ...value.providerMetadata, providerExecuted: true }
-                : value.providerMetadata,
+              metadata:
+                match.metadata?.providerExecuted || value.providerExecuted
+                  ? { ...value.providerMetadata, providerExecuted: true }
+                  : value.providerMetadata,
             }))
 
             if (ctx.toolcalls[value.id]) delete ctx.toolcalls[value.id].preview
@@ -546,8 +558,30 @@ const layer = Layer.effect(
               return
             }
             const rawOutput = toolResultOutput(value)
+            if (value.name === "image_generation") {
+              const { mkdir, writeFile } = yield* Effect.promise(() => import("node:fs/promises"))
+              // 图片附件供本轮视觉消费，独立文件供后续 read/编辑；仅在写入成功后向模型公布真实路径。
+              for (const attachment of rawOutput.attachments ?? []) {
+                if (!attachment.url.startsWith("data:image/")) continue
+                const filepath = path.join(ctx.assistantMessage.path.cwd, ".opencode", "images", `${attachment.id}.png`)
+                const saved = yield* Effect.tryPromise(async () => {
+                  await mkdir(path.dirname(filepath), { recursive: true })
+                  await writeFile(filepath, Buffer.from(attachment.url.slice(attachment.url.indexOf(",") + 1), "base64"), { flag: "wx" })
+                  return filepath
+                }).pipe(Effect.exit)
+                if (Exit.isSuccess(saved)) {
+                  attachment.filename = saved.value
+                  rawOutput.output += `\nImage saved to: ${saved.value}`
+                  continue
+                }
+                // 落盘失败不丢弃已生成图片，也不把未写入的路径谎报为可读取文件。
+                rawOutput.output += "\nImage file could not be saved; the generated image remains attached."
+                yield* Effect.logWarning("Failed to save generated image", { cause: saved.cause })
+              }
+            }
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
-              attachment.mime.startsWith("image/")
+              // 原生生图结果续传必须保留供应商原始图片，不能在落盘前缩放后冒用同一 item ID。
+              attachment.mime.startsWith("image/") && value.name !== "image_generation"
                 ? image.normalize(attachment).pipe(
                     Effect.catchIf(
                       (error) => error instanceof Image.ResizerUnavailableError,
@@ -665,14 +699,20 @@ const layer = Layer.effect(
               time: { start: Date.now() },
               metadata: value.providerMetadata,
             }
-            yield* session.updatePart(ctx.currentText)
+            // 延迟到首个实际有文字输出的 text-delta 再持久化，避免生图等托管工具下发的纯空文本块污染消息
             return
 
           case "text-delta":
             if (!ctx.currentText) return
             if (value.text) hasOutput = true
+            const isFirstText = ctx.currentText.text === "" && Boolean(value.text)
             ctx.currentText.text += value.text
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
+            if (isFirstText) {
+              yield* session.updatePart(ctx.currentText)
+              // 首片已随完整 part 发布，不能再追加同一 delta 导致界面文字重复。
+              return
+            }
             yield* session.updatePartDelta({
               sessionID: ctx.currentText.sessionID,
               messageID: ctx.currentText.messageID,
@@ -684,6 +724,11 @@ const layer = Layer.effect(
 
           case "text-end":
             if (!ctx.currentText) return
+            // 若该文本段落没有任何有效内容（例如 hosted 生图工具附带的空 message），不落库保存
+            if (!ctx.currentText.text) {
+              ctx.currentText = undefined
+              return
+            }
             // oxlint-disable-next-line no-self-assign -- reactivity trigger
             ctx.currentText.text = ctx.currentText.text
             ctx.currentText.text = (yield* plugin.trigger(
@@ -726,9 +771,11 @@ const layer = Layer.effect(
         }
 
         if (ctx.currentText) {
-          const end = Date.now()
-          ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-          yield* session.updatePart(ctx.currentText)
+          if (ctx.currentText.text) {
+            const end = Date.now()
+            ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
+            yield* session.updatePart(ctx.currentText)
+          }
           ctx.currentText = undefined
         }
 
@@ -811,6 +858,7 @@ const layer = Layer.effect(
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
         repetitionRetry = false
         activeTools = streamInput.tools
+        let emptyAttempts = 0
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
@@ -840,12 +888,14 @@ const layer = Layer.effect(
             // Treat them as retryable stream failures so SessionRetry keeps going until real output or abort.
             if (aborted || ctx.needsCompaction || ctx.blocked || ctx.assistantMessage.error) return
             const finish = ctx.assistantMessage.finish
+            // 正常 stop 且有输出 token 的空正文是供应商的明确结束，不按网络静默丢包重试。
             const incomplete =
               !finish ||
               finish === "unknown" ||
               finish === "other" ||
-              (!hasOutput && finish !== "tool-calls" && finish !== "content-filter")
+              (!hasOutput && ctx.assistantMessage.tokens.output === 0 && finish !== "tool-calls" && finish !== "content-filter")
             if (!incomplete) return
+            if (!hasOutput) emptyAttempts += 1
             ctx.assistantMessage.finish = undefined
             // Must fail (not throw): throws become defects and bypass Effect.retry.
             return yield* Effect.fail(
@@ -853,7 +903,8 @@ const layer = Layer.effect(
                 message: hasOutput
                   ? `Provider stream ended incompletely (${finish ?? "no-finish"})`
                   : "Provider stream ended without output",
-                isRetryable: true,
+                // 真正的空流最多重试两次，避免供应商持续空响应时无限循环。
+                isRetryable: hasOutput || emptyAttempts <= 2,
               }),
             )
           }).pipe(

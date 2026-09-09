@@ -353,6 +353,28 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         if (part.type === "tool") {
           toolNames.add(part.tool)
+          if (part.tool === "image_generation" && (part.state.status === "completed" || part.state.status === "error")) {
+            // 执行仍由服务端负责；结算后的历史按普通调用和结果重放，不再依赖托管 item 的续传语义。
+            // 媒体裁剪只移除附件，成功状态及实际落盘路径必须继续保留，避免模型误以为尚未执行。
+            const attachments =
+              part.state.status === "completed" && !part.state.time.compacted && !options?.stripMedia
+                ? (part.state.attachments ?? []).filter((_, index) => !dropped.has(`${part.id}:${index}`))
+                : []
+            assistantMessage.parts.push({
+              type: "tool-image_generation",
+              toolCallId: part.callID,
+              input: part.state.input,
+              ...(part.state.status === "error"
+                ? { state: "output-error" as const, errorText: part.state.error }
+                : {
+                    state: "output-available" as const,
+                    output: { text: part.state.output, attachments },
+                  }),
+            })
+            // 托管调用后的同轮正文必须排在普通工具结果之后，否则 SDK 会把结果拖到整条 assistant 消息末尾。
+            assistantMessage.parts.push({ type: "step-start" })
+            continue
+          }
           if (part.state.status === "completed") {
             const rawAttachments =
               part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
@@ -399,7 +421,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               toolCallId: part.callID,
               input: part.state.input,
               output,
-              ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+              ...(isProviderExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
             })
           }

@@ -227,12 +227,17 @@ export function toLLMEvents(
     case "tool-call":
       return Effect.sync(() => {
         state.toolNames[event.toolCallId] = event.toolName
+        // 显式标记或对原生 hosted tool（如 image_generation）保底设置 providerExecuted
+        const providerExecuted =
+          ("providerExecuted" in event && typeof event.providerExecuted === "boolean"
+            ? event.providerExecuted
+            : undefined) ?? (event.toolName === "image_generation" ? true : undefined)
         return [
           LLMEvent.toolCall({
             id: event.toolCallId,
             name: event.toolName,
             input: event.input,
-            providerExecuted: "providerExecuted" in event ? event.providerExecuted : undefined,
+            providerExecuted,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),
         ]
@@ -242,12 +247,16 @@ export function toLLMEvents(
       return Effect.sync(() => {
         const name = state.toolNames[event.toolCallId] ?? "unknown"
         delete state.toolNames[event.toolCallId]
+        const providerExecuted =
+          ("providerExecuted" in event && typeof event.providerExecuted === "boolean"
+            ? event.providerExecuted
+            : undefined) ?? (name === "image_generation" ? true : undefined)
         return [
           LLMEvent.toolResult({
             id: event.toolCallId,
             name,
             result: ToolResultValue.make(event.output),
-            providerExecuted: "providerExecuted" in event ? event.providerExecuted : undefined,
+            providerExecuted,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),
         ]

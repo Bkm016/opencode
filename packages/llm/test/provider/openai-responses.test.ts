@@ -1325,7 +1325,20 @@ describe("OpenAI Responses route", () => {
         },
       ])
       const finish = response.events.find((event) => event.type === "finish")
-      expect(finish?.reason).toBe("tool-calls")
+      expect(finish?.reason).toBe("stop")
+      const replay = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model,
+          providerOptions: { openai: { store: false } },
+          messages: [Message.assistant([
+            { type: "tool-call", id: item.id, name: "image_generation", input: { prompt: item.prompt }, providerExecuted: true },
+            { type: "tool-result", id: item.id, name: "image_generation", result: { type: "json", value: item }, providerExecuted: true },
+          ])],
+        }),
+      )
+      expect(replay.body.input).toEqual([
+        { type: "image_generation_call", id: item.id, status: "completed", result: item.result },
+      ])
     }),
   )
 

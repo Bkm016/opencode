@@ -1,6 +1,7 @@
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { ulid } from "ulid"
 import { PartID } from "./schema"
+import type { ModelMessage } from "ai"
 
 /**
  * Chunk 压缩策略的核心数据结构与纯函数。
@@ -63,6 +64,32 @@ export function estimateTokens(text: string) {
     else other++
   }
   return Math.max(0, Math.ceil(ascii / 4 + cjk + other / 2))
+}
+
+/** 请求正文中的原生图片按媒体预算估算，Base64 传输字节不能当作文本 token。 */
+export function estimateModelTokens(messages: readonly ModelMessage[]) {
+  let images = 0
+  const text = JSON.stringify(messages, function (this: unknown, key: string, value: unknown) {
+    if (
+      typeof value === "string" &&
+      typeof this === "object" &&
+      this !== null &&
+      "type" in this &&
+      ((key === "result" && this.type === "image_generation_call") ||
+        // 普通工具结果使用 media.data；转换托管结果后也必须按图片估算，不能重新按 Base64 文本裁剪。
+        (key === "data" && this.type === "media" && "mediaType" in this &&
+          typeof this.mediaType === "string" && this.mediaType.startsWith("image/")) ||
+        (key === "image" && this.type === "image") ||
+        (key === "data" && this.type === "file" && "mediaType" in this &&
+          typeof this.mediaType === "string" && this.mediaType.startsWith("image/")))
+    ) {
+      images += 1
+      return undefined
+    }
+    return value
+  })
+  // 图片 token 由供应商按分辨率计费；这里保守预留固定开销，传输大小仍由媒体字节预算限制。
+  return estimateTokens(text) + images * 8192
 }
 
 /** 估算一组消息投影后的 token 成本（含 JSON 结构开销） */

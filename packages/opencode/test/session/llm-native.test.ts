@@ -319,6 +319,27 @@ describe("session.llm-native.request", () => {
     ])
   })
 
+  test("preserves hosted image results when AI SDK omits the result execution flag", () => {
+    const image = { type: "image_generation_call", id: "ig_1", status: "completed", result: "aW1hZ2U=" }
+    const request = LLMNative.request({
+      model: baseModel,
+      messages: [{
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "ig_1", toolName: "image_generation", input: {}, providerExecuted: true },
+          { type: "tool-result", toolCallId: "ig_1", toolName: "image_generation", output: { type: "json", value: image } },
+        ],
+      }],
+    })
+    expect(request.messages[0]?.content[1]).toMatchObject({
+      type: "tool-result",
+      id: "ig_1",
+      name: "image_generation",
+      providerExecuted: true,
+      result: { type: "json", value: image },
+    })
+  })
+
   test("maps stored provider metadata to native content metadata", () => {
     const reasoning = Object.assign(
       { type: "reasoning" as const, text: "thinking" },

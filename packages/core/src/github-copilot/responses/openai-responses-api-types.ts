@@ -3,6 +3,7 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 export type OpenAIResponsesInput = Array<OpenAIResponsesInputItem>
 
 export type OpenAIResponsesInputItem =
+  | { type: "image_generation_call"; id: string; status: "completed" | "failed"; result: string | null }
   | OpenAIResponsesSystemMessage
   | OpenAIResponsesUserMessage
   | OpenAIResponsesAssistantMessage

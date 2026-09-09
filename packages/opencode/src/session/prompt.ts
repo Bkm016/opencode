@@ -1546,9 +1546,15 @@ const layer = Layer.effect(
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
           )
+          // 托管工具可以直接交付图片；没有文字不代表仍有本地工具待执行。
+          // 已结算的生图结果仍需下一轮模型消费；只看最新 assistant，后续回复完成后不会再次消费历史结果。
           const hasToolCalls =
             lastAssistantMsg?.parts.some(
-              (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
+              (part) =>
+                part.type === "tool" &&
+                !isOrphanedInterruptedTool(part) &&
+                (!part.metadata?.providerExecuted ||
+                  (part.tool === "image_generation" && ["completed", "error"].includes(part.state.status))),
             ) ?? false
           // 悬空压缩恢复时，summary 会晚于已经排队的真实 user，不能把它当成该 user 的回复。
           const lastUserIndex = msgs.findIndex((message) => message.info.id === lastUser.id)
@@ -1828,7 +1834,7 @@ const layer = Layer.effect(
                 const fixedTokens = SessionChunk.estimateTokens(
                   JSON.stringify({ system: fullSystem, messages: [], tools: toolDefinitions }),
                 )
-                let requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
+                let requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 let selection = history.chunk?.selection
                 while (requestTokens > requestLimit) {
                   const chunk = selection?.visible[0]
@@ -1848,7 +1854,7 @@ const layer = Layer.effect(
                       parts: message.parts.map((part) => part.type === "text" ? { ...part, text: checkpoint } : part),
                     })
                   modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes })
-                  requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
+                  requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 }
                 if (requestTokens > requestLimit) {
                   // 没有可见历史可移除时，再压低 active tail 的媒体与 tool output；
@@ -1861,7 +1867,7 @@ const layer = Layer.effect(
                     toolOutputMaxChars: 4_000,
                     mediaBudgetBytes,
                   })
-                  requestTokens = fixedTokens + SessionChunk.estimateTokens(JSON.stringify([...modelMsgs, ...suffix]))
+                  requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 }
               }
             }

@@ -318,11 +318,18 @@ const live: Layer.Layer<
               }
             }
             if (prepared.tools[requested]) return failed.toolCall
+            let rawInput: unknown = failed.toolCall.input
+            try {
+              rawInput = JSON.parse(failed.toolCall.input)
+            } catch {
+              // 保留未能解析为 JSON 的原始字符串
+            }
             return {
               ...failed.toolCall,
               input: JSON.stringify({
                 tool: failed.toolCall.toolName,
                 error: failed.error.message,
+                input: rawInput,
               }),
               toolName: "invalid",
             }

@@ -2045,6 +2045,23 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return current.error
   })
 
+  // 排除有专属错误呈现逻辑的工具，其余工具失败时提取错误文本供通用 ToolErrorCard 展示
+  const genericToolError = createMemo(() => {
+    const err = errorText()
+    if (!err) return undefined
+    const tool = part().tool
+    if (
+      tool === "bash" ||
+      tool === "python" ||
+      tool === "canvas" ||
+      tool === "computer_use" ||
+      tool === "image_generation"
+    ) {
+      return undefined
+    }
+    return err
+  })
+
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
@@ -2055,17 +2072,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         <Switch>
           {/* image_generation 失败时保留 BasicTool 框架，由专属渲染器呈现错误，不走通用 ToolErrorCard */}
           {/* bash/python 中断/失败时保留命令与已有输出，不走 ToolErrorCard 吞掉 input/output；错误通过 status 传给渲染器 */}
-          <Match
-            when={
-              part().state.status === "error" &&
-              (part().state as any).error &&
-              part().tool !== "bash" &&
-              part().tool !== "python" &&
-              part().tool !== "canvas" &&
-              part().tool !== "computer_use" &&
-              part().tool !== "image_generation"
-            }
-          >
+          <Match when={genericToolError()}>
             {(error) => {
               const cleaned = typeof error() === "string" ? error().replace("Error: ", "") : String(error())
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {

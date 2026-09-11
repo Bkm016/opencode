@@ -6,6 +6,7 @@ import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { Icon } from "@opencode-ai/ui/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -13,6 +14,7 @@ import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { useData } from "../context"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { ComputerUseTool } from "./computer-use-tool"
+import "./edit-tool-card.css"
 import {
   ToolGroupRegistry,
   computeToolGroupDuration,
@@ -431,78 +433,83 @@ function ScriptGroupItem(props: {
               {i18n.t("ui.toolErrorCard.failed")}
             </span>
           </Show>
+          <span class="edit-tool-card-arrow" data-open={open() ? "true" : "false"}>
+            <Icon name="chevron-down" size="small" />
+          </span>
         </div>
       </div>
 
-      {/* 展开内容区：标准输出卡片，带有顶部舒适间距 */}
-      <Show when={open()}>
-        <div data-component="bash-output" class="mt-2">
-          <div data-slot="bash-header">
-            <Show when={host()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.host")}</span>
-                <span data-slot="bash-meta-value" data-accent>
-                  {host()}
-                </span>
-              </span>
-            </Show>
-            <Show when={workdir()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.workdir")}</span>
-                <span data-slot="bash-meta-value">{workdir()}</span>
-              </span>
-            </Show>
-            <span data-slot="bash-header-tail">
-              <Show when={exit() !== undefined}>
+      {/* 展开内容区：使用 CSS Grid 0fr -> 1fr 平滑下落动画容器 */}
+      <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
+        <div class="edit-tool-card-body-inner">
+          <div data-component="bash-output">
+            <div data-slot="bash-header">
+              <Show when={host()}>
                 <span data-slot="bash-meta">
-                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.exit")}</span>
-                  <span data-slot="bash-meta-value" data-exit={exit() === 0 ? "ok" : "fail"}>
-                    {exit()}
+                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.host")}</span>
+                  <span data-slot="bash-meta-value" data-accent>
+                    {host()}
                   </span>
                 </span>
               </Show>
-              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-                <IconButtonV2
-                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                  size="normal"
-                  variant="ghost-muted"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handleCopy()
-                  }}
-                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-                />
-              </TooltipV2>
-            </span>
-          </div>
-          <div
-            data-slot="bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-            ref={(el) => {
-              scrollRef = el
-              scrollToEnd()
-            }}
-          >
-            <pre data-slot="bash-pre" data-section="command">
-              <code>{scriptContent()}</code>
-            </pre>
-            <Show when={output()}>
-              <pre data-slot="bash-pre" data-section="output">
-                <code>{output()}</code>
+              <Show when={workdir()}>
+                <span data-slot="bash-meta">
+                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.workdir")}</span>
+                  <span data-slot="bash-meta-value">{workdir()}</span>
+                </span>
+              </Show>
+              <span data-slot="bash-header-tail">
+                <Show when={exit() !== undefined}>
+                  <span data-slot="bash-meta">
+                    <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.exit")}</span>
+                    <span data-slot="bash-meta-value" data-exit={exit() === 0 ? "ok" : "fail"}>
+                      {exit()}
+                    </span>
+                  </span>
+                </Show>
+                <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+                  <IconButtonV2
+                    icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                    size="normal"
+                    variant="ghost-muted"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleCopy()
+                    }}
+                    aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                  />
+                </TooltipV2>
+              </span>
+            </div>
+            <div
+              data-slot="bash-scroll"
+              data-scrollable
+              tabIndex={0}
+              role="region"
+              aria-label={i18n.t("ui.scrollView.ariaLabel")}
+              ref={(el) => {
+                scrollRef = el
+                scrollToEnd()
+              }}
+            >
+              <pre data-slot="bash-pre" data-section="command">
+                <code>{scriptContent()}</code>
               </pre>
-            </Show>
-            <Show when={errored() && errorText()}>
-              <pre data-slot="bash-pre" data-section="error">
-                <code>{errorText()}</code>
-              </pre>
-            </Show>
+              <Show when={output()}>
+                <pre data-slot="bash-pre" data-section="output">
+                  <code>{output()}</code>
+                </pre>
+              </Show>
+              <Show when={errored() && errorText()}>
+                <pre data-slot="bash-pre" data-section="error">
+                  <code>{errorText()}</code>
+                </pre>
+              </Show>
+            </div>
           </div>
         </div>
-      </Show>
+      </div>
     </div>
   )
 }

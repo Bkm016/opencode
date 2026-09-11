@@ -85,6 +85,7 @@ import {
 } from "./tool-group"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard } from "./edit-tool-card"
+import { ScriptToolCard } from "./script-tool-card"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
 import type { CanvasReference } from "../context/canvas"
@@ -3612,173 +3613,19 @@ for (const name of ["task_status", "task_wait", "task_abort"] as const) {
 ToolRegistry.register({
   name: "python",
   render(props) {
-    const i18n = useI18n()
-    const pending = () => props.status === "pending" || props.status === "running"
-    const errored = () => props.status === "error"
-    const errorText = createMemo(() => {
-      if (!errored()) return ""
-      const meta = props.metadata
-      if (meta.interrupted === true) return i18n.t("ui.message.interrupted")
-      const raw = meta.error
-      return typeof raw === "string" ? raw.replace(/^Error:\s*/, "").trim() : ""
-    })
-    const remote = createMemo(() => {
-      const value = props.input.host ?? props.metadata.host
-      return typeof value === "string" && value ? value : undefined
-    })
-    const host = createMemo(() => remote() ?? "localhost")
-    const workdir = createMemo(() => {
-      const value = props.input.workdir ?? props.metadata.workdir
-      return typeof value === "string" && value ? value : undefined
-    })
-    const code = createMemo(() => {
-      // 展示完整脚本而不是首行，方便核对实际执行的内容。
-      const raw = typeof props.input.code === "string" ? props.input.code : (props.metadata.code ?? "")
-      return String(raw).replace(/\r\n?/g, "\n").trimEnd()
-    })
-    // 折叠态把多行脚本压成单行预览：首行 + 行数提示，与终端命令预览保持一致风格。
-    const codePreview = createMemo(() => {
-      const lines = code().split("\n")
-      const first = lines.find((line: string) => line.trim()) ?? ""
-      const extra = lines.length - 1
-      return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
-    })
-    const output = createMemo(() => {
-      const raw = props.output ?? props.metadata.output
-      const text = typeof raw === "string" ? raw : ""
-      return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
-    })
-    const exit = createMemo(() => {
-      const code = props.metadata.exit
-      return typeof code === "number" ? code : undefined
-    })
-    const failed = createMemo(() => exit() !== undefined && exit() !== 0)
-    const location = createMemo(() => {
-      const parts: string[] = []
-      if (host()) parts.push(host()!)
-      if (workdir()) parts.push(workdir()!)
-      return parts.join(" · ")
-    })
-    const [copied, setCopied] = createSignal(false)
-    let scrollRef: HTMLDivElement | undefined
-
-    const scrollToEnd = () => {
-      const el = scrollRef
-      if (!el) return
-      // 等内容渲染和 max-height 约束生效后再滚，rAF 保证拿到真实的 scrollHeight。
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
-      })
-    }
-
-    // 输出流式增长时保持定位在末尾。
-    createEffect(() => {
-      output()
-      scrollToEnd()
-    })
-
-    const handleCopy = async () => {
-      const content = `${code()}${output() ? "\n\n" + output() : ""}`
-      if (await writeClipboard(content)) {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      }
-    }
-
     return (
-      <BasicTool
-        {...props}
-        icon="console"
-        // 运行中的 python 也展开输出，让长脚本的进度可以实时观察。
-        forceOpen={pending()}
-        trigger={(open) => (
-          <div data-slot="bash-trigger" data-open={open() ? "true" : undefined}>
-            <div data-slot="bash-trigger-main">
-              <span data-slot="bash-trigger-prompt">python</span>
-              <span data-slot="bash-trigger-cmd">
-                <TextShimmer text={codePreview()} active={pending()} />
-              </span>
-              <Show when={!pending() && location()}>
-                <span data-slot="bash-trigger-location">{location()}</span>
-              </Show>
-            </div>
-            <Show when={!pending() && failed()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail">
-                {i18n.t("ui.tool.shell.exit")} {exit()}
-              </span>
-            </Show>
-            <Show when={errored()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail" title={errorText() || undefined}>
-                {i18n.t("ui.toolErrorCard.failed")}
-              </span>
-            </Show>
-          </div>
-        )}
-      >
-        <div data-component="bash-output">
-          <div data-slot="bash-header">
-            <Show when={host()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.host")}</span>
-                <span data-slot="bash-meta-value" data-accent>
-                  {host()}
-                </span>
-              </span>
-            </Show>
-            <Show when={workdir()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.workdir")}</span>
-                <span data-slot="bash-meta-value">{workdir()}</span>
-              </span>
-            </Show>
-            <span data-slot="bash-header-tail">
-              <Show when={exit() !== undefined}>
-                <span data-slot="bash-meta">
-                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.exit")}</span>
-                  <span data-slot="bash-meta-value" data-exit={exit() === 0 ? "ok" : "fail"}>
-                    {exit()}
-                  </span>
-                </span>
-              </Show>
-              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-                <IconButtonV2
-                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                  size="normal"
-                  variant="ghost-muted"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleCopy}
-                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-                />
-              </TooltipV2>
-            </span>
-          </div>
-          <div
-            data-slot="bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-            ref={(el) => {
-              scrollRef = el
-              scrollToEnd()
-            }}
-          >
-            <pre data-slot="bash-pre" data-section="command">
-              <code>{code()}</code>
-            </pre>
-            <Show when={output()}>
-              <pre data-slot="bash-pre" data-section="output">
-                <code>{output()}</code>
-              </pre>
-            </Show>
-            <Show when={errored() && errorText()}>
-              <pre data-slot="bash-pre" data-section="error">
-                <code>{errorText()}</code>
-              </pre>
-            </Show>
-          </div>
-        </div>
-      </BasicTool>
+      <ScriptToolCard
+        tool="python"
+        prompt="python"
+        codeKey="code"
+        status={props.status}
+        defaultOpen={props.defaultOpen}
+        forceOpen={props.forceOpen}
+        input={props.input}
+        metadata={props.metadata}
+        output={props.output}
+        error={props.error}
+      />
     )
   },
 })
@@ -3786,175 +3633,19 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "bash",
   render(props) {
-    const i18n = useI18n()
-    const pending = () => props.status === "pending" || props.status === "running"
-    const errored = () => props.status === "error"
-    const errorText = createMemo(() => {
-      if (!errored()) return ""
-      const meta = props.metadata
-      if (meta.interrupted === true) return i18n.t("ui.message.interrupted")
-      const raw = meta.error
-      return typeof raw === "string" ? raw.replace(/^Error:\s*/, "").trim() : ""
-    })
-    // 远端主机（用户显式传入）才在折叠态高亮；本地命令不标 @，避免噪音。
-    const remote = createMemo(() => {
-      const value = props.input.host ?? props.metadata.host
-      return typeof value === "string" && value ? value : undefined
-    })
-    const host = createMemo(() => remote() ?? "localhost")
-    const workdir = createMemo(() => {
-      const value = props.input.workdir ?? props.metadata.workdir
-      return typeof value === "string" && value ? value : undefined
-    })
-    const command = createMemo(() => {
-      const raw = props.input.command ?? props.metadata.command
-      return typeof raw === "string" ? raw : ""
-    })
-    // 折叠态把多行命令压成单行预览：首行 + 行数提示，避免 heredoc 之类把布局顶乱。
-    const commandPreview = createMemo(() => {
-      const lines = String(command()).replace(/\r\n?/g, "\n").split("\n")
-      const first = lines.find((line: string) => line.trim()) ?? ""
-      const extra = lines.length - 1
-      return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
-    })
-    const output = createMemo(() => {
-      const raw = props.output ?? props.metadata.output
-      const text = typeof raw === "string" ? raw : ""
-      return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
-    })
-    const exit = createMemo(() => {
-      const code = props.metadata.exit
-      return typeof code === "number" ? code : undefined
-    })
-    const failed = createMemo(() => exit() !== undefined && exit() !== 0)
-    const location = createMemo(() => {
-      const parts: string[] = []
-      if (remote()) parts.push(remote()!)
-      if (workdir()) parts.push(workdir()!)
-      return parts.join(" · ")
-    })
-    const [copied, setCopied] = createSignal(false)
-    let scrollRef: HTMLDivElement | undefined
-
-    const scrollToEnd = () => {
-      const el = scrollRef
-      if (!el) return
-      // 等内容渲染和 max-height 约束生效后再滚，rAF 保证拿到真实的 scrollHeight。
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
-      })
-    }
-
-    // 输出流式增长时保持定位在末尾（命令在折叠态就能看到，关注点在输出结果）。
-    createEffect(() => {
-      output()
-      scrollToEnd()
-    })
-
-    const handleCopy = async () => {
-      const content = `$ ${command()}${output() ? "\n\n" + output() : ""}`
-      if (await writeClipboard(content)) {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      }
-    }
-
     return (
-      <BasicTool
-        {...props}
-        icon="console"
-        // 运行中的 shell 也展开输出，让长命令的进度可以实时观察。
-        forceOpen={pending()}
-        trigger={(open) => (
-          <div data-slot="bash-trigger" data-open={open() ? "true" : undefined}>
-            <div data-slot="bash-trigger-main">
-              <span data-slot="bash-trigger-prompt">$</span>
-              <span data-slot="bash-trigger-cmd">
-                <TextShimmer text={commandPreview()} active={pending()} />
-              </span>
-              <Show when={!pending() && location()}>
-                <span data-slot="bash-trigger-location">{location()}</span>
-              </Show>
-            </div>
-            <Show when={!pending() && failed()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail">
-                {i18n.t("ui.tool.shell.exit")} {exit()}
-              </span>
-            </Show>
-            <Show when={errored()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail" title={errorText() || undefined}>
-                {i18n.t("ui.toolErrorCard.failed")}
-              </span>
-            </Show>
-          </div>
-        )}
-      >
-        <div data-component="bash-output">
-          <div data-slot="bash-header">
-            <Show when={host()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.host")}</span>
-                <span data-slot="bash-meta-value" data-accent>
-                  {host()}
-                </span>
-              </span>
-            </Show>
-            <Show when={workdir()}>
-              <span data-slot="bash-meta">
-                <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.workdir")}</span>
-                <span data-slot="bash-meta-value">{workdir()}</span>
-              </span>
-            </Show>
-            <span data-slot="bash-header-tail">
-              <Show when={exit() !== undefined}>
-                <span data-slot="bash-meta">
-                  <span data-slot="bash-meta-key">{i18n.t("ui.tool.shell.exit")}</span>
-                  <span data-slot="bash-meta-value" data-exit={exit() === 0 ? "ok" : "fail"}>
-                    {exit()}
-                  </span>
-                </span>
-              </Show>
-              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-                <IconButtonV2
-                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                  size="normal"
-                  variant="ghost-muted"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleCopy}
-                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-                />
-              </TooltipV2>
-            </span>
-          </div>
-          <div
-            data-slot="bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-            ref={(el) => {
-              scrollRef = el
-              scrollToEnd()
-            }}
-          >
-            <pre data-slot="bash-pre" data-section="command">
-              <code>
-                <span data-slot="bash-prompt">$</span> {command()}
-              </code>
-            </pre>
-            <Show when={output()}>
-              <pre data-slot="bash-pre" data-section="output">
-                <code>{output()}</code>
-              </pre>
-            </Show>
-            <Show when={errored() && errorText()}>
-              <pre data-slot="bash-pre" data-section="error">
-                <code>{errorText()}</code>
-              </pre>
-            </Show>
-          </div>
-        </div>
-      </BasicTool>
+      <ScriptToolCard
+        tool="bash"
+        prompt="$"
+        codeKey="command"
+        status={props.status}
+        defaultOpen={props.defaultOpen}
+        forceOpen={props.forceOpen}
+        input={props.input}
+        metadata={props.metadata}
+        output={props.output}
+        error={props.error}
+      />
     )
   },
 })

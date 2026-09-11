@@ -350,7 +350,8 @@ const layer = Layer.effect(
 
         const usePatch =
           input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
-        if (tool.id === ApplyPatchTool.id) return usePatch
+        // apply_patch 注册给所有模型；edit/write 仅对 GPT 模型维持互斥（GPT 只给 apply_patch）
+        if (tool.id === ApplyPatchTool.id) return true
         if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
 
         return true

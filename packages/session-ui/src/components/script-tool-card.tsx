@@ -162,7 +162,8 @@ export function ScriptToolCard(props: ScriptToolCardProps) {
 
       <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
         <div class="edit-tool-card-body-inner">
-          <div data-component="bash-output">
+          <Show when={open()}>
+            <div data-component="bash-output">
             <div data-slot="bash-header">
               <Show when={host()}>
                 <span data-slot="bash-meta">
@@ -226,8 +227,9 @@ export function ScriptToolCard(props: ScriptToolCardProps) {
               </Show>
             </div>
           </div>
-        </div>
+        </Show>
       </div>
     </div>
+  </div>
   )
 }

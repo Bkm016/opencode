@@ -442,7 +442,8 @@ function ScriptGroupItem(props: {
       {/* 展开内容区：使用 CSS Grid 0fr -> 1fr 平滑下落动画容器 */}
       <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
         <div class="edit-tool-card-body-inner">
-          <div data-component="bash-output">
+          <Show when={open()}>
+            <div data-component="bash-output">
             <div data-slot="bash-header">
               <Show when={host()}>
                 <span data-slot="bash-meta">
@@ -508,8 +509,9 @@ function ScriptGroupItem(props: {
               </Show>
             </div>
           </div>
-        </div>
+        </Show>
       </div>
+    </div>
     </div>
   )
 }

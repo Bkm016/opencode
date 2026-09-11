@@ -1487,7 +1487,7 @@ export function MessageTimeline(props: {
                     bodyEl = el
                   }}
                   data-slot="session-turn-process-body"
-                  class="flex flex-col gap-3 pt-2"
+                  class="flex flex-col pt-4"
                 >
                   <For each={summaryViewProps.row().groups}>
                     {(group) =>

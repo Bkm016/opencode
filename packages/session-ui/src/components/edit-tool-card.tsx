@@ -1,4 +1,4 @@
-import { createSignal, createMemo, Show, For, Switch, Match, type JSX } from "solid-js"
+import { createSignal, createMemo, createEffect, onCleanup, Show, For, Switch, Match, type JSX } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -75,7 +75,9 @@ export function EditToolCard(props: EditToolCardProps) {
 
       <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
         <div class="edit-tool-card-body-inner">
-          <div class="edit-tool-card-content">{props.children}</div>
+          <Show when={open()}>
+            <div class="edit-tool-card-content">{props.children}</div>
+          </Show>
         </div>
       </div>
     </div>
@@ -154,80 +156,84 @@ export function MultiEditToolCard(props: MultiEditToolCardProps) {
 
       <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
         <div class="edit-tool-card-body-inner">
-          <div class="multi-edit-file-list">
-            <For each={props.files}>
-              {(file) => {
-                const isItemOpen = () => !collapsedFiles()[file.relativePath]
-                return (
-                  <div class="multi-edit-file-item">
-                    {/* 子文件 Header：无粘性定位，纯整齐卡片头部 */}
-                    <div
-                      class="multi-edit-file-header"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleFile(file.relativePath)}
-                    >
-                      <div class="multi-edit-file-info">
-                        <span class="multi-edit-file-name">{getFilename(file.relativePath)}</span>
-                        <Show when={file.relativePath.includes("/")}>
-                          <span class="multi-edit-file-dir">{getDirectory(file.relativePath)}</span>
-                        </Show>
+          <Show when={open()}>
+            <div class="multi-edit-file-list">
+              <For each={props.files}>
+                {(file) => {
+                  const isItemOpen = () => !collapsedFiles()[file.relativePath]
+                  return (
+                    <div class="multi-edit-file-item">
+                      {/* 子文件 Header：无粘性定位，纯整齐卡片头部 */}
+                      <div
+                        class="multi-edit-file-header"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleFile(file.relativePath)}
+                      >
+                        <div class="multi-edit-file-info">
+                          <span class="multi-edit-file-name">{getFilename(file.relativePath)}</span>
+                          <Show when={file.relativePath.includes("/")}>
+                            <span class="multi-edit-file-dir">{getDirectory(file.relativePath)}</span>
+                          </Show>
+                        </div>
+
+                        <div class="multi-edit-file-actions" onClick={(e) => e.stopPropagation()}>
+                          <Switch>
+                            <Match when={pending()}>
+                              <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
+                            </Match>
+                            <Match when={file.type === "add"}>
+                              <span class="multi-edit-badge" data-type="added">
+                                {i18n.t("ui.patch.action.created")}
+                              </span>
+                            </Match>
+                            <Match when={file.type === "delete"}>
+                              <span class="multi-edit-badge" data-type="removed">
+                                {i18n.t("ui.patch.action.deleted")}
+                              </span>
+                            </Match>
+                            <Match when={file.type === "move"}>
+                              <span class="multi-edit-badge" data-type="modified">
+                                {i18n.t("ui.patch.action.moved")}
+                              </span>
+                            </Match>
+                            <Match when={true}>
+                              <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
+                            </Match>
+                          </Switch>
+
+                          <Show when={props.onViewFile && file.filePath}>
+                            <Tooltip value={i18n.t("ui.sessionReview.openFile")} placement="top" gutter={4}>
+                              <button
+                                class="edit-tool-card-open-btn"
+                                type="button"
+                                aria-label={i18n.t("ui.sessionReview.openFile")}
+                                onClick={() => props.onViewFile?.(file.filePath)}
+                              >
+                                <Icon name="open-file" size="small" />
+                              </button>
+                            </Tooltip>
+                          </Show>
+
+                          <span class="edit-tool-card-arrow" data-open={isItemOpen() ? "true" : "false"}>
+                            <Icon name="chevron-down" size="small" />
+                          </span>
+                        </div>
                       </div>
 
-                      <div class="multi-edit-file-actions" onClick={(e) => e.stopPropagation()}>
-                        <Switch>
-                          <Match when={pending()}>
-                            <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
-                          </Match>
-                          <Match when={file.type === "add"}>
-                            <span class="multi-edit-badge" data-type="added">
-                              {i18n.t("ui.patch.action.created")}
-                            </span>
-                          </Match>
-                          <Match when={file.type === "delete"}>
-                            <span class="multi-edit-badge" data-type="removed">
-                              {i18n.t("ui.patch.action.deleted")}
-                            </span>
-                          </Match>
-                          <Match when={file.type === "move"}>
-                            <span class="multi-edit-badge" data-type="modified">
-                              {i18n.t("ui.patch.action.moved")}
-                            </span>
-                          </Match>
-                          <Match when={true}>
-                            <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
-                          </Match>
-                        </Switch>
-
-                        <Show when={props.onViewFile && file.filePath}>
-                          <Tooltip value={i18n.t("ui.sessionReview.openFile")} placement="top" gutter={4}>
-                            <button
-                              class="edit-tool-card-open-btn"
-                              type="button"
-                              aria-label={i18n.t("ui.sessionReview.openFile")}
-                              onClick={() => props.onViewFile?.(file.filePath)}
-                            >
-                              <Icon name="open-file" size="small" />
-                            </button>
-                          </Tooltip>
-                        </Show>
-
-                        <span class="edit-tool-card-arrow" data-open={isItemOpen() ? "true" : "false"}>
-                          <Icon name="chevron-down" size="small" />
-                        </span>
+                      <div class="edit-tool-card-body-wrapper" data-open={isItemOpen() ? "true" : "false"}>
+                        <div class="edit-tool-card-body-inner">
+                          <Show when={isItemOpen()}>
+                            <div class="edit-tool-card-content">{file.renderContent()}</div>
+                          </Show>
+                        </div>
                       </div>
                     </div>
-
-                    <div class="edit-tool-card-body-wrapper" data-open={isItemOpen() ? "true" : "false"}>
-                      <div class="edit-tool-card-body-inner">
-                        <div class="edit-tool-card-content">{file.renderContent()}</div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              }}
-            </For>
-          </div>
+                  )
+                }}
+              </For>
+            </div>
+          </Show>
         </div>
       </div>
     </div>

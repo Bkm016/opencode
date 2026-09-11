@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: 0;
+  padding: 4px 0 0 0;
   box-sizing: border-box;
 }
 
@@ -140,7 +140,13 @@
 .edit-tool-card-body-inner {
   min-height: 0;
   overflow: hidden;
-  padding-top: 4px;
+  padding: 0 0 4px 0;
+}
+
+.edit-tool-card-content,
+.multi-edit-file-list,
+[data-component="bash-output"] {
+  margin-top: 4px;
 }
 
 .edit-tool-card-content {

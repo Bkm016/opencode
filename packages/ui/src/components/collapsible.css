@@ -95,7 +95,7 @@
     }
 
     &[data-closed] {
-    animation: collapsible-slide-up 0.16s cubic-bezier(0.4, 0, 1, 1);
+      animation: collapsible-slide-up 0.16s cubic-bezier(0.4, 0, 1, 1);
     }
   }
 

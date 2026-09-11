@@ -84,6 +84,7 @@ import {
   PythonToolGroup,
 } from "./tool-group"
 import { ImageGenerationTool } from "./image-generation-tool"
+import { EditToolCard } from "./edit-tool-card"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
 import type { CanvasReference } from "../context/canvas"
@@ -1666,43 +1667,6 @@ function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) =
         </button>
       </Tooltip>
     </Show>
-  )
-}
-
-function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
-  // 同一文件的路径从生成中到服务端规范化后可能改变，不能因此丢失展开状态。
-  const value = "tool-file"
-
-  return (
-    <Accordion
-      multiple
-      data-scope="apply-patch"
-      style={{ "--sticky-accordion-offset": "calc(32px + var(--tool-content-gap))" }}
-      defaultValue={[value]}
-    >
-      <Accordion.Item value={value}>
-        <StickyAccordionHeader>
-          <Accordion.Trigger>
-            <div data-slot="apply-patch-trigger-content">
-              <div data-slot="apply-patch-file-info">
-                <FileIcon node={{ path: props.path, type: "file" }} />
-                <div data-slot="apply-patch-file-name-container">
-                  <Show when={props.path.includes("/")}>
-                    <span data-slot="apply-patch-directory">{`\u202A${getDirectory(props.path)}\u202C`}</span>
-                  </Show>
-                  <span data-slot="apply-patch-filename">{getFilename(props.path)}</span>
-                </div>
-              </div>
-              <div data-slot="apply-patch-trigger-actions">
-                {props.actions}
-                <Icon name="chevron-grabber-vertical" size="small" />
-              </div>
-            </div>
-          </Accordion.Trigger>
-        </StickyAccordionHeader>
-        <Accordion.Content>{props.children}</Accordion.Content>
-      </Accordion.Item>
-    </Accordion>
   )
 }
 
@@ -4002,7 +3966,6 @@ ToolRegistry.register({
     const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
-    const filename = () => getFilename(props.input.filePath ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     const diffSource = createMemo(
       () => {
@@ -4045,61 +4008,26 @@ ToolRegistry.register({
 
     return (
       <div data-component="edit-tool">
-        <BasicTool
-          {...props}
-          allowPendingDetails
+        <EditToolCard
+          actionTitle={i18n.t("ui.messagePart.title.edit")}
+          filePath={props.input.filePath}
+          status={props.status}
           defaultOpen={pending() || props.defaultOpen}
-          icon="code-lines"
-          defer={props.deferContent !== false}
-          trigger={
-            <div data-component="edit-trigger">
-              <div data-slot="message-part-title-area">
-                <div data-slot="message-part-title">
-                  <span data-slot="message-part-title-text">
-                    <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
-                  </span>
-                  <Show when={filename()}>
-                    <span data-slot="message-part-title-filename">{filename()}</span>
-                  </Show>
-                </div>
-                <Show when={props.input.filePath?.includes("/")}>
-                  <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
-                  </div>
-                </Show>
-              </div>
-              <div data-slot="message-part-actions">
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} />
-                </Show>
-                <OpenFileButton filePath={props.input.filePath ?? ""} onViewFile={props.onViewFile} />
-              </div>
-            </div>
-          }
+          fileDiff={props.metadata?.filediff}
+          onViewFile={props.onViewFile}
         >
           <Show when={path()}>
-            <ToolFileAccordion
-              path={path()}
-              actions={
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
-                </Show>
-              }
-            >
-              <div data-component="edit-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  streaming={pending()}
-                  onRendered={props.onContentRendered}
-                  {...fileCompProps()}
-                />
-              </div>
-            </ToolFileAccordion>
+            <Dynamic
+              component={fileComponent}
+              mode="diff"
+              virtualize={props.virtualizeDiff}
+              streaming={pending()}
+              onRendered={props.onContentRendered}
+              {...fileCompProps()}
+            />
           </Show>
-          <DiagnosticsDisplay diagnostics={diagnostics()} />
-        </BasicTool>
+        </EditToolCard>
+        <DiagnosticsDisplay diagnostics={diagnostics()} />
       </div>
     )
   },
@@ -4112,60 +4040,32 @@ ToolRegistry.register({
     const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.input.filePath || "")
-    const filename = () => getFilename(props.input.filePath ?? "")
     const pending = () => props.status === "pending" || props.status === "running"
     return (
       <div data-component="write-tool">
-        <BasicTool
-          {...props}
-          allowPendingDetails
+        <EditToolCard
+          actionTitle={i18n.t("ui.messagePart.title.write")}
+          filePath={props.input.filePath}
+          status={props.status}
           defaultOpen={pending() || props.defaultOpen}
-          icon="code-lines"
-          defer={props.deferContent !== false}
-          trigger={
-            <div data-component="write-trigger">
-              <div data-slot="message-part-title-area">
-                <div data-slot="message-part-title">
-                  <span data-slot="message-part-title-text">
-                    <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
-                  </span>
-                  <Show when={filename()}>
-                    <span data-slot="message-part-title-filename">{filename()}</span>
-                  </Show>
-                </div>
-                <Show when={props.input.filePath?.includes("/")}>
-                  <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
-                  </div>
-                </Show>
-              </div>
-              <div data-slot="message-part-actions">
-                {/* <DiffChanges diff={diff} /> */}
-                <OpenFileButton filePath={props.input.filePath ?? ""} onViewFile={props.onViewFile} />
-              </div>
-            </div>
-          }
+          onViewFile={props.onViewFile}
         >
           <Show when={props.input.content && path()}>
-            <ToolFileAccordion path={path()}>
-              <div data-component="write-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="text"
-                  streaming={pending()}
-                  file={{
-                    name: props.input.filePath,
-                    contents: props.input.content,
-                    cacheKey: checksum(props.input.content),
-                  }}
-                  overflow="scroll"
-                  onRendered={props.onContentRendered}
-                />
-              </div>
-            </ToolFileAccordion>
+            <Dynamic
+              component={fileComponent}
+              mode="text"
+              streaming={pending()}
+              file={{
+                name: props.input.filePath,
+                contents: props.input.content,
+                cacheKey: checksum(props.input.content),
+              }}
+              overflow="scroll"
+              onRendered={props.onContentRendered}
+            />
           </Show>
-          <DiagnosticsDisplay diagnostics={diagnostics()} />
-        </BasicTool>
+        </EditToolCard>
+        <DiagnosticsDisplay diagnostics={diagnostics()} />
       </div>
     )
   },

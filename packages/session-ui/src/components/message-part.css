@@ -688,7 +688,7 @@
 [data-slot="bash-trigger"] {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   width: 100%;
   font-size: 13px;
@@ -697,9 +697,10 @@
 [data-slot="bash-trigger-main"] {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
   flex: 0 1 auto;
+  overflow: hidden;
 }
 
 [data-slot="bash-trigger-prompt"] {
@@ -728,6 +729,7 @@
   white-space: nowrap;
   flex-shrink: 1;
   min-width: 0;
+  margin-left: 4px;
 }
 
 [data-slot="bash-trigger-location"]::before {
@@ -737,11 +739,12 @@
 }
 
 [data-slot="bash-trigger-exit"] {
-  margin-left: auto;
+  margin-left: 12px;
   flex-shrink: 0;
+  white-space: nowrap;
   font-family: var(--font-family-sans);
   font-size: 11px;
-  padding: 1px 7px;
+  padding: 1.5px 8px;
   border-radius: 4px;
 }
 
@@ -1498,31 +1501,19 @@
 
   [data-slot="context-tool-main"] {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 7px;
     min-width: 0;
     flex: 1 1 auto;
     overflow: hidden;
   }
 
+  [data-slot="context-tool-tag"],
   [data-slot="context-tool-badge"] {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    color: var(--v2-text-text-faint);
     font-family: var(--font-family-mono, monospace);
-    line-height: 1;
-    background: var(--surface-active, rgba(255, 255, 255, 0.05));
-    color: var(--text-weak);
-    border: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+    user-select: none;
+    flex-shrink: 0;
   }
 
   [data-slot="context-tool-target"] {
@@ -1532,21 +1523,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-family-mono, monospace);
-    font-size: 12.5px;
-    font-weight: 500;
-    color: var(--text-strong);
+    font-size: 13px;
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--v2-text-text-base, var(--text-strong));
   }
 
   [data-slot="context-tool-detail"] {
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: 12px;
     font-family: var(--font-family-mono, monospace);
-    color: var(--text-weak);
-    background: var(--surface-active, rgba(255, 255, 255, 0.04));
-    padding: 0 4px;
-    border-radius: 3px;
+    color: var(--v2-text-text-faint, var(--text-weak));
     white-space: nowrap;
-    border: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.05));
   }
 
   [data-slot="context-tool-path"] {
@@ -1556,7 +1543,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
-    color: var(--text-weak);
+    color: var(--v2-text-text-faint, var(--text-weak));
   }
 
   [data-slot="context-tool-meta"] {
@@ -1570,14 +1557,14 @@
     font-family: var(--font-family-mono, monospace);
     font-variant-numeric: tabular-nums;
     font-size: 11.5px;
-    color: var(--text-weak);
+    color: var(--v2-text-text-faint, var(--text-weak));
     letter-spacing: -0.01em;
   }
 
   [data-slot="context-tool-running"] {
     display: inline-flex;
     align-items: center;
-    color: var(--text-weak);
+    color: var(--v2-text-text-faint, var(--text-weak));
   }
 }
 
@@ -1611,6 +1598,59 @@
   gap: 4px;
 
   [data-slot="computer-use-group-item"] {
+    min-width: 0;
+    padding: 0;
+  }
+}
+
+[data-component="python-tool-group-trigger"],
+[data-component="bash-tool-group-trigger"] {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0px;
+  cursor: default;
+
+  [data-slot="python-tool-group-title"],
+  [data-slot="bash-tool-group-title"] {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  [data-slot="python-tool-group-total-duration"],
+  [data-slot="bash-tool-group-total-duration"] {
+    font-family: var(--font-family-mono, monospace);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-weak);
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--surface-active, rgba(255, 255, 255, 0.04));
+    border: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.06));
+    margin-left: 2px;
+  }
+
+  [data-slot="collapsible-arrow"] {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
+}
+
+[data-component="python-tool-group-list"],
+[data-component="bash-tool-group-list"] {
+  padding-top: 3px;
+  padding-right: 0;
+  padding-bottom: 4px;
+  padding-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  [data-slot="python-tool-group-item"],
+  [data-slot="bash-tool-group-item"] {
     min-width: 0;
     padding: 0;
   }
@@ -2510,5 +2550,58 @@
 
 [data-component="tool-loaded-file"] {
   color: var(--text-weak);
+}
+
+[data-component="invalid-tool-content"] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+
+  [data-slot="invalid-tool-error"] {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--surface-danger-subtle, rgba(239, 68, 68, 0.08));
+    border: 0.5px solid var(--border-danger-subtle, rgba(239, 68, 68, 0.2));
+    color: var(--text-danger, #f87171);
+    font-size: 12px;
+    line-height: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  [data-slot="invalid-tool-header"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-weak);
+  }
+
+  [data-slot="invalid-tool-pre"] {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--surface-active, rgba(255, 255, 255, 0.03));
+    border: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    font-size: 12px;
+    line-height: 18px;
+    max-height: 240px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    code {
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+    }
+  }
 }
 

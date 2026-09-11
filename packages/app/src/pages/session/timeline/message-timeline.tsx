@@ -1,4 +1,4 @@
-import {
+﻿import {
   createEffect,
   createMemo,
   createSignal,
@@ -20,14 +20,13 @@ import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import {
-  ContextToolGroup,
+  GenericToolGroup,
   Message,
   MessageDivider,
   Part as MessagePart,
   partDefaultOpen,
   type UserActions,
 } from "@opencode-ai/session-ui/message-part"
-import { ComputerUseToolGroup } from "@opencode-ai/session-ui/computer-use-tool"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -38,15 +37,13 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { SessionRetry } from "@opencode-ai/session-ui/session-retry"
 import { CanvasSummary } from "@opencode-ai/session-ui/canvas-tool"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import {
   animateOutputEnter,
-  animateProcessChevron,
-  animateProcessHide,
-  animateProcessReveal,
 } from "@opencode-ai/ui/hooks/gsap-surface"
 import type { PartGroup } from "@opencode-ai/session-ui/message-part"
 import type {
@@ -169,8 +166,6 @@ function formatTurnDuration(ms: number | undefined, t: (key: string, params?: Re
 
 function TimelineProcessSummaryHeader(props: {
   durationMs?: number
-  open: boolean
-  onToggle: () => void
   kind?: "process" | "compaction"
 }) {
   const language = useLanguage()
@@ -181,56 +176,33 @@ function TimelineProcessSummaryHeader(props: {
     if (!value) return language.t("ui.sessionTurn.status.processed")
     return language.t("ui.sessionTurn.status.processedWithDuration", { duration: value })
   }
-  let chevron: HTMLElement | undefined
-
-  createEffect(() => {
-    animateProcessChevron(chevron, props.open)
-  })
-
-  const chevronEl = () => (
-    <span
-      data-slot="session-turn-process-summary-chevron"
-      ref={(el) => {
-        chevron = el
-        animateProcessChevron(el, props.open)
-      }}
-    >
-      <Icon name="chevron-right" size="small" class="session-turn-process-summary-chevron" />
-    </span>
-  )
 
   // Compaction: full-width —— label —— divider, distinct from process chips.
   if (props.kind === "compaction") {
     return (
-      <button
-        type="button"
+      <Collapsible.Trigger
         data-slot="session-turn-process-summary"
         data-kind="compaction"
-        data-open={props.open ? "true" : undefined}
-        aria-expanded={props.open}
-        onClick={() => props.onToggle()}
       >
         <span data-slot="session-turn-process-summary-line" aria-hidden="true" />
         <span data-slot="session-turn-process-summary-center">
           <span data-slot="session-turn-process-summary-label">{label()}</span>
         </span>
         <span data-slot="session-turn-process-summary-line" aria-hidden="true" />
-      </button>
+      </Collapsible.Trigger>
     )
   }
 
   return (
-    <button
-      type="button"
+    <Collapsible.Trigger
       data-slot="session-turn-process-summary"
       data-kind="process"
-      data-open={props.open ? "true" : undefined}
-      aria-expanded={props.open}
-      onClick={() => props.onToggle()}
     >
       <span data-slot="session-turn-process-summary-label">{label()}</span>
-      {chevronEl()}
-    </button>
+      <span data-slot="session-turn-process-summary-chevron">
+        <Collapsible.Arrow />
+      </span>
+    </Collapsible.Trigger>
   )
 }
 
@@ -1180,42 +1152,35 @@ export function MessageTimeline(props: {
     canvases?: TimelineRowMap["AssistantPart"]["canvases"]
     onSizeChange?: () => void
   }) => {
-    if (input.group.type === "context") {
+    // 通用连续工具聚合分组渲染（context、computerUse、python、bash 等均自动通过注册表接入）
+    if (input.group.type !== "part") {
       const parts = createMemo(() =>
-        input.group.type === "context"
+        input.group.type !== "part"
           ? input.group.refs
               .map((ref) => getMsgPart(ref.messageID, ref.partID))
               .filter((part): part is ToolPart => part?.type === "tool")
           : emptyTools,
       )
-      const contextOpenKey = `context:${input.group.key}`
-      return (
-        <ContextToolGroup
-          parts={parts()}
-          open={toolOpen[contextOpenKey] === true}
-          onOpenChange={(value) => setToolOpen(contextOpenKey, value)}
-          busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
-          onSizeChange={input.onSizeChange}
-        />
-      )
-    }
+      const openKey = `${input.group.type}:${input.group.key}`
+      const firstMessage = createMemo(() => {
+        if (input.group.type === "part") return undefined
+        const firstRef = input.group.refs[0]
+        const msg = firstRef ? messageByID().get(firstRef.messageID) : undefined
+        return msg?.role === "assistant" ? (msg as AssistantMessage) : undefined
+      })
 
-    if (input.group.type === "computerUse") {
-      const parts = createMemo(() =>
-        input.group.type === "computerUse"
-          ? input.group.refs
-              .map((ref) => getMsgPart(ref.messageID, ref.partID))
-              .filter((part): part is ToolPart => part?.type === "tool")
-          : emptyTools,
-      )
-      const computerUseOpenKey = `computerUse:${input.group.key}`
       return (
-        <ComputerUseToolGroup
+        <GenericToolGroup
+          group={input.group}
           parts={parts()}
-          open={toolOpen[computerUseOpenKey] === true}
-          onOpenChange={(value) => setToolOpen(computerUseOpenKey, value)}
+          message={firstMessage()}
+          open={toolOpen[openKey] === true}
+          onOpenChange={(value) => setToolOpen(openKey, value)}
           busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
           onSizeChange={input.onSizeChange}
+          shellToolDefaultOpen={settings.general.shellToolPartsExpanded()}
+          editToolDefaultOpen={settings.general.editToolPartsExpanded()}
+          turnDurationMs={turnDurationMs(input.userMessageID)}
         />
       )
     }
@@ -1483,137 +1448,59 @@ export function MessageTimeline(props: {
     }
   }
 
-  function TimelineProcessSummaryView(props: {
+  function TimelineProcessSummaryView(summaryViewProps: {
     row: Accessor<TimelineRowByTag<"ProcessSummary">>
     onSizeChange?: () => void
   }) {
-    const open = () => processOpen[props.row().userMessageID] === true
-    // Stay mounted through hide tween so collapse is not an instant DOM cut.
-    const [bodyMounted, setBodyMounted] = createSignal(open())
-    const [toggling, setToggling] = createSignal(false)
+    const open = () => processOpen[summaryViewProps.row().userMessageID] === true
     let bodyEl: HTMLDivElement | undefined
-    const rowKey = () => TimelineRow.key(props.row())
-    const pinRowTop = () => {
-      const key = rowKey()
-      const root = listRoot()
-      const host = root?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(key)}"]`)
-      if (!root || !host) return
-      processSizePin = {
-        key,
-        top: host.getBoundingClientRect().top - root.getBoundingClientRect().top,
-      }
+
+    const handleOpenChange = (nextOpen: boolean) => {
+      setProcessOpen(summaryViewProps.row().userMessageID, nextOpen)
+      summaryViewProps.onSizeChange?.()
     }
-    const forceMeasure = () => {
-      // Virtual rows pin outer height to item.size. Stale cache (or measuring before
-      // collapse paints) leaves a permanent gap before the final answer.
-      const key = rowKey()
-      const index = timelineRows().findIndex((item) => TimelineRow.key(item) === key)
-      const root = listRoot()
-      const host = root?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(key)}"]`)
-      const el = host?.querySelector<HTMLElement>("[data-index]")
-      if (!el || index < 0) {
-        props.onSizeChange?.()
-        return
-      }
-      // Keep this row's top fixed so open/close always grows/shrinks downward.
-      if ((!processSizePin || processSizePin.key !== key) && root && host) {
-        processSizePin = {
-          key,
-          top: host.getBoundingClientRect().top - root.getBoundingClientRect().top,
-        }
-      }
-      // scrollHeight ignores the pinned outer height and matches real content.
-      const height = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height))
-      resizeItem(index, Math.max(1, height))
-      if (virtualContent) virtualContent.style.height = `${virtualizer.getTotalSize()}px`
-      const activePin = processSizePin?.key === key ? processSizePin : undefined
-      if (activePin && root && host) {
-        const nextTop = host.getBoundingClientRect().top - root.getBoundingClientRect().top
-        const delta = nextTop - activePin.top
-        if (Math.abs(delta) > 0.5) root.scrollTop += delta
-      }
-    }
-    const scheduleMeasure = (clearPin = true) => {
-      requestAnimationFrame(() => {
-        forceMeasure()
-        requestAnimationFrame(() => {
-          forceMeasure()
-          if (clearPin) processSizePin = undefined
-        })
-      })
-    }
-    const playOpen = () => {
-      pinRowTop()
-      setProcessOpen(props.row().userMessageID, true)
-      setBodyMounted(true)
-      requestAnimationFrame(() => {
-        const targets = bodyEl ? Array.from(bodyEl.children) : []
-        animateProcessReveal(targets.length > 0 ? targets : bodyEl)
-        scheduleMeasure()
-      })
-    }
-    const playClose = async () => {
-      if (toggling()) return
-      setToggling(true)
-      pinRowTop()
-      const targets = bodyEl ? Array.from(bodyEl.children) : []
-      await animateProcessHide(targets.length > 0 ? targets : bodyEl)
-      setProcessOpen(props.row().userMessageID, false)
-      setBodyMounted(false)
-      setToggling(false)
-      scheduleMeasure()
-    }
-    onMount(scheduleMeasure)
+
     createEffect(
       on(
-        () => [bodyMounted(), props.row().groups.length] as const,
-        () => scheduleMeasure(false),
+        () => [open(), summaryViewProps.row().groups.length] as const,
+        () => summaryViewProps.onSizeChange?.(),
         { defer: true },
       ),
     )
-    createEffect(
-      on(open, (value) => {
-        if (!value || bodyMounted()) return
-        setBodyMounted(true)
-        scheduleMeasure()
-      }),
-    )
     return (
-      <TimelineRowFrame row={props.row}>
+      <TimelineRowFrame row={summaryViewProps.row}>
         <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-          <div data-slot="session-turn-process" data-kind={props.row().kind ?? "process"}>
-            <TimelineProcessSummaryHeader
-              durationMs={props.row().durationMs}
-              kind={props.row().kind}
+          <div data-slot="session-turn-process" data-kind={summaryViewProps.row().kind ?? "process"}>
+            <Collapsible
               open={open()}
-              onToggle={() => {
-                if (toggling()) return
-                if (open()) void playClose()
-                else playOpen()
-              }}
-            />
-            <Show when={bodyMounted()}>
-              <div
-                ref={(el) => {
-                  bodyEl = el
-                }}
-                data-slot="session-turn-process-body"
-                class="flex flex-col gap-3 pt-2"
-              >
-                <For each={props.row().groups}>
-                  {(group) =>
-                    renderPartGroup({
-                      userMessageID: props.row().userMessageID,
-                      group,
-                      onSizeChange: () => {
-                        props.onSizeChange?.()
-                        scheduleMeasure(false)
-                      },
-                    })
-                  }
-                </For>
-              </div>
-            </Show>
+              onOpenChange={handleOpenChange}
+              variant="ghost"
+              class="w-full"
+            >
+              <TimelineProcessSummaryHeader
+                durationMs={summaryViewProps.row().durationMs}
+                kind={summaryViewProps.row().kind}
+              />
+              <Collapsible.Content>
+                <div
+                  ref={(el) => {
+                    bodyEl = el
+                  }}
+                  data-slot="session-turn-process-body"
+                  class="flex flex-col gap-3 pt-2"
+                >
+                  <For each={summaryViewProps.row().groups}>
+                    {(group) =>
+                      renderPartGroup({
+                        userMessageID: summaryViewProps.row().userMessageID,
+                        group,
+                        onSizeChange: summaryViewProps.onSizeChange,
+                      })
+                    }
+                  </For>
+                </div>
+              </Collapsible.Content>
+            </Collapsible>
           </div>
         </div>
       </TimelineRowFrame>

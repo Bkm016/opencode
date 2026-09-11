@@ -56,7 +56,6 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Card, CardDescription, CardTitle } from "@opencode-ai/ui/card"
-import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles, pendingPatchFiles } from "./apply-patch-file"
 import { parseTaskNotification, TaskNotificationCard } from "./task-notification"
@@ -64,7 +63,26 @@ import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
-import { isContextGroupTool, isComputerUseGroupTool } from "./message-part-groups"
+import {
+  ToolGroupRegistry,
+  computeToolGroupDuration,
+  groupParts,
+  sameGroups,
+  isContextGroupTool,
+  isComputerUseGroupTool,
+  isPythonGroupTool,
+  isBashGroupTool,
+  type GroupToolRefs,
+  type PartGroup,
+  type PartRef,
+  type ToolGroupDefinition,
+  type ToolGroupItemProps,
+} from "./message-part-groups"
+import {
+  GenericToolGroup as BaseGenericToolGroup,
+  ContextToolGroup,
+  PythonToolGroup,
+} from "./tool-group"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
@@ -943,118 +961,18 @@ function same<T>(a: readonly T[] | undefined, b: readonly T[] | undefined) {
   return a.every((x, i) => x === b[i])
 }
 
-export type PartRef = {
-  messageID: string
-  partID: string
-}
-
-export type PartGroup =
-  | {
-      key: string
-      type: "part"
-      ref: PartRef
-    }
-  | {
-      key: string
-      type: "context" | "computerUse"
-      refs: PartRef[]
-    }
-
-function sameRef(a: PartRef, b: PartRef) {
-  return a.messageID === b.messageID && a.partID === b.partID
-}
-
-function sameGroup(a: PartGroup, b: PartGroup) {
-  if (a === b) return true
-  if (a.key !== b.key) return false
-  if (a.type !== b.type) return false
-  if (a.type === "part") {
-    if (b.type !== "part") return false
-    return sameRef(a.ref, b.ref)
-  }
-  if (b.type === "part") return false
-  if (a.refs.length !== b.refs.length) return false
-  return a.refs.every((ref, i) => sameRef(ref, b.refs[i]!))
-}
-
-export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.length !== b.length) return false
-  return a.every((item, i) => sameGroup(item, b[i]!))
-}
-
-export function groupParts(parts: { messageID: string; part: PartType }[]) {
-  const result: PartGroup[] = []
-  let start = -1
-  let computerStart = -1
-
-  const flush = (end: number) => {
-    if (start < 0) return
-    const first = parts[start]
-    const last = parts[end]
-    if (!first || !last) {
-      start = -1
-      return
-    }
-    result.push({
-      key: `context:${first.part.id}`,
-      type: "context",
-      refs: parts.slice(start, end + 1).map((item) => ({
-        messageID: item.messageID,
-        partID: item.part.id,
-      })),
-    })
-    start = -1
-  }
-
-  const flushComputer = (end: number) => {
-    if (computerStart < 0) return
-    const first = parts[computerStart]
-    const last = parts[end]
-    if (!first || !last) {
-      computerStart = -1
-      return
-    }
-    result.push({
-      key: `computerUse:${first.part.id}`,
-      type: "computerUse",
-      refs: parts.slice(computerStart, end + 1).map((item) => ({
-        messageID: item.messageID,
-        partID: item.part.id,
-      })),
-    })
-    computerStart = -1
-  }
-
-  parts.forEach((item, index) => {
-    if (isContextGroupTool(item.part)) {
-      flushComputer(index - 1)
-      if (start < 0) start = index
-      return
-    }
-    if (isComputerUseGroupTool(item.part)) {
-      flush(index - 1)
-      if (computerStart < 0) computerStart = index
-      return
-    }
-
-    flush(index - 1)
-    flushComputer(index - 1)
-    result.push({
-      key: `part:${item.messageID}:${item.part.id}`,
-      type: "part",
-      ref: {
-        messageID: item.messageID,
-        partID: item.part.id,
-      },
-    })
-  })
-
-  flush(parts.length - 1)
-  flushComputer(parts.length - 1)
-  return result
-}
+export {
+  type PartRef,
+  type PartGroup,
+  type ToolGroupDefinition,
+  ToolGroupRegistry,
+  computeToolGroupDuration,
+  sameGroups,
+  groupParts,
+  isContextGroupTool,
+  isComputerUseGroupTool,
+  isPythonGroupTool,
+} from "./message-part-groups"
 
 function index<T extends { id: string }>(items: readonly T[]) {
   return new Map(items.map((item) => [item.id, item] as const))
@@ -1080,7 +998,7 @@ export function isProcessPart(part: PartType) {
 }
 
 export function isProcessGroup(group: PartGroup, resolve: (ref: PartRef) => PartType | undefined) {
-  if (group.type === "context" || group.type === "computerUse") return true
+  if (group.type !== "part") return true
   const part = resolve(group.ref)
   return !!part && isProcessPart(part)
 }
@@ -1140,46 +1058,35 @@ export function AssistantParts(props: {
 
         return (
           <Switch>
-            <Match when={entryType() === "context"}>
+            <Match when={entryType() !== "part"}>
               {(() => {
+                const entry = entryAccessor() as Extract<PartGroup, { refs: PartRef[] }>
                 const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
-                    return entry.refs
+                  () =>
+                    entry.refs
                       .map((ref) => part().get(ref.messageID)?.get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
-                  },
+                      .filter((part): part is ToolPart => part?.type === "tool"),
                   emptyTools,
                   { equals: same },
                 )
-                const busy = createMemo(() => props.working && last() === entryAccessor().key)
+                const firstMessage = createMemo(() => {
+                  const firstRef = entry.refs[0]
+                  return firstRef ? msgs().get(firstRef.messageID) : undefined
+                })
+                const busy = createMemo(() => props.working && last() === entry.key)
 
                 return (
                   <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} busy={busy()} />
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "computerUse"}>
-              {(() => {
-                const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "computerUse") return emptyTools
-                    return entry.refs
-                      .map((ref) => part().get(ref.messageID)?.get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isComputerUseGroupTool(part))
-                  },
-                  emptyTools,
-                  { equals: same },
-                )
-                const busy = createMemo(() => props.working && last() === entryAccessor().key)
-
-                return (
-                  <Show when={parts().length > 0}>
-                    <ComputerUseToolGroup parts={parts()} busy={busy()} />
+                    <GenericToolGroup
+                      group={entry}
+                      parts={parts()}
+                      message={firstMessage()}
+                      busy={busy()}
+                      showAssistantCopyPartID={props.showAssistantCopyPartID}
+                      turnDurationMs={props.turnDurationMs}
+                      shellToolDefaultOpen={props.shellToolDefaultOpen}
+                      editToolDefaultOpen={props.editToolDefaultOpen}
+                    />
                   </Show>
                 )
               })()}
@@ -1232,175 +1139,6 @@ function contextToolDetail(part: ToolPart): string | undefined {
   const description = part.state.input?.description
   if (typeof description === "string") return description
   return undefined
-}
-
-// 格式化上下文搜索/读取等工具的执行耗时
-function formatToolDuration(part: ToolPart): string | undefined {
-  const time = part.state && "time" in part.state ? (part.state as any).time : undefined
-  if (!time || typeof time.start !== "number" || typeof time.end !== "number") return undefined
-  const diff = Math.max(0, time.end - time.start)
-  if (diff < 1000) return `${diff}ms`
-  if (diff < 60000) return `${(diff / 1000).toFixed(diff < 10000 ? 2 : 1)}s`
-  const mins = Math.floor(diff / 60000)
-  const secs = Math.round((diff % 60000) / 1000)
-  return `${mins}m ${secs}s`
-}
-
-function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = (part.state.input ?? {}) as Record<string, unknown>
-  const path = typeof input.path === "string" ? input.path : "/"
-  const filePath = typeof input.filePath === "string" ? input.filePath : undefined
-  const pattern = typeof input.pattern === "string" ? input.pattern : undefined
-  const include = typeof input.include === "string" ? input.include : undefined
-  const offset = typeof input.offset === "number" ? input.offset : undefined
-  const limit = typeof input.limit === "number" ? input.limit : undefined
-
-  switch (part.tool) {
-    case "read": {
-      const args: string[] = []
-      if (offset !== undefined) args.push("offset=" + offset)
-      if (limit !== undefined) args.push("limit=" + limit)
-      const detail =
-        offset !== undefined && limit !== undefined
-          ? `L${offset}–${offset + limit}`
-          : offset !== undefined
-            ? `L${offset}+`
-            : limit !== undefined
-              ? `${limit} lines`
-              : undefined
-      const targetFile = filePath ? getFilename(filePath) : path !== "/" ? getFilename(path) : ""
-      return {
-        tag: "READ",
-        title: i18n.t("ui.tool.read"),
-        target: targetFile,
-        targetTooltip: filePath || path,
-        detail,
-        path: filePath ? getDirectory(filePath) : undefined,
-        fullPath: filePath || path,
-        subtitle: targetFile,
-        args,
-      }
-    }
-    case "list_dir": {
-      const dirPath = (typeof input.path === "string" && input.path) || path || "/"
-      return {
-        tag: "LIST",
-        title: i18n.t("ui.tool.list"),
-        target: getDirectory(dirPath),
-        targetTooltip: dirPath,
-        detail: undefined,
-        path: undefined,
-        fullPath: dirPath,
-        subtitle: getDirectory(dirPath),
-        args: [],
-      }
-    }
-    case "glob":
-      return {
-        tag: "GLOB",
-        title: i18n.t("ui.tool.glob"),
-        target: pattern || "*",
-        targetTooltip: pattern,
-        detail: undefined,
-        path: getDirectory(path),
-        fullPath: path,
-        subtitle: getDirectory(path),
-        args: pattern ? ["pattern=" + pattern] : [],
-      }
-    case "grep": {
-      const args: string[] = []
-      if (pattern) args.push("pattern=" + pattern)
-      if (include) args.push("include=" + include)
-      return {
-        tag: "GREP",
-        title: i18n.t("ui.tool.grep"),
-        target: pattern || "*",
-        targetTooltip: pattern,
-        detail: include ? `in ${include}` : undefined,
-        path: getDirectory(path),
-        fullPath: path,
-        subtitle: getDirectory(path),
-        args,
-      }
-    }
-    case "history_grep": {
-      const args: string[] = []
-      if (input.source === "task") args.push("source=task")
-      if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
-      if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
-      if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
-      const patternText = typeof input.pattern === "string" ? input.pattern : ""
-      return {
-        tag: "H-GREP",
-        title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
-        target: patternText,
-        targetTooltip: patternText,
-        detail:
-          input.source === "task"
-            ? "task"
-            : typeof input.chunk_id === "string" && input.chunk_id
-              ? `chunk ${input.chunk_id}`
-              : undefined,
-        path: undefined,
-        subtitle: patternText,
-        args,
-      }
-    }
-    case "history_list": {
-      const args: string[] = []
-      if (input.source === "task") args.push("source=task")
-      if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
-      if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
-      if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
-      if (typeof input.offset === "number") args.push("offset=" + input.offset)
-      if (typeof input.limit === "number") args.push("limit=" + input.limit)
-      const ref =
-        typeof input.chunk_id === "string" && input.chunk_id
-          ? input.chunk_id
-          : typeof input.message_id === "string" && input.message_id
-            ? input.part_id
-              ? `${input.message_id}:${input.part_id}`
-              : input.message_id
-            : ""
-      const detail =
-        offset !== undefined && limit !== undefined
-          ? `L${offset}–${offset + limit}`
-          : offset !== undefined
-            ? `L${offset}+`
-            : undefined
-      return {
-        tag: "H-LIST",
-        title: input.source === "task" ? i18n.t("ui.historyTool.list.evidenceDone") : i18n.t("ui.tool.historyList"),
-        target: ref,
-        targetTooltip: ref,
-        detail,
-        path: undefined,
-        subtitle: ref,
-        args,
-      }
-    }
-    default: {
-      const info = getToolInfo(part.tool, input, "metadata" in part.state ? part.state.metadata : undefined)
-      const subtitle = info.subtitle || contextToolDetail(part)
-      return {
-        tag: (part.tool || "TOOL").slice(0, 6).toUpperCase(),
-        title: info.title,
-        target: subtitle || info.title,
-        targetTooltip: subtitle,
-        detail: undefined,
-        path: undefined,
-        subtitle,
-        args: [],
-      }
-    }
-  }
-}
-
-function contextToolSummary(parts: ToolPart[]) {
-  const read = parts.filter((part) => part.tool === "read").length
-  const search = parts.filter((part) => part.tool === "glob" || part.tool === "grep").length
-  const list = parts.filter((part) => part.tool === "list_dir").length
-  return { read, search, list }
 }
 
 function ExaOutput(props: { output?: string }) {
@@ -1488,44 +1226,26 @@ export function AssistantMessageDisplay(props: {
 
         return (
           <Switch>
-            <Match when={entryType() === "context"}>
+            <Match when={entryType() !== "part"}>
               {(() => {
+                const entry = entryAccessor() as Extract<PartGroup, { refs: PartRef[] }>
                 const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
-                    return entry.refs
+                  () =>
+                    entry.refs
                       .map((ref) => part().get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
-                  },
+                      .filter((part): part is ToolPart => part?.type === "tool"),
                   emptyTools,
                   { equals: same },
                 )
 
                 return (
                   <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} />
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "computerUse"}>
-              {(() => {
-                const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "computerUse") return emptyTools
-                    return entry.refs
-                      .map((ref) => part().get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isComputerUseGroupTool(part))
-                  },
-                  emptyTools,
-                  { equals: same },
-                )
-
-                return (
-                  <Show when={parts().length > 0}>
-                    <ComputerUseToolGroup parts={parts()} />
+                    <GenericToolGroup
+                      group={entry}
+                      parts={parts()}
+                      message={props.message}
+                      showAssistantCopyPartID={props.showAssistantCopyPartID}
+                    />
                   </Show>
                 )
               })()}
@@ -1556,159 +1276,46 @@ export function AssistantMessageDisplay(props: {
   )
 }
 
-export function ContextToolGroup(props: {
+// 注册内建工具分组：已探索 (context)
+export function GenericToolGroup(props: {
+  group: { key: string; type: string; refs: PartRef[] }
   parts: ToolPart[]
+  message?: AssistantMessage
   busy?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onSizeChange?: () => void
+  shellToolDefaultOpen?: boolean
+  editToolDefaultOpen?: boolean
+  showAssistantCopyPartID?: string | null
+  turnDurationMs?: number
+  onCompactHere?: (messageID: string) => void
 }) {
-  const i18n = useI18n()
-  const [localOpen, setLocalOpen] = createSignal(false)
-  const open = () => props.open ?? localOpen()
-  const pending = createMemo(
-    () =>
-      !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
-  )
-  const summary = createMemo(() => contextToolSummary(props.parts))
-  // 计算上下文探索步骤的总耗时跨度
-  const totalDuration = createMemo(() => {
-    let minStart = Infinity
-    let maxEnd = -Infinity
-    let hasValid = false
-    for (const part of props.parts) {
-      const time = part.state && "time" in part.state ? (part.state as any).time : undefined
-      if (time && typeof time.start === "number") {
-        minStart = Math.min(minStart, time.start)
-        if (typeof time.end === "number") {
-          maxEnd = Math.max(maxEnd, time.end)
-          hasValid = true
-        }
-      }
-    }
-    if (!hasValid || minStart === Infinity || maxEnd <= minStart) return undefined
-    const diff = maxEnd - minStart
-    if (diff < 1000) return `${diff}ms`
-    if (diff < 60000) return `${(diff / 1000).toFixed(diff < 10000 ? 2 : 1)}s`
-    const mins = Math.floor(diff / 60000)
-    const secs = Math.round((diff % 60000) / 1000)
-    return `${mins}m ${secs}s`
-  })
-  const handleOpenChange = (value: boolean) => {
-    if (props.open === undefined) setLocalOpen(value)
-    props.onOpenChange?.(value)
-    props.onSizeChange?.()
-  }
-
   return (
-    <Collapsible
-      open={open()}
-      onOpenChange={handleOpenChange}
-      variant="ghost"
-      class="tool-collapsible"
-      data-timeline-part-ids={props.parts.map((part) => part.id).join(",")}
-    >
-      <Collapsible.Trigger>
-        <div data-component="context-tool-group-trigger">
-          <span
-            data-slot="context-tool-group-title"
-            class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
-          >
-            <span data-slot="context-tool-group-label" class="shrink-0">
-              <ToolStatusTitle
-                active={pending()}
-                activeText={i18n.t("ui.sessionTurn.status.gatheringContext")}
-                doneText={i18n.t("ui.sessionTurn.status.gatheredContext")}
-                split={false}
-              />
-            </span>
-            <span
-              data-slot="context-tool-group-summary"
-              class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
-            >
-              <AnimatedCountList
-                items={[
-                  {
-                    key: "read",
-                    count: summary().read,
-                    one: i18n.t("ui.messagePart.context.read.one"),
-                    other: i18n.t("ui.messagePart.context.read.other"),
-                  },
-                  {
-                    key: "search",
-                    count: summary().search,
-                    one: i18n.t("ui.messagePart.context.search.one"),
-                    other: i18n.t("ui.messagePart.context.search.other"),
-                  },
-                  {
-                    key: "list",
-                    count: summary().list,
-                    one: i18n.t("ui.messagePart.context.list.one"),
-                    other: i18n.t("ui.messagePart.context.list.other"),
-                  },
-                ]}
-                fallback=""
-              />
-            </span>
-            <Show when={!pending() && totalDuration()}>
-              <span data-slot="context-tool-group-total-duration">{totalDuration()}</span>
-            </Show>
-          </span>
-          <Collapsible.Arrow />
-        </div>
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        <div data-component="context-tool-group-list">
-          <Index each={props.parts}>
-            {(partAccessor) => {
-              const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
-              const running = createMemo(
-                () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
-              )
-              const duration = createMemo(() => formatToolDuration(partAccessor()))
-
-              return (
-                <div data-slot="context-tool-group-item">
-                  <div data-component="context-tool-row">
-                    <div data-slot="context-tool-main">
-                      <span data-slot="context-tool-badge" data-tool={partAccessor().tool}>
-                        {trigger().tag}
-                      </span>
-                      <span
-                        data-slot="context-tool-target"
-                        title={trigger().targetTooltip || trigger().target || trigger().title}
-                      >
-                        <TextShimmer text={trigger().target || trigger().title} active={running()} />
-                      </span>
-                      <Show when={!running() && trigger().detail}>
-                        <span data-slot="context-tool-detail">{trigger().detail}</span>
-                      </Show>
-                      <Show when={!running() && trigger().path}>
-                        <span data-slot="context-tool-path" title={trigger().fullPath || trigger().path}>
-                          {trigger().path}
-                        </span>
-                      </Show>
-                    </div>
-                    <div data-slot="context-tool-meta">
-                      <Show when={running()}>
-                        <span data-slot="context-tool-running">
-                          <Spinner class="size-3" />
-                        </span>
-                      </Show>
-                      <Show when={!running() && duration()}>
-                        <span data-slot="context-tool-duration">{duration()}</span>
-                      </Show>
-                    </div>
-                  </div>
-                </div>
-              )
-            }}
-          </Index>
-        </div>
-      </Collapsible.Content>
-    </Collapsible>
+    <BaseGenericToolGroup
+      {...props}
+      renderFallbackItem={(itemProps) => (
+        <Part
+          part={itemProps.part}
+          message={itemProps.message!}
+          showAssistantCopyPartID={itemProps.showAssistantCopyPartID}
+          turnDurationMs={itemProps.turnDurationMs}
+          defaultOpen={partDefaultOpen(itemProps.part, itemProps.shellToolDefaultOpen, itemProps.editToolDefaultOpen)}
+          onCompactHere={itemProps.onCompactHere}
+        />
+      )}
+    />
   )
 }
+
+export {
+  GenericToolGroup as BaseGenericToolGroup,
+  ContextToolGroup,
+  PythonToolGroup,
+  formatToolDuration,
+  contextToolTrigger,
+  contextToolSummary,
+} from "./tool-group"
 
 export function UserMessageDisplay(props: {
   message: UserMessage
@@ -4137,8 +3744,8 @@ ToolRegistry.register({
               </span>
             </Show>
             <Show when={errored()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail">
-                {errorText() || i18n.t("ui.message.interrupted")}
+              <span data-slot="bash-trigger-exit" data-exit="fail" title={errorText() || undefined}>
+                {i18n.t("ui.toolErrorCard.failed")}
               </span>
             </Show>
           </div>
@@ -4311,8 +3918,8 @@ ToolRegistry.register({
               </span>
             </Show>
             <Show when={errored()}>
-              <span data-slot="bash-trigger-exit" data-exit="fail">
-                {errorText() || i18n.t("ui.message.interrupted")}
+              <span data-slot="bash-trigger-exit" data-exit="fail" title={errorText() || undefined}>
+                {i18n.t("ui.toolErrorCard.failed")}
               </span>
             </Show>
           </div>
@@ -4925,28 +4532,26 @@ ToolRegistry.register({
         open={props.open}
         onOpenChange={props.onOpenChange}
       >
-        <div class="flex flex-col gap-2 p-3 text-12-regular">
+        <div data-component="invalid-tool-content">
           <Show when={errorDetail()}>
-            <div class="rounded bg-fill-danger-subtle p-2 text-text-danger">
+            <div data-slot="invalid-tool-error">
               {errorDetail()}
             </div>
           </Show>
           <Show when={rawInputText()}>
-            <div class="flex flex-col gap-1">
-              <div class="flex items-center justify-between text-text-weak text-11-medium">
-                <span>{i18n.t("ui.tool.invalid.rawInput")}</span>
-                <IconButtonV2
-                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                  size="normal"
-                  variant="ghost-muted"
-                  onClick={handleCopy}
-                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-                />
-              </div>
-              <pre class="max-h-60 overflow-auto rounded bg-fill-neutral-subtle p-2 font-mono text-11-regular">
-                <code>{rawInputText()}</code>
-              </pre>
+            <div data-slot="invalid-tool-header">
+              <span>{i18n.t("ui.tool.invalid.rawInput")}</span>
+              <IconButtonV2
+                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                size="normal"
+                variant="ghost-muted"
+                onClick={handleCopy}
+                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+              />
             </div>
+            <pre data-slot="invalid-tool-pre">
+              <code>{rawInputText()}</code>
+            </pre>
           </Show>
         </div>
       </BasicTool>

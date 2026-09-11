@@ -1336,10 +1336,7 @@
 }
 
 [data-component="context-tool-group-list"] {
-  padding-top: 3px;
-  padding-right: 0;
-  padding-bottom: 4px;
-  padding-left: 8px;
+  padding: 3px 0 18px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -1509,10 +1506,7 @@
 
 [data-component="python-tool-group-list"],
 [data-component="bash-tool-group-list"] {
-  padding-top: 3px;
-  padding-right: 0;
-  padding-bottom: 4px;
-  padding-left: 8px;
+  padding: 3px 0 18px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;

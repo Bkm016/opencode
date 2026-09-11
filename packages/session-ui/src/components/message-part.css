@@ -614,7 +614,8 @@
 
   [data-component="markdown"] {
     margin-top: 16px;
-    font-style: normal;
+    margin-bottom: 16px;
+    font-style: italic;
     font-size: 13px;
     color: var(--v2-text-text-muted);
 

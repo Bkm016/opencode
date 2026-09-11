@@ -167,6 +167,18 @@
       width: 14px;
       height: 14px;
     }
+
+    [data-slot="collapsible-arrow-icon"] {
+      display: inline-flex;
+      transform: translateZ(0) rotate(-90deg);
+      transition: transform 0.18s cubic-bezier(0, 0, 0.2, 1);
+      will-change: transform;
+    }
+  }
+
+  [data-slot="session-turn-process-summary"][aria-expanded="true"] [data-slot="collapsible-arrow-icon"],
+  [data-slot="session-turn-process-summary"][data-expanded] [data-slot="collapsible-arrow-icon"] {
+    transform: translateZ(0) rotate(0deg);
   }
 
   [data-slot="session-turn-diffs"] {

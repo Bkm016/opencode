@@ -14,7 +14,7 @@ export type PartRef = {
   partID: string
 }
 
-export type ToolGroupID = "context" | "computerUse" | "python" | "bash"
+export type ToolGroupID = "context" | "computerUse" | "python" | "bash" | "history" | "web"
 
 export type PartGroup =
   | {
@@ -197,4 +197,14 @@ export function isPythonGroupTool(part: Part): part is ToolPart {
 
 export function isBashGroupTool(part: Part): part is ToolPart {
   return part.type === "tool" && part.tool === "bash"
+}
+
+const HISTORY_GROUP_TOOLS = new Set(["history_grep", "history_list"])
+export function isHistoryGroupTool(part: Part): part is ToolPart {
+  return part.type === "tool" && HISTORY_GROUP_TOOLS.has(part.tool)
+}
+
+const WEB_GROUP_TOOLS = new Set(["webfetch", "websearch"])
+export function isWebGroupTool(part: Part): part is ToolPart {
+  return part.type === "tool" && WEB_GROUP_TOOLS.has(part.tool)
 }

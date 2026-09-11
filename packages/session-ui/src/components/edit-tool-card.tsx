@@ -3,7 +3,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import "./edit-tool-card.css"
@@ -41,9 +40,6 @@ export function EditToolCard(props: EditToolCardProps) {
         }}
       >
         <div class="edit-tool-card-info">
-          <span class="edit-tool-card-icon">
-            <Icon name="code-lines" size="small" />
-          </span>
           <span class="edit-tool-card-action">
             <TextShimmer text={props.actionTitle} active={pending()} />
           </span>
@@ -138,14 +134,11 @@ export function MultiEditToolCard(props: MultiEditToolCardProps) {
         }}
       >
         <div class="edit-tool-card-info">
-          <span class="edit-tool-card-icon">
-            <Icon name="code-lines" size="small" />
-          </span>
           <span class="edit-tool-card-action">
             <TextShimmer text={props.actionTitle} active={pending()} />
           </span>
           <Show when={countSummary()}>
-            <span class="edit-tool-card-filename">{countSummary()}</span>
+            <span class="edit-tool-card-summary">{countSummary()}</span>
           </Show>
         </div>
 
@@ -175,7 +168,6 @@ export function MultiEditToolCard(props: MultiEditToolCardProps) {
                       onClick={() => toggleFile(file.relativePath)}
                     >
                       <div class="multi-edit-file-info">
-                        <FileIcon node={{ path: file.relativePath, type: "file" }} />
                         <span class="multi-edit-file-name">{getFilename(file.relativePath)}</span>
                         <Show when={file.relativePath.includes("/")}>
                           <span class="multi-edit-file-dir">{getDirectory(file.relativePath)}</span>

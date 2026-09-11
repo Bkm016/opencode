@@ -20,6 +20,8 @@ import {
   isComputerUseGroupTool,
   isPythonGroupTool,
   isBashGroupTool,
+  isHistoryGroupTool,
+  isWebGroupTool,
   type PartRef,
 } from "./message-part-groups"
 
@@ -133,17 +135,22 @@ export function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI1
       if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
       if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
       const patternText = typeof input.pattern === "string" ? input.pattern : ""
-      return {
-        tag: "H-GREP",
-        title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
-        target: patternText,
-        targetTooltip: patternText,
-        detail:
-          input.source === "task"
+      const meta = ("metadata" in part.state ? (part.state as any).metadata : undefined) ?? {}
+      const matches = typeof meta.matches === "number" ? meta.matches : undefined
+      const detail =
+        matches !== undefined
+          ? i18n.t("ui.historyTool.matches", { count: matches })
+          : input.source === "task"
             ? "task"
             : typeof input.chunk_id === "string" && input.chunk_id
               ? `chunk ${input.chunk_id}`
-              : undefined,
+              : undefined
+      return {
+        tag: "H-GREP",
+        title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
+        target: patternText || (input.source === "task" ? i18n.t("ui.historyTool.source.taskEvidence") : "history"),
+        targetTooltip: patternText,
+        detail,
         path: undefined,
         subtitle: patternText,
         args,
@@ -159,18 +166,24 @@ export function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI1
       if (typeof input.limit === "number") args.push("limit=" + input.limit)
       const ref =
         typeof input.chunk_id === "string" && input.chunk_id
-          ? input.chunk_id
+          ? `chunk ${input.chunk_id}`
           : typeof input.message_id === "string" && input.message_id
             ? input.part_id
               ? `${input.message_id}:${input.part_id}`
               : input.message_id
-            : ""
+            : input.source === "task"
+              ? i18n.t("ui.historyTool.source.taskEvidence")
+              : "history"
+      const meta = ("metadata" in part.state ? (part.state as any).metadata : undefined) ?? {}
+      const lines = typeof meta.lines === "number" ? meta.lines : undefined
       const detail =
-        offset !== undefined && limit !== undefined
-          ? `L${offset}–${offset + limit}`
-          : offset !== undefined
-            ? `L${offset}+`
-            : undefined
+        lines !== undefined
+          ? i18n.t("ui.historyTool.lines", { count: lines })
+          : offset !== undefined && limit !== undefined
+            ? `L${offset}–${offset + limit}`
+            : offset !== undefined
+              ? `L${offset}+`
+              : undefined
       return {
         tag: "H-LIST",
         title: input.source === "task" ? i18n.t("ui.historyTool.list.evidenceDone") : i18n.t("ui.tool.historyList"),
@@ -180,6 +193,32 @@ export function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI1
         path: undefined,
         subtitle: ref,
         args,
+      }
+    }
+    case "webfetch": {
+      const rawUrl = typeof input.url === "string" ? input.url : ""
+      return {
+        tag: "FETCH",
+        title: i18n.t("ui.tool.webfetch"),
+        target: rawUrl,
+        targetTooltip: rawUrl,
+        detail: undefined,
+        path: undefined,
+        subtitle: rawUrl,
+        args: [],
+      }
+    }
+    case "websearch": {
+      const query = typeof input.query === "string" ? input.query : ""
+      return {
+        tag: "SEARCH",
+        title: i18n.t("ui.tool.websearch"),
+        target: query,
+        targetTooltip: query,
+        detail: undefined,
+        path: undefined,
+        subtitle: query,
+        args: [],
       }
     }
     default: {
@@ -211,6 +250,11 @@ function ContextToolRow(props: { part: ToolPart }) {
   const trigger = createMemo(() => contextToolTrigger(props.part, i18n, data.directory))
   const running = createMemo(() => props.part.state.status === "pending" || props.part.state.status === "running")
   const duration = createMemo(() => formatToolDuration(props.part))
+  const isWebfetch = createMemo(() => props.part.tool === "webfetch")
+  const url = createMemo(() => {
+    const u = (props.part.state.input as any)?.url
+    return typeof u === "string" && u.length > 0 ? u : undefined
+  })
 
   return (
     <div data-component="context-tool-row">
@@ -222,7 +266,20 @@ function ContextToolRow(props: { part: ToolPart }) {
           data-slot="context-tool-target"
           title={trigger().targetTooltip || trigger().target || trigger().title}
         >
-          <TextShimmer text={trigger().target || trigger().title} active={running()} />
+          <Show
+            when={isWebfetch() && url()}
+            fallback={<TextShimmer text={trigger().target || trigger().title} active={running()} />}
+          >
+            <a
+              href={url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="subagent-link truncate hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <TextShimmer text={trigger().target || trigger().title} active={running()} />
+            </a>
+          </Show>
         </span>
         <Show when={!running() && trigger().detail}>
           <span data-slot="context-tool-detail">{trigger().detail}</span>
@@ -234,6 +291,17 @@ function ContextToolRow(props: { part: ToolPart }) {
         </Show>
       </div>
       <div data-slot="context-tool-meta">
+        <Show when={isWebfetch() && url()}>
+          <a
+            href={url()}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-text-weak hover:text-text-base mr-1 inline-flex items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <IconV2 name="square-arrow-top-right" size="small" />
+          </a>
+        </Show>
         <Show when={running()}>
           <span data-slot="context-tool-running">
             <Spinner class="size-3" />
@@ -606,6 +674,80 @@ ToolGroupRegistry.register({
     )
   },
   componentName: "bash-tool-group",
+})
+
+// 注册内建工具分组：历史检索 (history)
+ToolGroupRegistry.register({
+  id: "history",
+  match: isHistoryGroupTool,
+  title: {
+    active: (i18n) => i18n.t("ui.sessionTurn.status.searchingHistory") || "正在查阅历史",
+    done: (i18n) => i18n.t("ui.sessionTurn.status.searchedHistory") || "已查阅历史",
+  },
+  renderSummary({ parts, i18n }) {
+    const grepCount = parts.filter((part) => part.tool === "history_grep").length
+    const listCount = parts.filter((part) => part.tool === "history_list").length
+    return (
+      <AnimatedCountList
+        items={[
+          {
+            key: "grep",
+            count: grepCount,
+            one: i18n.t("ui.messagePart.context.search.one"),
+            other: i18n.t("ui.messagePart.context.search.other"),
+          },
+          {
+            key: "list",
+            count: listCount,
+            one: i18n.t("ui.messagePart.context.read.one"),
+            other: i18n.t("ui.messagePart.context.read.other"),
+          },
+        ]}
+        fallback=""
+      />
+    )
+  },
+  renderItem(itemProps) {
+    return <ContextToolRow part={itemProps.part} />
+  },
+  componentName: "context-tool-group",
+})
+
+// 注册内建工具分组：网络访问 (web)
+ToolGroupRegistry.register({
+  id: "web",
+  match: isWebGroupTool,
+  title: {
+    active: (i18n) => i18n.t("ui.sessionTurn.status.browsingWeb") || "正在访问网页",
+    done: (i18n) => i18n.t("ui.sessionTurn.status.browsedWeb") || "已访问网页",
+  },
+  renderSummary({ parts, i18n }) {
+    const fetchCount = parts.filter((part) => part.tool === "webfetch").length
+    const searchCount = parts.filter((part) => part.tool === "websearch").length
+    return (
+      <AnimatedCountList
+        items={[
+          {
+            key: "fetch",
+            count: fetchCount,
+            one: i18n.t("ui.messagePart.web.fetch.one"),
+            other: i18n.t("ui.messagePart.web.fetch.other"),
+          },
+          {
+            key: "search",
+            count: searchCount,
+            one: i18n.t("ui.messagePart.context.search.one"),
+            other: i18n.t("ui.messagePart.context.search.other"),
+          },
+        ]}
+        fallback=""
+      />
+    )
+  },
+  renderItem(itemProps) {
+    return <ContextToolRow part={itemProps.part} />
+  },
+  componentName: "context-tool-group",
 })
 
 /**

@@ -1234,6 +1234,18 @@ function contextToolDetail(part: ToolPart): string | undefined {
   return undefined
 }
 
+// 格式化上下文搜索/读取等工具的执行耗时
+function formatToolDuration(part: ToolPart): string | undefined {
+  const time = part.state && "time" in part.state ? (part.state as any).time : undefined
+  if (!time || typeof time.start !== "number" || typeof time.end !== "number") return undefined
+  const diff = Math.max(0, time.end - time.start)
+  if (diff < 1000) return `${diff}ms`
+  if (diff < 60000) return `${(diff / 1000).toFixed(diff < 10000 ? 2 : 1)}s`
+  const mins = Math.floor(diff / 60000)
+  const secs = Math.round((diff % 60000) / 1000)
+  return `${mins}m ${secs}s`
+}
+
 function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
   const input = (part.state.input ?? {}) as Record<string, unknown>
   const path = typeof input.path === "string" ? input.path : "/"
@@ -1248,20 +1260,50 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
       const args: string[] = []
       if (offset !== undefined) args.push("offset=" + offset)
       if (limit !== undefined) args.push("limit=" + limit)
+      const detail =
+        offset !== undefined && limit !== undefined
+          ? `L${offset}–${offset + limit}`
+          : offset !== undefined
+            ? `L${offset}+`
+            : limit !== undefined
+              ? `${limit} lines`
+              : undefined
+      const targetFile = filePath ? getFilename(filePath) : path !== "/" ? getFilename(path) : ""
       return {
+        tag: "READ",
         title: i18n.t("ui.tool.read"),
-        subtitle: filePath ? getFilename(filePath) : "",
+        target: targetFile,
+        targetTooltip: filePath || path,
+        detail,
+        path: filePath ? getDirectory(filePath) : undefined,
+        fullPath: filePath || path,
+        subtitle: targetFile,
         args,
       }
     }
-    case "list_dir":
+    case "list_dir": {
+      const dirPath = (typeof input.path === "string" && input.path) || path || "/"
       return {
+        tag: "LIST",
         title: i18n.t("ui.tool.list"),
-        subtitle: getDirectory((typeof input.path === "string" && input.path) || path || "/"),
+        target: getDirectory(dirPath),
+        targetTooltip: dirPath,
+        detail: undefined,
+        path: undefined,
+        fullPath: dirPath,
+        subtitle: getDirectory(dirPath),
+        args: [],
       }
+    }
     case "glob":
       return {
+        tag: "GLOB",
         title: i18n.t("ui.tool.glob"),
+        target: pattern || "*",
+        targetTooltip: pattern,
+        detail: undefined,
+        path: getDirectory(path),
+        fullPath: path,
         subtitle: getDirectory(path),
         args: pattern ? ["pattern=" + pattern] : [],
       }
@@ -1270,7 +1312,13 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
       if (pattern) args.push("pattern=" + pattern)
       if (include) args.push("include=" + include)
       return {
+        tag: "GREP",
         title: i18n.t("ui.tool.grep"),
+        target: pattern || "*",
+        targetTooltip: pattern,
+        detail: include ? `in ${include}` : undefined,
+        path: getDirectory(path),
+        fullPath: path,
         subtitle: getDirectory(path),
         args,
       }
@@ -1281,9 +1329,20 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
       if (typeof input.chunk_id === "string" && input.chunk_id) args.push("chunk=" + input.chunk_id)
       if (typeof input.message_id === "string" && input.message_id) args.push("message=" + input.message_id)
       if (typeof input.part_id === "string" && input.part_id) args.push("part=" + input.part_id)
+      const patternText = typeof input.pattern === "string" ? input.pattern : ""
       return {
+        tag: "H-GREP",
         title: input.source === "task" ? i18n.t("ui.historyTool.grep.evidenceDone") : i18n.t("ui.tool.historyGrep"),
-        subtitle: typeof input.pattern === "string" ? input.pattern : "",
+        target: patternText,
+        targetTooltip: patternText,
+        detail:
+          input.source === "task"
+            ? "task"
+            : typeof input.chunk_id === "string" && input.chunk_id
+              ? `chunk ${input.chunk_id}`
+              : undefined,
+        path: undefined,
+        subtitle: patternText,
         args,
       }
     }
@@ -1303,17 +1362,34 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
               ? `${input.message_id}:${input.part_id}`
               : input.message_id
             : ""
+      const detail =
+        offset !== undefined && limit !== undefined
+          ? `L${offset}–${offset + limit}`
+          : offset !== undefined
+            ? `L${offset}+`
+            : undefined
       return {
+        tag: "H-LIST",
         title: input.source === "task" ? i18n.t("ui.historyTool.list.evidenceDone") : i18n.t("ui.tool.historyList"),
+        target: ref,
+        targetTooltip: ref,
+        detail,
+        path: undefined,
         subtitle: ref,
         args,
       }
     }
     default: {
       const info = getToolInfo(part.tool, input, "metadata" in part.state ? part.state.metadata : undefined)
+      const subtitle = info.subtitle || contextToolDetail(part)
       return {
+        tag: (part.tool || "TOOL").slice(0, 6).toUpperCase(),
         title: info.title,
-        subtitle: info.subtitle || contextToolDetail(part),
+        target: subtitle || info.title,
+        targetTooltip: subtitle,
+        detail: undefined,
+        path: undefined,
+        subtitle,
         args: [],
       }
     }
@@ -1495,6 +1571,29 @@ export function ContextToolGroup(props: {
       !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
   )
   const summary = createMemo(() => contextToolSummary(props.parts))
+  // 计算上下文探索步骤的总耗时跨度
+  const totalDuration = createMemo(() => {
+    let minStart = Infinity
+    let maxEnd = -Infinity
+    let hasValid = false
+    for (const part of props.parts) {
+      const time = part.state && "time" in part.state ? (part.state as any).time : undefined
+      if (time && typeof time.start === "number") {
+        minStart = Math.min(minStart, time.start)
+        if (typeof time.end === "number") {
+          maxEnd = Math.max(maxEnd, time.end)
+          hasValid = true
+        }
+      }
+    }
+    if (!hasValid || minStart === Infinity || maxEnd <= minStart) return undefined
+    const diff = maxEnd - minStart
+    if (diff < 1000) return `${diff}ms`
+    if (diff < 60000) return `${(diff / 1000).toFixed(diff < 10000 ? 2 : 1)}s`
+    const mins = Math.floor(diff / 60000)
+    const secs = Math.round((diff % 60000) / 1000)
+    return `${mins}m ${secs}s`
+  })
   const handleOpenChange = (value: boolean) => {
     if (props.open === undefined) setLocalOpen(value)
     props.onOpenChange?.(value)
@@ -1551,6 +1650,9 @@ export function ContextToolGroup(props: {
                 fallback=""
               />
             </span>
+            <Show when={!pending() && totalDuration()}>
+              <span data-slot="context-tool-group-total-duration">{totalDuration()}</span>
+            </Show>
           </span>
           <Collapsible.Arrow />
         </div>
@@ -1563,27 +1665,39 @@ export function ContextToolGroup(props: {
               const running = createMemo(
                 () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
               )
+              const duration = createMemo(() => formatToolDuration(partAccessor()))
+
               return (
                 <div data-slot="context-tool-group-item">
-                  <div data-component="tool-trigger">
-                    <div data-slot="basic-tool-tool-trigger-content">
-                      <div data-slot="basic-tool-tool-info">
-                        <div data-slot="basic-tool-tool-info-structured">
-                          <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title">
-                              <TextShimmer text={trigger().title} active={running()} />
-                            </span>
-                            <Show when={!running() && trigger().subtitle}>
-                              <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
-                            </Show>
-                            <Show when={!running() && trigger().args?.length}>
-                              <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
-                              </For>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
+                  <div data-component="context-tool-row">
+                    <div data-slot="context-tool-main">
+                      <span data-slot="context-tool-badge" data-tool={partAccessor().tool}>
+                        {trigger().tag}
+                      </span>
+                      <span
+                        data-slot="context-tool-target"
+                        title={trigger().targetTooltip || trigger().target || trigger().title}
+                      >
+                        <TextShimmer text={trigger().target || trigger().title} active={running()} />
+                      </span>
+                      <Show when={!running() && trigger().detail}>
+                        <span data-slot="context-tool-detail">{trigger().detail}</span>
+                      </Show>
+                      <Show when={!running() && trigger().path}>
+                        <span data-slot="context-tool-path" title={trigger().fullPath || trigger().path}>
+                          {trigger().path}
+                        </span>
+                      </Show>
+                    </div>
+                    <div data-slot="context-tool-meta">
+                      <Show when={running()}>
+                        <span data-slot="context-tool-running">
+                          <Spinner class="size-3" />
+                        </span>
+                      </Show>
+                      <Show when={!running() && duration()}>
+                        <span data-slot="context-tool-duration">{duration()}</span>
+                      </Show>
                     </div>
                   </div>
                 </div>
@@ -2055,7 +2169,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
       tool === "python" ||
       tool === "canvas" ||
       tool === "computer_use" ||
-      tool === "image_generation"
+      tool === "image_generation" ||
+      tool === "invalid"
     ) {
       return undefined
     }
@@ -4757,5 +4872,84 @@ ToolRegistry.register({
   name: "image_generation",
   render(props) {
     return <ImageGenerationTool {...props} />
+  },
+})
+
+// 模型调用未知/未提供工具的专属渲染器：展示试图调用的工具名、失败原因及模型原始请求入参
+ToolRegistry.register({
+  name: "invalid",
+  render(props) {
+    const i18n = useI18n()
+    const input = () => (props.input as { tool?: string; error?: string; input?: unknown }) || {}
+    const requestedTool = () => input().tool || "unknown"
+    const errorDetail = () => input().error || ""
+    const rawInput = () => input().input
+
+    const [copied, setCopied] = createSignal(false)
+    const rawInputText = createMemo(() => {
+      const val = rawInput()
+      if (val === undefined) return ""
+      return typeof val === "string" ? val : JSON.stringify(val, null, 2)
+    })
+
+    const handleCopy = async (e: MouseEvent) => {
+      e.stopPropagation()
+      const text = rawInputText() || errorDetail()
+      if (!text) return
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+
+    const trigger = () => (
+      <div data-slot="basic-tool-tool-info-structured">
+        <div data-slot="basic-tool-tool-info-main">
+          <span data-slot="basic-tool-tool-title" class="text-text-danger">
+            {i18n.t("ui.tool.invalid", { tool: requestedTool() })}
+          </span>
+          <Show when={errorDetail()}>
+            <span data-slot="basic-tool-tool-subtitle" class="text-text-weak truncate">
+              {errorDetail()}
+            </span>
+          </Show>
+        </div>
+      </div>
+    )
+
+    return (
+      <BasicTool
+        icon="circle-ban-sign"
+        status="error"
+        trigger={trigger()}
+        defaultOpen={props.defaultOpen ?? true}
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+      >
+        <div class="flex flex-col gap-2 p-3 text-12-regular">
+          <Show when={errorDetail()}>
+            <div class="rounded bg-fill-danger-subtle p-2 text-text-danger">
+              {errorDetail()}
+            </div>
+          </Show>
+          <Show when={rawInputText()}>
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center justify-between text-text-weak text-11-medium">
+                <span>{i18n.t("ui.tool.invalid.rawInput")}</span>
+                <IconButtonV2
+                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                  size="normal"
+                  variant="ghost-muted"
+                  onClick={handleCopy}
+                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                />
+              </div>
+              <pre class="max-h-60 overflow-auto rounded bg-fill-neutral-subtle p-2 font-mono text-11-regular">
+                <code>{rawInputText()}</code>
+              </pre>
+            </div>
+          </Show>
+        </div>
+      </BasicTool>
+    )
   },
 })

@@ -1524,7 +1524,15 @@ export function MessageTimeline(props: {
       if (part?.type === "tool") return part
     }
     const asyncFile = () => ["edit", "write", "apply_patch"].includes(tool()?.tool ?? "")
-    const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
+    // 折叠态编辑卡片不挂载内容，onContentRendered 不会触发；
+    // 若仍按缓存展开高度占位，min-height 会把折叠行僵死在旧高度
+    const initiallyExpanded = () => {
+      const part = tool()
+      if (!part) return false
+      if (part.state.status === "pending" || part.state.status === "running") return true
+      return partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded()) === true
+    }
+    const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile() || !initiallyExpanded())
     let contentMeasureFrame: number | undefined
     // 记录上次上报的高度，相同高度不再触发 measureElement，斩断
     // measure → 高度写回 → RO observe 再触发 measure 的自循环。

@@ -175,6 +175,7 @@ const SettingsModelsContent: Component = () => {
       <DialogModelConfig
         providerID={providerID}
         modelID={`${modelID}-copy`}
+        isClone
         initial={{
           name: m.name ? `${m.name} (Copy)` : undefined,
           contextLimit: m.limit?.context,

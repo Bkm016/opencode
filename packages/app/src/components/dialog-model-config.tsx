@@ -229,6 +229,7 @@ export function DialogProviderConfig(props: ProviderFormProps) {
 export interface ModelFormProps {
   providerID: string
   modelID?: string
+  isClone?: boolean
   initial?: {
     name?: string
     contextLimit?: number
@@ -250,7 +251,8 @@ export function DialogModelConfig(props: ModelFormProps) {
   const dialog = useDialog()
   const language = useLanguage()
   const serverSync = useServerSync()
-  const isEditing = !!props.modelID
+  const isClone = !!props.isClone
+  const isEditing = !isClone && !!props.modelID
 
   const initialReasoning = props.initial?.reasoning ?? true
   const initialVariants = props.initial?.variants
@@ -314,7 +316,14 @@ export function DialogModelConfig(props: ModelFormProps) {
       }
 
       const models = { ...(provider.models ?? {}) }
-      const existing = models[id] ?? {}
+
+      // 冲突检查：若新 ID 已经存在且与当前编辑的原 ID 不同
+      if ((!isEditing || id !== props.modelID) && models[id]) {
+        setError(`模型 ID 「${id}」已存在，请使用其他 ID`)
+        return
+      }
+
+      const existing = models[isEditing ? props.modelID! : id] ?? {}
 
       const nextModel: any = {
         ...existing,
@@ -346,18 +355,49 @@ export function DialogModelConfig(props: ModelFormProps) {
         delete nextModel.variants
       }
 
+      // 如果是编辑且修改了模型 ID，移除旧 ID
+      if (isEditing && props.modelID && props.modelID !== id) {
+        delete models[props.modelID]
+      }
+
       models[id] = nextModel
       providers[props.providerID] = {
         ...provider,
         models,
       }
 
-      await serverSync().updateConfig({ provider: providers })
+      const configUpdate: any = { provider: providers }
+
+      // 同步更新 agent 和全局默认模型引用
+      if (isEditing && props.modelID && props.modelID !== id) {
+        const oldRef = `${props.providerID}/${props.modelID}`
+        const newRef = `${props.providerID}/${id}`
+
+        if (currentConfig.model === oldRef) {
+          configUpdate.model = newRef
+        }
+
+        if (currentConfig.agent) {
+          let agentChanged = false
+          const nextAgents = { ...currentConfig.agent }
+          for (const [aID, a] of Object.entries(nextAgents)) {
+            if (a && a.model === oldRef) {
+              nextAgents[aID] = { ...a, model: newRef }
+              agentChanged = true
+            }
+          }
+          if (agentChanged) {
+            configUpdate.agent = nextAgents
+          }
+        }
+      }
+
+      await serverSync().updateConfig(configUpdate)
 
       showToast({
         variant: "success",
         icon: "circle-check",
-        title: isEditing ? "模型已更新" : "模型已添加",
+        title: isEditing ? "模型已更新" : isClone ? "模型已克隆" : "模型已添加",
         description: `${nextModel.name} 配置已保存并立即生效。`,
       })
 
@@ -377,7 +417,7 @@ export function DialogModelConfig(props: ModelFormProps) {
         <div class="flex items-center gap-3">
           <IconButton icon="arrow-left" variant="ghost" onClick={handleBack} aria-label={language.t("common.goBack")} />
           <span class="text-16-medium text-text-strong">
-            {isEditing ? `编辑模型: ${form.id}` : `添加模型 (${props.providerID})`}
+            {isEditing ? `编辑模型: ${form.id || props.modelID}` : isClone ? `克隆模型 (${props.providerID})` : `添加模型 (${props.providerID})`}
           </span>
         </div>
       }
@@ -398,9 +438,8 @@ export function DialogModelConfig(props: ModelFormProps) {
               label="模型 ID"
               placeholder="例如: kimi-k3, gpt-5.6-sol, gemini-3.8-flash"
               value={form.id}
-              disabled={isEditing}
               onChange={(v) => setForm("id", v)}
-              description={isEditing ? "模型 ID 无法修改" : "提供商接口接收的真实模型名称/版本"}
+              description="提供商接口接收的真实模型名称/版本"
               required
             />
 

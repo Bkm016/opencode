@@ -158,5 +158,5 @@
     "@solidjs/router@0.15.4": "patches/@solidjs%2Frouter@0.15.4.patch",
     "@ai-sdk/openai@3.0.84": "patches/@ai-sdk%2Fopenai@3.0.84.patch"
   },
-  "version": "0.0.0-prod-202609060850"
+  "version": "0.0.0-prod-202609120146"
 }

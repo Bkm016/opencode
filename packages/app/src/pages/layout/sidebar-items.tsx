@@ -1,66 +1,19 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { Avatar } from "@opencode-ai/ui/avatar"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
-import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getFilename } from "@opencode-ai/core/util/path"
 import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { type LocalProject, useLayout } from "@/context/layout"
+import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { isSessionPinned, toggleSessionPin } from "@/utils/session-pin"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import { getProjectAvatarSource, hasProjectPermissions, sidebarChildSessions } from "./helpers"
-
-export const ProjectIcon = (props: {
-  project: LocalProject
-  class?: string
-  notify?: boolean
-  working?: boolean
-}): JSX.Element => {
-  const serverSync = useServerSync()
-  const permission = usePermission()
-  const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
-  const hasPermissions = createMemo(() =>
-    dirs().some((directory) => {
-      return hasProjectPermissions(serverSync().session.data.permission, (item) => {
-        if (serverSync().session.get(item.sessionID)?.directory !== directory) return false
-        return !permission.autoResponds(item, directory)
-      })
-    }),
-  )
-  const notify = createMemo(() => props.notify && hasPermissions())
-  const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
-
-  return (
-    <div class={`relative size-8 shrink-0 rounded ${props.class ?? ""}`}>
-      <div class="size-full rounded overflow-clip">
-        <Avatar
-          fallback={name()}
-          src={getProjectAvatarSource(props.project.id, props.project.icon)}
-          background="var(--surface-raised-base-active)"
-          foreground="var(--text-strong)"
-          class="size-full rounded border-0"
-          classList={{ "badge-mask": notify() }}
-        />
-      </div>
-      <Show when={notify()}>
-        <div class="absolute top-px right-px size-1.5 rounded-full bg-surface-warning-strong z-10" />
-      </Show>
-      <Show when={props.working}>
-        <div class="absolute bottom-px right-px size-3 rounded-full bg-background-base z-10 flex items-center justify-center">
-          <Spinner class="size-[9px]" />
-        </div>
-      </Show>
-    </div>
-  )
-}
+import { sidebarChildSessions } from "./helpers"
 
 export type SessionItemProps = {
   session: Session
@@ -130,15 +83,7 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span
-        classList={{
-          "min-w-0 flex-1 truncate text-text-strong": true,
-          "text-14-medium": props.pinned(),
-          "text-14-regular": !props.pinned(),
-        }}
-      >
-        {title()}
-      </span>
+      <span class="min-w-0 flex-1 truncate text-text-strong text-14-regular">{title()}</span>
     </A>
   )
 }
@@ -219,12 +164,6 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
       style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
     >
-      <Show when={pinned()}>
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-icon-interactive-base"
-        />
-      </Show>
       <div class="flex min-w-0 items-center gap-1">
         <div class="min-w-0 flex-1">
           <Show

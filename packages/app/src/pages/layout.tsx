@@ -15,22 +15,22 @@ import gsap from "gsap"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
-import { useServerSync } from "@/context/server-sync"
+import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
+import { useIsFetching } from "@tanstack/solid-query"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Button } from "@opencode-ai/ui/button"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
-import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useProviders } from "@/hooks/use-providers"
 import { toaster } from "@opencode-ai/ui/toast"
@@ -52,7 +52,7 @@ import { prefersReducedMotion } from "@/utils/gsap-motion"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { useCommand, type CommandOption } from "@/context/command"
-import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
+import { getDraggableId } from "@/utils/solid-dnd"
 import { DebugBar } from "@/components/debug-bar"
 import { TabsInfoPopup } from "@/components/help-button"
 import { Titlebar } from "@/components/titlebar"
@@ -61,6 +61,7 @@ import { ServerConnection, useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { pinnedSessionIds, removeSessionPin } from "@/utils/session-pin"
+import { sessionTitle } from "@/utils/session-title"
 import {
   displayName,
   effectiveWorkspaceOrder,
@@ -75,14 +76,15 @@ import {
   drainPendingDeepLinks,
 } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
+import { WorkspaceSessionList, type WorkspaceSidebarContext } from "./layout/sidebar-workspace"
 import {
-  LocalWorkspace,
-  SortableWorkspace,
-  WorkspaceDragOverlay,
-  type WorkspaceSidebarContext,
-} from "./layout/sidebar-workspace"
-import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
+  ProjectDragOverlay,
+  TiledProjectSection,
+  type ProjectSidebarContext,
+  type TiledWorkspaceDrag,
+} from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
+import { DialogSessionSearch } from "@/components/dialog-session-search"
 
 export default function LegacyLayout(props: ParentProps) {
   const serverSDK = useServerSDK()
@@ -96,6 +98,8 @@ export default function LegacyLayout(props: ParentProps) {
       workspaceName: {} as Record<string, string>,
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
+      tiledExpanded: {} as Record<string, boolean>,
+      chatExpanded: true,
       gettingStartedDismissed: false,
     }),
   )
@@ -124,6 +128,7 @@ export default function LegacyLayout(props: ParentProps) {
   const command = useCommand()
   const theme = useTheme()
   const language = useLanguage()
+  const queryOptions = useQueryOptions()
   createEffect(() => setV2Toast(false))
   const initialDirectory = decode64(params.dir)
   const route = createMemo(() => {
@@ -151,7 +156,7 @@ export default function LegacyLayout(props: ParentProps) {
   const [state, setState] = createStore({
     autoselect: !initialDirectory,
     busyWorkspaces: {} as Record<string, boolean>,
-    sessionGroupsCommand: undefined as { open: boolean; revision: number } | undefined,
+    tiledGroupsCommand: {} as Record<string, { open: boolean; revision: number }>,
     scrollSessionKey: undefined as string | undefined,
     sortNow: Date.now(),
     sizing: false,
@@ -173,10 +178,12 @@ export default function LegacyLayout(props: ParentProps) {
   }
   const isBusy = (directory: string) => !!state.busyWorkspaces[pathKey(directory)]
   const sortNow = () => state.sortNow
-  const setSessionGroupsExpanded = (open: boolean) => {
-    setState("sessionGroupsCommand", {
+  // 各项目日期分组的展开 / 折叠命令是按项目独立的：平铺后每个项目有自己的分组列表。
+  const setTiledGroupsExpanded = (project: LocalProject, open: boolean) => {
+    const key = pathKey(project.worktree)
+    setState("tiledGroupsCommand", key, {
       open,
-      revision: (state.sessionGroupsCommand?.revision ?? 0) + 1,
+      revision: (state.tiledGroupsCommand[key]?.revision ?? 0) + 1,
     })
   }
   let sizet: number | undefined
@@ -210,8 +217,7 @@ export default function LegacyLayout(props: ParentProps) {
   createEffect(() => {
     const desktop = isDesktop()
     const opened = layout.sidebar.opened()
-    const collapsedWidth = 64
-    const width = opened ? Math.max(layout.sidebar.width(), 244) : collapsedWidth
+    const width = opened ? Math.max(layout.sidebar.width(), 244) : 0
     const sizing = state.sizing
     if (!desktop || !desktopSidebar) return
 
@@ -231,7 +237,7 @@ export default function LegacyLayout(props: ParentProps) {
     })
   })
 
-  // Desktop closed rail is icons-only; expanded only when sidebar is opened.
+  // 平铺侧栏：关闭时完全隐藏，不再保留图标 rail。
   const sidebarHovering = () => false
   const sidebarExpanded = createMemo(() => layout.sidebar.opened())
 
@@ -481,6 +487,97 @@ export default function LegacyLayout(props: ParentProps) {
     }
   })
 
+  // 聊天区会话落在桌面目录，独立于任何项目，关闭项目后仍在。
+  const chatDirectory = createMemo(() => {
+    const home = serverSync().data.path.home
+    if (!home) return ""
+    const sep = home.includes("\\") ? "\\" : "/"
+    return home.replace(/[\\/]+$/, "") + sep + "Desktop"
+  })
+  const chatSlug = createMemo(() => base64Encode(chatDirectory()))
+
+  // 会话数据在 memo 里同步挂上（bootstrap: true 激活加载），跟项目分区同一个模式，展开时数据已在。
+  const chatStore = createMemo(() => {
+    const directory = chatDirectory()
+    if (!directory) return
+    return serverSync().child(directory)
+  })
+
+  const chatSessions = createMemo(() => {
+    const entry = chatStore()
+    if (!entry) return []
+    return sortedRootSessions(entry[0], sortNow(), pinnedSessionIds(chatDirectory()))
+  })
+
+  const chatFetching = useIsFetching(() => queryOptions().sessions(pathKey(chatDirectory())))
+  const chatLoading = () => chatFetching() > 0 && chatSessions().length === 0
+
+  // 展开是纯状态切换，不依赖会话是否算出来，跟项目分区同一个手感。
+  const chatExpanded = () => store.chatExpanded
+  const toggleChatExpanded = () => setStore("chatExpanded", !store.chatExpanded)
+
+  // 聊天区独立组件：跟项目分区同款的 折叠+会话列表，但不进项目拖拽排序容器。
+  const TiledChatSection = (props: { mobile?: boolean }) => (
+    <section data-component="sidebar-chat" class="min-w-0 rounded-lg">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={chatExpanded()}
+        title={chatDirectory()}
+        onClick={() => toggleChatExpanded()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            toggleChatExpanded()
+          }
+        }}
+        class="group/chat relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
+      >
+        <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
+        <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{language.t("sidebar.chat")}</span>
+        <div
+          class="flex shrink-0 items-center"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <IconButton
+            icon="plus"
+            variant="ghost"
+            size="small"
+            class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto"
+            data-action="chat-new-session"
+            aria-label={language.t("sidebar.chat.new")}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              newChat()
+            }}
+          />
+        </div>
+      </div>
+
+      <Collapsible variant="ghost" data-scope="sidebar-chat" open={chatExpanded()} onOpenChange={toggleChatExpanded}>
+        <Collapsible.Content>
+          <div class="min-w-0 pt-1 pb-1 pl-4 pr-1">
+            <WorkspaceSessionList
+              slug={() => chatSlug()}
+              mobile={props.mobile}
+              ctx={workspaceSidebarCtx}
+              loading={chatLoading}
+              sessions={chatSessions}
+            />
+          </div>
+        </Collapsible.Content>
+      </Collapsible>
+    </section>
+  )
+
+  const newChat = () => {
+    const directory = chatDirectory()
+    if (!directory) return
+    navigate(`/${base64Encode(directory)}/session`)
+  }
+
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
     const key = pathKey(directory)
     const direct = store.workspaceName[key] ?? store.workspaceName[directory]
@@ -511,7 +608,22 @@ export default function LegacyLayout(props: ParentProps) {
     return layout.sidebar.workspaces(project.worktree)()
   })
 
+  // 平铺侧栏需要加载全部项目的会话，导航用的当前会话列表保持按当前项目过滤。
   const visibleSessionDirs = createMemo(() => {
+    const projects = layout.projects.list()
+    if (projects.length === 0) return [] as string[]
+    const dirs: string[] = []
+    for (const project of projects) {
+      if (project.vcs === "git" && layout.sidebar.workspaces(project.worktree)()) {
+        dirs.push(...workspaceIds(project))
+        continue
+      }
+      dirs.push(project.worktree)
+    }
+    return dirs
+  })
+
+  const currentProjectDirs = createMemo(() => {
     const project = currentProject()
     if (!project) return [] as string[]
     if (!workspaceSetting()) return [project.worktree]
@@ -542,7 +654,7 @@ export default function LegacyLayout(props: ParentProps) {
 
   const currentSessions = createMemo(() => {
     const now = Date.now()
-    const dirs = visibleSessionDirs()
+    const dirs = currentProjectDirs()
     if (dirs.length === 0) return [] as Session[]
 
     const result: Session[] = []
@@ -1678,12 +1790,11 @@ export default function LegacyLayout(props: ParentProps) {
   createEffect(() => {
     document.documentElement.style.setProperty(
       "--dialog-left-margin",
-      `${layout.sidebar.opened() ? layout.sidebar.width() : 48}px`,
+      `${layout.sidebar.opened() ? layout.sidebar.width() : 0}px`,
     )
   })
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), 244))
-  const panel = createMemo(() => Math.max(side() - 64, 0))
 
   const loadedSessionDirs = new Set<string>()
 
@@ -1754,22 +1865,23 @@ export default function LegacyLayout(props: ParentProps) {
 
   const sidebarProject = createMemo(() => currentProject())
 
+  const projectForDirectory = (directory: string) => {
+    const key = pathKey(directory)
+    return layout.projects
+      .list()
+      .find((item) => pathKey(item.worktree) === key || item.sandboxes?.some((sandbox) => pathKey(sandbox) === key))
+  }
+
   function handleWorkspaceDragStart(event: unknown) {
     const id = getDraggableId(event)
     if (!id) return
     setStore("activeWorkspace", id)
   }
 
-  function handleWorkspaceDragOver(event: DragEvent) {
-    const { draggable, droppable } = event
-    if (!draggable || !droppable) return
-
-    const project = sidebarProject()
-    if (!project) return
-
+  function moveWorkspace(project: LocalProject, draggableId: string, droppableId: string) {
     const ids = workspaceIds(project)
-    const fromIndex = ids.findIndex((dir) => dir === draggable.id.toString())
-    const toIndex = ids.findIndex((dir) => dir === droppable.id.toString())
+    const fromIndex = ids.findIndex((dir) => dir === draggableId)
+    const toIndex = ids.findIndex((dir) => dir === droppableId)
     if (fromIndex === -1 || toIndex === -1) return
     if (fromIndex === toIndex) return
 
@@ -1782,6 +1894,18 @@ export default function LegacyLayout(props: ParentProps) {
       project.worktree,
       result.filter((directory) => pathKey(directory) !== pathKey(project.worktree)),
     )
+  }
+
+  function handleWorkspaceDragOver(event: DragEvent) {
+    const { draggable, droppable } = event
+    if (!draggable || !droppable) return
+
+    const draggableId = draggable.id.toString()
+    const droppableId = droppable.id.toString()
+    // 平铺侧栏中多个项目的 workspace 各自有独立拖拽上下文，按目录反查所属项目。
+    const project = projectForDirectory(droppableId) ?? projectForDirectory(draggableId) ?? sidebarProject()
+    if (!project) return
+    moveWorkspace(project, draggableId, droppableId)
   }
 
   function handleWorkspaceDragEnd() {
@@ -1851,7 +1975,8 @@ export default function LegacyLayout(props: ParentProps) {
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },
-    sessionGroupsCommand: () => state.sessionGroupsCommand,
+    // 全局默认无分组命令，各项目渲染时按 worktree 覆盖为自己的命令。
+    sessionGroupsCommand: () => undefined,
   }
 
   const projectSidebarCtx: ProjectSidebarContext = {
@@ -1864,345 +1989,150 @@ export default function LegacyLayout(props: ParentProps) {
     workspaceIds,
   }
 
-  const SidebarPanel = (panelProps: {
-    project: Accessor<LocalProject | undefined>
-    mobile?: boolean
-  }) => {
-    const project = panelProps.project
-    const merged = createMemo(() => !!panelProps.mobile || layout.sidebar.opened())
-    const empty = createMemo(() => !params.dir && layout.projects.list().length === 0)
-    const projectName = createMemo(() => {
-      const item = project()
-      if (!item) return ""
-      return item.name || getFilename(item.worktree)
-    })
-    const projectId = createMemo(() => project()?.id ?? "")
-    const worktree = createMemo(() => project()?.worktree ?? "")
-    const slug = createMemo(() => {
-      const dir = worktree()
-      if (!dir) return ""
-      return base64Encode(dir)
-    })
-    const workspaces = createMemo(() => {
-      const item = project()
-      if (!item) return [] as string[]
-      return workspaceIds(item)
-    })
-    const workspacesEnabled = createMemo(() => {
-      const item = project()
-      if (!item) return false
-      if (item.vcs !== "git") return false
-      return layout.sidebar.workspaces(item.worktree)()
-    })
-    const canToggle = createMemo(() => {
-      const item = project()
-      if (!item) return false
-      return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
-    })
-    return (
-      <div
-        classList={{
-          "flex flex-col min-h-0 min-w-0 box-border px-3": true,
-          "shrink-0": !panelProps.mobile,
-          "bg-background-base": merged(),
-          "bg-background-stronger": !merged(),
-          "flex-1 min-w-0": panelProps.mobile,
-          "max-w-full overflow-hidden": panelProps.mobile,
-        }}
-        style={{
-          width: panelProps.mobile ? undefined : `${panel()}px`,
-        }}
-      >
-        <Show
-          when={project()}
-          fallback={
-            <Show when={empty()}>
-              <div class="flex-1 min-h-0 -mt-4 flex items-center justify-center px-6 pb-64 text-center">
-                <div class="mt-8 flex max-w-60 flex-col items-center gap-6 text-center">
-                  <div class="flex flex-col gap-3">
-                    <div class="text-14-medium text-text-strong">{language.t("sidebar.empty.title")}</div>
-                    <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
-                      {language.t("sidebar.empty.description")}
-                    </div>
-                  </div>
-                  <Button size="large" icon="folder-add-left" onClick={chooseProject}>
-                    {language.t("command.project.open")}
-                  </Button>
-                </div>
-              </div>
-            </Show>
-          }
-          keyed
-        >
-          {(project) => (
-            <>
-              <div class="shrink-0 py-0.5">
-                <div class="group/project flex items-center justify-between gap-2 pt-4 pb-1.5 pl-2 pr-0">
-                  <Tooltip placement="bottom" gutter={4} value={worktree()} class="min-w-0 flex-1 overflow-hidden">
-                    <div class="min-w-0 w-full overflow-hidden">
-                      <InlineEditor
-                        id={`project:${projectId()}`}
-                        value={projectName}
-                        onSave={(next) => {
-                          void renameProject(project, next)
-                        }}
-                        class="block w-full min-w-0 text-14-medium text-text-strong truncate"
-                        displayClass="block w-full min-w-0 text-14-medium text-text-strong truncate"
-                        stopPropagation
-                      />
-                    </div>
-                  </Tooltip>
+  // 平铺侧栏的项目折叠状态，按 worktree key 存放，默认全部展开。
+  const isTiledExpanded = (project: LocalProject) => store.tiledExpanded[pathKey(project.worktree)] ?? true
+  const toggleTiledExpanded = (project: LocalProject) => {
+    const key = pathKey(project.worktree)
+    setStore("tiledExpanded", key, !(store.tiledExpanded[key] ?? true))
+  }
 
-                  <div class="flex shrink-0 items-center gap-0.5">
-                    <Tooltip placement="bottom" value={language.t("command.session.new")}>
-                      <IconButton
-                        icon="plus"
-                        variant="ghost"
-                        size="small"
-                        data-action="new-session"
-                        aria-label={language.t("command.session.new")}
-                        onClick={() => navigateWithSidebarReset(`/${slug()}/session`)}
-                      />
-                    </Tooltip>
-                    <Tooltip placement="bottom" value={language.t("home.sessions.group.expandAll")}>
-                      <IconButton
-                        icon="expand"
-                        variant="ghost"
-                        size="small"
-                        data-action="sessions-expand-all"
-                        aria-label={language.t("home.sessions.group.expandAll")}
-                        onClick={() => setSessionGroupsExpanded(true)}
-                      />
-                    </Tooltip>
-                    <Tooltip placement="bottom" value={language.t("home.sessions.group.collapseAll")}>
-                      <IconButton
-                        icon="collapse"
-                        variant="ghost"
-                        size="small"
-                        data-action="sessions-collapse-all"
-                        aria-label={language.t("home.sessions.group.collapseAll")}
-                        onClick={() => setSessionGroupsExpanded(false)}
-                      />
-                    </Tooltip>
-                    <DropdownMenu modal>
-                      <DropdownMenu.Trigger
-                        as={IconButton}
-                        icon="dot-grid"
-                        variant="ghost"
-                        data-action="project-menu"
-                        data-project={slug()}
-                        class="shrink-0 size-6 rounded-md opacity-100 data-[expanded]:bg-surface-base-active"
-                        aria-label={language.t("common.moreOptions")}
-                      />
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content class="mt-1">
-                          <DropdownMenu.Item
-                            onSelect={() => {
-                              showEditProjectDialog(server.current!, project)
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            data-action="project-workspaces-toggle"
-                            data-project={slug()}
-                            disabled={!canToggle()}
-                            onSelect={() => {
-                              toggleProjectWorkspaces(project)
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>
-                              {workspacesEnabled()
-                                ? language.t("sidebar.workspaces.disable")
-                                : language.t("sidebar.workspaces.enable")}
-                            </DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            data-action="project-skills"
-                            data-project={slug()}
-                            onSelect={() => {
-                              void import("@/components/dialog-skills").then((x) => {
-                                dialog.show(() => <x.DialogSkills directory={worktree()} />)
-                              })
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>{language.t("sidebar.project.skills")}</DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            data-action="project-instructions"
-                            data-project={slug()}
-                            onSelect={() => {
-                              void import("@/components/settings-instructions").then((x) => {
-                                dialog.show(() => <x.DialogInstructions directory={worktree()} />)
-                              })
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>
-                              {language.t("settings.tab.instructions")}
-                            </DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            data-action="project-archived-sessions"
-                            data-project={slug()}
-                            onSelect={() => {
-                              void import("@/components/dialog-archived-sessions").then((x) => {
-                                dialog.show(() => (
-                                  <x.DialogArchivedSessions directory={worktree()} project={project} />
-                                ))
-                              })
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>
-                              {language.t("sidebar.project.archivedSessions")}
-                            </DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Separator />
-                          <DropdownMenu.Item
-                            data-action="project-close-menu"
-                            data-project={slug()}
-                            onSelect={() => {
-                              const dir = worktree()
-                              if (!dir) return
-                              closeProject(dir)
-                            }}
-                          >
-                            <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
+  // 搜索跳转或直接输入 URL 时，自动展开对应项目分组（只在路由变化时执行一次，不持续监听）。
+  let lastAutoExpandedDir: string | undefined
+  createEffect(() => {
+    const dir = currentDir()
+    if (!dir) return
+    if (dir === lastAutoExpandedDir) return
+    lastAutoExpandedDir = dir
+    const root = projectRoot(dir)
+    if (!root) return
+    const key = pathKey(root)
+    if (store.tiledExpanded[key] === false) setStore("tiledExpanded", key, true)
+  })
+  // 顶部“全部展开 / 全部折叠”：一次性收起或展开所有项目。
+  const setAllTiledExpanded = (value: boolean) => {
+    const next: Record<string, boolean> = {}
+    for (const project of layout.projects.list()) {
+      next[pathKey(project.worktree)] = value
+    }
+    setStore("tiledExpanded", next)
+  }
 
-              <div class="flex-1 min-h-0 flex flex-col">
-                <Show
-                  when={workspacesEnabled()}
-                  fallback={
-                    <>
-                      <div class="flex-1 min-h-0">
-                        <LocalWorkspace
-                          ctx={workspaceSidebarCtx}
-                          project={project}
-                          sortNow={sortNow}
-                          mobile={panelProps.mobile}
-                        />
-                      </div>
-                    </>
-                  }
-                >
-                  <>
-                    <div class="shrink-0 py-4">
-                      <Button
-                        size="large"
-                        icon="plus-small"
-                        class="w-full"
-                        onClick={() => {
-                          void createWorkspace(project)
-                        }}
-                      >
-                        {language.t("workspace.new")}
-                      </Button>
-                    </div>
-                    <div class="relative flex-1 min-h-0">
-                      <DragDropProvider
-                        onDragStart={handleWorkspaceDragStart}
-                        onDragEnd={handleWorkspaceDragEnd}
-                        onDragOver={handleWorkspaceDragOver}
-                        collisionDetector={closestCenter}
-                      >
-                        <DragDropSensors />
-                        <ConstrainDragXAxis />
-                        <div
-                          ref={(el) => {
-                            if (!panelProps.mobile) scrollContainerRef = el
-                          }}
-                          class="size-full flex flex-col py-2 gap-4 overflow-y-auto no-scrollbar [overflow-anchor:none]"
-                        >
-                          <SortableProvider ids={workspaces()}>
-                            <For each={workspaces()}>
-                              {(directory) => (
-                                <SortableWorkspace
-                                  ctx={workspaceSidebarCtx}
-                                  directory={directory}
-                                  project={project}
-                                  sortNow={sortNow}
-                                  mobile={panelProps.mobile}
-                                />
-                              )}
-                            </For>
-                          </SortableProvider>
-                        </div>
-                        <DragOverlay>
-                          <WorkspaceDragOverlay
-                            sidebarProject={sidebarProject}
-                            activeWorkspace={() => store.activeWorkspace}
-                            workspaceLabel={workspaceLabel}
-                          />
-                        </DragOverlay>
-                      </DragDropProvider>
-                    </div>
-                  </>
-                </Show>
-              </div>
-            </>
-          )}
-        </Show>
+  const tiledWorkspaceDrag: TiledWorkspaceDrag = {
+    onDragStart: handleWorkspaceDragStart,
+    onDragOver: handleWorkspaceDragOver,
+    onDragEnd: handleWorkspaceDragEnd,
+    activeWorkspace: () => store.activeWorkspace,
+    label: workspaceLabel,
+    onCreateWorkspace: (project) => {
+      void createWorkspace(project)
+    },
+  }
 
-        <div
-          class="shrink-0 px-3 py-3"
-          classList={{
-            hidden: store.gettingStartedDismissed || !(providers.all().size > 0 && providers.paid().length === 0),
-          }}
-        >
-          <div class="rounded-xl bg-background-base shadow-xs-border-base" data-component="getting-started">
-            <div class="p-3 flex flex-col gap-6">
-              <div class="flex flex-col gap-2">
-                <div class="text-14-medium text-text-strong">{language.t("sidebar.gettingStarted.title")}</div>
-                <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
-                  {language.t("sidebar.gettingStarted.line1")}
-                </div>
-                <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
-                  {language.t("sidebar.gettingStarted.line2")}
-                </div>
-              </div>
-              <div data-component="getting-started-actions">
-                <Button size="large" icon="plus-small" onClick={connectProvider}>
-                  {language.t("command.provider.connect")}
-                </Button>
-                <Button size="large" variant="ghost" onClick={() => setStore("gettingStartedDismissed", true)}>
-                  {language.t("toast.update.action.notYet")}
-                </Button>
-              </div>
+  const TiledEmpty = () => (
+    <div class="flex min-h-48 flex-1 items-center justify-center px-6 py-8 text-center">
+      <div class="flex max-w-60 flex-col items-center gap-6 text-center">
+        <div class="flex flex-col gap-3">
+          <div class="text-14-medium text-text-strong">{language.t("sidebar.empty.title")}</div>
+          <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
+            {language.t("sidebar.empty.description")}
+          </div>
+        </div>
+        <Button size="large" icon="folder-add-left" onClick={chooseProject}>
+          {language.t("command.project.open")}
+        </Button>
+      </div>
+    </div>
+  )
+
+  const TiledGettingStarted = () => (
+    <div
+      class="shrink-0 px-1 py-3"
+      classList={{
+        hidden: store.gettingStartedDismissed || !(providers.all().size > 0 && providers.paid().length === 0),
+      }}
+    >
+      <div class="rounded-xl bg-background-base shadow-xs-border-base" data-component="getting-started">
+        <div class="p-3 flex flex-col gap-6">
+          <div class="flex flex-col gap-2">
+            <div class="text-14-medium text-text-strong">{language.t("sidebar.gettingStarted.title")}</div>
+            <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
+              {language.t("sidebar.gettingStarted.line1")}
             </div>
+            <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
+              {language.t("sidebar.gettingStarted.line2")}
+            </div>
+          </div>
+          <div data-component="getting-started-actions">
+            <Button size="large" icon="plus-small" onClick={connectProvider}>
+              {language.t("command.provider.connect")}
+            </Button>
+            <Button size="large" variant="ghost" onClick={() => setStore("gettingStartedDismissed", true)}>
+              {language.t("toast.update.action.notYet")}
+            </Button>
           </div>
         </div>
       </div>
-    )
-  }
+    </div>
+  )
 
   const projects = () => layout.projects.list()
   const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent
       mobile={mobile}
-      opened={() => layout.sidebar.opened()}
       projects={projects}
-      currentProject={currentProject}
-      renderProject={(project) => (
-        <SortableProject ctx={projectSidebarCtx} project={project} />
-      )}
+      renderProjectSection={(project) => {
+        // 各项目用自己的分组命令覆盖全局 ctx，行内的展开 / 折叠只影响自己项目的日期分组。
+        const sectionCtx: WorkspaceSidebarContext = {
+          ...workspaceSidebarCtx,
+          sessionGroupsCommand: () => state.tiledGroupsCommand[pathKey(project.worktree)],
+        }
+        return (
+          <TiledProjectSection
+            project={project}
+            mobile={mobile}
+            sortNow={sortNow}
+            projectCtx={projectSidebarCtx}
+            workspaceCtx={sectionCtx}
+            workspaceDrag={tiledWorkspaceDrag}
+            expanded={isTiledExpanded(project)}
+            onToggleExpanded={() => toggleTiledExpanded(project)}
+            onExpandAllGroups={() => setTiledGroupsExpanded(project, true)}
+            onCollapseAllGroups={() => setTiledGroupsExpanded(project, false)}
+          />
+        )
+      }}
       handleDragStart={handleDragStart}
       handleDragEnd={handleDragEnd}
       handleDragOver={handleDragOver}
       openProjectLabel={language.t("command.project.open")}
       openProjectKeybind={() => command.keybind("project.open")}
       onOpenProject={chooseProject}
+      expandAllLabel={language.t("home.sessions.group.expandAll")}
+      onExpandAll={() => setAllTiledExpanded(true)}
+      collapseAllLabel={language.t("home.sessions.group.collapseAll")}
+      onCollapseAll={() => setAllTiledExpanded(false)}
       renderProjectOverlay={projectOverlay}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
-      renderPanel={() => <SidebarPanel project={currentProject} mobile={mobile} />}
+      headerTitle={language.t("sidebar.projects")}
+      renderChat={() => <TiledChatSection mobile={mobile} />}
+      renderSearch={() => (
+        <IconButton
+          icon="magnifying-glass"
+          variant="ghost"
+          size="small"
+          data-action="sidebar-session-search-open"
+          aria-label={language.t("home.sessions.search.placeholder")}
+          onClick={() => dialog.show(() => <DialogSessionSearch />)}
+        />
+      )}
+      renderEmpty={TiledEmpty}
+      renderGettingStarted={TiledGettingStarted}
+      setScrollRef={(el) => {
+        if (!mobile) scrollContainerRef = el
+      }}
     />
   )
 
@@ -2220,13 +2150,16 @@ export default function LegacyLayout(props: ParentProps) {
                   desktopSidebar = element
                 }}
                 classList={{
-                  "absolute inset-y-0 left-0 w-16": true,
-                  // Above main (z-20): otherwise the content pane can steal clicks on the rail/session list.
+                  "absolute inset-y-0 left-0": true,
+                  // Above main (z-20): otherwise the content pane can steal clicks on the session list.
                   "z-30": true,
                   "overflow-hidden": true,
                 }}
               >
-                <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
+                {/* 内容宽度钉在最小侧栏宽，折叠动画靠外层 overflow-hidden 裁切，避免内容被压扁变形。 */}
+                <div class="@container h-full contain-strict" style={{ width: `${side()}px` }}>
+                  {sidebarContent()}
+                </div>
               </nav>
 
               <Show when={layout.sidebar.opened()}>
@@ -2289,7 +2222,7 @@ export default function LegacyLayout(props: ParentProps) {
                 left: isDesktop()
                   ? layout.sidebar.opened()
                     ? `${side()}px`
-                    : "4rem"
+                    : "0px"
                   : undefined,
               }}
             >

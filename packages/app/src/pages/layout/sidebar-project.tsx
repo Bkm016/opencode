@@ -1,15 +1,37 @@
-import gsap from "gsap"
-import { createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { base64Encode } from "@opencode-ai/core/util/encode"
-import { ContextMenu } from "@opencode-ai/ui/context-menu"
-import { createSortable } from "@thisbeyond/solid-dnd"
-import { useLayout, type LocalProject } from "@/context/layout"
-import { useServerSync } from "@/context/server-sync"
+import { useNavigate } from "@solidjs/router"
+import { For, Show, createMemo, type Accessor, type JSX } from "solid-js"
+import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { prefersReducedMotion } from "@/utils/gsap-motion"
-import { ProjectIcon } from "./sidebar-items"
-import { displayName } from "./helpers"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Button } from "@opencode-ai/ui/button"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import {
+  DragDropProvider,
+  DragDropSensors,
+  DragOverlay,
+  SortableProvider,
+  closestCenter,
+  createSortable,
+  type DragEvent,
+} from "@thisbeyond/solid-dnd"
+import { useIsFetching } from "@tanstack/solid-query"
+import { type LocalProject } from "@/context/layout"
+import { pathKey } from "@/utils/path-key"
+import { pinnedSessionIds } from "@/utils/session-pin"
+import { sessionTitle } from "@/utils/session-title"
+import { ConstrainDragXAxis } from "@/utils/solid-dnd"
+import {
+  SortableWorkspace,
+  WorkspaceDragOverlay,
+  WorkspaceSessionList,
+  type WorkspaceSidebarContext,
+} from "./sidebar-workspace"
+import { displayName, sortedRootSessions } from "./helpers"
 
 export type ProjectSidebarContext = {
   currentProject: Accessor<LocalProject | undefined>
@@ -21,6 +43,17 @@ export type ProjectSidebarContext = {
   workspaceIds: (project: LocalProject) => string[]
 }
 
+export type TiledWorkspaceDrag = {
+  onDragStart: (event: unknown) => void
+  onDragOver: (event: DragEvent) => void
+  onDragEnd: () => void
+  activeWorkspace: Accessor<string | undefined>
+  label: (directory: string, branch?: string, projectId?: string) => string
+  onCreateWorkspace: (project: LocalProject) => void
+}
+
+// Codex 式平铺：各项目会话直接跟在项目下方，按置顶 + 今天 / 昨天 / 日期分组展示。
+
 export const ProjectDragOverlay = (props: {
   projects: Accessor<LocalProject[]>
   activeProject: Accessor<string | undefined>
@@ -29,164 +62,275 @@ export const ProjectDragOverlay = (props: {
   return (
     <Show when={project()}>
       {(p) => (
-        <div class="bg-background-base rounded-xl p-1">
-          <ProjectIcon project={p()} />
+        <div class="flex items-center gap-2 rounded-lg bg-background-base px-3 py-2 shadow-md">
+          <Icon name="folder" size="small" class="shrink-0 text-icon-base" />
+          <span class="text-14-medium text-text-strong">{displayName(p())}</span>
         </div>
       )}
     </Show>
   )
 }
 
-const ProjectTile = (props: {
+export const TiledProjectSection = (props: {
   project: LocalProject
-  selected: Accessor<boolean>
-  active: Accessor<boolean>
-  isWorking: Accessor<boolean>
-  dirs: Accessor<string[]>
-  navigateToProject: (directory: string) => void
-  showEditProjectDialog: (project: LocalProject) => void
-  toggleProjectWorkspaces: (project: LocalProject) => void
-  workspacesEnabled: (project: LocalProject) => boolean
-  closeProject: (directory: string) => void
-  setMenu: (value: boolean) => void
-  language: ReturnType<typeof useLanguage>
+  mobile?: boolean
+  sortNow: Accessor<number>
+  projectCtx: ProjectSidebarContext
+  workspaceCtx: WorkspaceSidebarContext
+  workspaceDrag: TiledWorkspaceDrag
+  expanded: boolean
+  onToggleExpanded: () => void
+  onExpandAllGroups: () => void
+  onCollapseAllGroups: () => void
 }): JSX.Element => {
-  const layout = useLayout()
-  let icon: HTMLDivElement | undefined
+  const navigate = useNavigate()
+  const language = useLanguage()
+  const dialog = useDialog()
+  const serverSync = useServerSync()
+  const queryOptions = useQueryOptions()
+  const sortable = createSortable(props.project.worktree)
+  const selected = createMemo(() => props.projectCtx.currentProject()?.worktree === props.project.worktree)
+  const worktree = createMemo(() => props.project.worktree)
+  const slug = createMemo(() => base64Encode(worktree()))
+  const workspacesEnabled = createMemo(() => props.projectCtx.workspacesEnabled(props.project))
+  const canToggle = createMemo(() => {
+    if (props.project.vcs === "git") return true
+    return props.projectCtx.workspacesEnabled(props.project)
+  })
+  const workspaces = createMemo(() => props.projectCtx.workspaceIds(props.project))
+  const localChild = createMemo(() => {
+    const [store] = serverSync().child(worktree(), { bootstrap: false })
+    return { store }
+  })
+  const localSessions = createMemo(() =>
+    sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
+  )
+  const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
+  const localLoading = () => localFetching() > 0 && (localSessions()?.length ?? 0) === 0
 
-  const animateHover = (active: boolean) => {
-    if (!icon || prefersReducedMotion()) return
-    gsap.to(icon, {
-      scale: active ? 1.05 : 1,
-      y: active ? -1 : 0,
-      filter: active ? "brightness(1.12)" : "brightness(1)",
-      duration: active ? 0.28 : 0.36,
-      ease: active ? "power3.out" : "power3.inOut",
-      overwrite: "auto",
+  const openSkills = () => {
+    const directory = worktree()
+    if (!directory) return
+    void import("@/components/dialog-skills").then((x) => {
+      dialog.show(() => <x.DialogSkills directory={directory} />)
     })
   }
-
-  onCleanup(() => {
-    if (icon) gsap.killTweensOf(icon)
-  })
-
-  return (
-    <ContextMenu
-      modal
-      onOpenChange={(value) => {
-        props.setMenu(value)
-      }}
-    >
-      <ContextMenu.Trigger
-        as="button"
-        type="button"
-        aria-label={displayName(props.project)}
-        data-action="project-switch"
-        data-project={base64Encode(props.project.worktree)}
-        data-selected={props.selected() ? "true" : undefined}
-        classList={{
-          "relative z-10 flex items-center justify-center size-10 p-1 rounded-lg overflow-hidden transition-colors cursor-default focus:outline-none": true,
-          "bg-surface-base-hover": !props.selected() && props.active(),
-        }}
-        onClick={() => {
-          if (props.selected()) {
-            layout.sidebar.toggle()
-            return
-          }
-          props.navigateToProject(props.project.worktree)
-        }}
-        onMouseEnter={() => animateHover(true)}
-        onMouseLeave={() => animateHover(false)}
-        onFocus={() => animateHover(true)}
-        onBlur={() => animateHover(false)}
-      >
-        <div
-          ref={(element) => {
-            icon = element
-            gsap.set(element, {
-              scale: 1,
-              y: 0,
-              filter: "brightness(1)",
-              transformOrigin: "center center",
-            })
-          }}
-          class="flex size-full items-center justify-center will-change-transform"
-        >
-          <ProjectIcon project={props.project} notify working={props.isWorking()} />
-        </div>
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content>
-          <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
-            <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item
-            data-action="project-workspaces-toggle"
-            data-project={base64Encode(props.project.worktree)}
-            disabled={props.project.vcs !== "git" && !props.workspacesEnabled(props.project)}
-            onSelect={() => props.toggleProjectWorkspaces(props.project)}
-          >
-            <ContextMenu.ItemLabel>
-              {props.workspacesEnabled(props.project)
-                ? props.language.t("sidebar.workspaces.disable")
-                : props.language.t("sidebar.workspaces.enable")}
-            </ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Separator />
-          <ContextMenu.Item
-            data-action="project-close-menu"
-            data-project={base64Encode(props.project.worktree)}
-            onSelect={() => props.closeProject(props.project.worktree)}
-          >
-            <ContextMenu.ItemLabel>{props.language.t("common.close")}</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu>
-  )
-}
-
-export const SortableProject = (props: {
-  project: LocalProject
-  ctx: ProjectSidebarContext
-}): JSX.Element => {
-  const serverSync = useServerSync()
-  const language = useLanguage()
-  const sortable = createSortable(props.project.worktree)
-  const selected = createMemo(() => props.ctx.currentProject()?.worktree === props.project.worktree)
-  const dirs = createMemo(() => props.ctx.workspaceIds(props.project))
-  const [state, setState] = createStore({
-    menu: false,
-  })
-
-  const active = createMemo(() => state.menu)
-
-  const isWorking = createMemo(() =>
-    dirs().some((directory) => {
-      return Object.keys(serverSync().session.data.session_status).some((id) => {
-        if (serverSync().session.get(id)?.directory !== directory) return false
-        return serverSync().session.data.session_working(id)
-      })
-    }),
-  )
+  const openInstructions = () => {
+    const directory = worktree()
+    if (!directory) return
+    void import("@/components/settings-instructions").then((x) => {
+      dialog.show(() => <x.DialogInstructions directory={directory} />)
+    })
+  }
+  const openArchived = () => {
+    const directory = worktree()
+    if (!directory) return
+    void import("@/components/dialog-archived-sessions").then((x) => {
+      dialog.show(() => <x.DialogArchivedSessions directory={directory} project={props.project} />)
+    })
+  }
 
   return (
     // @ts-ignore
     <div use:sortable classList={{ "opacity-30": sortable.isActiveDraggable }}>
-      <ProjectTile
-        project={props.project}
-        selected={selected}
-        active={active}
-        isWorking={isWorking}
-        dirs={dirs}
-        navigateToProject={props.ctx.navigateToProject}
-        showEditProjectDialog={props.ctx.showEditProjectDialog}
-        toggleProjectWorkspaces={props.ctx.toggleProjectWorkspaces}
-        workspacesEnabled={props.ctx.workspacesEnabled}
-        closeProject={props.ctx.closeProject}
-        setMenu={(value) => setState("menu", value)}
-        language={language}
-      />
+      <section data-component="tiled-project" data-project={slug()} class="min-w-0 rounded-lg">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={props.expanded}
+          data-action="project-collapse"
+          data-project={slug()}
+          title={worktree()}
+          onClick={() => props.onToggleExpanded()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              props.onToggleExpanded()
+            }
+          }}
+          class="group/project relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
+        >
+          <Show when={selected()}>
+            <div
+              aria-hidden="true"
+              class="pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-icon-interactive-base"
+            />
+          </Show>
+          <Icon name="folder" size="small" class="shrink-0 text-icon-base transition-transform duration-200 group-hover/project:scale-110" />
+          <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{displayName(props.project)}</span>
+          <div
+            class="flex shrink-0 items-center"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <Tooltip value={language.t("command.session.new")} placement="top">
+              <IconButton
+                icon="plus"
+                variant="ghost"
+                size="small"
+                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                data-action="project-new-session"
+                data-project={slug()}
+                aria-label={language.t("command.session.new")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  navigate(`/${slug()}/session`)
+                }}
+              />
+            </Tooltip>
+            <Tooltip value={language.t("home.sessions.group.expandAll")} placement="top">
+              <IconButton
+                icon="expand"
+                variant="ghost"
+                size="small"
+                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                data-action="sessions-expand-all"
+                data-project={slug()}
+                aria-label={language.t("home.sessions.group.expandAll")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  props.onExpandAllGroups()
+                }}
+              />
+            </Tooltip>
+            <Tooltip value={language.t("home.sessions.group.collapseAll")} placement="top">
+              <IconButton
+                icon="collapse"
+                variant="ghost"
+                size="small"
+                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                data-action="sessions-collapse-all"
+                data-project={slug()}
+                aria-label={language.t("home.sessions.group.collapseAll")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  props.onCollapseAllGroups()
+                }}
+              />
+            </Tooltip>
+            <DropdownMenu modal>
+              <DropdownMenu.Trigger
+                as={IconButton}
+                icon="dot-grid"
+                variant="ghost"
+                data-action="project-menu"
+                data-project={slug()}
+                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto data-[expanded]:opacity-100 data-[expanded]:pointer-events-auto"
+                aria-label={language.t("common.moreOptions")}
+              />
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content class="mt-1">
+                  <DropdownMenu.Item onSelect={() => props.projectCtx.showEditProjectDialog(props.project)}>
+                    <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    data-action="project-workspaces-toggle"
+                    data-project={slug()}
+                    disabled={!canToggle()}
+                    onSelect={() => props.projectCtx.toggleProjectWorkspaces(props.project)}
+                  >
+                    <DropdownMenu.ItemLabel>
+                      {workspacesEnabled()
+                        ? language.t("sidebar.workspaces.disable")
+                        : language.t("sidebar.workspaces.enable")}
+                    </DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item data-action="project-skills" data-project={slug()} onSelect={openSkills}>
+                    <DropdownMenu.ItemLabel>{language.t("sidebar.project.skills")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    data-action="project-instructions"
+                    data-project={slug()}
+                    onSelect={openInstructions}
+                  >
+                    <DropdownMenu.ItemLabel>{language.t("settings.tab.instructions")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    data-action="project-archived-sessions"
+                    data-project={slug()}
+                    onSelect={openArchived}
+                  >
+                    <DropdownMenu.ItemLabel>{language.t("sidebar.project.archivedSessions")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item
+                    data-action="project-close-menu"
+                    data-project={slug()}
+                    onSelect={() => props.projectCtx.closeProject(worktree())}
+                  >
+                    <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <Show when={props.expanded}>
+          <div class="min-w-0 pt-1 pb-1 pl-4 pr-4">
+          <Show
+            when={workspacesEnabled()}
+            fallback={
+              <WorkspaceSessionList
+                slug={slug}
+                mobile={props.mobile}
+                ctx={props.workspaceCtx}
+                loading={localLoading}
+                sessions={localSessions}
+              />
+            }
+          >
+            <div
+              class="flex min-w-0 flex-col gap-1"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Button
+                size="large"
+                icon="plus-small"
+                class="w-full"
+                onClick={() => props.workspaceDrag.onCreateWorkspace(props.project)}
+              >
+                {language.t("workspace.new")}
+              </Button>
+              <DragDropProvider
+                onDragStart={props.workspaceDrag.onDragStart}
+                onDragEnd={props.workspaceDrag.onDragEnd}
+                onDragOver={props.workspaceDrag.onDragOver}
+                collisionDetector={closestCenter}
+              >
+                <DragDropSensors />
+                <ConstrainDragXAxis />
+                <SortableProvider ids={workspaces()}>
+                  <div class="flex flex-col gap-2">
+                    <For each={workspaces()}>
+                      {(directory) => (
+                        <SortableWorkspace
+                          ctx={props.workspaceCtx}
+                          directory={directory}
+                          project={props.project}
+                          sortNow={props.sortNow}
+                          mobile={props.mobile}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </SortableProvider>
+                <DragOverlay>
+                  <WorkspaceDragOverlay
+                    sidebarProject={() => props.project}
+                    activeWorkspace={props.workspaceDrag.activeWorkspace}
+                    workspaceLabel={props.workspaceDrag.label}
+                  />
+                </DragOverlay>
+              </DragDropProvider>
+            </div>
+          </Show>
+          </div>
+        </Show>
+      </section>
     </div>
   )
 }

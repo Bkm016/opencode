@@ -759,6 +759,7 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.sevenDaysAgo": "7+ days ago",
+  "home.sessions.group.pinned": "Pinned",
   "home.sessions.group.expandAll": "Expand all",
   "home.sessions.group.collapseAll": "Collapse all",
   "home.providerTip": "Connect to 75+ providers to use other models, including Claude, GPT, Gemini, etc",
@@ -1030,6 +1031,9 @@ export const dict = {
   "sidebar.gettingStarted.line2": "Connect any provider to use models, inc. Claude, GPT, Gemini etc.",
   "sidebar.project.archivedSessions": "Archived sessions",
   "sidebar.project.skills": "Skills",
+  "sidebar.projects": "Projects",
+  "sidebar.chat": "Chat",
+  "sidebar.chat.new": "New chat",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",
 

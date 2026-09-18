@@ -1,13 +1,7 @@
-import { useNavigate } from "@solidjs/router"
+import { useNavigate, useParams } from "@solidjs/router"
 import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import {
-  closestCenter,
-  createSortable,
-  DragDropProvider,
-  DragDropSensors,
-  SortableProvider,
-} from "@thisbeyond/solid-dnd"
+import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -25,8 +19,7 @@ import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
-import { isSessionPinned, movePinnedSession, pinnedSessionIds } from "@/utils/session-pin"
-import { ConstrainDragXAxis } from "@/utils/solid-dnd"
+import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -251,29 +244,14 @@ const WorkspaceActions = (props: {
   </div>
 )
 
-const SortablePinnedSession = (props: { session: Session; children: JSX.Element }): JSX.Element => {
-  const sortable = createSortable(props.session.id)
-
-  return (
-    <div
-      // @ts-ignore
-      use:sortable
-      // 置顶会话位于可排序工作区内部时，只让最近一层拖拽上下文接收手势。
-      onPointerDown={(event) => event.stopPropagation()}
-      classList={{ "relative z-10": sortable.isActiveDraggable }}
-    >
-      {props.children}
-    </div>
-  )
-}
-
-const WorkspaceSessionList = (props: {
+export const WorkspaceSessionList = (props: {
   slug: Accessor<string>
   mobile?: boolean
   ctx: WorkspaceSidebarContext
   loading: Accessor<boolean>
   sessions: Accessor<Session[]>
 }): JSX.Element => {
+  const params = useParams()
   const language = useLanguage()
   const dateFormatter = createMemo(
     () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
@@ -289,51 +267,53 @@ const WorkspaceSessionList = (props: {
     setGroupOpen(group.key, open)
   }
 
-  const pinnedSessions = createMemo(() =>
-    props.sessions().filter((session) => isSessionPinned(session.directory, session.id)),
-  )
-  const unpinnedSessions = createMemo(() =>
-    props.sessions().filter((session) => !isSessionPinned(session.directory, session.id)),
-  )
-
   const groups = createMemo(() => {
-    // 置顶会话保持在日期分组之前，避免日期分组打乱现有置顶顺序。
-    const pinned = pinnedSessions()
     const groups: SessionGroup[] = []
+    // 置顶会话集中在最前的“置顶”分组，跟时间分区走同一条渲染路径。
+    const pinned = props.sessions().filter((session) => isSessionPinned(session.directory, session.id))
     if (pinned.length > 0) {
-      groups.push({ key: "pinned", sessions: pinned, collapsible: false, defaultOpen: true })
+      groups.push({
+        key: "pinned",
+        label: language.t("home.sessions.group.pinned"),
+        sessions: pinned,
+        collapsible: true,
+        defaultOpen: true,
+      })
     }
 
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
     const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime()
-    unpinnedSessions().forEach((session) => {
-      const date = new Date(session.time.updated ?? session.time.created)
-      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-      const older = day <= sevenDaysAgo
-      const key = older ? "older" : String(day)
-      const label =
-        older
-          ? language.t("home.sessions.group.sevenDaysAgo")
-          : day === today
-            ? language.t("home.sessions.group.today")
-            : day === yesterday
-              ? language.t("home.sessions.group.yesterday")
-              : dateFormatter().format(date)
-      const group = groups.at(-1)
-      if (group?.key === key) {
-        group.sessions.push(session)
-        return
-      }
-      groups.push({
-        key,
-        label,
-        sessions: [session],
-        collapsible: true,
-        defaultOpen: !groups.some((item) => item.collapsible),
+    props
+      .sessions()
+      .filter((session) => !isSessionPinned(session.directory, session.id))
+      .forEach((session) => {
+        const date = new Date(session.time.updated ?? session.time.created)
+        const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+        const older = day <= sevenDaysAgo
+        const key = older ? "older" : String(day)
+        const label =
+          older
+            ? language.t("home.sessions.group.sevenDaysAgo")
+            : day === today
+              ? language.t("home.sessions.group.today")
+              : day === yesterday
+                ? language.t("home.sessions.group.yesterday")
+                : dateFormatter().format(date)
+        const group = groups.at(-1)
+        if (group?.key === key) {
+          group.sessions.push(session)
+          return
+        }
+        groups.push({
+          key,
+          label,
+          sessions: [session],
+          collapsible: true,
+          defaultOpen: !groups.some((item) => item.collapsible),
+        })
       })
-    })
     return groups
   })
   createEffect(() => {
@@ -343,6 +323,18 @@ const WorkspaceSessionList = (props: {
     for (const group of groups()) {
       if (group.collapsible) setGroupOpen(group.key, command.open)
     }
+  })
+
+  // 路由指向某个会话时，自动展开包含该会话的分组（只在路由变化时执行一次，不持续监听）。
+  let lastAutoExpandedSession: string | undefined
+  createEffect(() => {
+    const sessionID = params.id
+    if (!sessionID) return
+    if (sessionID === lastAutoExpandedSession) return
+    lastAutoExpandedSession = sessionID
+    const group = groups().find((item) => item.sessions.some((session) => session.id === sessionID))
+    if (!group) return
+    if (!isGroupOpen(group)) setGroupOpen(group.key, true)
   })
   const item = (session: Session) => (
     <SessionItem
@@ -362,31 +354,6 @@ const WorkspaceSessionList = (props: {
       <For each={sessions}>{item}</For>
     </div>
   )
-  const pinnedSessionItems = (sessions: Session[]) => (
-    <DragDropProvider
-      onDragEnd={(event) => {
-        const target = event.droppable
-        if (!target) return
-        const sessionID = event.draggable.id.toString()
-        const targetID = target.id.toString()
-        if (sessionID === targetID) return
-        const session = sessions.find((item) => item.id === sessionID)
-        if (!session) return
-        movePinnedSession(session.directory, sessionID, targetID)
-      }}
-      collisionDetector={closestCenter}
-    >
-      <DragDropSensors />
-      <ConstrainDragXAxis />
-      <SortableProvider ids={sessions.map((session) => session.id)}>
-        <div class="flex flex-col gap-1">
-          <For each={sessions}>
-            {(session) => <SortablePinnedSession session={session}>{item(session)}</SortablePinnedSession>}
-          </For>
-        </div>
-      </SortableProvider>
-    </DragDropProvider>
-  )
 
   return (
     <nav class="flex flex-1 flex-col gap-1">
@@ -400,7 +367,7 @@ const WorkspaceSessionList = (props: {
         >
           <svg
             aria-hidden="true"
-            class="pointer-events-none absolute -top-1 right-[4rem] h-16 w-8 text-icon-weaker opacity-60"
+            class="pointer-events-none absolute -top-1 right-[3.7rem] h-16 w-8 text-icon-weaker opacity-60"
             viewBox="0 0 32 64"
           >
             <path
@@ -429,37 +396,36 @@ const WorkspaceSessionList = (props: {
       </Show>
       <Show
         when={!props.mobile}
-        fallback={
-          <>
-            <Show when={pinnedSessions().length > 0}>{pinnedSessionItems(pinnedSessions())}</Show>
-            <Show when={unpinnedSessions().length > 0}>{sessionItems(unpinnedSessions())}</Show>
-          </>
-        }
+        fallback={sessionItems(props.sessions())}
       >
         <For each={groups()}>
           {(group) => (
             <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
-              <Show
-                when={group.collapsible}
-                fallback={group.key === "pinned" ? pinnedSessionItems(group.sessions) : sessionItems(group.sessions)}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={isGroupOpen(group)}
+                onClick={() => setGroupExpanded(group, !isGroupOpen(group))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    setGroupExpanded(group, !isGroupOpen(group))
+                  }
+                }}
+                class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
               >
-                <Collapsible
-                  variant="ghost"
-                  open={isGroupOpen(group)}
-                  onOpenChange={(open) => setGroupExpanded(group, open)}
-                >
-                  <Collapsible.Trigger class="h-7 justify-between px-2 text-text-weak hover:text-text-base">
-                    <span>{group.label}</span>
-                    <span class="flex items-center gap-1">
-                      <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
-                      <Collapsible.Arrow />
-                    </span>
-                  </Collapsible.Trigger>
-                  <Collapsible.Content>
-                    {sessionItems(group.sessions)}
-                  </Collapsible.Content>
-                </Collapsible>
-              </Show>
+                <span>{group.label}</span>
+                <span class="flex items-center gap-1">
+                  <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
+                  <Icon
+                    name="chevron-down"
+                    size="small"
+                    class="shrink-0 text-icon-weaker transition-transform duration-150"
+                    classList={{ "rotate-180": !isGroupOpen(group) }}
+                  />
+                </span>
+              </div>
+              {isGroupOpen(group) && sessionItems(group.sessions)}
             </div>
           )}
         </For>
@@ -542,7 +508,7 @@ export const SortableWorkspace = (props: {
         "opacity-50": busy(),
       }}
     >
-      <Collapsible variant="ghost" open={open()} class="shrink-0" onOpenChange={openWrapper}>
+      <div class="shrink-0">
         <div class="py-1">
           <div
             class="group/workspace relative"
@@ -553,15 +519,31 @@ export const SortableWorkspace = (props: {
               <Show
                 when={workspaceEditActive()}
                 fallback={
-                  <Collapsible.Trigger
-                    class={`flex items-center justify-between w-full pl-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover transition-[padding] duration-200 ${
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={open()}
+                    onClick={() => openWrapper(!open())}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        openWrapper(!open())
+                      }
+                    }}
+                    class={`flex items-center justify-between w-full pl-2 py-1.5 rounded-md hover:bg-surface-raised-base-hover transition-[padding] duration-200 cursor-pointer ${
                       menu.open ? "pr-16" : "pr-2"
                     } group-hover/workspace:pr-16 group-focus-within/workspace:pr-16`}
                     data-action="workspace-toggle"
                     data-workspace={base64Encode(props.directory)}
                   >
                     {header()}
-                  </Collapsible.Trigger>
+                    <Icon
+                      name="chevron-down"
+                      size="small"
+                      class="shrink-0 text-icon-weaker transition-transform duration-150"
+                      classList={{ "rotate-180": !open() }}
+                    />
+                  </div>
                 }
               >
                 <div
@@ -594,7 +576,7 @@ export const SortableWorkspace = (props: {
           </div>
         </div>
 
-        <Collapsible.Content>
+        <Show when={open()}>
           <WorkspaceSessionList
             slug={slug}
             mobile={props.mobile}
@@ -602,44 +584,8 @@ export const SortableWorkspace = (props: {
             loading={loading}
             sessions={sessions}
           />
-        </Collapsible.Content>
-      </Collapsible>
-    </div>
-  )
-}
-
-export const LocalWorkspace = (props: {
-  ctx: WorkspaceSidebarContext
-  project: LocalProject
-  sortNow: Accessor<number>
-  mobile?: boolean
-}): JSX.Element => {
-  const serverSync = useServerSync()
-  const queryOptions = useQueryOptions()
-  const workspace = createMemo(() => {
-    const [store] = serverSync().child(props.project.worktree)
-    return { store }
-  })
-  const slug = createMemo(() => base64Encode(props.project.worktree))
-  const sessions = createMemo(() =>
-    sortedRootSessions(workspace().store, props.sortNow(), pinnedSessionIds(props.project.worktree)),
-  )
-  const count = createMemo(() => sessions()?.length ?? 0)
-  const fetching = useIsFetching(() => queryOptions().sessions(pathKey(props.project.worktree)))
-  const loading = () => fetching() > 0 && count() === 0
-
-  return (
-    <div
-      ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
-      class="size-full flex flex-col py-1 overflow-y-auto no-scrollbar [overflow-anchor:none]"
-    >
-      <WorkspaceSessionList
-        slug={slug}
-        mobile={props.mobile}
-        ctx={props.ctx}
-        loading={loading}
-        sessions={sessions}
-      />
+        </Show>
+      </div>
     </div>
   )
 }

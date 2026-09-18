@@ -736,6 +736,7 @@ export const dict = {
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
   "home.sessions.group.sevenDaysAgo": "七天前",
+  "home.sessions.group.pinned": "置顶",
   "home.sessions.group.expandAll": "全部展开",
   "home.sessions.group.collapseAll": "全部折叠",
   "home.providerTip": "连接 75 个以上的提供商，使用 Claude、GPT、Gemini 等其他模型",
@@ -956,6 +957,9 @@ export const dict = {
   "sidebar.gettingStarted.line2": "连接任意提供商即可使用更多模型，如 Claude、GPT、Gemini 等。",
   "sidebar.project.archivedSessions": "已归档会话",
   "sidebar.project.skills": "Skills",
+  "sidebar.projects": "项目",
+  "sidebar.chat": "聊天",
+  "sidebar.chat.new": "新建聊天",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 

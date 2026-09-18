@@ -6,14 +6,17 @@ export interface CollapsibleProps extends ParentProps<CollapsibleRootProps> {
   class?: string
   classList?: ComponentProps<"div">["classList"]
   variant?: "normal" | "ghost"
+  /** 保持内容挂载，配合 CSS max-height 过渡做展开/折叠动画。 */
+  forceMount?: boolean
 }
 
 function CollapsibleRoot(props: CollapsibleProps) {
-  const [local, others] = splitProps(props, ["class", "classList", "variant"])
+  const [local, others] = splitProps(props, ["class", "classList", "variant", "forceMount"])
   return (
     <Kobalte
       data-component="collapsible"
       data-variant={local.variant || "normal"}
+      forceMount={local.forceMount}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

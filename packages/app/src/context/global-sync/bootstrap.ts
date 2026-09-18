@@ -236,8 +236,9 @@ export async function bootstrapDirectory(input: {
   const rev = (providerRev.get(revKey) ?? 0) + 1
   providerRev.set(revKey, rev)
   ;(async () => {
+    // 会话加载优先单独跑，别被 VCS/provider 等慢任务连累（非项目目录如桌面会卡在 vcs.get 超时）。
+    const sessionsPromise = Promise.resolve(input.loadSessions(input.directory))
     const slow = [
-      () => Promise.resolve(input.loadSessions(input.directory)),
       () =>
         input.queryClient
           .ensureQueryData(loadAgentsQuery(input.scope, input.directory, input.sdk))
@@ -350,7 +351,6 @@ export async function bootstrapDirectory(input: {
             )
           }),
         ),
-      () => Promise.resolve(input.loadSessions(input.directory)),
       input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
       input.mcp && (() => input.queryClient.fetchQuery(loadMcpResourcesQuery(input.scope, input.directory, input.sdk))),
       () =>
@@ -366,6 +366,8 @@ export async function bootstrapDirectory(input: {
 
     await waitForPaint()
     const slowErrs = errors(await runAll(slow))
+    // 会话加载结果单独收口，慢任务出错不影响会话列表渲染。
+    await sessionsPromise.catch(() => undefined)
     if (slowErrs.length > 0) {
       console.error("Failed to finish bootstrap instance", slowErrs[0])
       const project = getFilename(input.directory)

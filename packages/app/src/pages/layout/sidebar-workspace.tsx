@@ -416,7 +416,7 @@ export const WorkspaceSessionList = (props: {
                       setGroupExpanded(group, !isGroupOpen(group))
                     }
                   }}
-                  class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
+                  class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak/50 hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
                 >
                   <span>{group.label}</span>
                   <span class="flex items-center gap-1">

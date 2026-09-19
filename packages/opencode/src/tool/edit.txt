@@ -1,5 +1,6 @@
 Replace oldString with newString in a file, preserving other edits. Read the file first; omit read's line-number prefixes from replacement text.
 
 - oldString must match safely and uniquely. Line-ending/indentation differences are tolerated; include surrounding context to disambiguate, or use replaceAll for every occurrence.
+- After any successful edit to a file, earlier read output of that file is stale. Re-read before further edits to the same file; never patch blind against a stale view.
 - On matching failure, re-read before retrying; do not bypass safeguards with shell writes.
 - Prefer existing files; create files only when required. Add emojis only if requested.

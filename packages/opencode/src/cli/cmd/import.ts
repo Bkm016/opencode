@@ -1,20 +1,12 @@
 import type { Session as SDKSession, Message, Part } from "@opencode-ai/sdk/v2"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { Session } from "@/session/session"
-import { MessageV2 } from "../../session/message-v2"
+import { SessionTransfer } from "@/session/transfer"
 import { CliError, effectCmd } from "../effect-cmd"
-import { Database } from "@opencode-ai/core/database/database"
-import { SessionTable, MessageTable, PartTable } from "@opencode-ai/core/session/sql"
 import { InstanceRef } from "@/effect/instance-ref"
 import { ShareNext } from "@/share/share-next"
 import { EOL } from "os"
-import path from "path"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Effect, Schema } from "effect"
 import type { InstanceContext } from "@/project/instance-context"
-
-const decodeMessageInfo = Schema.decodeUnknownSync(SessionV1.Info)
-const decodePart = Schema.decodeUnknownSync(SessionV1.Part)
 
 /** Discriminated union returned by the ShareNext API (GET /api/shares/:id/data) */
 export type ShareData =
@@ -110,9 +102,8 @@ export const ImportCommand = effectCmd({
 const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: InstanceContext) {
   const share = yield* ShareNext.Service
   const fs = yield* FSUtil.Service
-  const { db } = yield* Database.Service
 
-  let exportData: ExportData | undefined
+  let bundle: SessionTransfer.Bundle | undefined
 
   const isUrl = file.startsWith("http://") || file.startsWith("https://")
 
@@ -163,68 +154,33 @@ const runImport = Effect.fn("Cli.import.body")(function* (file: string, ctx: Ins
       return
     }
 
-    exportData = transformed
+    // 分享链接只有 transcript，没有 todos/goals，补空后走同一导入链路。
+    bundle = {
+      info: transformed.info as unknown as SessionTransfer.Bundle["info"],
+      messages: transformed.messages as unknown as SessionTransfer.Bundle["messages"],
+      todos: [],
+      goal: null,
+      lessons: [],
+    }
   } else {
-    exportData = (yield* fs
+    const raw = yield* fs
       .readJson(file)
-      .pipe(Effect.mapError((error) => new CliError({ message: formatImportFileError(file, error) })))) as ExportData
+      .pipe(Effect.mapError((error) => new CliError({ message: formatImportFileError(file, error) })))
+    const decoded = yield* Schema.decodeUnknownEffect(SessionTransfer.Bundle)(raw).pipe(
+      Effect.mapError(() => new CliError({ message: `Invalid session bundle in ${file}` })),
+    )
+    bundle = decoded
   }
 
-  if (!exportData) {
+  if (!bundle) {
     process.stdout.write(`Failed to read session data`)
     process.stdout.write(EOL)
     return
   }
 
-  const info = Schema.decodeUnknownSync(Session.Info)({
-    ...exportData.info,
-    projectID: ctx.project.id,
-    directory: ctx.directory,
-    path: path.relative(path.resolve(ctx.worktree), ctx.directory).replaceAll("\\", "/"),
-  }) as Session.Info
-  const row = Session.toRow(info)
-  yield* db
-    .insert(SessionTable)
-    .values(row)
-    .onConflictDoUpdate({
-      target: SessionTable.id,
-      set: { project_id: row.project_id, directory: row.directory, path: row.path },
-    })
-    .run()
-    .pipe(Effect.orDie)
+  // 完整 Bundle（含 todos/goals）走统一导入，project/directory 重映射到当前实例。
+  const info = yield* SessionTransfer.importBundle(bundle, ctx)
 
-  for (const msg of exportData.messages) {
-    const msgInfo = decodeMessageInfo(msg.info) as SessionV1.Info
-    const { id, sessionID: _, ...msgData } = msgInfo
-    yield* db
-      .insert(MessageTable)
-      .values({
-        id,
-        session_id: row.id,
-        time_created: msgInfo.time?.created ?? Date.now(),
-        data: msgData as never,
-      })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
-
-    for (const part of msg.parts) {
-      const partInfo = decodePart(part) as SessionV1.Part
-      const { id: partId, sessionID: _s, messageID, ...partData } = partInfo
-      yield* db
-        .insert(PartTable)
-        .values({
-          id: partId,
-          message_id: messageID,
-          session_id: row.id,
-          data: partData,
-        })
-        .onConflictDoNothing()
-        .run()
-        .pipe(Effect.orDie)
-    }
-  }
-
-  process.stdout.write(`Imported session: ${exportData.info.id}`)
+  process.stdout.write(`Imported session: ${info.id}`)
   process.stdout.write(EOL)
 })

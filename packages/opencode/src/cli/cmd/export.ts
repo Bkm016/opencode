@@ -1,4 +1,5 @@
 import { Session } from "@/session/session"
+import { SessionTransfer } from "@/session/transfer"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { MessageV2 } from "../../session/message-v2"
 import { SessionID } from "../../session/schema"
@@ -24,7 +25,7 @@ function span(id: string, value: { value: string; start: number; end: number }) 
   }
 }
 
-function diff(kind: string, diffs: { file?: string; patch?: string }[] | undefined) {
+function diff(kind: string, diffs: readonly { file?: string; patch?: string }[] | undefined) {
   return diffs?.map((item, i) => ({
     ...item,
     file: item.file === undefined ? undefined : redact(`${kind}-file`, String(i), item.file),
@@ -160,8 +161,9 @@ function part(part: SessionV1.Part): SessionV1.Part {
 
 const partFn = part
 
-function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] }) {
+function sanitize(data: SessionTransfer.Bundle) {
   return {
+    ...data,
     info: {
       ...data.info,
       title: redact("session-title", data.info.id, data.info.title),
@@ -214,7 +216,32 @@ function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] })
                 root: redact("root", msg.info.id, msg.info.path.root),
               },
             },
-      parts: msg.parts.map(partFn),
+      parts: (msg.parts as SessionV1.Part[]).map(partFn),
+    })),
+    todos: data.todos?.map((todo, i) => ({
+      ...todo,
+      content: redact("todo-content", String(i), todo.content),
+    })),
+    goal: !data.goal
+      ? data.goal
+      : {
+          ...data.goal,
+          outcome: redact("goal-outcome", data.goal.goalID, data.goal.outcome),
+          verification: data.goal.verification.map((item, i) =>
+            redact("goal-verification", `${data.goal!.goalID}-${i}`, item),
+          ),
+          constraints: data.goal.constraints.map((item, i) =>
+            redact("goal-constraints", `${data.goal!.goalID}-${i}`, item),
+          ),
+          boundaries: data.goal.boundaries.map((item, i) =>
+            redact("goal-boundaries", `${data.goal!.goalID}-${i}`, item),
+          ),
+        },
+    lessons: data.lessons?.map((lesson) => ({
+      ...lesson,
+      attempt: redact("lesson-attempt", lesson.id, lesson.attempt),
+      observed: redact("lesson-observed", lesson.id, lesson.observed),
+      implication: redact("lesson-implication", lesson.id, lesson.implication),
     })),
   }
 }
@@ -281,10 +308,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
   // Match legacy try/catch — catches both typed failures and defects
   // (Session.Service.get throws NotFoundError as a defect, not a typed E).
   return yield* Effect.gen(function* () {
-    const sessionInfo = yield* svc.get(sessionID!)
-    const messages = yield* svc.messages({ sessionID: sessionInfo.id })
-
-    const exportData = { info: sessionInfo, messages }
+    const exportData = yield* SessionTransfer.exportBundle(sessionID!)
 
     process.stdout.write(JSON.stringify(args.sanitize ? sanitize(exportData) : exportData, null, 2))
     process.stdout.write(EOL)

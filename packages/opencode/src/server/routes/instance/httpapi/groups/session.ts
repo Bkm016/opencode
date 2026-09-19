@@ -8,6 +8,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
+import { SessionTransfer } from "@/session/transfer"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
@@ -89,6 +90,8 @@ export const SessionPaths = {
   remove: `${root}/:sessionID`,
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
+  exportBundle: `${root}/:sessionID/export`,
+  importBundle: `${root}/import`,
   abort: `${root}/:sessionID/abort`,
   simulateOverflow: `${root}/:sessionID/simulate-overflow`,
   retry: `${root}/:sessionID/retry`,
@@ -254,6 +257,32 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.fork",
             summary: "Fork session",
             description: "Create a new session by forking an existing session at a specific message point.",
+          }),
+        ),
+        HttpApiEndpoint.get("exportBundle", SessionPaths.exportBundle, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(SessionTransfer.Bundle, "Full session bundle for device migration"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.export",
+            summary: "Export session bundle",
+            description:
+              "Export a full-fidelity session bundle (messages, todos, goal) for device migration. Import it on another device to continue seamlessly.",
+          }),
+        ),
+        HttpApiEndpoint.post("importBundle", SessionPaths.importBundle, {
+          query: WorkspaceRoutingQuery,
+          payload: SessionTransfer.Bundle,
+          success: described(Session.Info, "Imported session"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.import",
+            summary: "Import session bundle",
+            description:
+              "Import a session bundle exported from another device. Remaps project and directory to the current instance.",
           }),
         ),
         HttpApiEndpoint.post("abort", SessionPaths.abort, {

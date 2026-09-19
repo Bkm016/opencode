@@ -14,6 +14,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionOwnership } from "./session-ownership"
+import { exportTransfer, importTransfer } from "./timeline/session-export"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -341,6 +342,48 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
+  // 换机迁移导出：完整会话包下载到本地
+  const exportTransferBundle = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    const title = info()?.title ?? sessionID
+    void exportTransfer(sdk(), sessionID, title)
+      .then(() => {
+        showToast({ variant: "success", title: language.t("session.export.toast.success.title") })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          variant: "error",
+          title: language.t("session.export.toast.failed.title"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
+
+  // 换机迁移导入：选择 transfer.json 恢复到当前设备并跳转
+  const importTransferBundle = () => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".json,application/json"
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) return
+      void importTransfer(sdk(), file)
+        .then((id) => {
+          showToast({ variant: "success", title: language.t("session.import.toast.success.title") })
+          navigate(`/${params.dir}/session/${id}`)
+        })
+        .catch((err: unknown) => {
+          showToast({
+            variant: "error",
+            title: language.t("session.import.toast.failed.title"),
+            description: err instanceof Error ? err.message : String(err),
+          })
+        })
+    }
+    input.click()
+  }
+
   const shareCmds = () => {
     if (sync().data.config.share === "disabled") return []
     return [
@@ -441,6 +484,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "children",
       disabled: !params.id,
       onSelect: openChildSessions,
+    }),
+    sessionCommand({
+      id: "session.exportTransfer",
+      title: language.t("command.session.exportTransfer"),
+      description: language.t("command.session.exportTransfer.description"),
+      disabled: !params.id,
+      onSelect: exportTransferBundle,
+    }),
+    sessionCommand({
+      id: "session.importTransfer",
+      title: language.t("command.session.importTransfer"),
+      description: language.t("command.session.importTransfer.description"),
+      onSelect: importTransferBundle,
     }),
   ]
 

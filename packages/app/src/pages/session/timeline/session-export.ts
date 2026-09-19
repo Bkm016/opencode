@@ -203,3 +203,25 @@ export async function exportLastResponse(sdk: SDK, sessionID: string): Promise<v
   const model = snap.model.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
   download(`${ts}_${snap.route}_${model}_response.json`, JSON.stringify(snap.body, null, 2), "application/json")
 }
+
+// 换机迁移导出：完整会话包（messages/todos/goal），可在另一设备导入后无缝继续
+export async function exportTransfer(sdk: SDK, sessionID: string, title: string): Promise<void> {
+  const session = sdk.client.session as unknown as {
+    export: (input: { sessionID: string }) => Promise<{ data?: unknown; error?: unknown }>
+  }
+  const res = await session.export({ sessionID })
+  if (res.error || !res.data) throw new Error("Failed to export session bundle")
+  download(`${safeFilename(title)}-transfer.json`, JSON.stringify(res.data, null, 2), "application/json")
+}
+
+// 换机迁移导入：读取 transfer.json 并恢复到当前设备，返回新会话 id
+export async function importTransfer(sdk: SDK, file: File): Promise<string> {
+  const text = await file.text()
+  const bundle = JSON.parse(text) as unknown
+  const session = sdk.client.session as unknown as {
+    import: (input: { sessionTransferBundle?: unknown }) => Promise<{ data?: { id: string }; error?: unknown }>
+  }
+  const res = await session.import({ sessionTransferBundle: bundle })
+  if (res.error || !res.data) throw new Error("Failed to import session bundle")
+  return res.data.id
+}

@@ -3,6 +3,8 @@ import { For, Show, createMemo, type Accessor, type JSX } from "solid-js"
 import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useServerSDK } from "@/context/server-sdk"
+import { showToast } from "@/utils/toast"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -85,6 +87,7 @@ export const TiledProjectSection = (props: {
   const navigate = useNavigate()
   const language = useLanguage()
   const dialog = useDialog()
+  const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
   const sortable = createSortable(props.project.worktree)
@@ -98,15 +101,16 @@ export const TiledProjectSection = (props: {
   })
   const workspaces = createMemo(() => props.projectCtx.workspaceIds(props.project))
   const localChild = createMemo(() => {
-    const [store] = serverSync().child(worktree(), { bootstrap: false })
+    const [store] = serverSync().child(worktree(), { bootstrap: true })
     return { store }
   })
   const localSessions = createMemo(() =>
     sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
   )
   const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
-  // 首次加载（child store 还在 loading）且会话为空时显示骨架屏；数据加载完且为空时才显示空态。
-  const localLoading = () => (localSessions()?.length ?? 0) === 0 && (localChild().store.status === "loading" || localFetching() > 0)
+  // 首次加载（会话列表查询进行中或尚未发起）且会话为空时显示骨架屏；查询完成且为空时才显示空态。
+  // 首次加载（child store 还在 loading/partial）且会话为空时显示骨架屏；加载完成（complete）且为空时才显示空态。
+  const localLoading = () => (localSessions()?.length ?? 0) === 0 && localChild().store.status !== "complete"
 
   const openSkills = () => {
     const directory = worktree()
@@ -128,6 +132,37 @@ export const TiledProjectSection = (props: {
     void import("@/components/dialog-archived-sessions").then((x) => {
       dialog.show(() => <x.DialogArchivedSessions directory={directory} project={props.project} />)
     })
+  }
+  // 换机迁移导入：选 transfer.json 恢复到本项目目录，成功后直接打开新会话。
+  const importTransferBundle = () => {
+    const directory = worktree()
+    if (!directory) return
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".json,application/json"
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) return
+      void (async () => {
+        try {
+          const bundle = (await file.text().then((text) => JSON.parse(text))) as unknown
+          const res = await serverSDK().client.session.import({
+            sessionTransferBundle: bundle as never,
+            directory,
+          })
+          if (res.error || !res.data) throw new Error("Failed to import session bundle")
+          showToast({ variant: "success", title: language.t("session.import.toast.success.title") })
+          navigate(`/${slug()}/session/${res.data.id}`)
+        } catch (err) {
+          showToast({
+            variant: "error",
+            title: language.t("session.import.toast.failed.title"),
+            description: err instanceof Error ? err.message : String(err),
+          })
+        }
+      })()
+    }
+    input.click()
   }
 
   return (
@@ -254,6 +289,13 @@ export const TiledProjectSection = (props: {
                     onSelect={openArchived}
                   >
                     <DropdownMenu.ItemLabel>{language.t("sidebar.project.archivedSessions")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    data-action="project-import-transfer"
+                    data-project={slug()}
+                    onSelect={importTransferBundle}
+                  >
+                    <DropdownMenu.ItemLabel>{language.t("sidebar.project.importTransfer")}</DropdownMenu.ItemLabel>
                   </DropdownMenu.Item>
                   <DropdownMenu.Separator />
                   <DropdownMenu.Item

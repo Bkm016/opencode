@@ -8,6 +8,7 @@ import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
+import { SessionTransfer } from "@/session/transfer"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
@@ -240,6 +241,20 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         Effect.mapError(() => new HttpApiError.BadRequest({})),
       )
       return yield* fork({ params: ctx.params, payload })
+    })
+
+    // 换机迁移：导出完整会话包，导入时重映射到当前实例目录。
+    const exportBundle = Effect.fn("SessionHttpApi.exportBundle")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      return yield* SessionError.mapStorageNotFound(SessionTransfer.exportBundle(ctx.params.sessionID))
+    })
+
+    const importBundle = Effect.fn("SessionHttpApi.importBundle")(function* (ctx: {
+      payload: typeof SessionTransfer.Bundle.Type
+    }) {
+      const instance = yield* InstanceState.context
+      return yield* SessionTransfer.importBundle(ctx.payload, instance)
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -539,6 +554,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("remove", remove)
       .handle("update", update)
       .handleRaw("fork", forkRaw)
+      .handle("exportBundle", exportBundle)
+      .handle("importBundle", importBundle)
       .handle("abort", abort)
       .handle("simulateOverflow", simulateOverflow)
       .handle("retry", retry)

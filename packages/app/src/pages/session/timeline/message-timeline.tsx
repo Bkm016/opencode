@@ -61,7 +61,7 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionRunScripts } from "@/components/session-run-scripts"
-import { exportFull, exportLastRequest, exportLastResponse, exportSummary } from "./session-export"
+import { exportFull, exportLastRequest, exportLastResponse, exportSummary, exportTransfer } from "./session-export"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -788,8 +788,8 @@ export function MessageTimeline(props: {
     props.setScrollRef(undefined)
   })
 
-  // 导出会话:summary/full 导出消息;request/response 导出最近一次 provider wire body
-  const runExport = async (mode: "summary" | "full" | "request" | "response") => {
+  // 导出会话:summary/full 导出消息;request/response 导出最近一次 provider wire body;transfer 导出换机迁移包
+  const runExport = async (mode: "summary" | "full" | "request" | "response" | "transfer") => {
     const id = sessionID()
     const t = titleValue()
     if (!id || exporting()) return
@@ -801,6 +801,7 @@ export function MessageTimeline(props: {
       if (mode === "summary") await exportSummary(sdk, id, name)
       else if (mode === "full") await exportFull(sdk, id, name)
       else if (mode === "request") await exportLastRequest(sdk, id)
+      else if (mode === "transfer") await exportTransfer(sdk, id, name)
       else await exportLastResponse(sdk, id)
       showToast({
         variant: "success",
@@ -1833,6 +1834,14 @@ export function MessageTimeline(props: {
                                 >
                                   <DropdownMenu.ItemLabel>
                                     {language.t("session.export.action.response")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  onSelect={() => void runExport("transfer")}
+                                  disabled={exporting()}
+                                >
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.export.action.transfer")}
                                   </DropdownMenu.ItemLabel>
                                 </DropdownMenu.Item>
                               </DropdownMenu.SubContent>

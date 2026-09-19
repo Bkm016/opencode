@@ -1960,10 +1960,12 @@ export type ImageAttachmentConfig = {
   max_width?: number
   max_height?: number
   max_base64_bytes?: number
+  compress_over_base64_bytes?: number
 }
 
 export type AttachmentConfig = {
   image?: ImageAttachmentConfig
+  max_total_base64_bytes?: number
 }
 
 export type Config = {
@@ -2743,6 +2745,18 @@ export type ProviderAuthError1 = {
     message?: string
     kind?: string
   }
+}
+
+export type SessionTransferBundle = {
+  version?: 1
+  info: Session
+  messages: Array<{
+    info: Message
+    parts: Array<Part>
+  }>
+  todos?: Array<Todo>
+  goal?: SessionGoal
+  lessons?: Array<SessionGoalLesson>
 }
 
 export type TextPartInput = {
@@ -10501,6 +10515,72 @@ export type SessionForkResponses = {
 }
 
 export type SessionForkResponse = SessionForkResponses[keyof SessionForkResponses]
+
+export type SessionExportData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/export"
+}
+
+export type SessionExportErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionExportError = SessionExportErrors[keyof SessionExportErrors]
+
+export type SessionExportResponses = {
+  /**
+   * Full session bundle for device migration
+   */
+  200: SessionTransferBundle
+}
+
+export type SessionExportResponse = SessionExportResponses[keyof SessionExportResponses]
+
+export type SessionImportData = {
+  body?: SessionTransferBundle
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/import"
+}
+
+export type SessionImportErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionImportError = SessionImportErrors[keyof SessionImportErrors]
+
+export type SessionImportResponses = {
+  /**
+   * Imported session
+   */
+  200: Session
+}
+
+export type SessionImportResponse = SessionImportResponses[keyof SessionImportResponses]
 
 export type SessionAbortData = {
   body?: never

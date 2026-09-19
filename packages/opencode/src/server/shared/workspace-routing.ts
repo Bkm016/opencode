@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect"
 import { SessionID } from "@/session/schema"
 
 type Rule = { method?: string; path: string; exact?: boolean; action: "local" | "forward" }
@@ -18,14 +19,16 @@ export function isLocalWorkspaceRoute(method: string, path: string) {
 }
 
 export function getWorkspaceRouteSessionID(url: URL) {
-  if (url.pathname === "/session/status") return null
-
   const id =
     url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
     url.pathname.match(/^\/experimental\/session\/([^/]+)\/background$/)?.[1]
   if (!id) return null
 
-  return SessionID.make(id)
+  // 静态子路由（如 /session/import、/session/status）的段不是会话 ID，解码失败返回 null，
+  // 调用方按无会话处理，避免 brand 校验抛 defect 变成 500。
+  const decoded = Schema.decodeUnknownOption(SessionID)(id)
+  if (Option.isNone(decoded)) return null
+  return decoded.value
 }
 
 export function workspaceProxyURL(target: string | URL, requestURL: URL) {

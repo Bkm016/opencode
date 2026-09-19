@@ -4,9 +4,8 @@ import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Button } from "@opencode-ai/ui/button"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -106,7 +105,8 @@ export const TiledProjectSection = (props: {
     sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
   )
   const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
-  const localLoading = () => localFetching() > 0 && (localSessions()?.length ?? 0) === 0
+  // 首次加载（child store 还在 loading）且会话为空时显示骨架屏；数据加载完且为空时才显示空态。
+  const localLoading = () => (localSessions()?.length ?? 0) === 0 && (localChild().store.status === "loading" || localFetching() > 0)
 
   const openSkills = () => {
     const directory = worktree()
@@ -269,67 +269,69 @@ export const TiledProjectSection = (props: {
           </div>
         </div>
 
-        <Show when={props.expanded}>
-          <div class="min-w-0 pt-1 pb-1 pl-4 pr-4">
-          <Show
-            when={workspacesEnabled()}
-            fallback={
-              <WorkspaceSessionList
-                slug={slug}
-                mobile={props.mobile}
-                ctx={props.workspaceCtx}
-                loading={localLoading}
-                sessions={localSessions}
-              />
-            }
-          >
-            <div
-              class="flex min-w-0 flex-col gap-1"
-              onPointerDown={(event) => event.stopPropagation()}
+        <div class="sidebar-reveal" data-open={props.expanded ? "" : undefined}>
+          <div class="sidebar-reveal-inner">
+            <div class="min-w-0 pt-1 pb-1 pl-4 pr-4">
+            <Show
+              when={workspacesEnabled()}
+              fallback={
+                <WorkspaceSessionList
+                  slug={slug}
+                  mobile={props.mobile}
+                  ctx={props.workspaceCtx}
+                  loading={localLoading}
+                  sessions={localSessions}
+                />
+              }
             >
-              <Button
-                size="large"
-                icon="plus-small"
-                class="w-full"
-                onClick={() => props.workspaceDrag.onCreateWorkspace(props.project)}
+              <div
+                class="flex min-w-0 flex-col gap-1"
+                onPointerDown={(event) => event.stopPropagation()}
               >
-                {language.t("workspace.new")}
-              </Button>
-              <DragDropProvider
-                onDragStart={props.workspaceDrag.onDragStart}
-                onDragEnd={props.workspaceDrag.onDragEnd}
-                onDragOver={props.workspaceDrag.onDragOver}
-                collisionDetector={closestCenter}
-              >
-                <DragDropSensors />
-                <ConstrainDragXAxis />
-                <SortableProvider ids={workspaces()}>
-                  <div class="flex flex-col gap-2">
-                    <For each={workspaces()}>
-                      {(directory) => (
-                        <SortableWorkspace
-                          ctx={props.workspaceCtx}
-                          directory={directory}
-                          project={props.project}
-                          sortNow={props.sortNow}
-                          mobile={props.mobile}
-                        />
-                      )}
-                    </For>
-                  </div>
-                </SortableProvider>
-                <DragOverlay>
-                  <WorkspaceDragOverlay
-                    sidebarProject={() => props.project}
-                    activeWorkspace={props.workspaceDrag.activeWorkspace}
-                    workspaceLabel={props.workspaceDrag.label}
-                  />
-                </DragOverlay>
-              </DragDropProvider>
+                <Button
+                  size="large"
+                  icon="plus-small"
+                  class="w-full"
+                  onClick={() => props.workspaceDrag.onCreateWorkspace(props.project)}
+                >
+                  {language.t("workspace.new")}
+                </Button>
+                <DragDropProvider
+                  onDragStart={props.workspaceDrag.onDragStart}
+                  onDragEnd={props.workspaceDrag.onDragEnd}
+                  onDragOver={props.workspaceDrag.onDragOver}
+                  collisionDetector={closestCenter}
+                >
+                  <DragDropSensors />
+                  <ConstrainDragXAxis />
+                  <SortableProvider ids={workspaces()}>
+                    <div class="flex flex-col gap-2">
+                      <For each={workspaces()}>
+                        {(directory) => (
+                          <SortableWorkspace
+                            ctx={props.workspaceCtx}
+                            directory={directory}
+                            project={props.project}
+                            sortNow={props.sortNow}
+                            mobile={props.mobile}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </SortableProvider>
+                  <DragOverlay>
+                    <WorkspaceDragOverlay
+                      sidebarProject={() => props.project}
+                      activeWorkspace={props.workspaceDrag.activeWorkspace}
+                      workspaceLabel={props.workspaceDrag.label}
+                    />
+                  </DragOverlay>
+                </DragDropProvider>
+              </div>
+            </Show>
             </div>
-          </Show>
           </div>
-        </Show>
+        </div>
       </section>
     </div>
   )

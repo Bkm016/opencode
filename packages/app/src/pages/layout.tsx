@@ -20,7 +20,6 @@ import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import { useIsFetching } from "@tanstack/solid-query"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -517,47 +516,61 @@ export default function LegacyLayout(props: ParentProps) {
   const toggleChatExpanded = () => setStore("chatExpanded", !store.chatExpanded)
 
   // 聊天区独立组件：跟项目分区同款的 折叠+会话列表，但不进项目拖拽排序容器。
-  const TiledChatSection = (props: { mobile?: boolean }) => (
-    <section data-component="sidebar-chat" class="min-w-0 rounded-lg">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={chatExpanded()}
-        title={chatDirectory()}
-        onClick={() => toggleChatExpanded()}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault()
-            toggleChatExpanded()
-          }
-        }}
-        class="group/chat relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
-      >
-        <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
-        <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{language.t("sidebar.chat")}</span>
-        <div
-          class="flex shrink-0 items-center"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <IconButton
-            icon="plus"
-            variant="ghost"
-            size="small"
-            class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto"
-            data-action="chat-new-session"
-            aria-label={language.t("sidebar.chat.new")}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              newChat()
-            }}
-          />
-        </div>
-      </div>
+  // 空聊天时不展开——点击头部直接新建会话，不渲染空列表。
+  const TiledChatSection = (props: { mobile?: boolean }) => {
+    const hasSessions = createMemo(() => chatSessions().length > 0)
+    const showList = createMemo(() => hasSessions() && chatExpanded())
 
-      <Collapsible variant="ghost" data-scope="sidebar-chat" open={chatExpanded()} onOpenChange={toggleChatExpanded}>
-        <Collapsible.Content>
+    const handleClick = () => {
+      if (!hasSessions()) {
+        newChat()
+        return
+      }
+      toggleChatExpanded()
+    }
+
+    return (
+      <section data-component="sidebar-chat" class="min-w-0 rounded-lg">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={hasSessions() ? chatExpanded() : undefined}
+          title={chatDirectory()}
+          onClick={handleClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              handleClick()
+            }
+          }}
+          class="group/chat relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
+        >
+          <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
+          <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{language.t("sidebar.chat")}</span>
+          <div
+            class="flex shrink-0 items-center"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <Show when={hasSessions()}>
+              <IconButton
+                icon="plus"
+                variant="ghost"
+                size="small"
+                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto"
+                data-action="chat-new-session"
+                aria-label={language.t("sidebar.chat.new")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  newChat()
+                }}
+              />
+            </Show>
+          </div>
+        </div>
+
+        <Show when={showList()}>
           <div class="min-w-0 pt-1 pb-1 pl-4 pr-1">
             <WorkspaceSessionList
               slug={() => chatSlug()}
@@ -565,12 +578,14 @@ export default function LegacyLayout(props: ParentProps) {
               ctx={workspaceSidebarCtx}
               loading={chatLoading}
               sessions={chatSessions}
+              flat
+              hideEmpty
             />
           </div>
-        </Collapsible.Content>
-      </Collapsible>
-    </section>
-  )
+        </Show>
+      </section>
+    )
+  }
 
   const newChat = () => {
     const directory = chatDirectory()

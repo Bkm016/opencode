@@ -250,6 +250,10 @@ export const WorkspaceSessionList = (props: {
   ctx: WorkspaceSidebarContext
   loading: Accessor<boolean>
   sessions: Accessor<Session[]>
+  /** 聊天区专用：不分组，直接平铺全部会话。 */
+  flat?: boolean
+  /** 聊天区专用：不显示空态 placeholder。 */
+  hideEmpty?: boolean
 }): JSX.Element => {
   const params = useParams()
   const language = useLanguage()
@@ -360,7 +364,7 @@ export const WorkspaceSessionList = (props: {
       <Show when={props.loading()}>
         <SessionSkeleton />
       </Show>
-      <Show when={!props.loading() && props.sessions().length === 0}>
+      <Show when={!props.hideEmpty && !props.loading() && props.sessions().length === 0}>
         <div
           data-component="sessions-empty"
           class="relative flex min-h-48 flex-1 items-center justify-center px-6 text-center"
@@ -398,37 +402,45 @@ export const WorkspaceSessionList = (props: {
         when={!props.mobile}
         fallback={sessionItems(props.sessions())}
       >
-        <For each={groups()}>
-          {(group) => (
-            <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={isGroupOpen(group)}
-                onClick={() => setGroupExpanded(group, !isGroupOpen(group))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    setGroupExpanded(group, !isGroupOpen(group))
-                  }
-                }}
-                class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
-              >
-                <span>{group.label}</span>
-                <span class="flex items-center gap-1">
-                  <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
-                  <Icon
-                    name="chevron-down"
-                    size="small"
-                    class="shrink-0 text-icon-weaker transition-transform duration-150"
-                    classList={{ "rotate-180": !isGroupOpen(group) }}
-                  />
-                </span>
+        <Show when={props.flat} fallback={
+          <For each={groups()}>
+            {(group) => (
+              <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isGroupOpen(group)}
+                  onClick={() => setGroupExpanded(group, !isGroupOpen(group))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      setGroupExpanded(group, !isGroupOpen(group))
+                    }
+                  }}
+                  class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
+                >
+                  <span>{group.label}</span>
+                  <span class="flex items-center gap-1">
+                    <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
+                    <Icon
+                      name="chevron-down"
+                      size="small"
+                      class="shrink-0 text-icon-weaker transition-transform duration-150"
+                      classList={{ "rotate-180": !isGroupOpen(group) }}
+                    />
+                  </span>
+                </div>
+                <div class="sidebar-reveal" data-open={isGroupOpen(group) ? "" : undefined}>
+                  <div class="sidebar-reveal-inner">
+                    {sessionItems(group.sessions)}
+                  </div>
+                </div>
               </div>
-              {isGroupOpen(group) && sessionItems(group.sessions)}
-            </div>
-          )}
-        </For>
+            )}
+          </For>
+        }>
+          {sessionItems(props.sessions())}
+        </Show>
       </Show>
     </nav>
   )

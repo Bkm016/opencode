@@ -3,6 +3,22 @@
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 @import "tw-animate-css";
 
+/* 侧栏分组展开/折叠：grid 行高过渡，不截断内容（区别于 max-height 固定值）。 */
+.sidebar-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.18s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.sidebar-reveal[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.sidebar-reveal-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");

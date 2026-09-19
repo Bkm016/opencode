@@ -4,7 +4,7 @@ import { QueryClient } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project, Session } from "@opencode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstrap"
-import type { State, VcsCache } from "./types"
+import type { State } from "./types"
 import { createServerSession } from "../server-session"
 import { ServerScope } from "@/utils/server-scope"
 
@@ -47,7 +47,6 @@ function directoryState() {
     mcp_resource: {},
     lsp_ready: true,
     lsp: [],
-    vcs: undefined,
     message: {},
     part: {},
     part_text_accum_delta: {},
@@ -83,7 +82,6 @@ describe("bootstrapDirectory", () => {
         app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
         config: { get: async () => ({ data: {} }) },
         session: { status: async () => ({ data: {} }) },
-        vcs: { get: async () => ({ data: undefined }) },
         command: {
           list: async () => {
             mcpReads.push("command")
@@ -103,7 +101,6 @@ describe("bootstrapDirectory", () => {
       } as unknown as OpencodeClient,
       store,
       setStore,
-      vcsCache: { setStore() {} } as unknown as VcsCache,
       loadSessions() {},
       translate: (key) => key,
       queryClient: new QueryClient(),
@@ -127,7 +124,6 @@ describe("bootstrapDirectory", () => {
         status: async () => ({ data: { ses_busy: { type: "busy" } } }),
         get: () => stalled.promise,
       },
-      vcs: { get: async () => ({ data: undefined }) },
       command: { list: async () => ({ data: [] }) },
       permission: { list: async () => ({ data: [] }) },
       question: { list: async () => ({ data: [] }) },
@@ -171,7 +167,6 @@ describe("bootstrapDirectory", () => {
       sdk: client,
       store,
       setStore,
-      vcsCache: { setStore() {} } as unknown as VcsCache,
       loadSessions() {},
       translate: (key) => key,
       queryClient: new QueryClient(),

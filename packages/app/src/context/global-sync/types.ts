@@ -15,7 +15,6 @@ import type {
   SessionStatus,
   SnapshotFileDiff,
   Todo,
-  VcsInfo,
 } from "@opencode-ai/sdk/v2/client"
 import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import type { Accessor } from "solid-js"
@@ -70,7 +69,6 @@ export type State = {
   }
   lsp_ready: boolean
   lsp: LspStatus[]
-  vcs: VcsInfo | undefined
   message: {
     [sessionID: string]: Message[]
   }
@@ -80,12 +78,6 @@ export type State = {
   part_text_accum_delta: {
     [partID: string]: string
   }
-}
-
-export type VcsCache = {
-  store: Store<{ value: VcsInfo | undefined }>
-  setStore: SetStoreFunction<{ value: VcsInfo | undefined }>
-  ready: Accessor<boolean>
 }
 
 export type MetaCache = {

@@ -20,7 +20,7 @@ import { pathKey } from "@/utils/path-key"
 export function createPromptInputController(input: {
   sessionKey: Accessor<string>
   sessionID: Accessor<string | undefined>
-  queryOptions: Pick<QueryOptionsApi, "agents" | "providers">
+  queryOptions: Pick<QueryOptionsApi, "providers">
   model?: ModelSelection
 }) {
   const layout = useLayout()
@@ -29,7 +29,6 @@ export function createPromptInputController(input: {
   const sync = useSync()
   const sdk = useSDK()
   const view = layout.view(input.sessionKey)
-  const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sdk().directory)))
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
   const providersQuery = createQuery(() => input.queryOptions.providers(pathKey(sdk().directory)))
 
@@ -38,7 +37,7 @@ export function createPromptInputController(input: {
       available: sync().data.agent,
       options: local.agent.list().map((agent) => agent.name),
       current: local.agent.current()?.name ?? "",
-      loading: agentsQuery.isLoading,
+      loading: sync().data.agent.length === 0,
       visible: local.agent.visible(),
       select: local.agent.set,
     },

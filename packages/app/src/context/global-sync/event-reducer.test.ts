@@ -76,7 +76,6 @@ const baseState = (input: Partial<State> = {}) =>
     question: {},
     mcp: {},
     lsp: [],
-    vcs: undefined,
     message: {},
     part: {},
     part_text_accum_delta: {},
@@ -506,11 +505,8 @@ describe("applyDirectoryEvent", () => {
     expect(store.question[sessionID]?.map((x) => x.id)).toEqual(["q_1", "q_3"])
   })
 
-  test("updates vcs branch in store and cache", () => {
-    const [store, setStore] = createStore(baseState({ vcs: { branch: "main", default_branch: "main" } }))
-    const [cacheStore, setCacheStore] = createStore({
-      value: { branch: "main", default_branch: "main" } as State["vcs"],
-    })
+  test("ignores vcs branch events", () => {
+    const [store, setStore] = createStore(baseState())
 
     applyDirectoryEvent({
       event: { type: "vcs.branch.updated", properties: { branch: "feature/test" } },
@@ -519,15 +515,7 @@ describe("applyDirectoryEvent", () => {
       push() {},
       directory: "/tmp",
       loadLsp() {},
-      vcsCache: {
-        store: cacheStore,
-        setStore: setCacheStore,
-        ready: () => true,
-      },
     })
-
-    expect(store.vcs).toEqual({ branch: "feature/test", default_branch: "main" })
-    expect(cacheStore.value).toEqual({ branch: "feature/test", default_branch: "main" })
   })
 
   test("routes disposal and lsp events to side-effect handlers", () => {

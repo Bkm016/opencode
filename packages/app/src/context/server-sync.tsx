@@ -17,7 +17,6 @@ import {
   bootstrapDirectory,
   bootstrapGlobal,
   clearProviderRev,
-  loadAgentsQuery,
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
@@ -89,7 +88,6 @@ function makeQueryOptionsApi(
       loadProvidersQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     path: (directory: PathKey | null) =>
       loadPathQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
-    agents: (directory: PathKey) => loadAgentsQuery(scope, directory, sdkFor(directory)),
     references: (directory: PathKey) => loadReferencesQuery(scope, directory, sdkFor(directory)),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, sdkFor(directory)),
     mcpResources: (directory: PathKey) => loadMcpResourcesQuery(scope, directory, sdkFor(directory)),
@@ -328,8 +326,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     children.pin(key)
     const promise = Promise.resolve().then(async () => {
       const child = children.ensureChild(directory)
-      const cache = children.vcsCache.get(key)
-      if (!cache) return
       const sdk = sdkFor(directory)
       await bootstrapDirectory({
         directory,
@@ -344,7 +340,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         sdk,
         store: child[0],
         setStore: child[1],
-        vcsCache: cache,
         loadSessions,
         translate: language.t,
         queryClient,
@@ -405,7 +400,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         if (children.active(directory)) queue.push(directory)
       },
       sessionContent: false,
-      vcsCache: children.vcsCache.get(key),
       loadLsp: () => {
         if (!children.active(key)) return
         void queryClient.fetchQuery(queryOptionsApi.lsp(key))

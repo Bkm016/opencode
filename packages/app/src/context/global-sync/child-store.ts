@@ -1,7 +1,6 @@
 import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
-import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
 import {
   DIR_IDLE_TTL_MS,
   MAX_DIR_STORES,
@@ -11,7 +10,6 @@ import {
   type MetaCache,
   type ProjectMeta,
   type State,
-  type VcsCache,
 } from "./types"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
 import { useQuery } from "@tanstack/solid-query"
@@ -36,7 +34,6 @@ export function createChildStoreManager(input: {
   }
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
-  const vcsCache = new Map<string, VcsCache>()
   const metaCache = new Map<string, MetaCache>()
   const iconCache = new Map<string, IconCache>()
   const lifecycle = new Map<string, DirState>()
@@ -114,7 +111,6 @@ export function createChildStoreManager(input: {
       return false
     }
 
-    vcsCache.delete(key)
     metaCache.delete(key)
     iconCache.delete(key)
     lifecycle.delete(key)
@@ -153,16 +149,6 @@ export function createChildStoreManager(input: {
     const key = directoryKey(directory)
     if (!key) console.error("No directory provided")
     if (!children[key]) {
-      const vcs = runWithOwner(input.owner, () =>
-        input.persist(
-          Persist.serverWorkspace(input.scope, directory, "vcs", ["vcs.v1"]),
-          createStore({ value: undefined as VcsInfo | undefined }),
-        ),
-      )
-      if (!vcs) throw new Error(input.translate("error.childStore.persistedCacheCreateFailed"))
-      const vcsStore = vcs[0]
-      vcsCache.set(key, { store: vcsStore, setStore: vcs[1], ready: vcs[3] })
-
       const meta = runWithOwner(input.owner, () =>
         input.persist(
           Persist.serverWorkspace(input.scope, directory, "project", ["project.v1"]),
@@ -261,7 +247,6 @@ export function createChildStoreManager(input: {
             get lsp() {
               return lspQuery.isLoading ? [] : (lspQuery.data ?? [])
             },
-            vcs: vcsStore.value,
             message: {},
             part: {},
             part_text_accum_delta: {},
@@ -278,12 +263,6 @@ export function createChildStoreManager(input: {
               run()
             })
           }
-
-          onPersistedInit(vcs[2], () => {
-            const cached = vcsStore.value
-            if (!cached?.branch) return
-            child[1]("vcs", (value) => value ?? cached)
-          })
 
           onPersistedInit(meta[2], () => {
             if (child[0].projectMeta !== initialMeta) return
@@ -398,7 +377,6 @@ export function createChildStoreManager(input: {
     disableMcp,
     disposeDirectory,
     runEviction,
-    vcsCache,
     metaCache,
     iconCache,
   }

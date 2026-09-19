@@ -11,7 +11,7 @@ import type {
   SnapshotFileDiff,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import type { State, VcsCache } from "./types"
+import type { State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 
@@ -112,7 +112,6 @@ export function applyDirectoryEvent(input: {
   directory: string
   loadLsp: () => void
   loadReferences?: () => void
-  vcsCache?: VcsCache
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   sessionContent?: boolean
 }) {
@@ -313,11 +312,6 @@ export function applyDirectoryEvent(input: {
       break
     }
     case "vcs.branch.updated": {
-      const props = event.properties as { branch?: string }
-      if (input.store.vcs?.branch === props.branch) break
-      const next = { ...input.store.vcs, branch: props.branch }
-      input.setStore("vcs", next)
-      if (input.vcsCache) input.vcsCache.setStore("value", next)
       break
     }
     case "permission.asked": {

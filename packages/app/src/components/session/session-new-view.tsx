@@ -37,8 +37,6 @@ export function NewSessionView(props: NewSessionViewProps) {
   const label = (value: string) => {
     if (value === MAIN_WORKTREE) {
       if (isWorktree()) return language.t("session.new.worktree.main")
-      const branch = sync().data.vcs?.branch
-      if (branch) return language.t("session.new.worktree.mainWithBranch", { branch })
       return language.t("session.new.worktree.main")
     }
 

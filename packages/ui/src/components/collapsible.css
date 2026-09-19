@@ -88,12 +88,14 @@
   }
 
   [data-slot="collapsible-content"] {
-    max-height: 0;
     overflow: hidden;
-    transition: max-height 0.18s cubic-bezier(0, 0, 0.2, 1);
 
     &[data-expanded] {
-      max-height: var(--kb-collapsible-content-height, 1000px);
+      animation: collapsible-slide-down 0.22s cubic-bezier(0, 0, 0.2, 1);
+    }
+
+    &[data-closed] {
+      animation: collapsible-slide-up 0.16s cubic-bezier(0.4, 0, 1, 1);
     }
   }
 
@@ -130,7 +132,28 @@
       height: 28px;
     }
   }
+}
 
+@keyframes collapsible-slide-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--kb-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-slide-up {
+  from {
+    height: var(--kb-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

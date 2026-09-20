@@ -10,7 +10,11 @@ import { createRequire } from "node:module"
 const require2 = createRequire(process.env.OPENCODE_BROWSER_HELPER_RESOLVE ?? import.meta.url)
 const { chromium } = require2("playwright-core") as typeof import("playwright-core")
 const { registry } = require2("playwright-core/lib/server/registry/index") as {
-  registry: { findExecutable(name: string): { executablePath?: () => string | undefined } | undefined }
+  registry: {
+    findExecutable(name: string): { executablePath?: () => string | undefined } | undefined
+    // 下载并安装可执行文件到本机缓存；接受 findExecutable 返回的描述符。
+    install(executables: unknown[]): Promise<void>
+  }
 }
 
 interface Request {
@@ -36,14 +40,31 @@ function fail(id: number, error: unknown) {
 }
 
 // 三级可执行文件回退：显式环境变量 > playwright 已下载缓存 > 系统 Chrome/Edge channel。
+// 打包版 playwright-core 期望的 revision 可能与本机缓存不一致（dev 用仓库内另一份），
+// 缓存缺失时先自动下载期望版本再重试，避免回退到几乎必然失败的 channel 解析。
 async function launchOptions() {
   const headed = process.env.OPENCODE_BROWSER_HEADED === "1" || process.env.OPENCODE_BROWSER_HEADED === "true"
   const executable = process.env.OPENCODE_BROWSER_EXECUTABLE_PATH
   if (executable) return { executablePath: executable, headless: !headed }
   const preferred = headed ? ["chromium", "chromium-headless-shell"] : ["chromium-headless-shell", "chromium"]
-  for (const name of preferred) {
-    const path = registry.findExecutable(name)?.executablePath?.()
-    if (path) return { executablePath: path, headless: !headed }
+  const { existsSync } = await import("node:fs")
+  // executablePath() 恒返回按 revision 拼出的路径、不做存在性检查，故须自行 existsSync 校验缓存缺失。
+  const lookup = () => {
+    for (const name of preferred) {
+      const descriptor = registry.findExecutable(name)
+      const path = descriptor?.executablePath?.()
+      if (descriptor && path && existsSync(path)) return { descriptor, path }
+    }
+    return undefined
+  }
+  const cached = lookup()
+  if (cached) return { executablePath: cached.path, headless: !headed }
+  // 缓存缺失：下载期望 revision（首个 preferred，即 headless 时的 chromium-headless-shell）后重查。
+  const target = registry.findExecutable(preferred[0])
+  if (target) {
+    await registry.install([target])
+    const installed = lookup()
+    if (installed) return { executablePath: installed.path, headless: !headed }
   }
   return { channel: "chromium", headless: !headed }
 }

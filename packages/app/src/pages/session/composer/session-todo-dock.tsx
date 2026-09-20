@@ -48,8 +48,9 @@ export function SessionTodoDock(props: {
   dockProgress: number
 }) {
   const language = useLanguage()
+  const collapsedHeight = 40
   const [store, setStore] = createStore({
-    height: 78,
+    height: collapsedHeight,
   })
 
   const total = createMemo(() => props.todos.length)
@@ -77,7 +78,7 @@ export function SessionTodoDock(props: {
   const hide = createMemo(() => Math.max(value(), shut()))
   const off = createMemo(() => hide() > 0.98)
   const turn = createMemo(() => Math.max(0, Math.min(1, value())))
-  const full = createMemo(() => Math.max(78, store.height))
+  const full = createMemo(() => Math.max(collapsedHeight, store.height))
   let contentRef: HTMLDivElement | undefined
 
   createEffect(() => {
@@ -98,13 +99,13 @@ export function SessionTodoDock(props: {
       style={{
         "overflow-x": "visible",
         "overflow-y": "hidden",
-        "max-height": `${Math.max(78, full() - value() * (full() - 78))}px`,
+        "max-height": `${Math.max(collapsedHeight, full() - value() * (full() - collapsedHeight))}px`,
       }}
     >
       <div ref={contentRef}>
         <div
           data-action="session-todo-toggle"
-          class="pl-3 pr-2 py-2 flex items-center gap-2 overflow-visible"
+          class="pl-3 pr-2 h-10 flex items-center gap-2 overflow-visible cursor-pointer"
           role="button"
           tabIndex={0}
           onClick={props.onToggle}
@@ -205,7 +206,7 @@ function TodoList(props: { todos: Todo[] }) {
   return (
     <div class="relative">
       <div
-        class="px-3 pb-11 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
+        class="px-3 pb-2.5 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
         style={{ "overflow-anchor": "none" }}
         onScroll={(e) => {
           setStore("stuck", e.currentTarget.scrollTop > 0)
@@ -249,7 +250,7 @@ function TodoList(props: { todos: Todo[] }) {
       <div
         class="pointer-events-none absolute top-0 left-0 right-0 h-4 transition-opacity duration-150"
         style={{
-          background: "linear-gradient(to bottom, var(--background-base), transparent)",
+          background: "linear-gradient(to bottom, var(--surface-inset-base), transparent)",
           opacity: store.stuck ? 1 : 0,
         }}
       />

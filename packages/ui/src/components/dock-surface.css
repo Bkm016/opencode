@@ -30,3 +30,14 @@
   border: 0;
   border-radius: 0 0 12px 12px;
 }
+
+/* Todo dock 合体布局：与输入框同用 inset 背景，无边框，作为合体卡片的顶部面板。 */
+[data-component="session-todo-dock"] {
+  background-color: var(--surface-inset-base);
+  border: 0;
+  border-bottom: 1px solid var(--border-weak-base);
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}

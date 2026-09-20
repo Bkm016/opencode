@@ -1341,7 +1341,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   return (
     // 合体卡片：外壳统一承载圆角与背景，内部的 shell / tray 由 dock-surface CSS 合并为一张卡片。
-    <div class="relative size-full flex flex-col gap-0 rounded-xl bg-surface-inset-base">
+    <div
+      data-component="prompt-input-root"
+      class="relative size-full flex flex-col gap-0 rounded-xl bg-surface-inset-base"
+    >
       <PromptPopover
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}

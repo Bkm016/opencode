@@ -28,9 +28,10 @@ export function SessionComposerRegion(props: {
     >
       <div
         classList={{
-          "w-full px-3 pointer-events-auto": true,
+          "group/composer w-full px-3 pointer-events-auto": true,
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
+        data-has-todo={controller.dock() ? "" : undefined}
       >
         <Show when={controller.state.questionRequest()} keyed>
           {(request) => (
@@ -103,7 +104,6 @@ export function SessionComposerRegion(props: {
                 </Show>
                 <div
                   class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none"
-                  style={{ "margin-top": `${-36 * controller.dockProgress()}px` }}
                 >
                   {controller.handoffPrompt() || language.t("prompt.loading")}
                 </div>
@@ -112,11 +112,7 @@ export function SessionComposerRegion(props: {
           >
             <Show when={rolled()} keyed>
               {(revert) => (
-                <div
-                  style={{
-                    "margin-top": `${-36 * controller.dockProgress()}px`,
-                  }}
-                >
+                <div>
                   <SessionRevertDock
                     items={revert.items}
                     restoring={revert.restoring}
@@ -129,6 +125,7 @@ export function SessionComposerRegion(props: {
             <div
               classList={{
                 "relative z-[70]": true,
+                "[&_[data-component=prompt-input-root]]:rounded-t-none": controller.dock(),
               }}
               style={{
                 "margin-top": `${-controller.lift()}px`,

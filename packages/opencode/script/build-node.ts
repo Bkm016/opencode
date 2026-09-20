@@ -22,14 +22,17 @@ const sourcemap = process.env.OPENCODE_NODE_SOURCEMAP === "1" ? "linked" : "none
 
 await Bun.build({
   target: "node",
-  entrypoints: ["./src/node.ts"],
+  entrypoints: ["./src/node.ts", "./src/tool/browser-helper.ts"],
   outdir: "./dist/node",
+  naming: "[name].js",
   format: "esm",
   // Linked maps double disk I/O (~50MB) and are rarely needed for the desktop sidecar.
   sourcemap,
   // jsonc-parser stays external: its UMD entry uses require("./impl/*") and
   // does not bundle cleanly. Desktop copies the package next to the sidecar.
-  external: ["jsonc-parser", "@lydell/node-pty"],
+  // playwright-core stays external: the browser helper spawns a separate node
+  // process and resolves it from the sidecar node_modules at runtime.
+  external: ["jsonc-parser", "@lydell/node-pty", "playwright-core"],
   define: {
     OPENCODE_MODELS_DEV: generated.modelsData,
     OPENCODE_CHANNEL: `'${Script.channel}'`,
@@ -38,6 +41,10 @@ await Bun.build({
     "opencode-web-ui.gen.ts": "",
   },
 })
+
+// browser helper 由独立 node 子进程 spawn，脱离 package.json 上下文，须带 .mjs 扩展按 ESM 加载。
+const helper = path.join(dir, "dist/node/browser-helper.js")
+if (fs.existsSync(helper)) fs.renameSync(helper, path.join(dir, "dist/node/browser-helper.mjs"))
 
 if (sourcemap === "none") {
   const map = path.join(dir, "dist/node/node.js.map")

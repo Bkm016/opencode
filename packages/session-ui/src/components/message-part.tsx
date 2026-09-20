@@ -87,6 +87,7 @@ import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard } from "./edit-tool-card"
 import { ScriptToolCard } from "./script-tool-card"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
+import { BrowserTool } from "./browser-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
 import type { CanvasReference } from "../context/canvas"
 import { writeClipboardImage } from "./clipboard-image"
@@ -1647,6 +1648,7 @@ export const ToolRegistry = {
 
 ToolRegistry.register({ name: "canvas", render: CanvasTool })
 ToolRegistry.register({ name: "computer_use", render: ComputerUseTool })
+ToolRegistry.register({ name: "browser", render: BrowserTool })
 
 // 在 edit/write/apply_patch 折叠态 trigger 上显示的「打开文件」按钮，点击用系统默认编辑器打开源文件
 function OpenFileButton(props: { filePath: string; onViewFile?: (file: string) => void }) {

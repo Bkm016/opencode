@@ -14,7 +14,7 @@ export type PartRef = {
   partID: string
 }
 
-export type ToolGroupID = "context" | "computerUse" | "python" | "bash" | "history" | "web"
+export type ToolGroupID = "context" | "computerUse" | "browser" | "python" | "bash" | "history" | "web"
 
 export type PartGroup =
   | {
@@ -189,6 +189,10 @@ export function isContextGroupTool(part: Part): part is ToolPart {
 
 export function isComputerUseGroupTool(part: Part): part is ToolPart {
   return part.type === "tool" && part.tool === "computer_use"
+}
+
+export function isBrowserGroupTool(part: Part): part is ToolPart {
+  return part.type === "tool" && part.tool === "browser"
 }
 
 export function isPythonGroupTool(part: Part): part is ToolPart {

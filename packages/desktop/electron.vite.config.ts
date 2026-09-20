@@ -57,6 +57,8 @@ async function copyServerDist() {
   await copyServerNodeModule("jsonc-parser")
   await copyServerNodeModule("@lydell/node-pty")
   await copyServerNodeModule(nodePtyPkg)
+  // browser 工具的 helper 子进程按外部依赖解析 playwright-core，须随 sidecar 一起分发。
+  await copyServerNodeModule("playwright-core")
 }
 
 async function resolveNodeModule(name: string) {

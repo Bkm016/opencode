@@ -1282,6 +1282,72 @@
   }
 }
 
+/* 浏览器工具卡片与 computer-use 同一卡片骨架；状态行用 sans，正文才用等宽。 */
+[data-component="browser-tool-output"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  margin-top: 4px;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 6px;
+
+  [data-slot="browser-tool-content-scroll"] {
+    max-height: 280px;
+
+    /* 自定义拇指覆盖在右侧 12px 轨道上，viewport 预留右内边距避免内容被拇指遮挡 */
+    .scroll-view__viewport {
+      padding-right: 14px;
+    }
+  }
+
+  pre {
+    margin: 0;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-small);
+  }
+
+  [role="alert"] {
+    color: var(--icon-critical-base);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="browser-tool-status"] {
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-faint);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-slot="browser-tool-screenshot"] {
+    width: min(520px, 100%);
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: transparent;
+    cursor: zoom-in;
+  }
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+}
+
+/* 浏览器副标题自带动作与目标，与 computer-use 一样不叠加工具名后的间隔点 */
+.browser-tool-subtitle {
+  color: var(--v2-text-text-muted);
+}
+
 [data-component="todos"] {
   padding: 10px 0 24px 0;
   display: flex;
@@ -1464,6 +1530,42 @@
   gap: 4px;
 
   [data-slot="computer-use-group-item"] {
+    min-width: 0;
+    padding: 0;
+  }
+}
+
+/* 浏览器分组与 computer-use 同一骨架：trigger 左对齐，展开列表左缩进。 */
+[data-component="browser-group-trigger"] {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0px;
+  cursor: default;
+
+  [data-slot="browser-group-title"] {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  [data-slot="collapsible-arrow"] {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
+}
+
+[data-component="browser-group-list"] {
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  [data-slot="browser-group-item"] {
     min-width: 0;
     padding: 0;
   }

@@ -14,12 +14,14 @@ import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { useData } from "../context"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { ComputerUseTool } from "./computer-use-tool"
+import { BrowserTool } from "./browser-tool"
 import "./edit-tool-card.css"
 import {
   ToolGroupRegistry,
   computeToolGroupDuration,
   isContextGroupTool,
   isComputerUseGroupTool,
+  isBrowserGroupTool,
   isPythonGroupTool,
   isBashGroupTool,
   isHistoryGroupTool,
@@ -623,6 +625,74 @@ ToolGroupRegistry.register({
     )
   },
   componentName: "computer-use-group",
+})
+
+// 注册内建工具分组：网页浏览 (browser)
+ToolGroupRegistry.register({
+  id: "browser",
+  match: isBrowserGroupTool,
+  title: {
+    active: (i18n) => i18n.t("ui.sessionTurn.status.usingBrowser"),
+    done: (i18n) => i18n.t("ui.sessionTurn.status.usedBrowser"),
+  },
+  renderSummary({ parts, i18n }) {
+    // 只看不改的动作计为查看：navigate/screenshot/get_content/evaluate/back
+    const observe = new Set(["navigate", "screenshot", "get_content", "evaluate", "back"])
+    const counts = { observe: 0, action: 0, error: 0 }
+    for (const part of parts) {
+      if (part.state.status === "error") counts.error++
+      const action = (part.state.input as Record<string, unknown> | undefined)?.action
+      if (observe.has(String(action))) counts.observe++
+      else counts.action++
+    }
+    return (
+      <AnimatedCountList
+        items={[
+          {
+            key: "observe",
+            count: counts.observe,
+            one: i18n.t("ui.messagePart.browser.observe.one"),
+            other: i18n.t("ui.messagePart.browser.observe.other"),
+          },
+          {
+            key: "action",
+            count: counts.action,
+            one: i18n.t("ui.messagePart.browser.action.one"),
+            other: i18n.t("ui.messagePart.browser.action.other"),
+          },
+          {
+            key: "error",
+            count: counts.error,
+            one: i18n.t("ui.messagePart.browser.error.one"),
+            other: i18n.t("ui.messagePart.browser.error.other"),
+          },
+        ]}
+        fallback=""
+      />
+    )
+  },
+  renderItem(itemProps) {
+    const input = itemProps.part.state.input ?? {}
+    const metadata = (itemProps.part.state as any).metadata ?? {}
+    const output = itemProps.part.state.status === "completed" ? itemProps.part.state.output : undefined
+    const error = itemProps.part.state.status === "error" ? itemProps.part.state.error : undefined
+    const attachments = itemProps.part.state.status === "completed" ? itemProps.part.state.attachments : undefined
+
+    return (
+      <BrowserTool
+        tool="browser"
+        input={input}
+        metadata={metadata}
+        output={output}
+        error={error}
+        attachments={attachments}
+        status={itemProps.part.state.status}
+        sessionID={itemProps.part.sessionID}
+        partID={itemProps.part.id}
+      />
+    )
+  },
+  componentName: "browser-group",
 })
 
 // 注册内建工具分组：Python 脚本执行 (python)

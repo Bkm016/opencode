@@ -380,7 +380,7 @@
     },
     "packages/desktop": {
       "name": "@opencode-ai/desktop",
-      "version": "0.0.0-prod-202609062353",
+      "version": "0.0.0-prod-202609192026",
       "dependencies": {
         "@zip.js/zip.js": "2.7.62",
         "effect": "catalog:",
@@ -647,6 +647,7 @@
         "opencode-poe-auth": "0.0.1",
         "opentui-spinner": "catalog:",
         "partial-json": "0.1.7",
+        "playwright-core": "catalog:",
         "remeda": "catalog:",
         "semver": "^7.6.3",
         "solid-js": "catalog:",
@@ -1144,6 +1145,7 @@
     "marked": "17.0.6",
     "marked-shiki": "1.2.1",
     "opentui-spinner": "0.0.7",
+    "playwright-core": "1.59.1",
     "remeda": "2.26.0",
     "remend": "1.3.0",
     "semver": "7.7.4",

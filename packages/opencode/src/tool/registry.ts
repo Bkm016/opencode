@@ -9,6 +9,7 @@ import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { PythonTool } from "./python"
 import { ComputerUseTool } from "./computer-use"
+import { BrowserTool } from "./browser"
 import { EditTool } from "./edit"
 import { MultiEditTool } from "./multiedit"
 import { GlobTool } from "./glob"
@@ -130,6 +131,7 @@ const layer = Layer.effect(
     const shell = yield* ShellTool
     const python = yield* PythonTool
     const computerUse = yield* ComputerUseTool
+    const browser = yield* BrowserTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
     const canvas = yield* CanvasTool
@@ -251,6 +253,7 @@ const layer = Layer.effect(
           taskAbort: Tool.init(taskAbort),
           taskFollowup: Tool.init(taskFollowup),
           fetch: Tool.init(webfetch),
+          browser: Tool.init(browser),
           python: Tool.init(python),
           computer_use: Tool.init(computerUse),
           todo: Tool.init(todo),
@@ -289,6 +292,7 @@ const layer = Layer.effect(
             tool.taskAbort,
             tool.taskFollowup,
             tool.fetch,
+            tool.browser,
             tool.todo,
             tool.search,
             tool.skill,

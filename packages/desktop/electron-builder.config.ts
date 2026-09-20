@@ -63,7 +63,12 @@ const getBase = (appId: string): Configuration => ({
   },
   files: ["out/**/*", "resources/**/*"],
   // Native pty prebuilds must stay outside asar; server loads them from out/main/server/node_modules.
-  asarUnpack: ["**/node_modules/@lydell/node-pty*/**"],
+  // browser-helper.js 由独立 node 子进程加载，asar 内文件对子进程不可见，须连同其外部依赖一起 unpack。
+  asarUnpack: [
+    "**/node_modules/@lydell/node-pty*/**",
+    "**/out/main/server/browser-helper.mjs",
+    "**/out/main/server/node_modules/playwright-core/**",
+  ],
   extraResources: [
     {
       from: "native/",

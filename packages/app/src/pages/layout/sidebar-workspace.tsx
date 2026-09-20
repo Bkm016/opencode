@@ -20,6 +20,7 @@ import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
 import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
+import { sessionGroupOpen, setSessionGroupOpen } from "@/utils/session-groups"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -259,15 +260,15 @@ export const WorkspaceSessionList = (props: {
   const dateFormatter = createMemo(
     () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
   )
-  const [groupOpen, setGroupOpen] = createStore<Record<string, boolean>>({})
+  // 分组折叠默认全收起，展开状态按侧栏列表 scope 持久化记忆，刷新后仍生效。
   // 挂载时记录当前命令版本，避免把挂载前的一次性折叠/展开命令重复套用到新列表上。
   const initialCommand = props.ctx.sessionGroupsCommand()
   let groupCommandRevision = initialCommand?.revision ?? 0
 
-  const isGroupOpen = (group: SessionGroup) => groupOpen[group.key] ?? group.defaultOpen
+  const isGroupOpen = (group: SessionGroup) => sessionGroupOpen(props.slug(), group.key) ?? group.defaultOpen
 
   const setGroupExpanded = (group: SessionGroup, open: boolean) => {
-    setGroupOpen(group.key, open)
+    setSessionGroupOpen(props.slug(), group.key, open)
   }
 
   const groups = createMemo(() => {
@@ -280,7 +281,7 @@ export const WorkspaceSessionList = (props: {
         label: language.t("home.sessions.group.pinned"),
         sessions: pinned,
         collapsible: true,
-        defaultOpen: true,
+        defaultOpen: false,
       })
     }
 
@@ -316,7 +317,7 @@ export const WorkspaceSessionList = (props: {
           label,
           sessions: [session],
           collapsible: true,
-          defaultOpen: !groups.some((item) => item.collapsible),
+          defaultOpen: false,
         })
       })
     return groups
@@ -326,7 +327,7 @@ export const WorkspaceSessionList = (props: {
     if (!command || command.revision === groupCommandRevision) return
     groupCommandRevision = command.revision
     for (const group of groups()) {
-      if (group.collapsible) setGroupOpen(group.key, command.open)
+      if (group.collapsible) setSessionGroupOpen(props.slug(), group.key, command.open)
     }
   })
 
@@ -339,7 +340,7 @@ export const WorkspaceSessionList = (props: {
     lastAutoExpandedSession = sessionID
     const group = groups().find((item) => item.sessions.some((session) => session.id === sessionID))
     if (!group) return
-    if (!isGroupOpen(group)) setGroupOpen(group.key, true)
+    if (!isGroupOpen(group)) setSessionGroupOpen(props.slug(), group.key, true)
   })
   const item = (session: Session) => (
     <SessionItem

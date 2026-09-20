@@ -172,9 +172,11 @@ const spawnHelper = Effect.fn("Browser.spawnHelper")(function* () {
     try: () => helperScript(),
     catch: (error) => new Error(`Failed to prepare the browser helper: ${error instanceof Error ? error.message : error}`),
   })
-  // helper 依赖解析锚点：生产态 bundled browser-helper.mjs 自身（同目录 node_modules 有 playwright-core），
-  // 开发态回到源码 browser-helper.ts（tmp 下的即时编译产物不在宿主依赖树内）。
-  const anchor = script.includes("dist") ? script : fileURLToPath(import.meta.url).replace(/browser\.ts$/, "browser-helper.ts")
+  // helper 依赖解析锚点：bundled browser-helper.mjs 与 browser.ts 同目录（其 node_modules 有 playwright-core），
+  // 直接用 script 自身；开发态即时编译产物落在 os tmp（不在宿主依赖树内），回退到源码 browser-helper.ts。
+  // 注意不能用路径里是否含 "dist" 判断：打包安装版在 app.asar.unpacked 下，不含 dist。
+  const bundled = path.dirname(script) === path.dirname(fileURLToPath(import.meta.url))
+  const anchor = bundled ? script : fileURLToPath(import.meta.url).replace(/browser\.ts$/, "browser-helper.ts")
   const child = spawn(nodeExecutable(), [script], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, OPENCODE_BROWSER_HELPER_RESOLVE: anchor },

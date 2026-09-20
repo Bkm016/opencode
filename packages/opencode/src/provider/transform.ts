@@ -1,6 +1,6 @@
 import type { ModelMessage, ToolResultPart } from "ai"
 import { mergeDeep, unique } from "remeda"
-import type { JSONSchema7 } from "@ai-sdk/provider"
+import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { iife } from "@/util/iife"
@@ -1474,6 +1474,19 @@ function sanitizeOpenAISchema(value: unknown): unknown {
         : []
 
   if (schemaTypes.length === 0 && (typeof result.$ref === "string" || compositionKeys.some((key) => key in result))) {
+    // 若含有 anyOf 且没有显式 type，尝试展平 properties 并提升为 type: "object" 避免 OpenAI 请求被拒
+    if (Array.isArray(result.anyOf)) {
+      const variants = result.anyOf.filter(isPlainObject)
+      const properties: JsonRecord = {}
+      for (const variant of variants) {
+        if (isPlainObject(variant.properties)) Object.assign(properties, variant.properties)
+      }
+      if (Object.keys(properties).length > 0) {
+        result.type = "object"
+        result.properties = { ...properties, ...(isPlainObject(result.properties) ? result.properties : {}) }
+        delete result.anyOf
+      }
+    }
     return result
   }
 
@@ -1519,7 +1532,12 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
   }
   */
 
-  if (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/azure") {
+  if (
+    model.api.npm === "@ai-sdk/openai" ||
+    model.api.npm === "@ai-sdk/azure" ||
+    model.api.npm === "@ai-sdk/openai-compatible" ||
+    model.providerID.includes("openai")
+  ) {
     schema = sanitizeOpenAISchema(schema) as JSONSchema7
     // Codex also applies lossy compaction above 4 KB; defer that until OpenCode needs the same schema budget.
   }
@@ -1637,6 +1655,15 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
     }
 
     schema = sanitizeGemini(schema)
+  }
+
+  // 任何模型提供商的 function tool parameters 顶层均必须为 object
+  if (isPlainObject(schema) && schema.type !== "object") {
+    schema = {
+      ...schema,
+      type: "object",
+      properties: (isPlainObject(schema.properties) ? schema.properties : {}) as Record<string, JSONSchema7Definition>,
+    }
   }
 
   return schema

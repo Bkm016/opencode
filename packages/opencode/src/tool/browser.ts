@@ -4,6 +4,8 @@ import path from "node:path"
 import { Effect, Schema, Semaphore } from "effect"
 import { Parser } from "htmlparser2"
 import TurndownService from "turndown"
+import type { JSONSchema7 } from "@ai-sdk/provider"
+import { ToolJsonSchema } from "./json-schema"
 import * as Tool from "./tool"
 import DESCRIPTION from "./browser.txt"
 
@@ -348,9 +350,21 @@ export const BrowserTool = Tool.define(
   Effect.gen(function* () {
     // 宿主进程退出时兜底杀掉 helper，避免孤儿浏览器常驻。
     process.once("exit", kill)
+    // 部分提供方不接受顶层 anyOf；模型描述由同一联合派生，执行时仍严格校验各动作必需字段。
+    const jsonSchema = {
+      type: "object",
+      properties: {
+        ...Object.fromEntries(
+          Parameters.members.flatMap((member) => Object.entries(ToolJsonSchema.fromSchema(member).properties ?? {})),
+        ),
+        action: { type: "string", enum: Parameters.members.map((member) => member.fields.action.literal) },
+      },
+      required: ["action"],
+    } satisfies JSONSchema7
     return {
       description: DESCRIPTION,
       parameters: Parameters,
+      jsonSchema,
       execute: (input: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         tab.lock.withPermits(1)(
           Effect.gen(function* () {

@@ -1,4 +1,4 @@
-import type { JSONSchema7 } from "@ai-sdk/provider"
+import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import { JsonSchema, Schema } from "effect"
 import type * as Tool from "./tool"
 
@@ -21,8 +21,40 @@ export function fromSchema(schema: Schema.Top): JSONSchema7 {
   return inlined
 }
 
+// 保证工具 parameters 的顶层始终满足 type: "object"，避免联合 Schema 顶层裸露 anyOf 导致 OpenAI 等提供商校验失败。
+function ensureObjectParameters(schema: JSONSchema7): JSONSchema7 {
+  if (!isRecord(schema)) {
+    return { type: "object", properties: {} }
+  }
+  if (schema.type === "object") return schema
+
+  // 顶层为 anyOf 联合时，合并各分支 properties 并提升为顶层 object。
+  if (Array.isArray(schema.anyOf)) {
+    const variants = schema.anyOf.filter(isRecord)
+    const properties: JsonObject = {}
+    for (const variant of variants) {
+      if (isRecord(variant.properties)) {
+        Object.assign(properties, variant.properties)
+      }
+    }
+    const { anyOf: _, ...rest } = schema
+    return {
+      type: "object",
+      properties: properties as Record<string, JSONSchema7Definition>,
+      ...rest,
+    }
+  }
+
+  return {
+    type: "object",
+    properties: (isRecord(schema.properties) ? schema.properties : {}) as Record<string, JSONSchema7Definition>,
+    ...schema,
+  }
+}
+
 export function fromTool(tool: Tool.Def): JSONSchema7 {
-  return tool.jsonSchema ?? fromSchema(tool.parameters as Schema.Top)
+  const schema = tool.jsonSchema ?? fromSchema(tool.parameters as Schema.Top)
+  return ensureObjectParameters(schema)
 }
 
 function normalize(value: unknown, options: { stripNull?: boolean } = {}): unknown {

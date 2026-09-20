@@ -283,6 +283,20 @@ const live: Layer.Layer<
       })
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
+      // 在开流前预存一次请求快照，确保即使握手前异常或网络中断也能导出最近请求。
+      ProviderRequestDump.record({
+        sessionID: input.sessionID,
+        model: input.model.id,
+        provider: input.model.providerID,
+        route: "ai-sdk",
+        protocol: "ai-sdk",
+        body: {
+          messages: prepared.messages,
+          tools: prepared.tools,
+          params: prepared.params,
+        },
+        runtime: "ai-sdk",
+      })
       // 状态需覆盖 middleware 与事件适配器，确保 start-step 携带 provider 已序列化的真实 body 大小。
       const state = LLMAISDK.adapterState()
       return {
@@ -362,8 +376,53 @@ const live: Layer.Layer<
                   }
                   return args.params
                 },
-                async wrapStream({ doStream }) {
-                  const result = await doStream()
+                async wrapStream({ doStream, params }) {
+                  let result: Awaited<ReturnType<typeof doStream>>
+                  try {
+                    result = await doStream()
+                  } catch (error) {
+                    // 请求在 doStream 阶段失败（如 400 Bad Request、APICallError 等），
+                    // 从 error 中捕获实际外发的请求体与服务端返回的错误体，确保失败时仍能导出。
+                    const apiError = error as {
+                      requestBodyValues?: unknown
+                      url?: string
+                      statusCode?: number
+                      responseHeaders?: Record<string, string>
+                      responseBody?: unknown
+                    }
+                    const body = apiError?.requestBodyValues ?? params
+                    const bodyText = typeof body === "string" ? body : body == null ? undefined : JSON.stringify(body)
+                    const bodyBytes = bodyText === undefined ? undefined : new TextEncoder().encode(bodyText).byteLength
+                    if (body !== undefined) {
+                      ProviderRequestDump.record({
+                        sessionID: input.sessionID,
+                        model: input.model.id,
+                        provider: input.model.providerID,
+                        route: "ai-sdk",
+                        protocol: "ai-sdk",
+                        url: apiError?.url,
+                        body: typeof body === "string" ? body : body,
+                        bodyBytes,
+                        runtime: "ai-sdk",
+                      })
+                    }
+                    if (apiError?.responseBody !== undefined) {
+                      ProviderResponseDump.record({
+                        sessionID: input.sessionID,
+                        model: input.model.id,
+                        provider: input.model.providerID,
+                        route: "ai-sdk",
+                        protocol: "ai-sdk",
+                        url: apiError?.url,
+                        status: apiError?.statusCode,
+                        headers: apiError?.responseHeaders,
+                        body: apiError.responseBody,
+                        error: true,
+                        runtime: "ai-sdk",
+                      })
+                    }
+                    throw error
+                  }
                   const body = result.request?.body
                   const bodyText = typeof body === "string" ? body : body == null ? undefined : JSON.stringify(body)
                   state.requestBodyBytes =

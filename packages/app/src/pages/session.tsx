@@ -1350,10 +1350,9 @@ export default function Page() {
 
       dockHeight = next
 
+      // 只有真正贴底时才跟随，且跳过折叠动画这类同帧自反馈；不再每帧 scheduleScrollState/fill，
+      // 否则 dock 高度动画会反向触发 content 的 ResizeObserver，形成 "ResizeObserver loop" 刷屏。
       if (stick) scrollToEnd()
-
-      if (el) scheduleScrollState(el)
-      fill()
     },
   )
 

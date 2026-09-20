@@ -118,27 +118,32 @@ function nodeExecutable() {
 }
 
 // helper 源文件与编译产物都放 os tmp，避免污染项目目录；内容变化时重建（按源文件 hash 判断）。
-async function helperScript(): Promise<string> {
+// 返回 script（helper 入口，须为独立 node 子进程可读的真实磁盘路径）与 anchor（createRequire 解析
+// playwright-core 的锚点，须落在宿主依赖树内）。
+async function helperScript(): Promise<{ script: string; anchor: string }> {
   // 打包运行时 build-node.ts 已把 helper bundle 成同目录 browser-helper.mjs，直接使用。
-  const self = fileURLToPath(import.meta.url)
+  // 本 bundle 跑在 app.asar 内；helper 由独立 node 子进程加载，asar 内文件对子进程不可见，
+  // 须映射到 asarUnpack 落盘的 app.asar.unpacked 等价路径（其 node_modules 有 playwright-core，可作锚点）。
+  const self = fileURLToPath(import.meta.url).replace("app.asar" + path.sep, "app.asar.unpacked" + path.sep)
   const bundled = path.join(path.dirname(self), "browser-helper.mjs")
   const fs = await import("node:fs/promises")
-  if (await fs.stat(bundled).catch(() => undefined)) return bundled
-  // 开发态源码是 .ts，需要即时编译到 os tmp 下的 .mjs。
+  if (await fs.stat(bundled).catch(() => undefined)) return { script: bundled, anchor: bundled }
+  // 开发态源码是 .ts，需要即时编译到 os tmp 下的 .mjs；tmp 产物不在宿主依赖树内，锚点回退源码路径。
   const source = self.replace(/browser\.ts$/, "browser-helper.ts")
   const text = await fs.readFile(source, "utf8")
   const crypto = await import("node:crypto")
   const os = await import("node:os")
   const hash = crypto.createHash("sha1").update(text).digest("hex").slice(0, 12)
   const target = path.join(os.tmpdir(), `opencode-browser-helper-${hash}.mjs`)
-  if (await fs.stat(target).catch(() => undefined)) return target
-  // 即时编译：strip 类型并保持 ESM import 语法；playwright-core 保持外部依赖在运行时解析。
-  const { transpileModule, ModuleKind, ScriptTarget } = await import("typescript")
-  const compiled = transpileModule(text, {
-    compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
-  })
-  await fs.writeFile(target, compiled.outputText, "utf8")
-  return target
+  if (!(await fs.stat(target).catch(() => undefined))) {
+    // 即时编译：strip 类型并保持 ESM import 语法；playwright-core 保持外部依赖在运行时解析。
+    const { transpileModule, ModuleKind, ScriptTarget } = await import("typescript")
+    const compiled = transpileModule(text, {
+      compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+    })
+    await fs.writeFile(target, compiled.outputText, "utf8")
+  }
+  return { script: target, anchor: source }
 }
 
 function kill() {
@@ -168,15 +173,10 @@ function touch() {
 }
 
 const spawnHelper = Effect.fn("Browser.spawnHelper")(function* () {
-  const script = yield* Effect.tryPromise({
+  const { script, anchor } = yield* Effect.tryPromise({
     try: () => helperScript(),
     catch: (error) => new Error(`Failed to prepare the browser helper: ${error instanceof Error ? error.message : error}`),
   })
-  // helper 依赖解析锚点：bundled browser-helper.mjs 与 browser.ts 同目录（其 node_modules 有 playwright-core），
-  // 直接用 script 自身；开发态即时编译产物落在 os tmp（不在宿主依赖树内），回退到源码 browser-helper.ts。
-  // 注意不能用路径里是否含 "dist" 判断：打包安装版在 app.asar.unpacked 下，不含 dist。
-  const bundled = path.dirname(script) === path.dirname(fileURLToPath(import.meta.url))
-  const anchor = bundled ? script : fileURLToPath(import.meta.url).replace(/browser\.ts$/, "browser-helper.ts")
   const child = spawn(nodeExecutable(), [script], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, OPENCODE_BROWSER_HELPER_RESOLVE: anchor },

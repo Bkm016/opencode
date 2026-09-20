@@ -24,7 +24,7 @@ export function SessionComposerRegion(props: {
     <div
       ref={controller.setDockRef}
       data-component="session-prompt-dock"
-      class="relative z-40 w-full shrink-0 flex flex-col justify-center items-center pb-3 pointer-events-none bg-background-stronger"
+      class="relative z-40 w-full shrink-0 flex flex-col justify-center items-center pb-6 pointer-events-none bg-background-stronger"
     >
       <div
         classList={{

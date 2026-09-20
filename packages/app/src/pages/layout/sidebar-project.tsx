@@ -53,7 +53,7 @@ export type TiledWorkspaceDrag = {
   onCreateWorkspace: (project: LocalProject) => void
 }
 
-// Codex 式平铺：各项目会话直接跟在项目下方，按置顶 + 今天 / 昨天 / 日期分组展示。
+// Codex 式平铺：各项目会话直接跟在项目下方，按置顶 + 今天平铺 + 昨天 / 日期分组展示。
 
 export const ProjectDragOverlay = (props: {
   projects: Accessor<LocalProject[]>

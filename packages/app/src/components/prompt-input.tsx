@@ -8,6 +8,7 @@ import {
   onCleanup,
   createMemo,
   createSignal,
+  createUniqueId,
   type JSX,
 } from "solid-js"
 import { selectionFromLines, type SelectedLineRange } from "@/context/file"
@@ -123,8 +124,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let savedCursor: number | null = null
 
   const mirror = { input: false }
-  const inset = 56
-  const space = `${inset}px`
+  // 发送按钮在 form 之外（合体卡片底行），需要通过 form 属性关联提交。
+  const formId = createUniqueId()
 
   const scrollCursorIntoView = () => {
     const container = scrollRef
@@ -154,8 +155,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
-    if (bottom > container.scrollTop + container.clientHeight - inset) {
-      container.scrollTop = bottom - container.clientHeight + inset
+    if (bottom > container.scrollTop + container.clientHeight - padding) {
+      container.scrollTop = bottom - container.clientHeight + padding
     }
   }
 
@@ -1339,7 +1340,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     props.ref?.(el)
   }
   return (
-    <div class="relative size-full flex flex-col gap-0">
+    // 合体卡片：外壳统一承载圆角与背景，内部的 shell / tray 由 dock-surface CSS 合并为一张卡片。
+    <div class="relative size-full flex flex-col gap-0 rounded-xl bg-surface-inset-base">
       <PromptPopover
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}
@@ -1364,11 +1366,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       />
       <DockShellForm
+        id={formId}
         onSubmit={handleSubmit}
         classList={{
           "group/prompt-input": true,
-          "focus-within:shadow-xs-border": true,
-          "border-icon-info-active border-dashed": store.draggingType !== null,
+          "outline outline-2 outline-dashed outline-icon-info-active": store.draggingType !== null,
           [props.class ?? ""]: !!props.class,
         }}
       >
@@ -1404,9 +1406,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           }}
         >
           <div
-            class="relative max-h-[240px] overflow-y-auto no-scrollbar"
+            class="relative max-h-[240px] overflow-y-auto no-scrollbar rounded-t-xl"
             ref={(el) => (scrollRef = el)}
-            style={{ "scroll-padding-bottom": space }}
           >
             <div
               data-component="prompt-input"
@@ -1430,72 +1431,41 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onKeyDown={handleKeyDown}
               classList={{
                 "select-text": true,
-                "w-full pl-3 pr-2 pt-2 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
+                "w-full min-h-15 px-3 pt-2 pb-2 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
               }}
-              style={{ "padding-bottom": space }}
             />
             <div
-              class="absolute top-0 inset-x-0 pl-3 pr-2 pt-2 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
+              class="absolute top-0 inset-x-0 px-3 pt-2 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
               classList={{ "font-mono!": store.mode === "shell" }}
-              style={{ "padding-bottom": space, display: prompt.dirty() ? "none" : undefined }}
+              style={{ display: prompt.dirty() ? "none" : undefined }}
             >
               {placeholder()}
             </div>
           </div>
 
-          <div
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-x-0 bottom-0"
-            style={{
-              height: space,
-              background:
-                "linear-gradient(to top, var(--surface-raised-stronger-non-alpha) calc(100% - 20px), transparent)",
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ACCEPTED_FILE_TYPES.join(",")}
+            class="hidden"
+            onChange={(e) => {
+              const list = e.currentTarget.files
+              if (list) void addAttachments(Array.from(list))
+              e.currentTarget.value = ""
             }}
           />
-
-          <div class="pointer-events-none absolute bottom-2 right-2 flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept={ACCEPTED_FILE_TYPES.join(",")}
-              class="hidden"
-              onChange={(e) => {
-                const list = e.currentTarget.files
-                if (list) void addAttachments(Array.from(list))
-                e.currentTarget.value = ""
-              }}
-            />
-
-            <div class="flex items-center gap-1 pointer-events-auto">
-              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-                <IconButton
-                  data-action="prompt-submit"
-                  type="submit"
-                  disabled={!working() && blank()}
-                  tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                  variant="primary"
-                  class="size-8"
-                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                  onClick={(event) => {
-                    if (!stopping()) return
-                    if (!event.ctrlKey) return
-                    event.preventDefault()
-                    void abort({ cascade: true })
-                  }}
-                />
-              </Tooltip>
-            </div>
-          </div>
-
-          <div class="pointer-events-none absolute bottom-2 left-2">
+        </div>
+      </DockShellForm>
+      <Show when={store.mode === "normal" || store.mode === "shell"}>
+        <DockTray attach="top">
+          <div class="px-1.75 py-1.5 flex items-center gap-2 min-w-0">
             <div
               aria-hidden={store.mode !== "normal"}
-              class="pointer-events-auto"
+              class="shrink-0"
               style={{
                 "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
               }}
@@ -1520,12 +1490,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Button>
               </TooltipKeybind>
             </div>
-          </div>
-        </div>
-      </DockShellForm>
-      <Show when={store.mode === "normal" || store.mode === "shell"}>
-        <DockTray attach="top">
-          <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
             <div class="flex items-center gap-1.5 min-w-0 flex-1 relative">
               <div
                 class="h-7 flex items-center gap-1.5 min-w-0 absolute inset-0"
@@ -1725,6 +1689,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </Show>
                 </Show>
               </div>
+            </div>
+            <div class="shrink-0 flex items-center">
+              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+                <IconButton
+                  data-action="prompt-submit"
+                  type="submit"
+                  form={formId}
+                  disabled={!working() && blank()}
+                  tabIndex={store.mode === "normal" ? undefined : -1}
+                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                  variant="primary"
+                  class="size-8 rounded-[10px]"
+                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                  onClick={(event) => {
+                    if (!stopping()) return
+                    if (!event.ctrlKey) return
+                    event.preventDefault()
+                    void abort({ cascade: true })
+                  }}
+                />
+              </Tooltip>
             </div>
           </div>
         </DockTray>

@@ -7,6 +7,15 @@
   overflow: clip;
 }
 
+/* Codex 合体布局：shell 与 tray 视觉上是同一张卡片，外壳负责圆角与背景。 */
+[data-dock-surface="shell"]:has(+ [data-dock-surface="tray"][data-dock-attach="top"]) {
+  background-color: transparent;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
 [data-dock-surface="tray"] {
   background-color: var(--background-base);
   border: 1px solid var(--border-weak-base);
@@ -17,7 +26,7 @@
 }
 
 [data-dock-surface="tray"][data-dock-attach="top"] {
-  margin-top: -0.875rem;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  background-color: transparent;
+  border: 0;
+  border-radius: 0 0 12px 12px;
 }

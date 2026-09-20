@@ -1346,6 +1346,10 @@
 /* 浏览器副标题自带动作与目标，与 computer-use 一样不叠加工具名后的间隔点 */
 .browser-tool-subtitle {
   color: var(--v2-text-text-muted);
+
+  &.browser-tool-error {
+    color: var(--icon-critical-base);
+  }
 }
 
 [data-component="todos"] {

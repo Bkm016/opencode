@@ -74,6 +74,12 @@ export function BrowserTool(props: ToolProps) {
     return output.length > 200 ? `${output.slice(0, 200)}…` : output
   })
   const empty = createMemo(() => props.status !== "error" && !content() && !status() && images().length === 0)
+  // 错误摘要：折叠态 trigger 上直接显示首行错误，点开才看完整堆栈。
+  const errorLine = createMemo(() => {
+    if (props.status !== "error") return undefined
+    const first = (props.error ?? "").split("\n")[0]?.trim()
+    return first ? (first.length > 120 ? `${first.slice(0, 120)}…` : first) : undefined
+  })
 
   return (
     <BasicTool
@@ -81,11 +87,11 @@ export function BrowserTool(props: ToolProps) {
       icon="window-cursor"
       allowPendingDetails
       hideDetails={empty()}
-      forceOpen={pending() || props.status === "error"}
+      forceOpen={pending()}
       trigger={{
         title: i18n.t("ui.tool.browser"),
-        subtitle: subtitle(),
-        subtitleClass: "browser-tool-subtitle",
+        subtitle: errorLine() ?? subtitle(),
+        subtitleClass: errorLine() ? "browser-tool-subtitle browser-tool-error" : "browser-tool-subtitle",
       }}
     >
       <Show when={!empty()}>

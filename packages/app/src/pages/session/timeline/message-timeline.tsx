@@ -1215,6 +1215,7 @@ export function MessageTimeline(props: {
               <MessagePart
                 part={part()}
                 message={message()}
+                live={workingTurn(input.userMessageID)}
                 showAssistantCopyPartID={assistantCopyPartID(input.userMessageID)}
                 turnDurationMs={turnDurationMs(input.userMessageID)}
                 onCompactHere={compactHere}

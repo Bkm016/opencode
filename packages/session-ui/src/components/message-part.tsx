@@ -395,6 +395,8 @@ export interface MessagePartProps {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   onViewFile?: (file: string) => void
+  /** 该 part 属于当前会话正在前台 drain 的活跃 turn 时才为 true，入场动画仅在此场景播放。 */
+  live?: boolean
   /** 自动产物引用放在正文之后、操作栏之前，不进入模型正文或复制文本。 */
   canvases?: CanvasReference[]
   /** 在该条 assistant 文本处触发「从中间压缩」，由 app 层注入真实调用 */
@@ -1114,6 +1116,7 @@ export function AssistantParts(props: {
                       <Part
                         part={item()!}
                         message={message()!}
+                        live={props.working}
                         showAssistantCopyPartID={props.showAssistantCopyPartID}
                         turnDurationMs={props.turnDurationMs}
                         defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
@@ -1568,8 +1571,10 @@ export function Part(props: MessagePartProps) {
       <div
         data-slot="message-part-motion"
         ref={(el) => {
-          // Fork 和冷历史拥有全新的 part ID；只有未完成的 assistant 消息才是实时输出。
-          if (props.message.role !== "assistant" || props.message.time.completed !== undefined) return
+          // 只有调用方明确标记为当前活跃 turn 的 part 才播入场动画。
+          // Fork、dup、冷历史的 part ID 全是新的，time.completed 判据无法区分，会在 fork 后的
+          // 未完成消息上把所有 part 重播一遍；live 由会话前台 drain 状态决定，idle 会话恒为 false。
+          if (props.live !== true) return
           // One-shot enter for newly streamed/completed parts; bulk loads are skipped.
           // Opacity-only — y on streaming rows fights the scroller and looks like flicker.
           animateOutputEnter(el, props.part.id, { y: 0, duration: 0.22 })

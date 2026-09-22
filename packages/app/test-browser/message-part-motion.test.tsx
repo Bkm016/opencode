@@ -40,7 +40,7 @@ const message = (completed?: number): AssistantMessage => ({
 })
 
 describe("message part motion", () => {
-  test("does not replay enter motion for completed fork history", () => {
+  test("does not replay enter motion for completed history without live flag", () => {
     entered.length = 0
     const root = document.createElement("div")
     const dispose = render(() => <MessagePart part={part("historical")} message={message(2)} />, root)
@@ -50,13 +50,35 @@ describe("message part motion", () => {
     dispose()
   })
 
+  // Fork/dup 出的新会话里，未完成 assistant 消息的 part ID 全是新的；
+  // 旧的 time.completed 判据会把它们当成实时输出整页重播，live 未标记时必须静默。
+  test("does not replay enter motion for unfinished fork history without live flag", () => {
+    entered.length = 0
+    const root = document.createElement("div")
+    const dispose = render(() => <MessagePart part={part("fork-unfinished")} message={message()} />, root)
+
+    expect(root.textContent).toBe("output")
+    expect(entered).toEqual([])
+    dispose()
+  })
+
   test("keeps enter motion for live assistant output", () => {
     entered.length = 0
     const root = document.createElement("div")
-    const dispose = render(() => <MessagePart part={part("live")} message={message()} />, root)
+    const dispose = render(() => <MessagePart part={part("live")} message={message()} live />, root)
 
     expect(root.textContent).toBe("output")
     expect(entered).toEqual(["live"])
+    dispose()
+  })
+
+  test("live flag wins over completed message", () => {
+    entered.length = 0
+    const root = document.createElement("div")
+    const dispose = render(() => <MessagePart part={part("live-completed")} message={message(2)} live />, root)
+
+    expect(root.textContent).toBe("output")
+    expect(entered).toEqual(["live-completed"])
     dispose()
   })
 })

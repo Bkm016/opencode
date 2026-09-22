@@ -83,7 +83,7 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span class="min-w-0 flex-1 truncate text-text-strong text-14-regular">{title()}</span>
+      <span class="min-w-0 flex-1 truncate text-14-regular text-text-strong opacity-70 group-hover/session:opacity-100 group-has-[.active]/session:opacity-100 transition-opacity">{title()}</span>
     </A>
   )
 }

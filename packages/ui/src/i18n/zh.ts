@@ -308,6 +308,9 @@ export const dict = {
   "ui.message.copiedImage": "已复制图片！",
   "ui.message.copied": "已复制！",
   "ui.message.interrupted": "已中断",
+  "ui.message.finish.length": "输出截断：达到最大长度",
+  "ui.message.finish.contentFilter": "被内容过滤器拦截",
+  "ui.message.finish.unknown": "无结束原因（疑似断流）",
   "ui.message.queued": "排队中",
   "ui.message.attachment.alt": "附件",
 

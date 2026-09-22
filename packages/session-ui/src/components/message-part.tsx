@@ -2201,6 +2201,16 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const meta = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message as AssistantMessage
+    // 只展示后端确认的非正常流结束原因；stop / tool-calls 是常规状态，不展示避免噪音。
+    // 正文语义是否完整在 UI 层无可靠信号，不做猜测。
+    const finishReason =
+      message.finish === "length"
+        ? i18n.t("ui.message.finish.length")
+        : message.finish === "content-filter"
+          ? i18n.t("ui.message.finish.contentFilter")
+          : message.finish === "unknown" || message.finish === "other"
+            ? i18n.t("ui.message.finish.unknown")
+            : ""
     const items = [
       message.agent && message.agent !== "compaction"
         ? message.agent[0]?.toUpperCase() + message.agent.slice(1)
@@ -2209,6 +2219,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       message.variant ?? "",
       duration(),
       finalSpeed(),
+      finishReason,
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
     return items.filter((x) => !!x).join(" · ")

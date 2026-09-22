@@ -894,7 +894,26 @@ const layer = Layer.effect(
               finish === "unknown" ||
               finish === "other" ||
               (!hasOutput && ctx.assistantMessage.tokens.output === 0 && finish !== "tool-calls" && finish !== "content-filter")
-            if (!incomplete) return
+            if (!incomplete) {
+              // stop/length 却全程零 token（无 usage）疑似上游截断后伪造的正常结束；
+              // usage 在既有语义里可选，只打日志不重试，避免误伤从不返回 usage 的供应商。
+              const tokens = ctx.assistantMessage.tokens
+              const noUsage =
+                tokens.input === 0 &&
+                tokens.output === 0 &&
+                tokens.reasoning === 0 &&
+                tokens.cache.read === 0 &&
+                tokens.cache.write === 0 &&
+                (tokens.total ?? 0) === 0
+              if ((finish === "stop" || finish === "length") && noUsage) {
+                yield* Effect.logWarning("completed without usage", {
+                  "session.id": input.sessionID,
+                  messageID: input.assistantMessage.id,
+                  finish,
+                })
+              }
+              return
+            }
             if (!hasOutput) emptyAttempts += 1
             ctx.assistantMessage.finish = undefined
             // Must fail (not throw): throws become defects and bypass Effect.retry.

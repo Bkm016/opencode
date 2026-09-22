@@ -245,6 +245,11 @@
     user-select: none;
   }
 
+  [data-slot="text-part-live-speed"] {
+    margin-top: 6px;
+    user-select: none;
+  }
+
   [data-slot="text-part-copy-wrapper"][data-interrupted] {
     width: 100%;
     justify-content: flex-end;

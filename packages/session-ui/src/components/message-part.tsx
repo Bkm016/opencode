@@ -63,6 +63,7 @@ import { useLocation } from "@solidjs/router"
 import { animateOutputEnter, animateShellSubtitle } from "@opencode-ai/ui/hooks/gsap-surface"
 import { attached, inline, kind } from "./message-file"
 import { isLastTextualPart, readPartText } from "./message-part-text"
+import { estimateOutputTokens, formatSpeed, speedFromTokens } from "./message-part-speed"
 import {
   ToolGroupRegistry,
   computeToolGroupDuration,
@@ -2110,6 +2111,17 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return match?.models?.[message.modelID]?.name ?? message.modelID
   })
 
+  const formatElapsed = (ms: number) => {
+    const total = Math.round(ms / 1000)
+    if (total < 60) return i18n.t("ui.message.duration.seconds", { count: numfmt().format(total) })
+    const minutes = Math.floor(total / 60)
+    const seconds = total % 60
+    return i18n.t("ui.message.duration.minutesSeconds", {
+      minutes: numfmt().format(minutes),
+      seconds: numfmt().format(seconds),
+    })
+  }
+
   const duration = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message as AssistantMessage
@@ -2121,29 +2133,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           ? completed - message.time.created
           : -1
     if (!(ms >= 0)) return ""
-    const total = Math.round(ms / 1000)
-    if (total < 60) return i18n.t("ui.message.duration.seconds", { count: numfmt().format(total) })
-    const minutes = Math.floor(total / 60)
-    const seconds = total % 60
-    return i18n.t("ui.message.duration.minutesSeconds", {
-      minutes: numfmt().format(minutes),
-      seconds: numfmt().format(seconds),
-    })
-  })
-
-  const meta = createMemo(() => {
-    if (props.message.role !== "assistant") return ""
-    const message = props.message as AssistantMessage
-    const items = [
-      message.agent && message.agent !== "compaction"
-        ? message.agent[0]?.toUpperCase() + message.agent.slice(1)
-        : "",
-      model(),
-      message.variant ?? "",
-      duration(),
-      interrupted() ? i18n.t("ui.message.interrupted") : "",
-    ]
-    return items.filter((x) => !!x).join(" \u00B7 ")
+    return formatElapsed(ms)
   })
 
   const text = () => readPartText(data.store.part_text_accum_delta, part())
@@ -2163,6 +2153,62 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       typeof (props.message as AssistantMessage).time.completed !== "number" &&
       part().time?.end === undefined,
   )
+  const speedfmt = createMemo(
+    () => new Intl.NumberFormat(i18n.locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+  )
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!streaming()) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 500)
+    onCleanup(() => clearInterval(timer))
+  })
+  const speedStart = createMemo(() => {
+    if (props.message.role !== "assistant") return undefined
+    const message = props.message as AssistantMessage
+    const start = part().time?.start
+    return typeof start === "number" ? start : message.time.created
+  })
+  // 流式阶段后端尚无真实 token 计数，按约 4 字符折算 1 token 估算实时速度，仅用于展示。
+  const liveLine = createMemo(() => {
+    if (!streaming()) return ""
+    const start = speedStart()
+    if (typeof start !== "number") return ""
+    const elapsedMs = now() - start
+    if (!(elapsedMs > 500)) return ""
+    const speed = speedFromTokens(estimateOutputTokens(text()), elapsedMs)
+    if (!speed) return ""
+    const rate = formatSpeed(speed.tps, speed.tpotMs, (value) => speedfmt().format(value))
+    return `${formatElapsed(elapsedMs)} · ${rate}`
+  })
+  // 完成后用真实 output token 与单条消息时长校准为精确值；duration() 可能展示整轮时长，此处坚持单条消息口径。
+  const finalSpeed = createMemo(() => {
+    if (props.message.role !== "assistant") return ""
+    if (streaming()) return ""
+    const message = props.message as AssistantMessage
+    const completed = message.time.completed
+    if (typeof completed !== "number") return ""
+    const speed = speedFromTokens(message.tokens.output, completed - message.time.created)
+    if (!speed) return ""
+    return formatSpeed(speed.tps, speed.tpotMs, (value) => speedfmt().format(value))
+  })
+
+  const meta = createMemo(() => {
+    if (props.message.role !== "assistant") return ""
+    const message = props.message as AssistantMessage
+    const items = [
+      message.agent && message.agent !== "compaction"
+        ? message.agent[0]?.toUpperCase() + message.agent.slice(1)
+        : "",
+      model(),
+      message.variant ?? "",
+      duration(),
+      finalSpeed(),
+      interrupted() ? i18n.t("ui.message.interrupted") : "",
+    ]
+    return items.filter((x) => !!x).join(" · ")
+  })
+
   const showCopy = createMemo(() => {
     if (chunkSummary()) return false
     if (props.message.role !== "assistant") return isLastTextPart()
@@ -2216,6 +2262,13 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                 <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
               </Show>
             </div>
+            <Show when={liveLine()}>
+              {(line) => (
+                <div data-slot="text-part-live-speed" class="text-12-regular text-text-weak">
+                  {line()}
+                </div>
+              )}
+            </Show>
             <Show when={props.canvases?.length}>
               <CanvasSummary sessionID={props.message.sessionID} canvases={props.canvases!} />
             </Show>

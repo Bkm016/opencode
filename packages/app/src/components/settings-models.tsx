@@ -13,6 +13,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { DialogConfirmAction, DialogModelConfig, DialogProviderConfig } from "./dialog-model-config"
+import { DialogFetchModels } from "./dialog-fetch-models"
 import { DialogSettings } from "./dialog-settings"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
@@ -146,6 +147,19 @@ const SettingsModelsContent: Component = () => {
   // 添加模型
   const addModel = (providerID: string) => {
     dialog.show(() => <DialogModelConfig providerID={providerID} onBack={backToSettings} />)
+  }
+
+  // 从提供商接口拉取可用模型（OpenAI 兼容协议为 {baseURL}/models）
+  const fetchRemoteModels = (providerID: string, provider: any) => {
+    dialog.show(() => (
+      <DialogFetchModels
+        providerID={providerID}
+        providerName={provider.name || providerID}
+        baseURL={provider.options?.baseURL}
+        apiKey={provider.options?.apiKey}
+        existingIDs={Object.keys(provider.models ?? {})}
+      />
+    ))
   }
 
   // 编辑模型
@@ -341,6 +355,17 @@ const SettingsModelsContent: Component = () => {
                     </div>
 
                     <div class="flex items-center gap-0.5 shrink-0">
+                      <Show when={provider.options?.baseURL}>
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          icon="download"
+                          onClick={() => fetchRemoteModels(providerID, provider)}
+                          class="text-12-regular"
+                        >
+                          获取模型
+                        </Button>
+                      </Show>
                       <Button
                         size="small"
                         variant="ghost"

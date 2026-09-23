@@ -250,7 +250,7 @@ export function SessionHeader() {
   const rightMount = useTitlebarRightMount()
   return (
     <>
-      {/* 手机上状态与终端入口收进会话菜单，标题栏只留标题和少量操作。 */}
+      {/* 手机上状态与终端入口放在会话标题栏（message-timeline），这里只渲染桌面端。 */}
       <Show when={isDesktop() && rightMount()}>
         {(mount) => (
           <Portal mount={mount()}>

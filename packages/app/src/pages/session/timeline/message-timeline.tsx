@@ -59,6 +59,7 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionRunScripts } from "@/components/session-run-scripts"
+import { StatusPopover } from "@/components/status-popover"
 import { exportFull, exportLastRequest, exportLastResponse, exportSummary, exportTransfer } from "./session-export"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
@@ -1696,6 +1697,20 @@ export function MessageTimeline(props: {
             <Show when={layout.isDesktop()}>
               <SessionRunScripts />
             </Show>
+            <Show when={!layout.isDesktop()}>
+              <div class="flex items-center">
+                <StatusPopover />
+                <IconButton
+                  icon={layout.view(sessionKey).terminal.opened() ? "terminal-active" : "terminal"}
+                  variant="ghost"
+                  class="w-8 h-6 rounded-md"
+                  aria-label={language.t("command.terminal.toggle")}
+                  aria-expanded={layout.view(sessionKey).terminal.opened()}
+                  aria-controls="terminal-panel"
+                  onClick={() => command.trigger("terminal.toggle")}
+                />
+              </div>
+            </Show>
             <SessionContextUsage placement="bottom" buttonAppearance="default" />
             <DropdownMenu
               gutter={4}
@@ -1769,11 +1784,6 @@ export function MessageTimeline(props: {
                       </DropdownMenu.SubContent>
                     </DropdownMenu.Portal>
                   </DropdownMenu.Sub>
-                  <Show when={!layout.isDesktop()}>
-                    <DropdownMenu.Item onSelect={() => command.trigger("terminal.toggle")}>
-                      <DropdownMenu.ItemLabel>{language.t("command.terminal.toggle")}</DropdownMenu.ItemLabel>
-                    </DropdownMenu.Item>
-                  </Show>
                   <DropdownMenu.Item onSelect={() => void simulateOverflow()} disabled={title.simulatingOverflow}>
                     <DropdownMenu.ItemLabel>{language.t("session.overflowTest.action")}</DropdownMenu.ItemLabel>
                   </DropdownMenu.Item>

@@ -46,7 +46,9 @@ function knownThemes() {
 
 const names: Record<string, string> = {
   amoled: "AMOLED",
+  claude: "Claude",
   cursor: "Cursor",
+  graphite: "Graphite",
   opencode: "OpenCode",
   orng: "Orng",
   vercel: "Vercel",

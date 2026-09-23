@@ -39,7 +39,9 @@ export { ThemeProvider, useTheme, type ColorScheme } from "./context"
 export {
   DEFAULT_THEMES,
   amoledTheme,
+  claudeTheme,
   cursorTheme,
+  graphiteTheme,
   opencodeTheme,
   orngTheme,
   vercelTheme,

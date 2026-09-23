@@ -503,7 +503,7 @@ function PromptInputV2ConfiguredSelect(props: {
   model?: boolean
 }) {
   const current = () => props.control.current()
-  const providerID = () => props.control.options().find((option) => option.id === current())?.providerID
+  const option = () => props.control.options().find((item) => item.id === current())
   return (
     <PromptInputV2Select
       title={props.title}
@@ -511,8 +511,12 @@ function PromptInputV2ConfiguredSelect(props: {
       options={props.control.options()}
       current={current()}
       currentIcon={
-        <Show when={props.model && providerID()}>
-          <ProviderIcon id={providerID()!} class="size-4 shrink-0 opacity-60" />
+        <Show when={props.model && option()?.providerID}>
+          <ProviderIcon
+            id={option()!.providerID!}
+            model={option()!.id}
+            class="size-4 shrink-0 opacity-60"
+          />
         </Show>
       }
       onSelect={props.control.onSelect}

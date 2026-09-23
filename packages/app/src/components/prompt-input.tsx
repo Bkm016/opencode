@@ -1570,12 +1570,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                 dialog.show(() => <DialogSelectModelUnpaid model={props.controls.model.selection} />)
                               }}
                             >
-                              <Show when={props.controls.model.selection.current()?.provider?.id}>
-                                <ProviderIcon
-                                  id={props.controls.model.selection.current()?.provider?.id ?? ""}
-                                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                                />
+                              <Show when={props.controls.model.selection.current()}>
+                                {(m) => (
+                                  <ProviderIcon
+                                    id={m().provider.id}
+                                    model={m().id}
+                                    family={m().family}
+                                    class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+                                    style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+                                  />
+                                )}
                               </Show>
                               <span class="truncate">
                                 {props.controls.model.selection.current()?.name ??
@@ -1604,12 +1608,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             }}
                             onClose={restoreFocus}
                           >
-                            <Show when={props.controls.model.selection.current()?.provider?.id}>
-                              <ProviderIcon
-                                id={props.controls.model.selection.current()?.provider?.id ?? ""}
-                                class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                                style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                              />
+                            <Show when={props.controls.model.selection.current()}>
+                              {(m) => (
+                                <ProviderIcon
+                                  id={m().provider.id}
+                                  model={m().id}
+                                  family={m().family}
+                                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+                                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+                                />
+                              )}
                             </Show>
                             <span class="truncate">
                               {props.controls.model.selection.current()?.name ??

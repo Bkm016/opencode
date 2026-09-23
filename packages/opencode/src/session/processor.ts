@@ -311,8 +311,6 @@ const layer = Layer.effect(
         return { call: ctx.toolcalls[input.id], part }
       })
 
-      const isFilePart = (value: unknown): value is SessionV1.FilePart => Schema.is(SessionV1.FilePart)(value)
-
       const settleRepetitionPart = Effect.fnUntraced(function* (kind: "text" | "reasoning", id: string) {
         if (kind === "text") {
           if (!ctx.currentText) return
@@ -396,13 +394,25 @@ const layer = Layer.effect(
           }
         }
         if (isRecord(value.result.value) && typeof value.result.value.output === "string") {
+          // 工具返回的 attachments 是 Omit<..., "id"|"sessionID"|"messageID">，这里补全为 FilePart
+          const attachments = Array.isArray(value.result.value.attachments)
+            ? value.result.value.attachments
+                .filter(
+                  (a): a is Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID"> =>
+                    isRecord(a) && a.type === "file" && typeof a.mime === "string" && typeof a.url === "string",
+                )
+                .map((a) => ({
+                  ...a,
+                  id: PartID.ascending(),
+                  sessionID: ctx.assistantMessage.sessionID,
+                  messageID: ctx.assistantMessage.id,
+                }))
+            : undefined
           return {
             title: typeof value.result.value.title === "string" ? value.result.value.title : value.name,
             metadata: isRecord(value.result.value.metadata) ? value.result.value.metadata : {},
             output: value.result.value.output,
-            attachments: Array.isArray(value.result.value.attachments)
-              ? value.result.value.attachments.filter(isFilePart)
-              : undefined,
+            attachments,
           }
         }
         return {

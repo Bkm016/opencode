@@ -5,6 +5,8 @@ export const PUBLIC_UI_PATHS = new Set<string>([
   "/site.webmanifest",
   "/web-app-manifest-192x192.png",
   "/web-app-manifest-512x512.png",
+  // Service worker update checks run in the background, outside the page's auth prompt.
+  "/sw.js",
 ])
 
 export function isPublicUIPath(method: string, pathname: string) {

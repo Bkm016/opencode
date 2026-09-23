@@ -153,6 +153,13 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   })
 }
 
+// PWA asset cache; the desktop app has its own entry and never registers it.
+if (!import.meta.env.DEV && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch(() => undefined)
+  })
+}
+
 if (root instanceof HTMLElement) {
   const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
   clearAuthToken()

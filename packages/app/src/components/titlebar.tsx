@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onMount, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -79,6 +79,16 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const electronWindows = createMemo(() => windows() && !tauriApi())
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
+  // Installed PWA with the title bar merged into the window (manifest display_override).
+  const [overlay, setOverlay] = createSignal(false)
+  onMount(() => {
+    if (!web()) return
+    const query = matchMedia("(display-mode: window-controls-overlay)")
+    const update = () => setOverlay(query.matches)
+    update()
+    query.addEventListener("change", update)
+    onCleanup(() => query.removeEventListener("change", update))
+  })
   const zoom = () => platform.webviewZoom?.() ?? 1
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
   const counterZoom = () => (windows() && titlebarZoom() < 1 ? 1 / titlebarZoom() : 1)
@@ -89,6 +99,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     return undefined
   }
   const windowsControlsWidth = () => `${windowsControlsBaseWidth / Math.max(titlebarZoom(), 1)}px`
+  const titlebarAreaWidth = () => {
+    if (electronWindows()) return `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))`
+    if (overlay()) return "env(titlebar-area-width, 100%)"
+    return undefined
+  }
 
   const [history, setHistory] = createStore({
     stack: [] as string[],
@@ -212,11 +227,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
         "min-height": minHeight(),
         // Keep native macOS traffic lights clear even when the desktop window is narrow.
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
-        width: electronWindows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
-        "max-width": electronWindows()
-          ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))`
-          : undefined,
-        "align-self": electronWindows() ? "flex-start" : undefined,
+        // Window controls sit on the left on macOS; titlebar-area-x is 0 elsewhere.
+        "margin-left": overlay() ? "env(titlebar-area-x, 0px)" : undefined,
+        width: titlebarAreaWidth(),
+        "max-width": titlebarAreaWidth(),
+        "align-self": titlebarAreaWidth() ? "flex-start" : undefined,
       }}
       data-tauri-drag-region
       onMouseDown={drag}
@@ -261,7 +276,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             <div class="flex items-center gap-1 shrink-0">
               <Show when={isDesktop()}>
                 <TooltipKeybind
-                  class={web() ? "shrink-0 ml-14" : "shrink-0 ml-2"}
+                  class={web() && !overlay() ? "shrink-0 ml-14" : "shrink-0 ml-2"}
                   placement="bottom"
                   title={language.t("command.sidebar.toggle")}
                   keybind={command.keybind("sidebar.toggle")}

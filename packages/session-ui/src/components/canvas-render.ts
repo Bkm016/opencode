@@ -30,6 +30,19 @@ renderer.link = function ({ href, tokens }) {
 renderer.code = ({ text, lang }) =>
   `<pre data-canvas-code="${encodeURIComponent(lang?.trim().split(/\s+/)[0] ?? "")}"><code>${escapeHtml(text)}</code></pre>\n`
 
+// GitHub 风格提示块：`> [!TIP]` 等标记转为带类型的提示卡片，其余引用保持原样。
+const CALLOUTS = ["note", "tip", "important", "warning", "caution"]
+renderer.blockquote = function ({ tokens }) {
+  const body = this.parser.parse(tokens)
+  const match = /^<p>\[!(\w+)\][ \t]*(?:<br>\s*|\n)?/i.exec(body)
+  const kind = match?.[1].toLowerCase()
+  if (!match || !kind || !CALLOUTS.includes(kind)) return `<blockquote>\n${body}</blockquote>\n`
+  const rest = body.slice(match[0].length).replace(/^<\/p>\s*/, "")
+  const content = rest.startsWith("<") || !rest ? rest : `<p>${rest}`
+  const title = kind[0].toUpperCase() + kind.slice(1)
+  return `<blockquote data-canvas-callout="${kind}"><p data-canvas-callout-title="">${title}</p>\n${content}</blockquote>\n`
+}
+
 function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
@@ -79,7 +92,17 @@ const PURIFY_MARKDOWN = {
     "td",
     "span",
   ],
-  ALLOWED_ATTR: ["href", "target", "rel", "start", "align", "data-canvas-formula", "data-canvas-code"],
+  ALLOWED_ATTR: [
+    "href",
+    "target",
+    "rel",
+    "start",
+    "align",
+    "data-canvas-formula",
+    "data-canvas-code",
+    "data-canvas-callout",
+    "data-canvas-callout-title",
+  ],
 }
 
 const PURIFY_SVG = {
@@ -211,6 +234,11 @@ function themeVariables() {
       transitionLabelColor: textStrong,
     },
   }
+}
+
+/** 在底色上按百分比混入强调色，供 SVG 内样式使用。 */
+function tint(color: string, percent: number, base: string) {
+  return `color-mix(in srgb, ${color} ${percent}%, ${base})`
 }
 
 function sanitizeMarkdownHtml(html: string): string {
@@ -355,38 +383,49 @@ async function renderCanvasSerial(content: string): Promise<CanvasResult> {
 
   if (diagrams.length) {
     const { default: mermaid } = await import("mermaid")
-    const theme = themeVariables().mermaid
+    const { mermaid: theme, chart } = themeVariables()
+    const brand = chart.colors[0]
+    const accent = chart.colors[2]
+    const shadow = theme.darkMode ? "rgba(0,0,0,0.35)" : "rgba(23,23,23,0.06)"
     // 宿主独占主题与排版，模型侧 init / theme / classDef 等指令已被前置拒绝
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
       themeVariables: theme,
-      // 流程节点使用中性底面，菱形保留主题强调色；样式只由宿主生成，不接收文档 CSS。
+      // 节点统一使用品牌色浅染底面 + 半透明品牌描边，判断节点换第二分类色区分；
+      // 轻投影让节点浮在点阵底面之上。样式只由宿主生成，不接收文档 CSS。
       themeCSS: `
-        .node rect, .node circle, .node ellipse, .node path {
-          fill: ${theme.secondaryColor};
-          stroke: ${theme.secondaryBorderColor};
+        .node rect, .node circle, .node ellipse, .node path,
+        .statediagram-state rect, rect.actor, .er.entityBox, .er.attributeBoxOdd, .er.attributeBoxEven {
+          fill: ${tint(brand, 10, theme.background)};
+          stroke: ${tint(brand, 55, theme.background)};
           stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px;
         }
-        .node rect { rx: 6px; ry: 6px; }
+        .er.attributeBoxEven { fill: ${tint(brand, 4, theme.background)}; }
+        .node rect, rect.actor, .statediagram-state rect { rx: 8px; ry: 8px; }
         .node polygon {
-          fill: ${theme.primaryColor};
-          stroke: ${theme.primaryBorderColor};
+          fill: ${tint(accent, 12, theme.background)};
+          stroke: ${tint(accent, 60, theme.background)};
           stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px;
         }
-        .node .label { font-weight: 500; }
-        .flowchart-link { stroke: ${theme.lineColor}; stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px; }
-        .edgeLabel { font-size: ${CANVAS_GRAPH_STYLE.labelSize}px; color: ${theme.mutedTextColor}; }
-        .edgeLabel rect { fill: ${theme.background}; opacity: 1; }
+        .node, rect.actor, .statediagram-state, .er.entityBox {
+          filter: drop-shadow(0 1px 1.5px ${shadow}) drop-shadow(0 4px 10px ${shadow});
+        }
+        .node .label, .actor tspan, .statediagram-state .nodeLabel { font-weight: 500; }
+        .flowchart-link { stroke: ${theme.lineColor}; stroke-width: ${CANVAS_GRAPH_STYLE.lineWidth - 0.5}px; }
+        .marker, marker path { fill: ${theme.lineColor}; stroke: ${theme.lineColor}; }
+        .edgeLabel { font-size: ${CANVAS_GRAPH_STYLE.labelSize - 1}px; color: ${theme.mutedTextColor}; }
+        .edgeLabel rect, .labelBkg { fill: ${theme.background}; background: ${theme.background}; opacity: 1; }
         .edgeLabel text { fill: ${theme.mutedTextColor}; }
-        .actor { stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px; }
-        .statediagram-state rect, .er.entityBox {
-          stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px;
+        .statediagram-state rect, .er.entityBox { stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px; }
+        .messageLine0, .messageLine1 {
+          stroke: ${theme.lineColor}; stroke-width: ${CANVAS_GRAPH_STYLE.lineWidth - 0.5}px;
         }
-        .messageLine0, .messageLine1, .actor-line {
-          stroke: ${theme.lineColor}; stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px;
-        }
+        .actor-line { stroke: ${tint(brand, 35, theme.background)}; stroke-dasharray: 3 4; }
+        .messageText { fill: ${theme.textColor}; font-weight: 500; }
+        #arrowhead path, .arrowheadPath { fill: ${theme.lineColor}; stroke: ${theme.lineColor}; }
+        circle.state-start, .state-end { fill: ${brand}; stroke: ${brand}; }
       `,
       maxTextSize: MERMAID_MAX_TEXT_SIZE,
       maxEdges: MERMAID_MAX_EDGES,

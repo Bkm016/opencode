@@ -468,4 +468,67 @@ describe("renderCanvasChart", () => {
     })
     await expect(renderCanvasChart(spec2)).rejects.toThrow('Property "datasets" is forbidden in chart specification')
   })
+
+  const names = Array.from({ length: 20 }, (_, index) => `Model ${String.fromCharCode(65 + index)}`)
+
+  it("folds donuts beyond the palette into a neutral other slice", async () => {
+    const theme = createCanvasTheme(false)
+    const svg = await renderCanvasChart(
+      JSON.stringify({
+        data: { values: names.map((name, index) => ({ name, share: index + 1 })) },
+        mark: { type: "arc", innerRadius: 50 },
+        encoding: {
+          theta: { field: "share", type: "quantitative" },
+          color: { field: "name", type: "nominal" },
+        },
+      }),
+      theme,
+    )
+    // 最大的 5 块保留名称，其余 15 块合并为一块灰色「其他」。
+    expect(svg).toContain("Model T")
+    expect(svg).toContain("Model P")
+    expect(svg).not.toContain("Model O")
+    expect(svg).toContain("其他（15 项）")
+    expect(svg).toContain(`fill="${theme.neutral}"`)
+  })
+
+  it("drops redundant color and turns crowded column bars horizontal", async () => {
+    const theme = createCanvasTheme(false)
+    const svg = await renderCanvasChart(
+      JSON.stringify({
+        data: { values: names.map((name, index) => ({ name, tokens: (index + 1) * 10 })) },
+        mark: "bar",
+        encoding: {
+          x: { field: "name", type: "nominal" },
+          y: { field: "tokens", type: "quantitative" },
+          color: { field: "name", type: "nominal" },
+        },
+      }),
+      theme,
+    )
+    // 颜色重复类别轴时统一品牌色；所有类别名都作为纵轴标签完整保留。
+    expect(svg).not.toContain(`fill="${theme.colors[1]}"`)
+    for (const name of names) expect(svg).toContain(`>${name}</text>`)
+  })
+
+  it("splits many color series into labeled small multiples", async () => {
+    const theme = createCanvasTheme(false)
+    const svg = await renderCanvasChart(
+      JSON.stringify({
+        data: {
+          values: names.flatMap((model, index) => [1, 2, 3].map((day) => ({ model, day, value: index + day }))),
+        },
+        mark: "line",
+        encoding: {
+          x: { field: "day", type: "quantitative" },
+          y: { field: "value", type: "quantitative" },
+          color: { field: "model", type: "nominal" },
+        },
+      }),
+      theme,
+    )
+    // 每个系列一格，格标题标出名称，颜色不再循环复用。
+    for (const name of names) expect(svg).toContain(`>${name}</text>`)
+    expect(svg).not.toContain(`stroke="${theme.colors[1]}"`)
+  })
 })

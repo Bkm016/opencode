@@ -108,7 +108,15 @@ export function CanvasDocument(props: CanvasDocumentProps) {
         return
       }
       // 全部成功才一次性替换，避免半份内容闪烁
-      if (bodyEl) bodyEl.innerHTML = result.html
+      if (bodyEl) {
+        bodyEl.innerHTML = result.html
+        // 两个以上章节且作者未自行编号时，章节标题自动带 01、02 序号。
+        const sections = Array.from(bodyEl.querySelectorAll(":scope > h2"), (h) => h.textContent?.trim() ?? "")
+        bodyEl.toggleAttribute(
+          "data-numbered",
+          sections.length >= 2 && !sections.some((text) => /^(?:\d+|[一二三四五六七八九十]+)[.、．:：)\s]/.test(text)),
+        )
+      }
       setState("hasHeading", !!bodyEl?.querySelector("h1"))
       publish(undefined)
       props.onCopyReady?.(copyImage)

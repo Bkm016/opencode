@@ -10,6 +10,8 @@ export interface CanvasChartTheme {
   colors: string[]
   /** 小面积标记的连续色阶，暗底下不使用接近背景的深蓝端点。 */
   ramp?: string[]
+  /** 合并后的「其他」等非主角数据的中性色，比文字灰更退后，不与分类色抢视线。 */
+  neutral?: string
 }
 
 // 两种绘图引擎共用文字尺度和线条重量，避免各自的默认值形成两套视觉语言。
@@ -28,6 +30,7 @@ export function createCanvasTheme(dark: boolean, host: Partial<CanvasChartTheme>
       ? ["#3987e5", "#199e70", "#9085e9", "#c98500", "#d55181", "#008300"]
       : ["#2a78d6", "#1baf7a", "#4a3aa7", "#eda100", "#e87ba4", "#008300"],
     ramp: dark ? ["#4389e5", "#b9ddff"] : ["#74aceb", "#1645a0"],
+    neutral: dark ? "#5c5c5c" : "#b3b3b3",
     surface: dark ? "#242424" : "#fafafa",
     border: dark ? "#525252" : "#d4d4d4",
     accentSurface: dark ? "#303030" : "#f0f0f0",

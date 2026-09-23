@@ -345,7 +345,181 @@ function validateLayer(
   return { layers: cleanLayers, totalRows: layerRows }
 }
 
-function buildSanitizedSpec(raw: unknown): Record<string, unknown> {
+// 分类色板只有 6 色：超过时不循环复用颜色，按图形改为合并「其他」、单色或小多图。
+const MAX_COLOR_CATEGORIES = 6
+// 竖向分类柱超过此数时横轴标签会互相挤掉，改为横向柱让每个名称完整显示。
+const MAX_COLUMN_CATEGORIES = 8
+const SMALL_MULTIPLE_COLUMNS = 4
+
+type ChannelDef = Record<string, unknown>
+
+function plainCategory(def: ChannelDef | undefined): def is ChannelDef & { field: string } {
+  return (
+    !!def &&
+    typeof def.field === "string" &&
+    (def.type === "nominal" || def.type === "ordinal") &&
+    !def.aggregate &&
+    !def.bin &&
+    !def.timeUnit
+  )
+}
+
+function distinctCount(rows: Record<string, unknown>[], field: string) {
+  return new Set(rows.map((row) => row[field])).size
+}
+
+/** 环形/饼图按数值降序保留前 5 块，其余求和并入灰色「其他」，排序与图例顺序一致。 */
+function foldArcCategories(
+  spec: Record<string, unknown>,
+  encoding: Record<string, ChannelDef>,
+  rows: Record<string, unknown>[],
+  theme: CanvasChartTheme,
+) {
+  const color = encoding.color
+  const theta = encoding.theta
+  if (!plainCategory(color) || color.scale || !theta || theta.type !== "quantitative") return
+  const valueField = theta.field
+  if (typeof valueField !== "string" || theta.aggregate || theta.bin) return
+  if (!rows.every((row) => typeof row[valueField] === "number" && (row[valueField] as number) >= 0)) return
+  if (distinctCount(rows, color.field) <= MAX_COLOR_CATEGORIES) return
+  const totals = new Map<unknown, number>()
+  for (const row of rows)
+    totals.set(row[color.field], (totals.get(row[color.field]) ?? 0) + (row[valueField] as number))
+  const sorted = [...totals].sort((a, b) => b[1] - a[1])
+  const kept = sorted.slice(0, MAX_COLOR_CATEGORIES - 1)
+  const rest = sorted.slice(MAX_COLOR_CATEGORIES - 1)
+  const other = `其他（${rest.length} 项）`
+  const folded = [...kept, [other, rest.reduce((sum, [, value]) => sum + value, 0)] as const]
+  const rank = "__canvas_rank"
+  spec.data = {
+    values: folded.map(([name, value], index) => ({ [color.field]: name, [valueField]: value, [rank]: index })),
+  }
+  const domain = folded.map(([name]) => name)
+  spec.encoding = {
+    ...encoding,
+    color: {
+      ...color,
+      sort: domain,
+      scale: { domain, range: [...theme.colors.slice(0, MAX_COLOR_CATEGORIES - 1), theme.neutral ?? theme.muted] },
+    },
+    order: { field: rank, type: "quantitative" },
+  }
+}
+
+/** 颜色超过 6 类且无法合并的单层图拆成按类别分面的小多图，每格单色并以类别名作标题。 */
+function facetByColor(spec: Record<string, unknown>, rows: Record<string, unknown>[]) {
+  const encoding = spec.encoding as Record<string, ChannelDef> | undefined
+  const color = encoding?.color
+  if (!encoding || !spec.mark || !plainCategory(color) || color.scale) return
+  const count = distinctCount(rows, color.field)
+  if (count <= MAX_COLOR_CATEGORIES) return
+  const { color: _color, ...rest } = encoding
+  const columns = Math.min(SMALL_MULTIPLE_COLUMNS, count)
+  spec.facet = { field: color.field, type: color.type, title: null, ...(color.sort ? { sort: color.sort } : {}) }
+  spec.columns = columns
+  spec.spacing = { row: 20, column: 16 }
+  spec.spec = {
+    mark: spec.mark,
+    encoding: rest,
+    width: Math.floor((CHART_WIDTH - 48 - (columns - 1) * 16) / columns),
+    height: 88,
+  }
+  spec.autosize = { type: "pad", contains: "padding" }
+  delete spec.mark
+  delete spec.encoding
+  delete spec.width
+  delete spec.height
+}
+
+function alpha(hex: string, opacity: number) {
+  const value = /^#([0-9a-f]{6})$/i.exec(hex)?.[1]
+  if (!value) return hex
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16))
+  return `rgba(${r},${g},${b},${opacity})`
+}
+
+/**
+ * 单色系列的装饰层：柱体沿数值方向由浅到深渐变，面积与折线下方铺一层向基线渐隐的色带。
+ * 只作用于没有颜色编码的系列，多系列仍保持纯色以免削弱分类识别；分层图逐层处理。
+ */
+function decorateSingleSeries(spec: Record<string, unknown>, theme: CanvasChartTheme) {
+  const target = (spec.facet ? spec.spec : spec) as Record<string, unknown> | undefined
+  if (!target) return
+  const shared = target.encoding as Record<string, ChannelDef> | undefined
+  if (Array.isArray(target.layer)) {
+    for (const layer of target.layer as Record<string, unknown>[]) {
+      const own = layer.encoding as Record<string, ChannelDef> | undefined
+      decorateMark(layer, { ...shared, ...own }, theme, false)
+    }
+    return
+  }
+  if (shared) decorateMark(target, shared, theme, true)
+}
+
+function decorateMark(
+  target: Record<string, unknown>,
+  encoding: Record<string, ChannelDef>,
+  theme: CanvasChartTheme,
+  canLayer: boolean,
+) {
+  const mark = target.mark
+  if (!mark) return
+  const base = typeof mark === "string" ? { type: mark } : (mark as Record<string, unknown>)
+  // 折线与面积只保留水平网格，竖线交给数据点本身。
+  if ((base.type === "line" || base.type === "area") && target.encoding) {
+    const own = target.encoding as Record<string, ChannelDef>
+    if (own.x && own.x.axis !== null) {
+      target.encoding = { ...own, x: { ...own.x, axis: { grid: false, ...(own.x.axis as object | undefined) } } }
+    }
+  }
+  if (encoding.color) return
+  const brand = theme.colors[0]
+  const fade = {
+    gradient: "linear",
+    x1: 0,
+    y1: 0,
+    x2: 0,
+    y2: 1,
+    stops: [
+      { offset: 0, color: alpha(brand, 0.32) },
+      { offset: 1, color: alpha(brand, 0) },
+    ],
+  }
+  if (base.type === "bar") {
+    const horizontal = encoding.x?.type === "quantitative" && encoding.y?.type !== "quantitative"
+    target.mark = {
+      ...base,
+      color: {
+        gradient: "linear",
+        ...(horizontal ? { x1: 0, y1: 0, x2: 1, y2: 0 } : { x1: 0, y1: 1, x2: 0, y2: 0 }),
+        stops: [
+          { offset: 0, color: alpha(brand, 0.55) },
+          { offset: 1, color: brand },
+        ],
+      },
+    }
+    return
+  }
+  if (base.type === "area") {
+    target.mark = {
+      ...base,
+      color: fade,
+      fillOpacity: 1,
+      line: { color: brand, strokeWidth: CANVAS_GRAPH_STYLE.lineWidth },
+    }
+    return
+  }
+  if (canLayer && base.type === "line" && encoding.y?.type === "quantitative") {
+    const interpolate = base.interpolate ?? "monotone"
+    target.layer = [
+      { mark: { type: "area", color: fade, fillOpacity: 1, line: false, point: false, interpolate } },
+      { mark: base },
+    ]
+    delete target.mark
+  }
+}
+
+function buildSanitizedSpec(raw: unknown, theme: CanvasChartTheme = DEFAULT_CANVAS_THEME): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Chart specification must be an object")
   checkDepth(raw)
   const spec = raw as Record<string, unknown>
@@ -446,6 +620,35 @@ function buildSanitizedSpec(raw: unknown): Record<string, unknown> {
     if (!("mark" in spec)) throw new Error("Specification must define either mark or layer")
     const mark = validateMark(spec.mark)
     cleanSpec.mark = mark
+    const markType = typeof mark === "string" ? mark : mark.type
+    const declared = cleanSpec.encoding as Record<string, ChannelDef> | undefined
+    if (declared && markType === "arc") foldArcCategories(cleanSpec, declared, rootValues, theme)
+    // 颜色只是重复坐标轴上的类别时，超过色板容量就去掉颜色，由轴标签识别。
+    const current = cleanSpec.encoding as Record<string, ChannelDef> | undefined
+    const colorDef = current?.color
+    if (
+      current &&
+      plainCategory(colorDef) &&
+      [current.x, current.y].some((def) => def?.field === colorDef.field) &&
+      distinctCount(rootValues, colorDef.field) > MAX_COLOR_CATEGORIES
+    ) {
+      const { color: _color, ...rest } = current
+      cleanSpec.encoding = rest
+    }
+    // 竖向分类柱过多时转为横向，名称沿纵轴完整排列，高度随类别数增长。
+    const columnBars = cleanSpec.encoding as Record<string, ChannelDef> | undefined
+    if (
+      markType === "bar" &&
+      columnBars &&
+      !columnBars.color &&
+      plainCategory(columnBars.x) &&
+      columnBars.y?.type === "quantitative" &&
+      distinctCount(rootValues, columnBars.x.field) > MAX_COLUMN_CATEGORIES
+    ) {
+      const count = distinctCount(rootValues, columnBars.x.field)
+      cleanSpec.encoding = { ...columnBars, x: columnBars.y, y: columnBars.x }
+      cleanSpec.height = Math.max(CHART_HEIGHT, count * 26)
+    }
     // 独立饼/环图采用紧凑正方形；显式外半径保留原尺寸，避免裁切用户指定的几何大小。
     // 当前由宿主统一普通饼/环图的显示半径，仅保留是否有内孔的语义；数据编码的半径和多层图不改写。
     const encoding = cleanSpec.encoding as Record<string, Record<string, unknown>> | undefined
@@ -456,7 +659,10 @@ function buildSanitizedSpec(raw: unknown): Record<string, unknown> {
       cleanSpec.mark = {
         ...(typeof mark === "object" ? mark : { type: mark }),
         outerRadius: 100,
-        innerRadius: typeof mark === "object" && typeof mark.innerRadius === "number" && mark.innerRadius > 0 ? 62 : 0,
+        innerRadius: typeof mark === "object" && typeof mark.innerRadius === "number" && mark.innerRadius > 0 ? 70 : 0,
+        // 扇区之间留缝并收圆角，环图更轻盈。
+        padAngle: 0.012,
+        cornerRadius: 3,
       }
     }
     // 仅为少量、未聚合且一分类一数值的简单图补标签；分组、堆叠、负值和分箱仍交由原编码表达。
@@ -644,6 +850,7 @@ function buildSanitizedSpec(raw: unknown): Record<string, unknown> {
       cleanSpec.padding = { top: 20, right: horizontal ? 48 : 12, bottom: 5, left: 5 }
       delete cleanSpec.mark
     }
+    facetByColor(cleanSpec, rootValues)
   }
 
   if (totalRows > MAX_TOTAL_ROWS) {
@@ -666,8 +873,9 @@ export async function renderCanvasChart(source: string, theme?: CanvasChartTheme
     throw new Error(`Chart specification is not valid JSON: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  const cleanSpec = buildSanitizedSpec(parsed)
   const activeTheme = theme ?? DEFAULT_CANVAS_THEME
+  const cleanSpec = buildSanitizedSpec(parsed, activeTheme)
+  decorateSingleSeries(cleanSpec, activeTheme)
   const rows = (cleanSpec.data as { values: Record<string, unknown>[] }).values
 
   // 构造统一宿主无边框与语义配色配置，为默认 mark 注入主题首选色
@@ -726,6 +934,15 @@ export async function renderCanvasChart(source: string, theme?: CanvasChartTheme
       labelAngle: 0,
       labelOverlap: true,
       labelLimit: 120,
+    },
+    // 小多图的格标题与图例文字同级，左对齐贴在各格上方。
+    header: {
+      labelColor: activeTheme.text,
+      labelFont: activeTheme.font,
+      labelFontSize: 12,
+      labelFontWeight: 500,
+      labelAnchor: "start",
+      labelPadding: 6,
     },
     legend: {
       title: null,

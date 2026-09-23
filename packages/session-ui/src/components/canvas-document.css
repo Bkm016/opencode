@@ -8,6 +8,18 @@
   font-family: var(--font-family-sans);
   font-size: 14px;
   line-height: 1.8;
+  /* 与图表首位分类色一致的品牌色与副强调色，文档装饰与图表共用一套色相。 */
+  --canvas-brand: #2a78d6;
+  --canvas-accent: #4a3aa7;
+  --canvas-card: color-mix(in srgb, var(--text-strong) 2.5%, var(--surface-raised-stronger-non-alpha, #ffffff));
+  --canvas-card-border: color-mix(in srgb, var(--text-strong) 9%, transparent);
+  --canvas-card-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.08);
+
+  :root[data-color-scheme="dark"] & {
+    --canvas-brand: #3987e5;
+    --canvas-accent: #9085e9;
+    --canvas-card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+  }
 
   .sr-only {
     position: absolute;
@@ -84,13 +96,39 @@
   /* 当前采用无描边、无投影样式，仅保留底色与留白。 */
   /* 当前改为单一纸面，外层负责底色，不再叠放带圆角的文档卡片。 */
   [data-slot="canvas-document-body"] {
+    position: relative;
+    isolation: isolate;
     max-width: 880px;
     margin: 0 auto;
-    padding: 48px 56px 64px;
+    padding: 56px 56px 72px;
     background: transparent;
     border: 0;
     border-radius: 0;
     box-sizing: border-box;
+
+    /* 页眉氛围：品牌色柔光 + 渐隐点阵，只铺在标题区，向下自然消失。 */
+    &::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 0 -120px auto;
+      height: 420px;
+      pointer-events: none;
+      background:
+        radial-gradient(
+          ellipse 55% 60% at 22% 0%,
+          color-mix(in srgb, var(--canvas-brand) 16%, transparent),
+          transparent 70%
+        ),
+        radial-gradient(
+          ellipse 45% 55% at 78% 8%,
+          color-mix(in srgb, var(--canvas-accent) 12%, transparent),
+          transparent 70%
+        ),
+        radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-weak) 22%, transparent) 1px, transparent 0) 0
+          0 / 22px 22px;
+      mask-image: radial-gradient(ellipse 70% 100% at 50% 0%, #000 20%, transparent 75%);
+    }
 
     @media (max-width: 640px) {
       padding: 24px 18px 40px;
@@ -102,11 +140,11 @@
   /* 正文内容已包含 h1 时，由组件隐藏 fallback 标题，避免标题重复。 */
   [data-slot="canvas-document-title"] {
     flex-shrink: 0;
-    margin: 0 0 20px;
+    margin: 0 0 18px;
     padding-bottom: 0;
     border-bottom: 0;
-    font-size: 32px;
-    font-weight: 600;
+    font-size: 38px;
+    font-weight: 700;
     color: var(--text-strong);
     line-height: 1.2;
     letter-spacing: -0.03em;
@@ -136,14 +174,33 @@
 
   /* 标题层级拉开字号与字重差，正文退一档字色，让结构一眼可读。 */
   h1 {
-    font-size: 32px;
+    font-size: 38px;
     color: var(--text-strong);
-    font-weight: 600;
-    margin: 40px 0 20px;
-    line-height: 1.2;
-    letter-spacing: -0.03em;
+    font-weight: 700;
+    margin: 40px 0 18px;
+    line-height: 1.15;
+    letter-spacing: -0.035em;
     padding-bottom: 0;
     border-bottom: 0;
+  }
+
+  /* 文档主标题：文字色向品牌色渐变。 */
+  > h1:first-child,
+  [data-slot="canvas-document-content"] > h1:first-child,
+  &[data-slot="canvas-document-body"] > [data-slot="canvas-document-title"] {
+    margin-top: 0;
+    width: fit-content;
+    max-width: 100%;
+    background: linear-gradient(
+      100deg,
+      var(--text-strong) 10%,
+      color-mix(in srgb, var(--canvas-brand) 80%, var(--text-strong)) 65%,
+      var(--canvas-accent)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding-bottom: 0.08em;
   }
 
   /* 紧跟主标题的第一段作为导语，放大并减弱字色。 */
@@ -174,6 +231,34 @@
     margin-top: 0;
     padding-top: 0;
     border-top: 0;
+  }
+
+  /* 自动章节序号：品牌色等宽小号数字 + 细线，杂志式分节。 */
+  [data-slot="canvas-document-content"][data-numbered] {
+    counter-reset: canvas-section;
+
+    > h2 {
+      counter-increment: canvas-section;
+    }
+
+    > h2::before {
+      content: counter(canvas-section, decimal-leading-zero);
+      display: block;
+      width: fit-content;
+      margin-bottom: 8px;
+      padding-right: 40px;
+      font-family: var(--font-family-mono);
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: 0.1em;
+      color: var(--canvas-brand);
+      background: linear-gradient(90deg, var(--canvas-brand), transparent) no-repeat right center / 28px 1.5px;
+    }
+
+    > h2::after {
+      content: none;
+    }
   }
 
   h3 {
@@ -265,31 +350,101 @@
   /* 取消强调边框，以浅底衬面区分引用。 */
   /* 引用保持无描边，改用极淡的强调色衬底与更大的内边距。 */
   blockquote {
+    --callout: var(--canvas-brand);
+    position: relative;
     border: 0;
     margin: 24px 0;
-    padding: 16px 20px;
-    background: color-mix(
-      in srgb,
-      var(--text-interactive-base) 7%,
-      var(--surface-raised-stronger-non-alpha, transparent)
-    );
-    border-radius: 10px;
+    padding: 16px 20px 16px 22px;
+    background: color-mix(in srgb, var(--callout) 7%, var(--surface-raised-stronger-non-alpha, transparent));
+    border-radius: 12px;
     color: var(--text-strong);
     line-height: 1.75;
+    overflow: hidden;
+
+    /* 左侧渐变强调条 */
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--callout), color-mix(in srgb, var(--callout) 25%, transparent));
+    }
 
     p {
       margin: 0;
     }
-    p + p {
+    p + p,
+    p + ul,
+    p + ol {
       margin-top: 8px;
     }
+    ul,
+    ol {
+      margin-bottom: 0;
+    }
+  }
+
+  /* GitHub 风格提示块：按类型着色，标题带图标。 */
+  blockquote[data-canvas-callout="tip"] {
+    --callout: #1a9f6c;
+  }
+  blockquote[data-canvas-callout="important"] {
+    --callout: var(--canvas-accent);
+  }
+  blockquote[data-canvas-callout="warning"] {
+    --callout: #d18a00;
+  }
+  blockquote[data-canvas-callout="caution"] {
+    --callout: #d9434e;
+  }
+
+  [data-canvas-callout-title] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 12.5px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--callout);
+
+    &::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      background: currentColor;
+      mask: var(--callout-icon) center / contain no-repeat;
+    }
+  }
+
+  blockquote[data-canvas-callout] {
+    --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm0 3a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8ZM9 11.5H7V7.5h2v4Z'/%3E%3C/svg%3E");
+  }
+  blockquote[data-canvas-callout="tip"] {
+    --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1a5 5 0 0 0-3 9v1.5c0 .6.4 1 1 1h4c.6 0 1-.4 1-1V10a5 5 0 0 0-3-9ZM6 14h4v1H6z'/%3E%3C/svg%3E");
+  }
+  blockquote[data-canvas-callout="important"] {
+    --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 1.5h10c.8 0 1.5.7 1.5 1.5v7c0 .8-.7 1.5-1.5 1.5H8l-3.5 3v-3H3c-.8 0-1.5-.7-1.5-1.5V3c0-.8.7-1.5 1.5-1.5Zm4 2v4h2v-4H7Zm0 5v2h2v-2H7Z'/%3E%3C/svg%3E");
+  }
+  blockquote[data-canvas-callout="warning"],
+  blockquote[data-canvas-callout="caution"] {
+    --callout-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.2c.4 0 .8.2 1 .6l6.3 11.3c.4.8-.1 1.7-1 1.7H1.7c-.9 0-1.4-.9-1-1.7L7 1.8c.2-.4.6-.6 1-.6ZM7 5.5v4h2v-4H7Zm0 5.5v2h2v-2H7Z'/%3E%3C/svg%3E");
   }
 
   hr {
     border: 0;
-    border-top: 1px solid var(--border-weaker-base);
-    height: 0;
-    margin: 40px 0;
+    height: 1px;
+    margin: 48px 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--border-weak-base) 20%,
+      color-mix(in srgb, var(--canvas-brand) 45%, var(--border-weak-base)) 50%,
+      var(--border-weak-base) 80%,
+      transparent
+    );
   }
 
   pre {
@@ -306,9 +461,11 @@
 
   /* 代码块：语言标签 + shiki 逐词着色，底色由画布统一提供。 */
   .canvas-code {
-    margin: 20px 0 24px;
-    border-radius: 10px;
+    margin: 24px 0 28px;
+    border-radius: 14px;
     background: var(--background-stronger);
+    border: 1px solid var(--canvas-card-border);
+    box-shadow: var(--canvas-card-shadow);
     overflow: hidden;
 
     pre {
@@ -319,8 +476,27 @@
     }
   }
 
+  /* 代码卡片页眉：三点窗口标记 + 语言名，分隔线与正文区分。 */
   .canvas-code-lang {
-    padding: 10px 18px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--canvas-card-border);
+    background: color-mix(in srgb, var(--text-strong) 2%, transparent);
+
+    &::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--text-weak) 35%, transparent);
+      box-shadow:
+        14px 0 0 color-mix(in srgb, var(--text-weak) 35%, transparent),
+        28px 0 0 color-mix(in srgb, var(--text-weak) 35%, transparent);
+      margin-right: 28px;
+    }
+
     font-family: var(--font-family-mono);
     font-size: 11px;
     line-height: 1.4;
@@ -356,15 +532,20 @@
     border-collapse: separate;
     border-spacing: 0;
     margin: 24px 0 28px;
-    border: 0;
+    border: 1px solid var(--canvas-card-border);
+    border-radius: 14px;
+    box-shadow: var(--canvas-card-shadow);
+    overflow: hidden;
   }
 
   th {
     color: var(--text-weak);
+    background: var(--canvas-card);
     font-weight: 600;
-    font-size: 12.5px;
-    letter-spacing: 0.01em;
-    padding: 0 14px 10px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 11px 16px;
     text-align: start;
     border: 0;
     border-bottom: 1px solid var(--border-weak-base);
@@ -383,16 +564,16 @@
 
   th:first-child,
   td:first-child {
-    padding-left: 4px;
+    padding-left: 18px;
   }
 
   th:last-child,
   td:last-child {
-    padding-right: 4px;
+    padding-right: 18px;
   }
 
   td {
-    padding: 12px 14px;
+    padding: 12px 16px;
     font-size: 14px;
     line-height: 1.6;
     color: var(--text-strong);
@@ -410,24 +591,33 @@
   }
 
   tbody tr:hover {
-    background: color-mix(in srgb, var(--surface-base) 60%, transparent);
+    background: color-mix(in srgb, var(--canvas-brand) 5%, transparent);
   }
 
   /* 图卡片：独立底面 + 边框，与正文阅读节奏分开 */
   /* 当前仅保留独立底面，不绘制卡片边框。 */
   /* 图表作为正文内容直接落在文档纸面上：无套层底色、无边框、无圆角、无阴影， */
   /* SVG 背景由宿主主题设为纸面色，保证图表与正文无缝衔接。 */
+  /* 图表放进卡片：细边框 + 柔和投影；流程图额外铺点阵底面，像设计稿画板。 */
   .canvas-diagram {
-    margin: 32px 0 36px;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    overflow: visible;
+    margin: 28px 0 32px;
+    padding: 28px 24px;
+    border: 1px solid var(--canvas-card-border);
+    border-radius: 16px;
+    background: var(--surface-raised-stronger-non-alpha, #ffffff);
+    box-shadow: var(--canvas-card-shadow);
+    overflow: hidden;
 
     &:first-child {
       margin-top: 0;
+    }
+
+    &[data-diagram-kind="diagram"] {
+      padding: 36px 24px;
+      background:
+        radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-weak) 28%, transparent) 1px, transparent 0) 0
+          0 / 18px 18px,
+        var(--surface-raised-stronger-non-alpha, #ffffff);
     }
   }
 

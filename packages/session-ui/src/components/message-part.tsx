@@ -45,6 +45,7 @@ import { ToolErrorCard } from "./tool-error-card"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Markdown } from "./markdown"
+import { copyAsImageCard } from "./message-image-card"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { checksum } from "@opencode-ai/core/util/encode"
@@ -79,11 +80,7 @@ import {
   type ToolGroupDefinition,
   type ToolGroupItemProps,
 } from "./message-part-groups"
-import {
-  GenericToolGroup as BaseGenericToolGroup,
-  ContextToolGroup,
-  PythonToolGroup,
-} from "./tool-group"
+import { GenericToolGroup as BaseGenericToolGroup, ContextToolGroup, PythonToolGroup } from "./tool-group"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard } from "./edit-tool-card"
 import { ScriptToolCard } from "./script-tool-card"
@@ -91,7 +88,6 @@ import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { BrowserTool } from "./browser-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
 import type { CanvasReference } from "../context/canvas"
-import { writeClipboardImage } from "./clipboard-image"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -117,176 +113,6 @@ async function writeClipboard(text: string): Promise<boolean> {
   )
 }
 
-async function copyAsImageCard(options: {
-  element: HTMLElement
-  meta?: string
-  agent?: string
-}): Promise<boolean> {
-  const { element, meta, agent } = options
-  if (!element) return false
-
-  const doc = element.ownerDocument || document
-  const win = doc.defaultView || window
-
-  const comp = win.getComputedStyle(element)
-  const textColor = comp.color || "rgba(255, 255, 255, 0.9)"
-  const fontFamily = comp.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-
-  // 沿 DOM 树向上递归提取实际生效的非透明背景色
-  let bg = comp.backgroundColor
-  let cur: HTMLElement | null = element
-  while ((!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") && cur) {
-    bg = win.getComputedStyle(cur).backgroundColor
-    cur = cur.parentElement
-  }
-  if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
-    bg = win.getComputedStyle(doc.body).backgroundColor
-  }
-  if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
-    bg = "#18181b"
-  }
-
-  // 通过亮度判定亮色或暗色主题
-  const rgbMatch = bg.match(/\d+/g)
-  let isDark = true
-  if (rgbMatch && rgbMatch.length >= 3) {
-    const r = parseInt(rgbMatch[0], 10)
-    const g = parseInt(rgbMatch[1], 10)
-    const b = parseInt(rgbMatch[2], 10)
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000
-    isDark = brightness < 128
-  }
-
-  const cardBorder = isDark ? "1px solid rgba(255, 255, 255, 0.12)" : "1px solid rgba(0, 0, 0, 0.1)"
-  const cardBg = bg
-  const mutedText = isDark ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)"
-  const dividerColor = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.08)"
-
-  const container = doc.createElement("div")
-  container.style.position = "fixed"
-  container.style.left = "-99999px"
-  container.style.top = "0"
-  container.style.opacity = "0"
-  container.style.pointerEvents = "none"
-  container.style.zIndex = "-9999"
-
-  if (element.parentElement) {
-    container.className = element.parentElement.className
-  }
-
-  // 包装分享视图（无圆角与边框，平铺直角纯色底）
-  const card = doc.createElement("div")
-  card.style.display = "flex"
-  card.style.flexDirection = "column"
-  card.style.boxSizing = "border-box"
-  card.style.width = Math.min(Math.max(element.offsetWidth + 56, 560), 840) + "px"
-  card.style.padding = "24px 28px"
-  card.style.borderRadius = "0"
-  card.style.backgroundColor = cardBg
-  card.style.color = textColor
-  card.style.fontFamily = fontFamily
-  card.style.border = "none"
-  card.style.boxShadow = "none"
-
-  // 顶部 Header
-  const header = doc.createElement("div")
-  header.style.display = "flex"
-  header.style.alignItems = "center"
-  header.style.justifyContent = "space-between"
-  header.style.paddingBottom = "12px"
-  header.style.marginBottom = "14px"
-  header.style.borderBottom = "none"
-
-  const headerLeft = doc.createElement("div")
-  headerLeft.style.display = "flex"
-  headerLeft.style.alignItems = "center"
-  headerLeft.style.gap = "8px"
-
-  const logoDot = doc.createElement("div")
-  logoDot.style.width = "8px"
-  logoDot.style.height = "8px"
-  logoDot.style.borderRadius = "50%"
-  logoDot.style.backgroundColor = isDark ? "#60a5fa" : "#2563eb"
-
-  const title = doc.createElement("span")
-  title.style.fontSize = "13px"
-  title.style.fontWeight = "600"
-  title.style.letterSpacing = "0.02em"
-  title.style.color = textColor
-  title.textContent = "OpenCode"
-
-  headerLeft.appendChild(logoDot)
-  headerLeft.appendChild(title)
-  header.appendChild(headerLeft)
-
-  if (agent) {
-    const headerRight = doc.createElement("span")
-    headerRight.style.fontSize = "12px"
-    headerRight.style.color = mutedText
-    headerRight.textContent = agent
-    header.appendChild(headerRight)
-  }
-
-  card.appendChild(header)
-
-  // 克隆消息正文主体，保留高亮代码块与 Markdown 排版
-  const bodyClone = element.cloneNode(true) as HTMLElement
-  bodyClone.style.margin = "0"
-  bodyClone.style.maxWidth = "100%"
-  bodyClone.style.overflow = "visible"
-  card.appendChild(bodyClone)
-
-  // 底部元信息栏
-  if (meta) {
-    const footer = doc.createElement("div")
-    footer.style.display = "flex"
-    footer.style.alignItems = "center"
-    footer.style.justifyContent = "space-between"
-    footer.style.paddingTop = "12px"
-    footer.style.marginTop = "16px"
-    footer.style.borderTop = "none"
-    footer.style.fontSize = "12px"
-    footer.style.color = mutedText
-
-    const metaSpan = doc.createElement("span")
-    metaSpan.textContent = meta
-    footer.appendChild(metaSpan)
-
-    card.appendChild(footer)
-  }
-
-  container.appendChild(card)
-  doc.body.appendChild(container)
-
-  try {
-    const { toBlob } = await import("html-to-image")
-    await new Promise((resolve) => setTimeout(resolve, 80))
-
-    let blob: Blob | null = null
-    try {
-      blob = await toBlob(card, {
-        pixelRatio: 2,
-        backgroundColor: cardBg,
-        cacheBust: true,
-      })
-    } catch {
-      blob = await toBlob(card, {
-        pixelRatio: 2,
-        backgroundColor: cardBg,
-        skipFonts: true,
-      })
-    }
-
-    if (!blob) return false
-    return await writeClipboardImage(blob)
-  } catch (err) {
-    console.error("Failed to copy image:", err)
-    return false
-  } finally {
-    container.remove()
-  }
-}
-
 function firstLine(text: unknown) {
   if (typeof text !== "string") return undefined
   return text.split("\n", 1)[0] || undefined
@@ -301,7 +127,8 @@ function pythonSubtitle(code: unknown) {
   return `${lines[0]} … (${lines.length} lines)`
 }
 
-function ShellSubmessage(props: { text: string; animate?: boolean }) {  let widthRef: HTMLSpanElement | undefined
+function ShellSubmessage(props: { text: string; animate?: boolean }) {
+  let widthRef: HTMLSpanElement | undefined
   let valueRef: HTMLSpanElement | undefined
 
   onMount(() => {
@@ -1183,11 +1010,7 @@ export function Message(props: MessageProps) {
     <Switch>
       <Match when={props.message.role === "user" && props.message}>
         {(userMessage) => (
-          <UserMessageDisplay
-            message={userMessage() as UserMessage}
-            parts={props.parts}
-            actions={props.actions}
-          />
+          <UserMessageDisplay message={userMessage() as UserMessage} parts={props.parts} actions={props.actions} />
         )}
       </Match>
       <Match when={props.message.role === "assistant" && props.message}>
@@ -1324,11 +1147,7 @@ export {
   contextToolSummary,
 } from "./tool-group"
 
-export function UserMessageDisplay(props: {
-  message: UserMessage
-  parts: PartType[]
-  actions?: UserActions
-}) {
+export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; actions?: UserActions }) {
   const data = useData()
   const dialog = useDialog()
   const i18n = useI18n()
@@ -1883,7 +1702,10 @@ function attrValue(attrs: string, name: string) {
 function parseUserMessageBody(body: string): ChunkUserInput {
   const reference = extractTagged(body, "user-text-reference")[0]
   if (!reference) return { text: body }
-  const sizeLine = reference.body.split("\n").find((line) => line.trim().startsWith("size:"))?.trim()
+  const sizeLine = reference.body
+    .split("\n")
+    .find((line) => line.trim().startsWith("size:"))
+    ?.trim()
   const metadata = sizeLine?.match(/^size:\s*([^,]+),\s*([^,]+)\s+lines,\s*approximately\s*([^\s]+)\s+tokens/)
   return {
     text: "",
@@ -1899,12 +1721,17 @@ function parseUserMessageBody(body: string): ChunkUserInput {
 
 function parseUserMessages(body: string): ChunkUserInput[] {
   const tagged = extractTagged(body, "user-message")
-  if (tagged.length > 0) return tagged.map((item) => parseUserMessageBody(item.body)).filter((item) => item.text || item.reference)
+  if (tagged.length > 0)
+    return tagged.map((item) => parseUserMessageBody(item.body)).filter((item) => item.text || item.reference)
   return body.trim() ? [parseUserMessageBody(body.trim())] : []
 }
 
 function parseChunkSummaryText(text: string): ParsedChunkSummary | undefined {
-  if (!text.includes("<conversation-checkpoint") && !text.includes("<chunk-input") && !text.includes("<chunk-summary")) {
+  if (
+    !text.includes("<conversation-checkpoint") &&
+    !text.includes("<chunk-input") &&
+    !text.includes("<chunk-summary")
+  ) {
     return
   }
   const checkpointBlock = extractTagged(text, "conversation-checkpoint")[0]
@@ -1941,10 +1768,7 @@ function previewText(value: string, max = 120) {
 function ChunkUserInputDisplay(props: { input: ChunkUserInput }) {
   const i18n = useI18n()
   return (
-    <Show
-      when={props.input.reference}
-      fallback={<Markdown text={props.input.text} streaming={false} />}
-    >
+    <Show when={props.input.reference} fallback={<Markdown text={props.input.text} streaming={false} />}>
       {(reference) => (
         <div data-slot="chunk-user-reference">
           <div data-slot="chunk-user-reference-header">
@@ -1954,13 +1778,25 @@ function ChunkUserInputDisplay(props: { input: ChunkUserInput }) {
             </div>
             <div data-slot="chunk-user-reference-meta">
               <Show when={reference().size}>
-                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.size", { size: value() })}</span>}
+                {(value) => (
+                  <span data-slot="chunk-user-reference-chip">
+                    {i18n.t("ui.chunkSummary.largeInput.size", { size: value() })}
+                  </span>
+                )}
               </Show>
               <Show when={reference().lines}>
-                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.lines", { count: value() })}</span>}
+                {(value) => (
+                  <span data-slot="chunk-user-reference-chip">
+                    {i18n.t("ui.chunkSummary.largeInput.lines", { count: value() })}
+                  </span>
+                )}
               </Show>
               <Show when={reference().tokens}>
-                {(value) => <span data-slot="chunk-user-reference-chip">{i18n.t("ui.chunkSummary.largeInput.tokens", { count: value() })}</span>}
+                {(value) => (
+                  <span data-slot="chunk-user-reference-chip">
+                    {i18n.t("ui.chunkSummary.largeInput.tokens", { count: value() })}
+                  </span>
+                )}
               </Show>
             </div>
           </div>
@@ -2010,12 +1846,7 @@ function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string
           <For each={props.parsed.checkpoint}>{(rule) => <li>{rule}</li>}</For>
         </ul>
       </Show>
-      <button
-        type="button"
-        data-slot="chunk-summary-trigger"
-        aria-expanded={open()}
-        onClick={() => setOpen(!open())}
-      >
+      <button type="button" data-slot="chunk-summary-trigger" aria-expanded={open()} onClick={() => setOpen(!open())}>
         <span data-slot="chunk-summary-line" />
         <span data-slot="chunk-summary-label">
           <Icon name="archive" size="small" />
@@ -2039,8 +1870,7 @@ function ChunkSummaryDisplay(props: { parsed: ParsedChunkSummary; partID: string
                         .filter(Boolean)
                         .join(" · ") || i18n.t("ui.chunkSummary.noInput"),
                     )
-                  const summaryPreview = () =>
-                    previewText(chunk.summary || i18n.t("ui.chunkSummary.noSummary"))
+                  const summaryPreview = () => previewText(chunk.summary || i18n.t("ui.chunkSummary.noSummary"))
                   return (
                     <div data-slot="chunk-card" data-open={isOpen() ? "true" : undefined}>
                       <button
@@ -2212,9 +2042,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             ? i18n.t("ui.message.finish.unknown")
             : ""
     const items = [
-      message.agent && message.agent !== "compaction"
-        ? message.agent[0]?.toUpperCase() + message.agent.slice(1)
-        : "",
+      message.agent && message.agent !== "compaction" ? message.agent[0]?.toUpperCase() + message.agent.slice(1) : "",
       model(),
       message.variant ?? "",
       duration(),
@@ -2250,13 +2078,20 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     if (copyingImage() || !bodyRef) return
     setCopyingImage(true)
     try {
+      const message = props.message
+      const parentID = message.role === "assistant" ? (message as AssistantMessage).parentID : undefined
+      const question = parentID
+        ? (data.store.part?.[parentID] ?? [])
+            .filter((item): item is TextPart => item.type === "text" && !item.synthetic && !item.ignored)
+            .map((item) => item.text)
+            .join("\n")
+        : undefined
       const ok = await copyAsImageCard({
         element: bodyRef,
         meta: meta(),
-        agent:
-          props.message.role === "assistant" && (props.message as AssistantMessage).agent
-            ? (props.message as AssistantMessage).agent
-            : undefined,
+        title: data.store.session?.find((session) => session.id === message.sessionID)?.title,
+        question,
+        time: message.time.created,
       })
       if (ok) {
         setCopiedImage(true)
@@ -2558,8 +2393,7 @@ ToolRegistry.register({
   },
 })
 
-const HISTORY_SOURCE_RE =
-  /^(USER|ASSISTANT|ASSISTANT_TOOL|TOOL_OUTPUT|TOOL_ERROR|SHELL)$/
+const HISTORY_SOURCE_RE = /^(USER|ASSISTANT|ASSISTANT_TOOL|TOOL_OUTPUT|TOOL_ERROR|SHELL)$/
 
 type HistorySource = "USER" | "ASSISTANT" | "ASSISTANT_TOOL" | "TOOL_OUTPUT" | "TOOL_ERROR" | "SHELL"
 
@@ -2653,7 +2487,10 @@ function parseHistoryListOutput(output: string | undefined): HistoryLine[] | und
   if (!output) return
   if (output.includes("message_id=")) {
     if (/message_id=\S+\s+part_id=\S+\s+line=\d+/.test(output)) {
-      const blocks = output.split(/\n\n+/).map((block) => block.trim()).filter(Boolean)
+      const blocks = output
+        .split(/\n\n+/)
+        .map((block) => block.trim())
+        .filter(Boolean)
       const lines: HistoryLine[] = []
       for (const block of blocks) {
         const rows = block.split("\n")
@@ -2694,7 +2531,10 @@ function parseHistoryListOutput(output: string | undefined): HistoryLine[] | und
 
 function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | undefined {
   if (!output) return
-  const blocks = output.split(/\n\n+/).map((block) => block.trim()).filter(Boolean)
+  const blocks = output
+    .split(/\n\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean)
   const hits: HistoryGrepHit[] = []
   for (const block of blocks) {
     const rows = block.split("\n")
@@ -2714,7 +2554,8 @@ function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | 
 
     const userTextMatch = headerRow.match(/^message\s+(\S+)\s+part\s+(\S+)\s+([A-Z_]+)\s+line\s+(\d+):?$/)
     if (userTextMatch) {
-      const source = userTextMatch[3] && HISTORY_SOURCE_RE.test(userTextMatch[3]) ? (userTextMatch[3] as HistorySource) : undefined
+      const source =
+        userTextMatch[3] && HISTORY_SOURCE_RE.test(userTextMatch[3]) ? (userTextMatch[3] as HistorySource) : undefined
       hits.push({
         messageID: userTextMatch[1],
         partID: userTextMatch[2],
@@ -2729,7 +2570,8 @@ function parseHistoryGrepOutput(output: string | undefined): HistoryGrepHit[] | 
 
     const chunkMatch = headerRow.match(/^chunk\s+(\S+)(?:\s+\(sequence\s+(\d+)\))?\s+([A-Z_]+)?\s+line\s+(\d+):?$/)
     if (chunkMatch) {
-      const source = chunkMatch[3] && HISTORY_SOURCE_RE.test(chunkMatch[3]) ? (chunkMatch[3] as HistorySource) : undefined
+      const source =
+        chunkMatch[3] && HISTORY_SOURCE_RE.test(chunkMatch[3]) ? (chunkMatch[3] as HistorySource) : undefined
       hits.push({
         chunk: chunkMatch[1]!,
         sequence: chunkMatch[2] ? Number(chunkMatch[2]) : undefined,
@@ -2764,11 +2606,7 @@ function HistoryTranscriptLine(props: { entry: HistoryLine; i18n: ReturnType<typ
   )
 }
 
-function HistoryToolOutput(props: {
-  text: string
-  ariaLabel: string
-  children: JSX.Element
-}) {
+function HistoryToolOutput(props: { text: string; ariaLabel: string; children: JSX.Element }) {
   const i18n = useI18n()
   const [copied, setCopied] = createSignal(false)
   const [view, setView] = createSignal<"formatted" | "raw">("formatted")
@@ -2914,9 +2752,7 @@ ToolRegistry.register({
                           </span>
                         </Show>
                         <Show when={hit.line != null}>
-                          <span data-slot="history-meta">
-                            {i18n.t("ui.historyTool.line", { line: hit.line! })}
-                          </span>
+                          <span data-slot="history-meta">{i18n.t("ui.historyTool.line", { line: hit.line! })}</span>
                         </Show>
                         <Show when={hit.source}>
                           <span data-slot="history-source">{historySourceLabel(hit.source, i18n)}</span>
@@ -3583,19 +3419,19 @@ function TaskFollowupToolRender(props: ToolProps) {
       undefined,
   )
   const background = createMemo(() => props.metadata.background !== false)
-  const delivery = createMemo(
-    () =>
-      props.metadata.delivery && typeof props.metadata.delivery === "object"
-        ? (props.metadata.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
-        : undefined,
+  const delivery = createMemo(() =>
+    props.metadata.delivery && typeof props.metadata.delivery === "object"
+      ? (props.metadata.delivery as { type?: "steer" | "followup"; state?: string; messageID?: string })
+      : undefined,
   )
-  const context = createMemo(
-    () =>
-      props.metadata.context && typeof props.metadata.context === "object"
-        ? (props.metadata.context as { originals?: number; evidence?: number })
-        : undefined,
+  const context = createMemo(() =>
+    props.metadata.context && typeof props.metadata.context === "object"
+      ? (props.metadata.context as { originals?: number; evidence?: number })
+      : undefined,
   )
-  const directory = createMemo(() => (typeof props.metadata.directory === "string" ? props.metadata.directory : undefined))
+  const directory = createMemo(() =>
+    typeof props.metadata.directory === "string" ? props.metadata.directory : undefined,
+  )
 
   return (
     <div data-component="task-tool-list">
@@ -4123,9 +3959,7 @@ ToolRegistry.register({
       >
         <div data-component="invalid-tool-content">
           <Show when={errorDetail()}>
-            <div data-slot="invalid-tool-error">
-              {errorDetail()}
-            </div>
+            <div data-slot="invalid-tool-error">{errorDetail()}</div>
           </Show>
           <Show when={rawInputText()}>
             <div data-slot="invalid-tool-header">

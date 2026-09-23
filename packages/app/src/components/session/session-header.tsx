@@ -259,7 +259,7 @@ export function SessionHeader() {
                     <Show
                       when={canOpen()}
                       fallback={
-                        <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
+                        <div class="flex h-[24px] box-border items-center rounded-md bg-surface-panel overflow-hidden">
                           <Button
                             variant="ghost"
                             class="rounded-none h-full py-0 pr-3 pl-0.5 gap-1.5 border-none shadow-none"

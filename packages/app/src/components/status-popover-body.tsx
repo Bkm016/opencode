@@ -171,10 +171,10 @@ export function StatusPopoverServerBody() {
 
 function ServerStatusPopoverView(props: { state: ServerStatusState }) {
   return (
-    <div class="flex items-center gap-1 w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]">
+    <div class="flex items-center gap-1 w-[360px] rounded-xl border border-border-base">
       <Tabs
         aria-label={props.state.ariaLabel}
-        class="tabs bg-background-strong rounded-xl overflow-hidden"
+        class="tabs bg-background-base rounded-xl overflow-hidden"
         data-component="tabs"
         data-active="servers"
         defaultValue="servers"

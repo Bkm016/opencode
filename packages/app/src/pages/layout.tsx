@@ -959,7 +959,7 @@ export default function LegacyLayout(props: ParentProps) {
         id: "sidebar.toggle",
         title: language.t("command.sidebar.toggle"),
         category: language.t("command.category.view"),
-        keybind: "mod+b",
+        keybind: "alt+1",
         onSelect: () => layout.sidebar.toggle(),
       },
       {

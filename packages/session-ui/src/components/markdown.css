@@ -337,7 +337,7 @@
   }
 
   :not(pre) > code {
-    color: var(--syntax-string);
+    color: var(--markdown-inline-code, var(--syntax-string));
     padding: 0;
     border-radius: 0;
     background: none;

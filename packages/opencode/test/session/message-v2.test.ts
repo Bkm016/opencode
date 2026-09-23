@@ -1898,10 +1898,10 @@ describe("session.message-v2.fromError", () => {
     expect(result.data.message).not.toContain("sk-live-secret")
   })
 
-  test("recognizes OpenAI response.failed payload as retryable api_error", () => {
+  test("recognizes OpenAI response.failed payload as non-retryable api_error", () => {
     const body = {
       type: "response.failed",
-      sequence_number: 189,
+      sequence_number: 11,
       response: {
         error: {
           code: "windsurf_proxy_error",
@@ -1915,7 +1915,7 @@ describe("session.message-v2.fromError", () => {
       name: "APIError",
       data: {
         message: "Devin did not confirm tool-turn completion or return the next tool call",
-        isRetryable: true,
+        isRetryable: false,
         responseBody: JSON.stringify(body),
       },
     })

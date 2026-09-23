@@ -91,8 +91,8 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
 
   const responseBody = redactSensitiveBodyFields(JSON.stringify(body))
 
-  // 已知终止事件的失败 payload 挂在 `response.error` 而不是 `error`；`response.failed`
-  // 必须识别为可重试，不能漏成 Unknown 错误越过重试清单。
+  // `response.failed` 的失败 payload 挂在 `response.error`；识别为终态失败但不重试，
+  //  Windsurf 代理的 `windsurf_proxy_error` 属于确定性状态机错误，重试无意义。
   if (body.type === "response.failed") {
     const error = json(body.response?.error)
     const message =
@@ -101,7 +101,7 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
     if (code === "context_length_exceeded" || isContextOverflow(message)) {
       return { type: "context_overflow", message, responseBody }
     }
-    return { type: "api_error", message, isRetryable: true, responseBody }
+    return { type: "api_error", message, isRetryable: false, responseBody }
   }
 
   if (body.type !== "error") return

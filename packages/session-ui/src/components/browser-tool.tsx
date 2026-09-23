@@ -16,6 +16,7 @@ const ACTION_KEYS = {
   scroll: "ui.tool.browser.action.scroll",
   evaluate: "ui.tool.browser.action.evaluate",
   back: "ui.tool.browser.action.back",
+  tabs: "ui.tool.browser.action.tabs",
   close: "ui.tool.browser.action.close",
 } as const
 
@@ -59,9 +60,9 @@ export function BrowserTool(props: ToolProps) {
     return target ? `${label} ${target}` : label
   })
   const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
-  // get_content 的页面正文需要完整展开；evaluate 的 JSON 结果同样保留。
+  // get_content 的页面正文需要完整展开；evaluate 的 JSON 结果与 tabs 的列表同样保留。
   const content = createMemo(() => {
-    if (action() !== "get_content" && action() !== "evaluate") return undefined
+    if (action() !== "get_content" && action() !== "evaluate" && action() !== "tabs") return undefined
     const output = props.output
     if (!output) return undefined
     return output.length > CONTENT_LIMIT ? `${output.slice(0, CONTENT_LIMIT)}…` : output

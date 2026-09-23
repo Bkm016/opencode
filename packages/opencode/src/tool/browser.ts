@@ -16,6 +16,10 @@ const MAX_SCREENSHOT_BASE64 = 16 * 1024 * 1024
 const MAX_EVALUATE_OUTPUT = 64 * 1024
 
 const Selector = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096))
+// helper 分配的不透明 tab id；helper 重启后旧 id 即失效，不得跨会话复用。
+const TabID = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)).annotate({
+  description: "Opaque tab identifier returned by navigate and listed by tabs.",
+})
 
 // 各动作共用的元数据形状；显式标注避免 union 窄化推断出互斥类型。
 interface Metadata {
@@ -24,24 +28,35 @@ interface Metadata {
   title?: string
   selector?: string
   format?: string
+  tab?: string
 }
+
+const TAB_DESCRIPTION = "Target tab. Required when multiple tabs are open; with a single tab it may be omitted."
 
 export const Parameters = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("navigate"),
     url: Schema.String.annotate({ description: "The fully qualified URL to open in the browser tab." }),
+    tab: Schema.optional(TabID).annotate({
+      description: "Navigate this existing tab, replacing its page state. Omit with new_tab to open a fresh tab.",
+    }),
+    new_tab: Schema.optional(Schema.Boolean).annotate({
+      description: "Open the URL in a new tab without touching existing tabs (default false).",
+    }),
     wait_until: Schema.optional(Schema.Literals(["load", "domcontentloaded", "networkidle"])).annotate({
       description: "Navigation settle condition (default load). Use networkidle for client-rendered apps.",
     }),
   }),
   Schema.Struct({
     action: Schema.Literal("screenshot"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     full_page: Schema.optional(Schema.Boolean).annotate({
       description: "Capture the full scrollable page instead of only the viewport (default false).",
     }),
   }),
   Schema.Struct({
     action: Schema.Literal("get_content"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     format: Schema.optional(Schema.Literals(["markdown", "text", "html"])).annotate({
       description: "Format of the rendered page content (default markdown).",
     }),
@@ -51,32 +66,46 @@ export const Parameters = Schema.Union([
   }),
   Schema.Struct({
     action: Schema.Literal("click"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     selector: Selector.annotate({ description: "CSS selector of the element to click." }),
   }),
   Schema.Struct({
     action: Schema.Literal("type_text"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     selector: Selector.annotate({ description: "CSS selector of the input element to type into." }),
     text: Schema.String.check(Schema.isMaxLength(100_000)),
     submit: Schema.optional(Schema.Boolean).annotate({ description: "Press Enter after typing (default false)." }),
   }),
   Schema.Struct({
     action: Schema.Literal("press_key"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     key: Schema.String.annotate({ description: "Playwright key name, e.g. Enter, Tab, Escape, ArrowDown, Control+a." }),
   }),
   Schema.Struct({
     action: Schema.Literal("scroll"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     delta_x: Schema.optional(Schema.Int).annotate({ description: "Horizontal wheel delta, negative left (default 0)." }),
     delta_y: Schema.optional(Schema.Int).annotate({ description: "Vertical wheel delta, negative up (default 600)." }),
   }),
   Schema.Struct({
     action: Schema.Literal("evaluate"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
     script: Schema.String.check(Schema.isMaxLength(100_000)).annotate({
       description:
         "JavaScript expression or function body evaluated in the page. The result must be JSON-serializable and is truncated to 64KB.",
     }),
   }),
-  Schema.Struct({ action: Schema.Literal("back") }),
-  Schema.Struct({ action: Schema.Literal("close") }),
+  Schema.Struct({
+    action: Schema.Literal("back"),
+    tab: Schema.optional(TabID).annotate({ description: TAB_DESCRIPTION }),
+  }),
+  Schema.Struct({ action: Schema.Literal("tabs") }),
+  Schema.Struct({
+    action: Schema.Literal("close"),
+    tab: Schema.optional(TabID).annotate({
+      description: "Close only this tab. Omit to close the whole browser and all tabs.",
+    }),
+  }),
 ])
 
 interface Reply {
@@ -84,6 +113,7 @@ interface Reply {
   result?: unknown
   error?: string
   event?: string
+  params?: { tab?: string }
 }
 
 interface Pending {
@@ -94,12 +124,12 @@ interface Pending {
 
 // Bun 下 playwright-core 的 launch/connect 因子进程管道兼容问题挂死，
 // 故浏览器由独立 node 子进程（browser-helper.ts）驱动，本侧只发 JSON-RPC。
-// 浏览器进程跨实例共享，锁与单例句柄不能按 InstanceState 隔离；单页模型避免标签页竞争。
+// 浏览器进程跨实例共享，锁与单例句柄不能按 InstanceState 隔离；
+// tabs 只是 helper 页面快照的本地缓存，每次动作前仍重新查询，权威状态在 helper 侧。
 const tab = {
   lock: Semaphore.makeUnsafe(1),
   child: undefined as ChildProcessWithoutNullStreams | undefined,
-  url: undefined as string | undefined,
-  open: false,
+  tabs: new Map<string, { url: string }>(),
   idle: undefined as ReturnType<typeof setTimeout> | undefined,
   sequence: 0,
   pending: new Map<number, Pending>(),
@@ -149,7 +179,7 @@ async function helperScript(): Promise<{ script: string; anchor: string }> {
 function kill() {
   const child = tab.child
   tab.child = undefined
-  tab.open = false
+  tab.tabs.clear()
   if (tab.idle) clearTimeout(tab.idle)
   for (const pending of tab.pending.values()) {
     pending.cleanup()
@@ -193,8 +223,14 @@ const spawnHelper = Effect.fn("Browser.spawnHelper")(function* () {
     stderr = (stderr + chunk).slice(-4096)
   })
   child.on("error", () => kill())
-  child.on("exit", () => {
-    if (stderr.trim() && tab.child) Effect.runSync(Effect.logWarning(`browser helper exited: ${stderr.trim()}`))
+  child.on("exit", (code, signal) => {
+    // 非正常退出且宿主未主动 kill 时才告警；stderr 可能为空，须带上退出码便于定位。
+    if (tab.child && code !== 0) {
+      const detail = stderr.trim()
+      Effect.runSync(
+        Effect.logWarning(`browser helper exited (code ${code}, signal ${signal})${detail ? `: ${detail}` : ""}`),
+      )
+    }
     kill()
   })
   child.stdout.on("data", (chunk: string) => {
@@ -211,9 +247,14 @@ const spawnHelper = Effect.fn("Browser.spawnHelper")(function* () {
       } catch {
         continue
       }
-      // crash/disconnected 事件使当前页面失效，下个动作会重启浏览器。
-      if (reply.event === "crash" || reply.event === "disconnected") {
-        tab.open = false
+      // crash/closed 仅使对应 tab 失效；disconnected 才清空全部页面（浏览器级失效）。
+      if (reply.event === "crash" || reply.event === "closed") {
+        const id = reply.params?.tab
+        if (id) tab.tabs.delete(id)
+        continue
+      }
+      if (reply.event === "disconnected") {
+        tab.tabs.clear()
         continue
       }
       if (reply.id === undefined) continue
@@ -280,17 +321,19 @@ function request(method: string, params: Record<string, unknown>, signal: AbortS
   })
 }
 
-// 确保浏览器已打开页面；navigate 之前的交互动作报明确错误。
+// 每次动作前刷新 helper 的权威页面快照；navigate 之前的交互动作报明确错误。
 function ensure(signal: AbortSignal) {
   return Effect.gen(function* () {
     if (!tab.child || tab.child.killed || tab.child.exitCode !== null) {
       tab.buffer = ""
       yield* spawnHelper()
     }
-    const state = (yield* request("current", {}, signal)) as { open?: boolean; url?: string }
-    tab.open = state.open === true
-    tab.url = state.url
-    return tab.open
+    const state = (yield* request("current", {}, signal)) as { tabs?: { tab: string; url: string }[] }
+    tab.tabs.clear()
+    for (const entry of state.tabs ?? []) {
+      tab.tabs.set(entry.tab, { url: entry.url })
+    }
+    return tab.tabs
   })
 }
 
@@ -371,13 +414,33 @@ export const BrowserTool = Tool.define(
         tab.lock.withPermits(1)(
           Effect.gen(function* () {
             const navigate = input.action === "navigate"
-            // 交互动作的权限以当前页 URL 为 pattern，防止跳转后权限漂移。
+            // 交互动作的权限以目标 tab 当前 URL 为 pattern，防止跳转后权限漂移。
             const open = yield* ensure(ctx.abort).pipe(
               Effect.catch((error) => Effect.fail(new Error(describe(error, input.action)))),
             )
-            const url = navigate ? input.url : tab.url
+            // 目标 tab 的判定在锁内一次完成，权限批准后不再重新解析，避免中途页面变化导致操作漂移。
+            // tabs、全局 close 与 new_tab 导航面向整个浏览器或新建页面，不参与已有 tab 的目标解析。
+            const untargeted =
+              input.action === "tabs" ||
+              (input.action === "close" && !("tab" in input && input.tab)) ||
+              (input.action === "navigate" && !("tab" in input && input.tab))
+            const requested = !untargeted && "tab" in input ? input.tab : undefined
+            const ambiguous = !untargeted && !requested && open.size > 1
+            // 统一成 [id, 快照] 元组：显式指定时取其当前 URL，单页缺省时直达唯一页面。
+            const target: [string, { url: string }] | undefined =
+              navigate || untargeted
+                ? undefined
+                : requested
+                  ? (() => {
+                      const info = open.get(requested)
+                      return info ? ([requested, info] as const) : undefined
+                    })()
+                  : open.size === 1
+                    ? open.entries().next().value
+                    : undefined
+            const url = navigate ? input.url : target?.[1].url
             const detail = `${input.action}${url ? `: ${url}` : ""}`
-            yield* ctx.metadata({ title: detail, metadata: { action: input.action, url  } as Metadata })
+            yield* ctx.metadata({ title: detail, metadata: { action: input.action, url, tab: requested } as Metadata })
             yield* ctx.ask({
               permission: "browser",
               patterns: [url ?? "*", detail],
@@ -385,8 +448,18 @@ export const BrowserTool = Tool.define(
               metadata: { ...input, url },
             })
             if (ctx.abort.aborted) throw new Error("Browser action was cancelled; no action was sent.")
-            if (!navigate && input.action !== "close" && !open) {
+            if (!navigate && input.action !== "close" && open.size === 0) {
               throw new Error("No browser tab is open. Navigate to a URL first.")
+            }
+            if (requested && !navigate && !target) {
+              throw new Error(`Browser tab "${requested}" is unavailable. Use tabs to list open tabs.`)
+            }
+            // navigate 指定失效 tab 同样报明确错误，而不是静默新建页面。
+            if (navigate && input.tab && !open.has(input.tab)) {
+              throw new Error(`Browser tab "${input.tab}" is unavailable. Use tabs to list open tabs.`)
+            }
+            if (ambiguous) {
+              throw new Error("Multiple browser tabs are open. Specify tab; use tabs to list them.")
             }
 
             const call = (method: string, params: Record<string, unknown>) =>
@@ -394,125 +467,168 @@ export const BrowserTool = Tool.define(
                 Effect.catch((error) => Effect.fail(new Error(describe(error, method)))),
                 Effect.tap(() => Effect.sync(() => touch())),
               )
+            // 单页缺省时把已解析的 tab id 带上，多页缺省在上面已拦截；navigate 由 helper 自行选择/创建页面。
+            const tabParams = () => {
+              if (requested) return { tab: requested }
+              if (target) return { tab: target[0] }
+              return {}
+            }
+            const remember = (id: string | undefined, next: string | undefined) => {
+              if (id) tab.tabs.set(id, { url: next ?? "" })
+            }
 
             switch (input.action) {
               case "navigate": {
                 if (!input.url.startsWith("http://") && !input.url.startsWith("https://")) {
                   throw new Error("URL must start with http:// or https://")
                 }
+                if (input.tab && input.new_tab) throw new Error("navigate accepts either tab or new_tab, not both.")
                 const result = (yield* call("navigate", {
                   url: input.url,
+                  tab: input.tab,
+                  new_tab: input.new_tab ?? false,
                   wait_until: input.wait_until ?? "load",
-                })) as { url: string; status: number | null; title: string }
-                tab.open = true
-                tab.url = result.url
+                })) as { tab: string; url: string; status: number | null; title: string }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url, title: result.title  } as Metadata,
-                  output: `Navigated to ${result.url}${result.title ? ` — ${result.title}` : ""}`,
+                  metadata: { action: input.action, url: result.url, title: result.title, tab: result.tab } as Metadata,
+                  output: `Navigated to ${result.url}${result.title ? ` — ${result.title}` : ""} [${result.tab}]`,
                 }
               }
               case "screenshot": {
-                const result = (yield* call("screenshot", { full_page: input.full_page ?? false })) as {
-                  url: string
-                  base64: string
-                }
-                tab.url = result.url
+                const result = (yield* call("screenshot", {
+                  ...tabParams(),
+                  full_page: input.full_page ?? false,
+                })) as { tab: string; url: string; base64: string }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url  } as Metadata,
+                  metadata: { action: input.action, url: result.url, tab: result.tab } as Metadata,
                   output: `Screenshot of ${result.url} captured.`,
                   attachments: [pngAttachment(result.base64, 1)],
                 }
               }
               case "get_content": {
-                const result = (yield* call("get_content", { selector: input.selector })) as {
+                const result = (yield* call("get_content", { ...tabParams(), selector: input.selector })) as {
+                  tab: string
                   url: string
                   html: string
                 }
-                tab.url = result.url
+                remember(result.tab, result.url)
                 const format = input.format ?? "markdown"
                 const output =
                   format === "html" ? result.html : format === "text" ? htmlToText(result.html) : htmlToMarkdown(result.html)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url, format  } as Metadata,
+                  metadata: { action: input.action, url: result.url, format, tab: result.tab } as Metadata,
                   output: output || "The page rendered no readable content.",
                 }
               }
               case "click": {
-                const result = (yield* call("click", { selector: input.selector })) as { url: string }
-                tab.url = result.url
+                const result = (yield* call("click", { ...tabParams(), selector: input.selector })) as {
+                  tab: string
+                  url: string
+                }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url, selector: input.selector  } as Metadata,
+                  metadata: { action: input.action, url: result.url, selector: input.selector, tab: result.tab } as Metadata,
                   output: `Clicked ${input.selector}. The page may have changed; observe it again before the next action.`,
                 }
               }
               case "type_text": {
                 const result = (yield* call("type_text", {
+                  ...tabParams(),
                   selector: input.selector,
                   text: input.text,
                   submit: input.submit ?? false,
-                })) as { url: string }
-                tab.url = result.url
+                })) as { tab: string; url: string }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url, selector: input.selector  } as Metadata,
+                  metadata: { action: input.action, url: result.url, selector: input.selector, tab: result.tab } as Metadata,
                   output: `Typed into ${input.selector}${input.submit ? " and submitted" : ""}.`,
                 }
               }
               case "press_key": {
-                const result = (yield* call("press_key", { key: input.key })) as { url: string }
-                tab.url = result.url
+                const result = (yield* call("press_key", { ...tabParams(), key: input.key })) as {
+                  tab: string
+                  url: string
+                }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url  } as Metadata,
+                  metadata: { action: input.action, url: result.url, tab: result.tab } as Metadata,
                   output: `Pressed ${input.key}.`,
                 }
               }
               case "scroll": {
-                const result = (yield* call("scroll", { delta_x: input.delta_x ?? 0, delta_y: input.delta_y ?? 600 })) as {
-                  url: string
-                }
-                tab.url = result.url
+                const result = (yield* call("scroll", {
+                  ...tabParams(),
+                  delta_x: input.delta_x ?? 0,
+                  delta_y: input.delta_y ?? 600,
+                })) as { tab: string; url: string }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url  } as Metadata,
+                  metadata: { action: input.action, url: result.url, tab: result.tab } as Metadata,
                   output: `Scrolled (${input.delta_x ?? 0}, ${input.delta_y ?? 600}).`,
                 }
               }
               case "evaluate": {
-                const result = (yield* call("evaluate", { script: input.script })) as { url: string; result: unknown }
-                tab.url = result.url
+                const result = (yield* call("evaluate", { ...tabParams(), script: input.script })) as {
+                  tab: string
+                  url: string
+                  result: unknown
+                }
+                remember(result.tab, result.url)
                 let output = JSON.stringify(result.result ?? null, null, 2)
                 if (output.length > MAX_EVALUATE_OUTPUT) {
                   output = `${output.slice(0, MAX_EVALUATE_OUTPUT)}… [truncated at 64KB]`
                 }
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url  } as Metadata,
+                  metadata: { action: input.action, url: result.url, tab: result.tab } as Metadata,
                   output,
                 }
               }
               case "back": {
-                const result = (yield* call("back", {})) as { url: string; navigated: boolean }
-                tab.url = result.url
+                const result = (yield* call("back", { ...tabParams() })) as { tab: string; url: string; navigated: boolean }
+                remember(result.tab, result.url)
                 return {
                   title: detail,
-                  metadata: { action: input.action, url: result.url  } as Metadata,
+                  metadata: { action: input.action, url: result.url, tab: result.tab } as Metadata,
                   output: result.navigated
                     ? `Went back to ${result.url}.`
                     : "No earlier page in history; the current page is unchanged.",
                 }
               }
+              case "tabs": {
+                // ensure() 已刷新快照，直接列出即可，无须再发一次 RPC。
+                const list = [...tab.tabs.entries()].map(([id, info]) => `${id} — ${info.url || "about:blank"}`)
+                return {
+                  title: detail,
+                  metadata: { action: input.action } as Metadata,
+                  output: list.length > 0 ? `Open browser tabs:\n${list.join("\n")}` : "No browser tab is open.",
+                }
+              }
               case "close": {
+                if (requested) {
+                  yield* call("close", { tab: requested })
+                  tab.tabs.delete(requested)
+                  return {
+                    title: detail,
+                    metadata: { action: input.action, tab: requested } as Metadata,
+                    output: `Closed browser tab ${requested}.`,
+                  }
+                }
                 yield* request("close", {}, ctx.abort).pipe(Effect.orElseSucceed(() => undefined))
                 kill()
                 return {
                   title: detail,
-                  metadata: { action: input.action  } as Metadata,
-                  output: "Closed the browser tab. The next browser action will start a fresh browser.",
+                  metadata: { action: input.action } as Metadata,
+                  output: "Closed the browser. The next browser action will start a fresh browser.",
                 }
               }
             }

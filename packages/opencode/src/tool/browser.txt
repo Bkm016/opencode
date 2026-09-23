@@ -1,16 +1,20 @@
 Drive a real browser to view rendered web pages, including client-rendered (JS-heavy) pages that the fetch tool cannot see. Use this to visually inspect pages you built (e.g. open http://localhost:3000 and screenshot to check your work), read dynamic content, and perform basic interactions.
 
 Actions:
-- navigate: open a URL (always the first step)
-- screenshot: capture the current page as an image attachment you can see. Use full_page for long pages.
-- get_content: read the rendered page as markdown (default), text, or html; optionally restricted to a CSS selector
-- click / type_text / press_key / scroll / back: interact with the page by CSS selector or keyboard
-- evaluate: run a JavaScript expression in the page and get its JSON result (e.g. inspect DOM state, read console-friendly globals)
-- close: close the browser tab (also closes automatically after 2 minutes idle)
+- navigate: open a URL. Returns an opaque tab id for later actions. By default it reuses the only open tab (or creates the first one); pass new_tab: true to keep existing tabs untouched and open a fresh one, or pass tab to navigate a specific existing tab (this reloads that tab and loses its in-memory page state).
+- screenshot: capture a page as an image attachment you can see. Use full_page for long pages.
+- get_content: read the rendered page as markdown (default), text, or html; optionally restricted to a CSS selector.
+- click / type_text / press_key / scroll / back: interact with a page by CSS selector or keyboard.
+- evaluate: run a JavaScript expression in the page and get its JSON result (e.g. inspect DOM state, read console-friendly globals).
+- tabs: list open tab ids with their current URLs, including popups opened by pages.
+- close: pass tab to close only that tab; omit tab to close the whole browser and all tabs.
 
 Guidelines:
-- One page at a time: state is a single tab shared across calls. You MUST call navigate with a valid http(s) URL before any other action — click, type_text, screenshot, get_content, evaluate, scroll, press_key, and back all fail if no page is open.
-- The evaluate action requires a `script` argument containing the JavaScript to run; calls without `script` are rejected.
+- Tabs share one browser context (cookies are shared). The browser also closes automatically after 2 minutes idle, which drops all tabs.
+- Every interaction action accepts a tab id; when multiple tabs are open you MUST pass tab — omitting it fails instead of guessing.
+- navigate always loads a page; it never selects an already-open tab. To keep a page with in-progress state (verification codes, OAuth, multi-step forms), do not navigate it away — open other pages with new_tab: true and pass their tab ids instead. back reloads history and does not restore a tab's JavaScript state.
+- You MUST call navigate with a valid http(s) URL before any other action — click, type_text, screenshot, get_content, evaluate, scroll, press_key, and back all fail if no tab is open.
+- The evaluate action requires a `script` argument containing the JavaScript to run; calls without `script` are rejected. It runs inside the target tab's page only: no Node.js access and no cross-origin privileges.
 - Prefer screenshot to verify visual work; prefer get_content for reading text.
 - After click, scroll, or navigation, the page may have changed — screenshot or get_content again before assuming state.
 - Requires permission. The browser runs headless on the OpenCode server machine by default.

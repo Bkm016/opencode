@@ -637,7 +637,7 @@ ToolGroupRegistry.register({
   },
   renderSummary({ parts, i18n }) {
     // 只看不改的动作计为查看：navigate/screenshot/get_content/evaluate/back
-    const observe = new Set(["navigate", "screenshot", "get_content", "evaluate", "back"])
+    const observe = new Set(["navigate", "screenshot", "get_content", "evaluate", "back", "tabs"])
     const counts = { observe: 0, action: 0, error: 0 }
     for (const part of parts) {
       if (part.state.status === "error") counts.error++

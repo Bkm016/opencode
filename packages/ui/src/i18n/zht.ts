@@ -243,6 +243,7 @@ export const dict = {
   "ui.tool.browser.action.scroll": "捲動",
   "ui.tool.browser.action.evaluate": "執行指令碼",
   "ui.tool.browser.action.back": "返回",
+  "ui.tool.browser.action.tabs": "列出分頁",
   "ui.tool.browser.action.close": "關閉瀏覽器",
   "ui.tool.patch": "修補",
   "ui.tool.invalid": "未提供工具: {{tool}}",

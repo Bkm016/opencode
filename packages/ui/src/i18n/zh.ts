@@ -267,6 +267,7 @@ export const dict = {
   "ui.tool.browser.action.scroll": "滚动",
   "ui.tool.browser.action.evaluate": "执行脚本",
   "ui.tool.browser.action.back": "后退",
+  "ui.tool.browser.action.tabs": "列出标签页",
   "ui.tool.browser.action.close": "关闭浏览器",
   "ui.tool.patch": "补丁",
   "ui.tool.invalid": "未提供工具: {{tool}}",

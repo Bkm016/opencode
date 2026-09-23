@@ -284,6 +284,7 @@ export const dict: Record<string, string> = {
   "ui.tool.browser.action.scroll": "Scroll",
   "ui.tool.browser.action.evaluate": "Evaluate script",
   "ui.tool.browser.action.back": "Go back",
+  "ui.tool.browser.action.tabs": "List tabs",
   "ui.tool.browser.action.close": "Close browser",
   "ui.tool.patch": "Patch",
   "ui.tool.invalid": "Unavailable tool: {{tool}}",

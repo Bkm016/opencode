@@ -1,7 +1,7 @@
 // Browser helper child process: 独立 node 进程驱动浏览器，与宿主 Bun 运行时隔离。
 // Bun 下 playwright-core 的 chromium.launch/connect 会因子进程管道兼容问题挂死，故浏览器生命周期全部放在 node 侧。
 // 协议：stdin 逐行收 JSON 请求 { id, method, params }，stdout 逐行回 JSON { id, result } 或 { id, error }。
-// 截图 base64 数据量大，直接放 result 字段随行返回；事件（crash/disconnected）发 { event, params } 无 id。
+// 截图 base64 数据量大，直接放 result 字段随行返回；事件（crash/closed/disconnected）发 { event, params } 无 id。
 
 import { createRequire } from "node:module"
 
@@ -29,7 +29,10 @@ const VIEWPORT = { width: 1280, height: 800 }
 
 let browser: import("playwright-core").Browser | undefined
 let context: import("playwright-core").BrowserContext | undefined
-let page: import("playwright-core").Page | undefined
+// 同一 context 内的全部页面按不透明 tab id 寻址；页面失效只移除对应 id，
+// 不得重建 context，否则其余 tab 的登录状态与 SPA 内存会一并丢失。
+const pages = new Map<string, import("playwright-core").Page>()
+let pageSequence = 0
 
 function send(message: unknown) {
   process.stdout.write(JSON.stringify(message) + "\n")
@@ -69,9 +72,26 @@ async function launchOptions() {
   return { channel: "chromium", headless: !headed }
 }
 
-async function ensurePage() {
-  if (browser && browser.isConnected() && page && !page.isClosed()) return page
+// 登记一个 Page（主动创建或 window.open 弹窗），返回分配的 tab id。
+function track(page: import("playwright-core").Page) {
+  const tab = `tab-${++pageSequence}`
+  page.setDefaultTimeout(ACTION_TIMEOUT)
+  page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT)
+  pages.set(tab, page)
+  page.on("close", () => {
+    if (pages.get(tab) !== page) return
+    pages.delete(tab)
+    send({ event: "closed", params: { tab } })
+  })
+  page.on("crash", () => send({ event: "crash", params: { tab } }))
+  return tab
+}
+
+// 确保 browser/context 存活；浏览器断连才整组重建（单页失效不触发）。
+async function ensureBrowser() {
+  if (browser && browser.isConnected() && context) return context
   if (browser) await browser.close().catch(() => {})
+  pages.clear()
   const options = await launchOptions()
   browser = await chromium.launch({ ...options, timeout: NAVIGATION_TIMEOUT })
   context = await browser.newContext({
@@ -79,80 +99,153 @@ async function ensurePage() {
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
   })
-  page = await context.newPage()
-  page.setDefaultTimeout(ACTION_TIMEOUT)
-  page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT)
-  page.on("crash", () => send({ event: "crash" }))
+  // 页面脚本 window.open 的弹窗同样登记，agent 可通过 tabs 发现并寻址。
+  context.on("page", (page) => track(page))
   browser.on("disconnected", () => {
     send({ event: "disconnected" })
     browser = undefined
-    page = undefined
+    context = undefined
+    pages.clear()
   })
-  return page
+  return context
+}
+
+// 新建 tab；仅 navigate 路径允许创建页面，交互动作缺失页面时必须报错。
+async function createPage() {
+  const ctx = await ensureBrowser()
+  const page = await ctx.newPage()
+  // context.on("page") 与 newPage 的返回指向同一对象，重复登记会分配两个 id，须去重。
+  for (const [tab, existing] of pages) {
+    if (existing === page) return { tab, page }
+  }
+  return { tab: track(page), page }
+}
+
+// 按 params.tab 解析目标页面：缺省且唯一时直达；多页缺省或 id 失效均报错，不猜测、不自动创建。
+function findPage(params: Record<string, unknown>) {
+  const id = typeof params.tab === "string" && params.tab ? params.tab : undefined
+  if (!id) {
+    if (pages.size === 1) {
+      const [tab, page] = pages.entries().next().value as [string, import("playwright-core").Page]
+      return { tab, page }
+    }
+    if (pages.size === 0) throw new Error("No browser tab is open. Navigate to a URL first.")
+    throw new Error("Multiple browser tabs are open. Specify tab; use tabs to list them.")
+  }
+  const page = pages.get(id)
+  if (!page || page.isClosed()) throw new Error(`Browser tab "${id}" is unavailable. Use tabs to list open tabs.`)
+  return { tab: id, page }
+}
+
+// 清理已被 closed 事件标记但尚未移除的 id；crash 事件保留 id 以使下一次操作报出明确错误。
+function sweep() {
+  for (const [tab, page] of [...pages]) {
+    if (page.isClosed()) pages.delete(tab)
+  }
 }
 
 const handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
   async navigate(params) {
-    const p = await ensurePage()
-    const response = await p.goto(String(params.url), {
+    if (params.new_tab === true && typeof params.tab === "string" && params.tab) {
+      throw new Error("navigate accepts either tab or new_tab, not both.")
+    }
+    if (params.new_tab === true) {
+      const { tab, page } = await createPage()
+      const response = await page.goto(String(params.url), {
+        waitUntil: (params.wait_until as "load" | "domcontentloaded" | "networkidle") ?? "load",
+      })
+      return { tab, url: page.url(), status: response?.status() ?? null, title: await page.title().catch(() => "") }
+    }
+    // 兼容单页旧调用：未指定 tab 且恰有一个页面时原地导航（会重置该页 SPA 状态）。
+    const target =
+      typeof params.tab === "string" && params.tab
+        ? findPage(params)
+        : pages.size === 1
+          ? findPage(params)
+          : await createPage()
+    const response = await target.page.goto(String(params.url), {
       waitUntil: (params.wait_until as "load" | "domcontentloaded" | "networkidle") ?? "load",
     })
-    return { url: p.url(), status: response?.status() ?? null, title: await p.title().catch(() => "") }
+    return {
+      tab: target.tab,
+      url: target.page.url(),
+      status: response?.status() ?? null,
+      title: await target.page.title().catch(() => ""),
+    }
   },
   async screenshot(params) {
-    const p = await ensurePage()
-    const buffer = await p.screenshot({ fullPage: params.full_page === true, type: "jpeg", quality: 85 })
-    return { url: p.url(), base64: buffer.toString("base64") }
+    const { tab, page } = findPage(params)
+    const buffer = await page.screenshot({ fullPage: params.full_page === true, type: "jpeg", quality: 85 })
+    return { tab, url: page.url(), base64: buffer.toString("base64") }
   },
   async get_content(params) {
-    const p = await ensurePage()
+    const { tab, page } = findPage(params)
     if (typeof params.selector === "string" && params.selector) {
-      const element = await p.$(params.selector)
+      const element = await page.$(params.selector)
       if (!element) throw new Error(`No element matches selector: ${params.selector}`)
-      return { url: p.url(), html: (await element.innerHTML()) ?? "" }
+      return { tab, url: page.url(), html: (await element.innerHTML()) ?? "" }
     }
-    return { url: p.url(), html: await p.content() }
+    return { tab, url: page.url(), html: await page.content() }
   },
   async click(params) {
-    const p = await ensurePage()
-    await p.click(String(params.selector))
-    return { url: p.url() }
+    const { tab, page } = findPage(params)
+    await page.click(String(params.selector))
+    return { tab, url: page.url() }
   },
   async type_text(params) {
-    const p = await ensurePage()
-    await p.fill(String(params.selector), String(params.text ?? ""))
-    if (params.submit === true) await p.press(String(params.selector), "Enter")
-    return { url: p.url() }
+    const { tab, page } = findPage(params)
+    await page.fill(String(params.selector), String(params.text ?? ""))
+    if (params.submit === true) await page.press(String(params.selector), "Enter")
+    return { tab, url: page.url() }
   },
   async press_key(params) {
-    const p = await ensurePage()
-    await p.keyboard.press(String(params.key))
-    return { url: p.url() }
+    const { tab, page } = findPage(params)
+    await page.keyboard.press(String(params.key))
+    return { tab, url: page.url() }
   },
   async scroll(params) {
-    const p = await ensurePage()
-    await p.mouse.wheel(Number(params.delta_x ?? 0), Number(params.delta_y ?? 600))
-    return { url: p.url() }
+    const { tab, page } = findPage(params)
+    await page.mouse.wheel(Number(params.delta_x ?? 0), Number(params.delta_y ?? 600))
+    return { tab, url: page.url() }
   },
   async evaluate(params) {
-    const p = await ensurePage()
-    const result = await p.evaluate(String(params.script))
-    return { url: p.url(), result: result ?? null }
+    const { tab, page } = findPage(params)
+    const result = await page.evaluate(String(params.script))
+    return { tab, url: page.url(), result: result ?? null }
   },
-  async back() {
-    const p = await ensurePage()
-    const response = await p.goBack({ waitUntil: "load" })
-    return { url: p.url(), navigated: response !== null }
+  async back(params) {
+    const { tab, page } = findPage(params)
+    const response = await page.goBack({ waitUntil: "load" })
+    return { tab, url: page.url(), navigated: response !== null }
   },
   async current() {
-    if (!browser || !browser.isConnected() || !page || page.isClosed()) return { open: false }
-    return { open: true, url: page.url() }
+    // 供宿主权限判定与 tabs 动作的页面快照；浏览器断连时视为无页面。
+    sweep()
+    if (!browser || !browser.isConnected()) return { tabs: [] }
+    const list = await Promise.all(
+      [...pages].map(async ([tab, page]) => ({
+        tab,
+        url: page.url(),
+        title: await page.title().catch(() => ""),
+      })),
+    )
+    return { tabs: list }
   },
-  async close() {
+  async close(params) {
+    if (typeof params.tab === "string" && params.tab) {
+      const page = pages.get(params.tab)
+      if (!page || page.isClosed()) {
+        throw new Error(`Browser tab "${params.tab}" is unavailable. Use tabs to list open tabs.`)
+      }
+      // close 事件负责移除 id 与上报，这里只关页面。
+      await page.close()
+      return { closed: true, tab: params.tab, all: false }
+    }
     if (browser) await browser.close().catch(() => {})
     browser = undefined
-    page = undefined
-    return { closed: true }
+    context = undefined
+    pages.clear()
+    return { closed: true, all: true }
   },
 }
 

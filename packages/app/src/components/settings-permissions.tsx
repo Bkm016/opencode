@@ -21,7 +21,19 @@ interface ToolMeta {
   id: string
   title: string
   description: string
-  icon: "terminal" | "folder" | "edit" | "link" | "subagent" | "brain" | "circle-check" | "prompt" | "magnifying-glass" | "file-tree" | "code" | "shield"
+  icon:
+    | "terminal"
+    | "folder"
+    | "edit"
+    | "link"
+    | "subagent"
+    | "brain"
+    | "circle-check"
+    | "prompt"
+    | "magnifying-glass"
+    | "file-tree"
+    | "code"
+    | "shield"
   defaultAction: PermissionAction
 }
 
@@ -194,15 +206,11 @@ const SettingsPermissionsContent: Component = () => {
 
   // 区分细粒度模式规则组与单一动作工具
   const multiRuleEntries = createMemo(() => {
-    return configuredEntries().filter(
-      ([, val]) => val && typeof val === "object" && !Array.isArray(val),
-    )
+    return configuredEntries().filter(([, val]) => val && typeof val === "object" && !Array.isArray(val))
   })
 
   const singleActionEntries = createMemo(() => {
-    return configuredEntries().filter(
-      ([, val]) => typeof val === "string" || !val || Array.isArray(val),
-    )
+    return configuredEntries().filter(([, val]) => typeof val === "string" || !val || Array.isArray(val))
   })
 
   // 未在配置中声明的常用工具（供快捷添加）
@@ -392,9 +400,9 @@ const SettingsPermissionsContent: Component = () => {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-4 pt-6 pb-5 max-w-[800px]">
           <div class="flex items-center justify-between gap-4">
-            <div class="flex items-baseline gap-2.5">
+            <div class="flex min-w-0 items-baseline gap-2.5 max-md:flex-col max-md:gap-0.5">
               <h2 class="text-16-medium text-text-strong">{language.t("settings.permissions.title")}</h2>
-              <span class="text-12-regular text-text-subtle">本地配置的权限策略</span>
+              <span class="text-12-regular text-text-weak">本地配置的权限策略</span>
             </div>
             <div class="flex items-center gap-2">
               <Show when={canOpenConfig()}>
@@ -482,18 +490,12 @@ const SettingsPermissionsContent: Component = () => {
                 <div class="flex items-center justify-between gap-3 px-1 pt-1">
                   <div class="flex items-center gap-2 min-w-0">
                     <Icon name={meta()?.icon ?? "terminal"} class="size-4 shrink-0 text-text-base" />
-                    <span class="text-13-medium text-text-strong">
-                      {meta()?.title ?? toolID}
-                    </span>
+                    <span class="text-13-medium text-text-strong">{meta()?.title ?? toolID}</span>
                     <Show when={meta()}>
-                      <span class="text-12-regular text-text-subtle font-mono">
-                        ({toolID})
-                      </span>
+                      <span class="text-12-regular text-text-weak font-mono">({toolID})</span>
                     </Show>
-                    <span class="text-12-regular text-text-subtle">·</span>
-                    <span class="text-11-regular text-text-subtle">
-                      {totalCount()} 条模式规则
-                    </span>
+                    <span class="text-12-regular text-text-weak">·</span>
+                    <span class="text-11-regular text-text-weak">{totalCount()} 条模式规则</span>
                   </div>
 
                   {/* 右侧动作组 */}
@@ -530,9 +532,7 @@ const SettingsPermissionsContent: Component = () => {
                         current={ACTION_OPTIONS.find((o) => o.value === (newActions()[toolID] ?? "ask"))}
                         value={(o) => o.value}
                         label={(o) => o.label}
-                        onSelect={(opt) =>
-                          opt && setNewActions((prev) => ({ ...prev, [toolID]: opt.value }))
-                        }
+                        onSelect={(opt) => opt && setNewActions((prev) => ({ ...prev, [toolID]: opt.value }))}
                         variant="secondary"
                         size="small"
                         triggerStyle={{
@@ -544,12 +544,7 @@ const SettingsPermissionsContent: Component = () => {
                         valueClass="text-12-regular"
                       />
                     </div>
-                    <Button
-                      size="small"
-                      variant="primary"
-                      icon="plus"
-                      onClick={() => addPatternRule(toolID)}
-                    >
+                    <Button size="small" variant="primary" icon="plus" onClick={() => addPatternRule(toolID)}>
                       确认添加
                     </Button>
                   </div>
@@ -560,9 +555,7 @@ const SettingsPermissionsContent: Component = () => {
                   {/* 若规则较多（> 8条），在列表顶置入轻量规则微过滤 */}
                   <Show when={totalCount() > 8}>
                     <div class="py-1.5 px-2 -mx-2 mb-1 border-b border-border-weak-base/20 flex items-center justify-between gap-2">
-                      <span class="text-11-regular text-text-subtle">
-                        自上而下匹配，最后命中的规则生效
-                      </span>
+                      <span class="text-11-regular text-text-weak">自上而下匹配，最后命中的规则生效</span>
                       <div class="w-40">
                         <TextField
                           type="text"
@@ -580,7 +573,7 @@ const SettingsPermissionsContent: Component = () => {
                       <div class="flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded-md border-b border-border-weak-base/20 last:border-none hover:bg-surface-base-hover/40 transition-colors group">
                         {/* 序号与模式名称 */}
                         <div class="flex items-center gap-2 min-w-0 flex-1">
-                          <span class="text-11-medium font-mono text-text-subtle w-6 shrink-0 text-center select-none">
+                          <span class="text-11-medium font-mono text-text-weak w-6 shrink-0 text-center select-none">
                             #{index() + 1}
                           </span>
                           <span
@@ -592,7 +585,7 @@ const SettingsPermissionsContent: Component = () => {
                             {pattern}
                           </span>
                           <Show when={pattern === "*"}>
-                            <Tag class="text-10-regular font-sans bg-surface-raised-base text-text-subtle border border-border-weak-base/40 select-none">
+                            <Tag class="text-10-regular font-sans bg-surface-raised-base text-text-weak border border-border-weak-base/40 select-none">
                               兜底通配符
                             </Tag>
                           </Show>
@@ -624,7 +617,7 @@ const SettingsPermissionsContent: Component = () => {
                                           : act.value === "deny"
                                             ? "bg-surface-critical-base text-text-critical-base font-semibold"
                                             : "bg-surface-raised-base text-text-strong shadow-xs font-semibold"
-                                        : "text-text-subtle hover:text-text-weak"
+                                        : "text-text-weaker hover:text-text-weak"
                                     }`}
                                   >
                                     {act.value}
@@ -650,10 +643,8 @@ const SettingsPermissionsContent: Component = () => {
               <div class="flex items-center gap-2 min-w-0">
                 <Icon name="shield" class="size-4 shrink-0 text-text-base" />
                 <span class="text-13-medium text-text-strong">基础工具策略</span>
-                <span class="text-12-regular text-text-subtle">·</span>
-                <span class="text-11-regular text-text-subtle">
-                  {singleActionEntries().length} 项
-                </span>
+                <span class="text-12-regular text-text-weak">·</span>
+                <span class="text-11-regular text-text-weak">{singleActionEntries().length} 项</span>
               </div>
             </div>
 
@@ -665,15 +656,13 @@ const SettingsPermissionsContent: Component = () => {
 
                   return (
                     <div class="flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded-md border-b border-border-weak-base/20 last:border-none hover:bg-surface-base-hover/40 transition-colors group">
-                      <div class="flex flex-col min-w-0 flex-1 pr-4">
-                        <div class="flex items-center gap-2">
-                          <span class="text-13-medium text-text-strong truncate">
+                      <div class="flex flex-col min-w-0 flex-1 md:pr-4">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="text-13-medium text-text-strong truncate shrink-0 max-w-full">
                             {meta()?.title ?? toolID}
                           </span>
                           <Show when={meta()}>
-                            <span class="text-11-regular text-text-subtle font-mono">
-                              ({toolID})
-                            </span>
+                            <span class="text-11-regular text-text-weak font-mono truncate min-w-0">({toolID})</span>
                           </Show>
                         </div>
                         <Show when={meta()?.description}>
@@ -727,9 +716,9 @@ const SettingsPermissionsContent: Component = () => {
         {/* 3. 快速添加其他常用工具（收敛在折叠下方，极简不喧宾夺主） */}
         <Show when={unconfiguredTools().length > 0}>
           <div class="flex flex-col gap-2 pt-2 border-t border-border-weak-base/20">
-            <div class="flex items-center justify-between gap-3 px-1 pt-1">
-              <span class="text-13-medium text-text-subtle">配置其他工具策略</span>
-              <span class="text-11-regular text-text-subtle">
+            <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-1 pt-1">
+              <span class="text-13-medium text-text-weak">配置其他工具策略</span>
+              <span class="text-11-regular text-text-weak">
                 {unconfiguredTools().length} 项未配置（当前为内置默认）
               </span>
             </div>
@@ -738,14 +727,12 @@ const SettingsPermissionsContent: Component = () => {
               <For each={unconfiguredTools()}>
                 {(tool) => (
                   <div class="flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded-md border-b border-border-weak-base/20 last:border-none hover:bg-surface-base-hover/40 transition-colors group">
-                    <div class="flex flex-col min-w-0 flex-1 pr-4">
-                      <div class="flex items-center gap-2">
-                        <span class="text-13-medium text-text-weak">{tool.title}</span>
-                        <span class="text-11-regular text-text-subtle font-mono">({tool.id})</span>
+                    <div class="flex flex-col min-w-0 flex-1 md:pr-4">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-13-medium text-text-base shrink-0">{tool.title}</span>
+                        <span class="text-11-regular text-text-weak font-mono truncate min-w-0">({tool.id})</span>
                       </div>
-                      <span class="text-11-regular text-text-subtle truncate max-w-md pt-0.5">
-                        {tool.description}
-                      </span>
+                      <span class="text-11-regular text-text-weak truncate max-w-md pt-0.5">{tool.description}</span>
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
@@ -755,7 +742,7 @@ const SettingsPermissionsContent: Component = () => {
                         icon="plus"
                         onClick={() => updateToolAction(tool.id, tool.defaultAction)}
                       >
-                        配置策略 ({tool.defaultAction})
+                        <span class="max-md:hidden">配置策略 </span>({tool.defaultAction})
                       </Button>
                     </div>
                   </div>

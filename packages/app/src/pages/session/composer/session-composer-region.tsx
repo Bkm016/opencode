@@ -24,11 +24,11 @@ export function SessionComposerRegion(props: {
     <div
       ref={controller.setDockRef}
       data-component="session-prompt-dock"
-      class="relative z-40 w-full shrink-0 flex flex-col justify-center items-center pb-6 pointer-events-none bg-background-stronger"
+      class="relative z-40 w-full shrink-0 flex flex-col justify-center items-center pb-[max(10px,env(safe-area-inset-bottom))] md:pb-6 pointer-events-none bg-background-stronger"
     >
       <div
         classList={{
-          "group/composer w-full px-3 pointer-events-auto": true,
+          "group/composer w-full px-2 md:px-3 pointer-events-auto": true,
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
         data-has-todo={controller.dock() ? "" : undefined}
@@ -102,9 +102,7 @@ export function SessionComposerRegion(props: {
                     </div>
                   )}
                 </Show>
-                <div
-                  class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none"
-                >
+                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
                   {controller.handoffPrompt() || language.t("prompt.loading")}
                 </div>
               </>

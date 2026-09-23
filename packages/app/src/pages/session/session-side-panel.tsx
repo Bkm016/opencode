@@ -1,4 +1,5 @@
 import { Show, createMemo } from "solid-js"
+import { Portal } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -7,6 +8,7 @@ import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { SessionContextTab } from "@/components/session"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useTitlebarMobileMount } from "@/components/titlebar"
 import { gsapEnter } from "@/utils/gsap-motion"
 import { SIDE_PANEL_WIDTH_MIN } from "@/pages/session/session-panel-width"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -25,6 +27,7 @@ export function SessionSidePanel(props: {
   availableWidth: () => number | undefined
 }) {
   const layout = useLayout()
+  const mobileMount = useTitlebarMobileMount()
   const language = useLanguage()
   const i18n = useI18n()
   const { view, sessionKey } = useSessionLayout()
@@ -65,6 +68,42 @@ export function SessionSidePanel(props: {
     return Math.min(sessionMax, Math.max(sessionMin, available - sideWidth))
   }
 
+  const tabs = () => (
+    <>
+      <div class="flex min-w-0 items-center gap-1">
+        <Button
+          size="small"
+          variant="ghost"
+          aria-pressed={!view().canvas.active()}
+          onClick={() => view().canvas.showContext()}
+        >
+          {language.t("session.tab.context")}
+        </Button>
+        <Show when={view().canvas.get()}>
+          {(canvas) => (
+            <Button
+              size="small"
+              variant="ghost"
+              aria-pressed={view().canvas.active()}
+              onClick={() => view().canvas.open(canvas())}
+            >
+              {i18n.t("ui.canvas.title")}
+            </Button>
+          )}
+        </Show>
+      </div>
+      <IconButton
+        icon="close-small"
+        variant="ghost"
+        class="shrink-0"
+        aria-label={language.t("common.closeTab")}
+        onClick={() => {
+          view().reviewPanel.close()
+        }}
+      />
+    </>
+  )
+
   return (
     <Show when={open()}>
       <aside
@@ -98,39 +137,21 @@ export function SessionSidePanel(props: {
         <Show when={open()}>
           <div class="size-full min-w-0 flex" ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}>
             <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden bg-background-base">
-              <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 min-w-0">
-                <div class="flex min-w-0 items-center gap-1">
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    aria-pressed={!view().canvas.active()}
-                    onClick={() => view().canvas.showContext()}
-                  >
-                    {language.t("session.tab.context")}
-                  </Button>
-                  <Show when={view().canvas.get()}>
-                    {(canvas) => (
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        aria-pressed={view().canvas.active()}
-                        onClick={() => view().canvas.open(canvas())}
-                      >
-                        {i18n.t("ui.canvas.title")}
-                      </Button>
+              <Show
+                when={layout.isDesktop()}
+                fallback={
+                  <Show when={mobileMount()}>
+                    {(mount) => (
+                      // 手机：Context / Canvas 切换与关闭按钮并入全局标题栏，面板本身少占一行。
+                      <Portal mount={mount()}>
+                        <div class="flex h-full min-w-0 flex-1 items-center justify-between gap-2 pr-1">{tabs()}</div>
+                      </Portal>
                     )}
                   </Show>
-                </div>
-                <IconButton
-                  icon="close-small"
-                  variant="ghost"
-                  class="shrink-0"
-                  aria-label={language.t("common.closeTab")}
-                  onClick={() => {
-                    view().reviewPanel.close()
-                  }}
-                />
-              </div>
+                }
+              >
+                <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 min-w-0">{tabs()}</div>
+              </Show>
               <div class="flex-1 min-h-0 min-w-0 overflow-hidden">
                 <Show when={canvasKey()} keyed fallback={<SessionContextTab />}>
                   {(_key) => {

@@ -5,6 +5,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
+import { createMediaQuery } from "@solid-primitives/media"
 import { type Component, For, Show, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -80,6 +81,11 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
   const serverSDK = useServerSDK()
   const [selectedID, setSelectedID] = createSignal<string>()
   const [copied, setCopied] = createSignal(false)
+  // 手机上列表与内容放不下两栏，改成先选再查看的两级页面。
+  const mobile = createMediaQuery("(max-width: 767px)")
+  const [viewing, setViewing] = createSignal(false)
+  const showList = () => !mobile() || !viewing()
+  const showDetail = () => !mobile() || viewing()
 
   const [remote] = createResource(
     () => ({ sdk: serverSDK(), directory: props.directory }),
@@ -170,15 +176,21 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
           "flex flex-col shrink-0": true,
           "gap-3 px-3 pt-3 pb-3": props.compact,
           "gap-4 px-4 pt-6 pb-4 sm:px-10": !props.compact,
+          "max-md:pb-0": !showList(),
         }}
       >
-        <Show when={!props.compact}>
+        <Show when={!props.compact && showList()}>
           <div class="flex items-center justify-between gap-4 max-w-[960px]">
             <h2 class="text-16-medium text-text-strong">{language.t("settings.tab.instructions")}</h2>
             <SettingsServerPicker />
           </div>
         </Show>
-        <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base max-w-[960px] w-full">
+        <div
+          classList={{
+            "flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base max-w-[960px] w-full": true,
+            hidden: !showList(),
+          }}
+        >
           <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
           <TextField
             variant="ghost"
@@ -223,9 +235,10 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
         >
           <div
             classList={{
-              "shrink-0 flex flex-col min-h-0 overflow-y-auto no-scrollbar": true,
+              "shrink-0 flex flex-col min-h-0 overflow-y-auto no-scrollbar max-md:w-full": true,
               "w-[320px]": props.compact,
               "w-[240px]": !props.compact,
+              hidden: !showList(),
             }}
           >
             <Show
@@ -255,12 +268,14 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
                       <button
                         type="button"
                         classList={{
-                          "w-full text-left flex items-center justify-between gap-2 py-2.5 px-1 border-b border-border-weak-base last:border-none transition-colors":
-                            true,
-                          "text-text-strong": active(),
-                          "text-text-weak hover:text-text-strong": !active(),
+                          "w-full text-left flex items-center justify-between gap-2 py-2.5 px-1 border-b border-border-weak-base last:border-none transition-colors": true,
+                          "text-text-strong": active() || mobile(),
+                          "text-text-weak hover:text-text-strong": !active() && !mobile(),
                         }}
-                        onClick={() => setSelectedID(item.id)}
+                        onClick={() => {
+                          setSelectedID(item.id)
+                          setViewing(true)
+                        }}
                       >
                         <span class="text-13-regular truncate min-w-0">{item.source}</span>
                         <Show when={item.isURL}>
@@ -274,7 +289,22 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
             </Show>
           </div>
 
-          <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+          <div
+            classList={{
+              "flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden": true,
+              hidden: !showDetail(),
+            }}
+          >
+            <Show when={mobile()}>
+              <button
+                type="button"
+                class="-ml-1 mb-2 flex h-9 w-fit shrink-0 items-center gap-1 rounded-md px-1 text-14-medium text-text-weak active:text-text-strong"
+                onClick={() => setViewing(false)}
+              >
+                <Icon name="chevron-left" size="small" />
+                {language.t("settings.tab.instructions")}
+              </button>
+            </Show>
             <Show
               when={selected()}
               fallback={
@@ -326,9 +356,7 @@ const SettingsInstructionsContent: Component<{ directory?: string; compact?: boo
                       </Button>
                     </Show>
                     <Button size="small" variant="ghost" onClick={() => void copy()}>
-                      {copied()
-                        ? language.t("settings.instructions.copied")
-                        : language.t("settings.instructions.copy")}
+                      {copied() ? language.t("settings.instructions.copied") : language.t("settings.instructions.copy")}
                     </Button>
                   </div>
                 </div>

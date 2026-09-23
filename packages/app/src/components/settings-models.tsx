@@ -63,8 +63,7 @@ const SettingsModelsContent: Component = () => {
 
       const modelList = Object.entries(provider.models ?? {})
       return modelList.some(
-        ([modelID, m]) =>
-          modelID.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q)),
+        ([modelID, m]) => modelID.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q)),
       )
     })
   })
@@ -242,9 +241,9 @@ const SettingsModelsContent: Component = () => {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-4 pt-6 pb-5 max-w-[800px]">
           <div class="flex items-center justify-between gap-4">
-            <div class="flex items-baseline gap-2.5">
+            <div class="flex min-w-0 items-baseline gap-2.5 max-md:flex-col max-md:gap-0.5">
               <h2 class="text-16-medium text-text-strong">{language.t("settings.models.title")}</h2>
-              <span class="text-12-regular text-text-subtle">本地提供商与模型</span>
+              <span class="text-12-regular text-text-weak">本地提供商与模型</span>
             </div>
             <div class="flex items-center gap-2">
               <Show when={canOpenConfig()}>
@@ -331,20 +330,22 @@ const SettingsModelsContent: Component = () => {
                       <ProviderIcon id={providerID} class="size-4 shrink-0 text-text-base" />
                       <span
                         class="text-13-medium text-text-strong truncate"
-                        title={providerID !== (provider.name || providerID) ? `${provider.name || providerID} (${providerID})` : providerID}
+                        title={
+                          providerID !== (provider.name || providerID)
+                            ? `${provider.name || providerID} (${providerID})`
+                            : providerID
+                        }
                       >
                         {provider.name || providerID}
                       </span>
-                      <span class="text-12-regular text-text-subtle">·</span>
-                      <span class="text-11-regular text-text-subtle">
-                        {allModels().length} 个模型
-                      </span>
+                      <span class="text-12-regular text-text-weak">·</span>
+                      <span class="text-11-regular text-text-weak">{allModels().length} 个模型</span>
                       <Show when={provider.options?.baseURL}>
                         {(url) => (
                           <>
-                            <span class="text-12-regular text-text-subtle hidden sm:inline">·</span>
+                            <span class="text-12-regular text-text-weak hidden sm:inline">·</span>
                             <span
-                              class="text-11-regular text-text-subtle font-mono truncate max-w-[240px] hidden sm:inline"
+                              class="text-11-regular text-text-weak font-mono truncate max-w-[240px] hidden sm:inline"
                               title={url()}
                             >
                               {url()}
@@ -403,8 +404,7 @@ const SettingsModelsContent: Component = () => {
                       <For each={filteredModels()}>
                         {([modelID, m]) => {
                           const key = { providerID, modelID }
-                          const variantCount = () =>
-                            m.variants ? Object.keys(m.variants).length : 0
+                          const variantCount = () => (m.variants ? Object.keys(m.variants).length : 0)
 
                           return (
                             <div class="flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded-md border-b border-border-weak-base/20 last:border-none hover:bg-surface-base-hover/40 transition-colors group">
@@ -412,13 +412,15 @@ const SettingsModelsContent: Component = () => {
                               <div class="flex items-center gap-3 min-w-0 flex-1">
                                 <span
                                   class="text-13-medium text-text-strong truncate"
-                                  title={modelID !== (m.name || modelID) ? `${m.name || modelID} (${modelID})` : modelID}
+                                  title={
+                                    modelID !== (m.name || modelID) ? `${m.name || modelID} (${modelID})` : modelID
+                                  }
                                 >
                                   {m.name || modelID}
                                 </span>
 
                                 {/* 能力与参数：数值 + 线性图标，告别汉字堆砌 */}
-                                <div class="flex items-center gap-2.5 shrink-0 text-text-subtle">
+                                <div class="flex items-center gap-2.5 shrink-0 text-text-weak">
                                   <Show when={m.limit?.context}>
                                     <span
                                       class="text-11-regular font-mono select-none"

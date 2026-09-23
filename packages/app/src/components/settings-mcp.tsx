@@ -209,9 +209,9 @@ const SettingsMcpContent: Component = () => {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-4 pt-6 pb-5 max-w-[800px]">
           <div class="flex items-center justify-between gap-4">
-            <div class="flex items-baseline gap-2.5">
+            <div class="flex min-w-0 items-baseline gap-2.5 max-md:flex-col max-md:gap-0.5">
               <h2 class="text-16-medium text-text-strong">{language.t("settings.mcp.title")}</h2>
-              <span class="text-12-regular text-text-subtle">模型上下文协议 (Model Context Protocol) 扩展</span>
+              <span class="text-12-regular text-text-weak">模型上下文协议 (Model Context Protocol) 扩展</span>
             </div>
             <div class="flex items-center gap-2">
               <Show when={canOpenConfig()}>
@@ -262,7 +262,7 @@ const SettingsMcpContent: Component = () => {
               <p class="text-14-medium text-text-base mb-1">
                 {search() ? "未找到匹配的 MCP 服务器" : "未配置 MCP 服务器"}
               </p>
-              <p class="text-12-regular text-text-subtle max-w-sm mb-4">
+              <p class="text-12-regular text-text-weak max-w-sm mb-4">
                 {search()
                   ? "尝试更换搜索关键字，或清除搜索框。"
                   : "通过添加 MCP 服务器，为智能体扩展外部工具、命令行工具链与企业知识库。"}
@@ -352,8 +352,8 @@ const SettingsMcpContent: Component = () => {
                             }
                             if (s === "disabled") {
                               return (
-                                <span class="flex items-center gap-1 text-11-regular text-text-subtle">
-                                  <span class="w-1.5 h-1.5 rounded-full bg-text-subtle/50" />
+                                <span class="flex items-center gap-1 text-11-regular text-text-weak">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-text-weak" />
                                   已禁用
                                 </span>
                               )
@@ -363,14 +363,12 @@ const SettingsMcpContent: Component = () => {
                         </Show>
 
                         <Show when={!isEnabled()}>
-                          <Tag class="text-10-regular text-text-subtle bg-surface-base border-border-base/30">
-                            已停用
-                          </Tag>
+                          <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/30">已停用</Tag>
                         </Show>
                       </div>
 
                       {/* 第 2 行：命令行 / URL 详细参数 */}
-                      <div class="flex items-center gap-2 text-11-regular text-text-subtle font-mono truncate">
+                      <div class="flex items-center gap-2 text-11-regular text-text-weak font-mono truncate">
                         <span class="truncate max-w-[460px]" title={commandDisplay()}>
                           {commandDisplay()}
                         </span>

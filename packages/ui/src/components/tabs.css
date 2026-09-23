@@ -679,3 +679,74 @@
 [data-component="tabs-drag-preview"] > * {
   position: relative;
 }
+
+/* 手机上的设置：分区列表与详情页二选一全屏显示（由 dialog-settings 写入 data-mobile-view）。 */
+@media (max-width: 767px) {
+  [data-component="tabs"][data-variant="settings"][data-mobile-view] {
+    [data-slot="tabs-list"] {
+      width: 100%;
+      min-width: 0;
+      padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+      border-right: none;
+      background-color: transparent;
+      overflow-y: auto;
+    }
+
+    [data-slot="tabs-section-title"] {
+      padding: 8px 12px 2px;
+      font-size: 13px;
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      width: 100%;
+      max-width: none;
+      height: 48px;
+      font-size: 15px;
+      border-radius: 10px;
+
+      [data-slot="tabs-trigger"] {
+        padding: 0 12px;
+        gap: 14px;
+      }
+
+      [data-slot="tabs-trigger"]::after {
+        content: "";
+        width: 7px;
+        height: 7px;
+        margin-left: auto;
+        border-top: 1.5px solid var(--icon-weak-base, var(--text-weak));
+        border-right: 1.5px solid var(--icon-weak-base, var(--text-weak));
+        transform: rotate(45deg);
+      }
+
+      /* 列表是导航而不是选中态，不保留上次停留分区的高亮。 */
+      &:has([data-selected]),
+      &:hover:not(:disabled) {
+        background-color: transparent;
+        color: inherit;
+      }
+
+      &:active {
+        background-color: var(--surface-base-hover);
+      }
+    }
+  }
+
+  [data-slot="dialog-content"]:has([data-component="tabs"][data-variant="settings"][data-mobile-view]) {
+    background: var(--surface-stronger-non-alpha);
+  }
+
+  [data-component="tabs"][data-variant="settings"][data-mobile-view="list"] [data-slot="tabs-content"] {
+    display: none;
+  }
+
+  [data-component="tabs"][data-variant="settings"][data-mobile-view="detail"] {
+    [data-slot="tabs-list"] {
+      display: none;
+    }
+
+    [data-slot="tabs-content"] {
+      width: 100%;
+    }
+  }
+}

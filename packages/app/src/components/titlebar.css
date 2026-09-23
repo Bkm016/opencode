@@ -75,3 +75,24 @@
     animation-range: calc(100% - 1.1px) calc(100% - 1px);
   }
 }
+
+/* 手机标题栏：图标按钮放大到 36px 触控尺寸，会话标题与右侧操作共用一行。 */
+@media (max-width: 767px) {
+  header [data-titlebar-side] .titlebar-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+#opencode-titlebar-mobile > div {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+#opencode-titlebar-mobile [data-slot="session-title-child"],
+#opencode-titlebar-mobile [data-slot="session-title-parent"] {
+  font-size: 15px;
+  line-height: 20px;
+}

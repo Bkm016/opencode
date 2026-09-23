@@ -154,9 +154,7 @@ export const SettingsGeneral: Component = () => {
       label: language.t(`settings.general.row.compactionStrategy.${value}`),
     })),
   )
-  const currentCompactionStrategy = createMemo(
-    () => serverSync().data.config.compaction?.strategy ?? "model",
-  )
+  const currentCompactionStrategy = createMemo(() => serverSync().data.config.compaction?.strategy ?? "model")
 
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
     const list = shells.latest
@@ -658,12 +656,13 @@ interface SettingsRowProps {
 
 const SettingsRow: Component<SettingsRowProps> = (props) => {
   return (
-    <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
-      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+      <div class="flex min-w-0 flex-1 basis-[200px] flex-col gap-0.5">
         <span class="text-14-medium text-text-strong">{props.title}</span>
         <span class="text-12-regular text-text-weak">{props.description}</span>
       </div>
-      <div class="flex w-full justify-end sm:w-auto sm:shrink-0">{props.children}</div>
+      {/* 开关等窄控件在手机上与标题同行，下拉等宽控件放不下时才折到下一行靠右。 */}
+      <div class="ml-auto flex shrink-0 justify-end">{props.children}</div>
     </div>
   )
 }

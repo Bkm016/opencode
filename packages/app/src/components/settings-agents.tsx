@@ -47,9 +47,7 @@ const SettingsAgentsContent: Component = () => {
 
   // 搜索过滤后的代理列表
   const filteredAgents = createMemo<Array<[string, AgentConfig]>>(() => {
-    const raw = Object.entries(configuredAgents()).filter(
-      (entry): entry is [string, AgentConfig] => !!entry[1],
-    )
+    const raw = Object.entries(configuredAgents()).filter((entry): entry is [string, AgentConfig] => !!entry[1])
     const q = search().trim().toLowerCase()
     if (!q) return raw
 
@@ -202,9 +200,9 @@ const SettingsAgentsContent: Component = () => {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex flex-col gap-4 pt-6 pb-5 max-w-[800px]">
           <div class="flex items-center justify-between gap-4">
-            <div class="flex items-baseline gap-2.5">
+            <div class="flex min-w-0 items-baseline gap-2.5 max-md:flex-col max-md:gap-0.5">
               <h2 class="text-16-medium text-text-strong">{language.t("settings.agents.title")}</h2>
-              <span class="text-12-regular text-text-subtle">本地代理与关联模型</span>
+              <span class="text-12-regular text-text-weak">本地代理与关联模型</span>
             </div>
             <div class="flex items-center gap-2">
               <Show when={canOpenConfig()}>
@@ -254,9 +252,7 @@ const SettingsAgentsContent: Component = () => {
           fallback={
             <div class="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border-weak-base text-center bg-surface-base/50">
               <Icon name="subagent" class="size-8 text-icon-weak-base mb-3" />
-              <span class="text-15-medium text-text-strong">
-                {search() ? "未找到匹配的代理" : "尚未配置任何代理"}
-              </span>
+              <span class="text-15-medium text-text-strong">{search() ? "未找到匹配的代理" : "尚未配置任何代理"}</span>
               <p class="text-13-regular text-text-weak mt-1 mb-5 max-w-md">
                 为特定任务定义专长代理，并为它们绑定特定的模型、提示词与思考变体。
               </p>
@@ -274,20 +270,12 @@ const SettingsAgentsContent: Component = () => {
               <div class="flex items-center gap-2 min-w-0">
                 <Icon name="brain" class="size-4 shrink-0 text-text-base" />
                 <span class="text-13-medium text-text-strong">已配置代理</span>
-                <span class="text-12-regular text-text-subtle">·</span>
-                <span class="text-11-regular text-text-subtle">
-                  {filteredAgents().length} 个代理
-                </span>
+                <span class="text-12-regular text-text-weak">·</span>
+                <span class="text-11-regular text-text-weak">{filteredAgents().length} 个代理</span>
               </div>
 
               <div class="flex items-center gap-0.5 shrink-0">
-                <Button
-                  size="small"
-                  variant="ghost"
-                  icon="plus-small"
-                  onClick={addAgent}
-                  class="text-12-regular"
-                >
+                <Button size="small" variant="ghost" icon="plus-small" onClick={addAgent} class="text-12-regular">
                   添加代理
                 </Button>
               </div>
@@ -317,25 +305,19 @@ const SettingsAgentsContent: Component = () => {
                         {/* 左侧：代理名称 + 关联模型与变体（第 1 行） + 职责描述（第 2 行） */}
                         <div class="flex flex-col min-w-0 flex-1 pr-4">
                           <div class="flex items-center gap-2 flex-wrap">
-                            <span
-                              class="text-13-medium text-text-strong truncate"
-                              title={id}
-                            >
+                            <span class="text-13-medium text-text-strong truncate" title={id}>
                               {id}
                             </span>
 
                             {/* 绑定的模型与变体：紧随代理名称，自然流畅 */}
                             <Show when={a.model}>
                               <div class="flex items-center gap-1.5 shrink-0">
-                                <span
-                                  class="text-11-regular font-mono text-text-weak"
-                                  title={`绑定的模型: ${a.model}`}
-                                >
+                                <span class="text-11-regular font-mono text-text-weak" title={`绑定的模型: ${a.model}`}>
                                   {shortModel()}
                                 </span>
                                 <Show when={a.variant}>
                                   <span
-                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-raised-base border border-border-weak-base/40 shrink-0 select-none text-text-subtle"
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-raised-base border border-border-weak-base/40 shrink-0 select-none text-text-weak"
                                     title={`思考变体: ${a.variant}`}
                                   >
                                     <Icon name="brain" size="small" class="size-3 text-icon-base" />
@@ -348,14 +330,10 @@ const SettingsAgentsContent: Component = () => {
                             </Show>
 
                             <Show when={a.mode === "primary"}>
-                              <span class="text-10-regular text-text-subtle font-mono">
-                                (primary)
-                              </span>
+                              <span class="text-10-regular text-text-weak font-mono">(primary)</span>
                             </Show>
                             <Show when={a.mode === "all"}>
-                              <span class="text-10-regular text-text-subtle font-mono">
-                                (all)
-                              </span>
+                              <span class="text-10-regular text-text-weak font-mono">(all)</span>
                             </Show>
                           </div>
 
@@ -394,24 +372,14 @@ const SettingsAgentsContent: Component = () => {
 
                           {/* 操作按钮组（Hover 淡入） */}
                           <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                            <IconButton
-                              icon="edit"
-                              variant="ghost"
-                              onClick={() => editAgent(id, a)}
-                              title="编辑代理"
-                            />
+                            <IconButton icon="edit" variant="ghost" onClick={() => editAgent(id, a)} title="编辑代理" />
                             <IconButton
                               icon="copy"
                               variant="ghost"
                               onClick={() => cloneAgent(id, a)}
                               title="克隆代理"
                             />
-                            <IconButton
-                              icon="trash"
-                              variant="ghost"
-                              onClick={() => deleteAgent(id)}
-                              title="删除代理"
-                            />
+                            <IconButton icon="trash" variant="ghost" onClick={() => deleteAgent(id)} title="删除代理" />
                           </div>
 
                           {/* 快捷启用 / 停用 Switch */}

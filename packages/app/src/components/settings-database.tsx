@@ -125,9 +125,7 @@ const SettingsDatabaseContent: Component = () => {
 
   const budgetReady = createMemo(() => budget.latest?.sessions !== undefined && !budget.error)
 
-  const unloadedProjectsAvailable = createMemo(
-    () => budget.latest?.sessions?.unloadedProjects === "available",
-  )
+  const unloadedProjectsAvailable = createMemo(() => budget.latest?.sessions?.unloadedProjects === "available")
 
   const sessionCandidates = createMemo(() => {
     const info = budget.latest?.sessions
@@ -217,10 +215,7 @@ const SettingsDatabaseContent: Component = () => {
       showToast({
         variant: "success",
         title: language.t("settings.database.compact.toast.success.title"),
-        description:
-          parts.length > 0
-            ? parts.join(" ")
-            : language.t("settings.database.compact.toast.success.none"),
+        description: parts.length > 0 ? parts.join(" ") : language.t("settings.database.compact.toast.success.none"),
       })
     } catch (err) {
       showToast({
@@ -240,9 +235,7 @@ const SettingsDatabaseContent: Component = () => {
       <Dialog title={language.t("settings.database.compact.confirm.title")} fit>
         <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
           <div class="flex flex-col gap-2">
-            <span class="text-14-regular text-text-strong">
-              {language.t("settings.database.compact.confirm.body")}
-            </span>
+            <span class="text-14-regular text-text-strong">{language.t("settings.database.compact.confirm.body")}</span>
             <span class="text-12-regular text-text-weak">
               {language.t("settings.database.compact.confirm.estimate", {
                 size: formatBytes(estimateBytes()),
@@ -316,12 +309,12 @@ const SettingsDatabaseContent: Component = () => {
   }> = (props) => {
     const value = () => props.value ?? "—"
     return (
-      <div class="flex flex-wrap items-start gap-3 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+      <div class="flex items-start gap-3 py-3 border-b border-border-weak-base last:border-none">
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
           <span class="text-14-medium text-text-strong">{props.title}</span>
           <span class="text-12-regular text-text-weak break-all font-mono">{value()}</span>
         </div>
-        <div class="flex w-full justify-end gap-2 sm:w-auto sm:shrink-0">
+        <div class="flex shrink-0 justify-end gap-2">
           <Show when={props.value}>
             <Button size="small" variant="ghost" onClick={() => copy(props.value!, props.copyKey)}>
               {copied() === props.copyKey
@@ -341,11 +334,11 @@ const SettingsDatabaseContent: Component = () => {
 
   const StatRow: Component<{ title: string; value: string }> = (props) => {
     return (
-      <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+      <div class="flex items-center gap-4 py-3 border-b border-border-weak-base last:border-none">
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
           <span class="text-14-medium text-text-strong">{props.title}</span>
         </div>
-        <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
+        <div class="flex shrink-0 justify-end">
           <span class="text-12-regular text-text-weak font-mono">{props.value}</span>
         </div>
       </div>
@@ -360,12 +353,12 @@ const SettingsDatabaseContent: Component = () => {
     disabled?: boolean
   }> = (props) => {
     return (
-      <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+      <div class="flex items-center gap-4 py-3 border-b border-border-weak-base last:border-none">
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
           <span class="text-14-medium text-text-strong">{props.title}</span>
           <span class="text-12-regular text-text-weak">{props.description}</span>
         </div>
-        <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
+        <div class="flex shrink-0 justify-end">
           <Switch checked={props.checked} onChange={props.onChange} disabled={props.disabled} />
         </div>
       </div>
@@ -434,7 +427,7 @@ const SettingsDatabaseContent: Component = () => {
                       }
                     >
                       {(entry) => (
-                        <div class="flex flex-wrap items-start gap-3 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+                        <div class="flex items-start gap-3 py-3 border-b border-border-weak-base last:border-none">
                           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span class="text-14-medium text-text-strong font-mono">{entry.name}</span>
                             <span class="text-12-regular text-text-weak">
@@ -443,7 +436,7 @@ const SettingsDatabaseContent: Component = () => {
                                 : language.t("settings.database.breakdown.kind.file")}
                             </span>
                           </div>
-                          <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+                          <div class="flex shrink-0 items-center justify-end gap-2">
                             <span class="text-12-regular text-text-weak font-mono">
                               {formatBytes(finiteNumber(entry.bytes))}
                             </span>
@@ -476,11 +469,11 @@ const SettingsDatabaseContent: Component = () => {
                       }
                     >
                       {(table) => (
-                        <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
+                        <div class="flex items-center gap-4 py-3 border-b border-border-weak-base last:border-none">
                           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                             <span class="text-14-medium text-text-strong font-mono">{table.name}</span>
                           </div>
-                          <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
+                          <div class="flex shrink-0 justify-end">
                             <span class="text-12-regular text-text-weak font-mono">
                               {table.rows === undefined
                                 ? language.t("settings.database.tables.rowsUnknown")
@@ -640,9 +633,7 @@ const SettingsDatabaseContent: Component = () => {
                 </div>
 
                 <div class="flex flex-col gap-1">
-                  <h3 class="text-14-medium text-text-strong pb-2">
-                    {language.t("settings.database.section.stats")}
-                  </h3>
+                  <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.database.section.stats")}</h3>
                   <SettingsList>
                     <StatRow
                       title={language.t("settings.database.row.size.title")}
@@ -666,7 +657,9 @@ const SettingsDatabaseContent: Component = () => {
                     />
                     <StatRow
                       title={language.t("settings.database.row.pageSize.title")}
-                      value={finiteNumber(info().pageSize) !== undefined ? formatBytes(finiteNumber(info().pageSize)) : "—"}
+                      value={
+                        finiteNumber(info().pageSize) !== undefined ? formatBytes(finiteNumber(info().pageSize)) : "—"
+                      }
                     />
                     <StatRow
                       title={language.t("settings.database.row.freelist.title")}

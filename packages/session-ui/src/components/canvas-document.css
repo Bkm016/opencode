@@ -114,7 +114,11 @@
       inset: 0 -120px auto;
       height: 420px;
       pointer-events: none;
-      background: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--text-weak) 22%, transparent) 1px, transparent 0)
+      background: radial-gradient(
+          circle at 1px 1px,
+          color-mix(in srgb, var(--text-weak) 22%, transparent) 1px,
+          transparent 0
+        )
         0 0 / 22px 22px;
       mask-image: radial-gradient(ellipse 70% 100% at 50% 0%, #000 20%, transparent 75%);
     }
@@ -617,5 +621,32 @@
     margin: 24px 0 28px;
     padding: 4px 0;
     overflow: visible;
+  }
+}
+
+/* 手机：标题与章节字号收一档，导语与段距同步收紧，避免首屏被主标题占满。 */
+@media (max-width: 640px) {
+  [data-component="canvas-document"] [data-slot="canvas-document-title"],
+  [data-component="canvas-document"] .canvas-markdown h1 {
+    font-size: 27px;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+  }
+
+  [data-component="canvas-document"] .canvas-markdown {
+    font-size: 15px;
+    line-height: 1.75;
+
+    h1 + p,
+    [data-slot="canvas-document-title"] + [data-slot="canvas-document-content"] > p:first-child {
+      font-size: 15.5px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-size: 19px;
+      margin: 40px 0 14px;
+      padding-top: 24px;
+    }
   }
 }

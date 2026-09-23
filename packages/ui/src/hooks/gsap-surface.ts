@@ -32,6 +32,13 @@ const presets: Record<
   overlay: { y: 0, scale: 1, duration: 0.18, ease: "power1.out" },
 }
 
+// 与 app 端手机样式约定：这些浮层在窄屏上贴底显示为底部面板，入场由 CSS 动画自下而上滑出，这里不再叠加位移。
+const SHEET = '.prompt-model-tray, [data-component="select-content"], [data-component="dropdown-menu-content"]'
+
+function isSheet(el: HTMLElement) {
+  return window.matchMedia("(max-width: 767px)").matches && el.matches(SHEET)
+}
+
 /** Shared open motion for tray / select / popover / menu / toast surfaces. */
 export function animateSurfaceIn(
   el: HTMLElement | null | undefined,
@@ -51,6 +58,7 @@ export function animateSurfaceIn(
     const scale = options?.scale ?? base.scale
     const ease = options?.ease ?? base.ease
     gsap.killTweensOf(el)
+    if (isSheet(el)) return
     if (options?.preset === "overlay") {
       return gsap.fromTo(
         el,

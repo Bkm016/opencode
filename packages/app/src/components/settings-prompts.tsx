@@ -4,6 +4,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
+import { createMediaQuery } from "@solid-primitives/media"
 import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, on } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
@@ -284,6 +285,11 @@ const SettingsPromptsContent: Component = () => {
   const [selectedID, setSelectedID] = createSignal<string>()
   const [draft, setDraft] = createSignal("")
   const [busy, setBusy] = createSignal(false)
+  // 手机上列表与编辑器放不下两栏，改成先选再编辑的两级页面。
+  const compact = createMediaQuery("(max-width: 767px)")
+  const [editing, setEditing] = createSignal(false)
+  const showList = () => !compact() || !editing()
+  const showEditor = () => !compact() || editing()
 
   const [remoteCatalog] = createResource(
     () => serverSDK(),
@@ -307,9 +313,7 @@ const SettingsPromptsContent: Component = () => {
       const override = current[item.id]
       const hasLocal = Object.prototype.hasOwnProperty.call(current, item.id)
       const overridden = hasLocal ? override !== "" : (item.overridden ?? false)
-      const body = overridden
-        ? (override as string)
-        : (item.default ?? item.value ?? "")
+      const body = overridden ? (override as string) : (item.default ?? item.value ?? "")
       return {
         ...item,
         overridden,
@@ -453,12 +457,27 @@ const SettingsPromptsContent: Component = () => {
 
   return (
     <div class="flex flex-col h-full overflow-hidden">
-      <div class="flex flex-col gap-4 px-4 pt-6 pb-4 sm:px-10 shrink-0">
-        <div class="flex items-center justify-between gap-4 max-w-[960px]">
+      <div
+        classList={{
+          "flex flex-col gap-4 px-4 pt-6 pb-4 sm:px-10 shrink-0": true,
+          "max-md:pb-0": !showList(),
+        }}
+      >
+        <div
+          classList={{
+            "flex items-center justify-between gap-4 max-w-[960px]": true,
+            hidden: !showList(),
+          }}
+        >
           <h2 class="text-16-medium text-text-strong">{language.t("settings.tab.prompts")}</h2>
           <SettingsServerPicker />
         </div>
-        <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base max-w-[960px]">
+        <div
+          classList={{
+            "flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base max-w-[960px]": true,
+            hidden: !showList(),
+          }}
+        >
           <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
           <TextField
             variant="ghost"
@@ -479,7 +498,12 @@ const SettingsPromptsContent: Component = () => {
       </div>
 
       <div class="flex flex-1 min-h-0 gap-4 px-4 pb-6 sm:px-10 max-w-[960px] w-full overflow-hidden">
-        <div class="w-[240px] shrink-0 flex flex-col min-h-0 overflow-y-auto no-scrollbar">
+        <div
+          classList={{
+            "w-[240px] shrink-0 flex flex-col min-h-0 overflow-y-auto no-scrollbar max-md:w-full": true,
+            hidden: !showList(),
+          }}
+        >
           <Show
             when={catalogReady() && list.flat().length > 0}
             fallback={
@@ -509,12 +533,14 @@ const SettingsPromptsContent: Component = () => {
                           <button
                             type="button"
                             classList={{
-                              "w-full text-left flex items-center justify-between gap-2 py-2.5 px-1 border-b border-border-weak-base last:border-none transition-colors":
-                                true,
-                              "text-text-strong": active(),
-                              "text-text-weak hover:text-text-strong": !active(),
+                              "w-full text-left flex items-center justify-between gap-2 py-2.5 px-1 border-b border-border-weak-base last:border-none transition-colors": true,
+                              "text-text-strong": active() || compact(),
+                              "text-text-weak hover:text-text-strong": !active() && !compact(),
                             }}
-                            onClick={() => setSelectedID(item.id)}
+                            onClick={() => {
+                              setSelectedID(item.id)
+                              setEditing(true)
+                            }}
                           >
                             <span class="text-13-regular truncate min-w-0">{item.title}</span>
                             <Show when={item.overridden}>
@@ -531,7 +557,22 @@ const SettingsPromptsContent: Component = () => {
           </Show>
         </div>
 
-        <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <div
+          classList={{
+            "flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden": true,
+            hidden: !showEditor(),
+          }}
+        >
+          <Show when={compact()}>
+            <button
+              type="button"
+              class="-ml-1 mb-2 flex h-9 w-fit shrink-0 items-center gap-1 rounded-md px-1 text-14-medium text-text-weak active:text-text-strong"
+              onClick={() => setEditing(false)}
+            >
+              <Icon name="chevron-left" size="small" />
+              {language.t("settings.tab.prompts")}
+            </button>
+          </Show>
           <Show
             when={selected()}
             fallback={
@@ -581,7 +622,12 @@ const SettingsPromptsContent: Component = () => {
                 </div>
 
                 <div class="flex items-center justify-end gap-2 shrink-0 pt-1">
-                  <Button size="small" variant="ghost" onClick={() => void reset()} disabled={busy() || !isOverridden()}>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => void reset()}
+                    disabled={busy() || !isOverridden()}
+                  >
                     {language.t("settings.prompts.action.reset")}
                   </Button>
                   <Button size="small" variant="primary" onClick={() => void save()} disabled={busy() || !dirty()}>

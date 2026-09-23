@@ -119,6 +119,16 @@
       }
     }
 
+    [data-slot="input-description"] {
+      color: var(--text-weak);
+
+      /* text-12-regular */
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight-regular);
+      line-height: 18px;
+    }
+
     [data-slot="input-error"] {
       color: var(--text-on-critical-base);
 

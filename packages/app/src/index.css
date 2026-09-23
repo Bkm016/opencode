@@ -376,6 +376,25 @@
     height: 0 !important;
   }
 
+  .prompt-model-tray [data-slot="list-header"] {
+    background: var(--oc-sheet-bg) !important;
+    padding-inline: 12px !important;
+    font-size: 13px !important;
+  }
+
+  .prompt-model-tray [data-slot="list-header"]::after {
+    background: linear-gradient(to bottom, var(--oc-sheet-bg), transparent) !important;
+  }
+
+  [data-component="select-content"] [data-slot="select-select-item"] {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  [data-component="dropdown-menu-content"] [data-slot="dropdown-menu-separator"] {
+    margin-inline: 14px;
+  }
+
   .prompt-model-tray [data-slot="list-item"] {
     border-radius: 6px;
   }
@@ -388,4 +407,191 @@
 [data-component="session-find-highlight-layer"] [data-slot="session-find-hit"],
 [data-component="session-find-highlight-layer"] [data-slot="session-find-active"] {
   pointer-events: none;
+}
+
+/* 手机输入栏：代理 / 模型 / 变体等选择器放不下时横向滑动，右缘渐隐提示还有内容，不再挤压发送按钮。 */
+@media (max-width: 767px) {
+  [data-slot="prompt-controls"] {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+    padding-right: 16px;
+  }
+
+  [data-slot="prompt-controls"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  [data-slot="prompt-controls"] > * {
+    flex-shrink: 0;
+  }
+
+  /* 选择器芯片收紧：去掉下拉箭头和多余内边距，窄屏上代理、模型、变体、自动批准基本一屏放下。 */
+  [data-slot="prompt-controls"] {
+    gap: 2px;
+  }
+
+  [data-slot="prompt-controls"] [data-action="prompt-model"] {
+    max-width: 148px;
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  [data-slot="prompt-controls"] [data-action="prompt-model"] > :last-child,
+  [data-slot="prompt-controls"] [data-slot="select-select-trigger-icon"] {
+    display: none;
+  }
+
+  [data-slot="prompt-controls"] [data-slot="select-select-trigger"] {
+    padding-inline: 8px;
+  }
+
+  [data-slot="prompt-controls"] [data-action="prompt-model"] [data-component="provider-icon"] {
+    opacity: 0.7;
+  }
+}
+
+/*
+ * 手机底部面板：模型选择、下拉选择和操作菜单不再是贴着按钮的小浮层，
+ * 而是贴底全宽、带遮罩与拖拽把手的面板，行高按手指点按尺寸放大。
+ */
+@keyframes oc-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes oc-scrim-in {
+  from {
+    box-shadow:
+      0 0 0 100vmax rgba(0, 0, 0, 0),
+      0 -8px 32px rgba(0, 0, 0, 0);
+  }
+}
+
+@media (max-width: 767px) {
+  [data-popper-positioner]:has(
+    > :is(.prompt-model-tray, [data-component="select-content"], [data-component="dropdown-menu-content"])
+  ) {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    transform: none !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  :is(.prompt-model-tray, [data-component="select-content"], [data-component="dropdown-menu-content"]) {
+    position: relative;
+    box-sizing: border-box;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: 78dvh;
+    border: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    padding: 22px 8px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+    --oc-sheet-bg: var(--v2-background-bg-layer-01, var(--surface-raised-stronger-non-alpha));
+    background: var(--oc-sheet-bg) !important;
+    box-shadow:
+      0 0 0 100vmax rgba(0, 0, 0, 0.42),
+      0 -8px 32px rgba(0, 0, 0, 0.18) !important;
+    animation:
+      oc-sheet-in 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+      oc-scrim-in 0.24s ease-out;
+    opacity: 1 !important;
+  }
+
+  :is(.prompt-model-tray, [data-component="select-content"], [data-component="dropdown-menu-content"])::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--text-weak) 35%, transparent);
+  }
+
+  /* 模型：固定高度，筛选时面板不跳动；搜索框 16px 字号避免 iOS 聚焦放大。 */
+  .prompt-model-tray {
+    height: min(72dvh, 600px) !important;
+  }
+
+  .prompt-model-tray [data-slot="list-search-input"],
+  .prompt-model-tray [data-slot="list-search-input"] input {
+    font-size: 16px !important;
+  }
+
+  .prompt-model-tray [data-slot="list-item"] {
+    min-height: 44px;
+    padding: 10px 12px !important;
+    border-radius: 10px;
+  }
+
+  .prompt-model-tray [data-slot="list-item"] .text-13-regular {
+    font-size: 15px;
+    gap: 10px;
+  }
+
+  .prompt-model-tray [data-slot="list-item"] [data-component="provider-icon"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  [data-component="select-content"] [data-slot="select-select-content-list"] {
+    max-height: 60dvh;
+  }
+
+  [data-component="select-content"] [data-slot="select-select-item"],
+  [data-component="dropdown-menu-content"]
+    :is(
+      [data-slot="dropdown-menu-item"],
+      [data-slot="dropdown-menu-checkbox-item"],
+      [data-slot="dropdown-menu-radio-item"],
+      [data-slot="dropdown-menu-sub-trigger"]
+    ) {
+    min-height: 46px;
+    padding-inline: 14px;
+    border-radius: 10px;
+    font-size: 15px;
+    gap: 12px;
+  }
+
+  [data-component="dropdown-menu-content"]
+    :is([data-slot="dropdown-menu-checkbox-item"], [data-slot="dropdown-menu-radio-item"]) {
+    padding-right: 40px;
+  }
+
+  /* 触屏没有真正的悬停：点按后残留的 :hover 背景会让未选中的项看起来也被选中。 */
+  @media (hover: none) {
+    [data-component="select-content"] [data-slot="select-select-item"]:hover:not([data-highlighted]),
+    .prompt-model-tray [data-slot="list-item"]:not([data-selected="true"]) {
+      background: transparent !important;
+    }
+
+    .prompt-model-tray [data-slot="list-item"][data-selected="true"] {
+      background: var(--surface-raised-base-hover) !important;
+    }
+  }
+}
+
+/* 触屏没有悬停：靠 hover 才浮现的行内操作（删除、编辑等）直接常显，否则手机上永远点不到。 */
+@media (hover: none) {
+  .opacity-0.group-hover\:opacity-100 {
+    opacity: 1;
+  }
+}
+
+/* 手机上 / 命令与 @ 提及的候选行放大到手指点按的高度。 */
+@media (max-width: 767px) {
+  [data-slot="prompt-popover"] {
+    max-height: min(50dvh, 420px);
+  }
+
+  [data-slot="prompt-popover"] button {
+    min-height: 44px;
+  }
 }

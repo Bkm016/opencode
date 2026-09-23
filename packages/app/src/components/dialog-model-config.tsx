@@ -859,7 +859,7 @@ export function DialogAgentConfig(props: AgentFormProps) {
               />
               <Show when={availableModels().length > 0}>
                 <div class="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span class="text-11-regular text-text-subtle shrink-0">快捷选择:</span>
+                  <span class="text-11-regular text-text-weak shrink-0">快捷选择:</span>
                   <For each={availableModels()}>
                     {(m) => (
                       <button
@@ -940,7 +940,7 @@ export function DialogAgentConfig(props: AgentFormProps) {
             <div class="flex flex-col gap-1.5">
               <label class="text-12-medium text-text-weak">专有系统提示词 (System Prompt)</label>
               <textarea
-                class="w-full min-h-[140px] max-h-[300px] p-3 rounded-lg bg-surface-base border border-border-weak-base text-text-base text-13-regular font-mono focus:outline-none focus:border-border-strong-base resize-y leading-relaxed placeholder:text-text-subtle"
+                class="w-full min-h-[140px] max-h-[300px] p-3 rounded-lg bg-surface-base border border-border-weak-base text-text-base text-13-regular font-mono focus:outline-none focus:border-border-strong-base resize-y leading-relaxed placeholder:text-text-weak"
                 placeholder="在此输入为该代理定制的专有 instructions 或 System Prompt..."
                 value={form.prompt}
                 onInput={(e) => setForm("prompt", e.currentTarget.value)}

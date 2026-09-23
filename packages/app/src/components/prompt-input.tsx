@@ -1408,10 +1408,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             editorRef?.focus()
           }}
         >
-          <div
-            class="relative max-h-[240px] overflow-y-auto no-scrollbar rounded-t-xl"
-            ref={(el) => (scrollRef = el)}
-          >
+          <div class="relative max-h-[240px] overflow-y-auto no-scrollbar rounded-t-xl" ref={(el) => (scrollRef = el)}>
             <div
               data-component="prompt-input"
               ref={bindEditorRef}
@@ -1514,7 +1511,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   {language.t("common.cancel")}
                 </Button>
               </div>
-              <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
+              <div data-slot="prompt-controls" class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
                 <Show when={!agentsLoading()}>
                   <div
                     data-component="prompt-agent-control"
@@ -1693,7 +1690,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           }}
                           onClick={toggleBypassPermission}
                         >
-                          <span class="truncate">{language.t("prompt.action.bypassPermission")}</span>
+                          <span class="truncate max-md:hidden">{language.t("prompt.action.bypassPermission")}</span>
                         </Button>
                       </TooltipKeybind>
                     </div>

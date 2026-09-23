@@ -73,7 +73,7 @@ export function ServerRow(props: ServerRowProps) {
       <div class={props.class} classList={{ "opacity-50": props.dimmed }}>
         <div class="flex flex-col items-start min-w-0 w-full">
           <div class="flex flex-row items-center gap-2 min-w-0 w-full">
-            <span ref={nameRef} class={`${props.nameClass ?? "truncate"} min-w-0`}>
+            <span ref={nameRef} class={`${props.nameClass ?? "truncate"} min-w-0 max-md:shrink-0 max-md:max-w-full`}>
               {name()}
             </span>
             <Show

@@ -12,7 +12,7 @@
   type JSX,
 } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
+import { Dynamic, Portal } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
 import { useMutation } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
@@ -42,9 +42,7 @@ import { isScrollKeyTarget, scrollKey, scrollKeyOwner, ScrollView } from "@openc
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import {
-  animateOutputEnter,
-} from "@opencode-ai/ui/hooks/gsap-surface"
+import { animateOutputEnter } from "@opencode-ai/ui/hooks/gsap-surface"
 import type { PartGroup } from "@opencode-ai/session-ui/message-part"
 import type {
   AssistantMessage,
@@ -65,6 +63,9 @@ import { exportFull, exportLastRequest, exportLastResponse, exportSummary, expor
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSessionKey } from "@/pages/session/session-layout"
+import { useLayout } from "@/context/layout"
+import { useCommand } from "@/context/command"
+import { useTitlebarMobileMount } from "@/components/titlebar"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
@@ -164,10 +165,7 @@ function formatTurnDuration(ms: number | undefined, t: (key: string, params?: Re
   })
 }
 
-function TimelineProcessSummaryHeader(props: {
-  durationMs?: number
-  kind?: "process" | "compaction"
-}) {
+function TimelineProcessSummaryHeader(props: { durationMs?: number; kind?: "process" | "compaction" }) {
   const language = useLanguage()
   const duration = () => formatTurnDuration(props.durationMs, language.t)
   const label = () => {
@@ -180,10 +178,7 @@ function TimelineProcessSummaryHeader(props: {
   // Compaction: full-width —— label —— divider, distinct from process chips.
   if (props.kind === "compaction") {
     return (
-      <Collapsible.Trigger
-        data-slot="session-turn-process-summary"
-        data-kind="compaction"
-      >
+      <Collapsible.Trigger data-slot="session-turn-process-summary" data-kind="compaction">
         <span data-slot="session-turn-process-summary-line" aria-hidden="true" />
         <span data-slot="session-turn-process-summary-center">
           <span data-slot="session-turn-process-summary-label">{label()}</span>
@@ -194,10 +189,7 @@ function TimelineProcessSummaryHeader(props: {
   }
 
   return (
-    <Collapsible.Trigger
-      data-slot="session-turn-process-summary"
-      data-kind="process"
-    >
+    <Collapsible.Trigger data-slot="session-turn-process-summary" data-kind="process">
       <span data-slot="session-turn-process-summary-label">{label()}</span>
       <span data-slot="session-turn-process-summary-chevron">
         <Collapsible.Arrow />
@@ -386,7 +378,14 @@ export function MessageTimeline(props: {
     if (value) return value
     return language.t("command.session.new")
   })
-  const showHeader = createMemo(() => !!(titleValue() || parentID()))
+  const layout = useLayout()
+  const command = useCommand()
+  const mobileMount = useTitlebarMobileMount()
+  const hasHeader = createMemo(() => !!(titleValue() || parentID()))
+  // 手机上标题行并入全局标题栏，时间线内不再占一行，虚拟列表偏移随之归零。
+  const showHeader = createMemo(() => hasHeader() && layout.isDesktop())
+  // 手机上时间线顶部留 12px 呼吸间距，替代原先标题行占用的位置。
+  const headerOffset = () => (showHeader() ? 64 : layout.isDesktop() ? 0 : 12)
   const childSessions = createMemo(() => {
     const id = sessionID()
     if (!id) return []
@@ -542,7 +541,7 @@ export function MessageTimeline(props: {
     followOnAppend: true,
     scrollEndThreshold: 80,
     get scrollMargin() {
-      return showHeader() ? 64 : 0
+      return headerOffset()
     },
     overscan: 50,
     paddingEnd: 64,
@@ -607,7 +606,9 @@ export function MessageTimeline(props: {
         ? timelineRows().find((row) => {
             if (row.userMessageID !== id) return false
             if (row._tag === "AssistantPart") {
-              return row.group.type === "part" && row.group.ref.messageID === messageID && row.group.ref.partID === partID
+              return (
+                row.group.type === "part" && row.group.ref.messageID === messageID && row.group.ref.partID === partID
+              )
             }
             if (row._tag !== "ProcessSummary") return false
             return row.groups.some((group) => {
@@ -1177,7 +1178,9 @@ export function MessageTimeline(props: {
           message={firstMessage()}
           open={toolOpen[openKey] === true}
           onOpenChange={(value) => setToolOpen(openKey, value)}
-          busy={workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key}
+          busy={
+            workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key
+          }
           onSizeChange={input.onSizeChange}
           shellToolDefaultOpen={settings.general.shellToolPartsExpanded()}
           editToolDefaultOpen={settings.general.editToolPartsExpanded()}
@@ -1201,10 +1204,15 @@ export function MessageTimeline(props: {
       if (!platform.openPath) return
       if (!server.isLocal()) return
       const dir = sdk().directory
-      const abs = filePath.includes("/") && !/^[A-Za-z]:[\\/]/.test(filePath) && !filePath.startsWith("/")
-        ? (dir.endsWith("/") || dir.endsWith("\\") ? dir : dir + "/") + filePath
-        : filePath
-      platform.openPath(abs).catch((err) => showToast({ variant: "error", title: language.t("ui.sessionReview.openFile"), description: String(err) }))
+      const abs =
+        filePath.includes("/") && !/^[A-Za-z]:[\\/]/.test(filePath) && !filePath.startsWith("/")
+          ? (dir.endsWith("/") || dir.endsWith("\\") ? dir : dir + "/") + filePath
+          : filePath
+      platform
+        .openPath(abs)
+        .catch((err) =>
+          showToast({ variant: "error", title: language.t("ui.sessionReview.openFile"), description: String(err) }),
+        )
     }
 
     return (
@@ -1296,9 +1304,7 @@ export function MessageTimeline(props: {
                 <div class="flex w-max min-w-full justify-end gap-2">
                   <Index each={comments()}>
                     {(comment) => (
-                      <div
-                        class="shrink-0 max-w-[260px] rounded-[6px] border border-border-weak-base bg-background-stronger px-2.5 py-2"
-                      >
+                      <div class="shrink-0 max-w-[260px] rounded-[6px] border border-border-weak-base bg-background-stronger px-2.5 py-2">
                         <div class="flex items-center gap-1.5 min-w-0 text-11-medium text-text-strong">
                           <FileIcon node={{ path: comment().path, type: "file" }} class="size-3.5 shrink-0" />
                           <span class="truncate">{getFilename(comment().path)}</span>
@@ -1408,7 +1414,9 @@ export function MessageTimeline(props: {
                 onRetryNow={() => {
                   const id = sessionID()
                   if (!id) return
-                  void sdk().client.session.retry({ sessionID: id }).catch(() => {})
+                  void sdk()
+                    .client.session.retry({ sessionID: id })
+                    .catch(() => {})
                 }}
               />
             </div>
@@ -1473,12 +1481,7 @@ export function MessageTimeline(props: {
       <TimelineRowFrame row={summaryViewProps.row}>
         <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
           <div data-slot="session-turn-process" data-kind={summaryViewProps.row().kind ?? "process"}>
-            <Collapsible
-              open={open()}
-              onOpenChange={handleOpenChange}
-              variant="ghost"
-              class="w-full"
-            >
+            <Collapsible open={open()} onOpenChange={handleOpenChange} variant="ghost" class="w-full">
               <TimelineProcessSummaryHeader
                 durationMs={summaryViewProps.row().durationMs}
                 kind={summaryViewProps.row().kind}
@@ -1532,9 +1535,14 @@ export function MessageTimeline(props: {
       const part = tool()
       if (!part) return false
       if (part.state.status === "pending" || part.state.status === "running") return true
-      return partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded()) === true
+      return (
+        partDefaultOpen(part, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded()) ===
+        true
+      )
     }
-    const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile() || !initiallyExpanded())
+    const [ready, setReady] = createSignal(
+      initialItem.size <= timelineFallbackItemSize || !asyncFile() || !initiallyExpanded(),
+    )
     let contentMeasureFrame: number | undefined
     // 记录上次上报的高度，相同高度不再触发 measureElement，斩断
     // measure → 高度写回 → RO observe 再触发 measure 的自循环。
@@ -1550,13 +1558,7 @@ export function MessageTimeline(props: {
 
     onMount(measure)
 
-    createEffect(
-      on(
-        () => item().index,
-        measure,
-        { defer: true },
-      ),
-    )
+    createEffect(on(() => item().index, measure, { defer: true }))
 
     onCleanup(() => {
       if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
@@ -1567,7 +1569,7 @@ export function MessageTimeline(props: {
         data-timeline-key={props.rowKey}
         style={{
           position: "absolute",
-          top: `${item().start - (showHeader() ? 64 : 0)}px`,
+          top: `${item().start - headerOffset()}px`,
           left: "0",
           width: "100%",
           height: `${item().size}px`,
@@ -1595,6 +1597,203 @@ export function MessageTimeline(props: {
       </div>
     )
   }
+
+  const headerRow = () => (
+    <div class="h-12 w-full flex items-center justify-between gap-2">
+      <div class="flex items-center gap-1 min-w-0 flex-1 pr-3">
+        <div class="flex items-center min-w-0 flex-1 w-full">
+          <Show when={parentID()}>
+            <button
+              type="button"
+              data-slot="session-title-parent"
+              class="min-w-0 max-w-[40%] truncate pl-2 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-faint transition-colors hover:text-v2-text-text-muted"
+              onClick={navigateParent}
+            >
+              {parentTitle()}
+            </button>
+            <span
+              data-slot="session-title-separator"
+              class="-translate-y-[0.5px] pl-2 pr-1 text-[11px] font-medium text-v2-text-text-faint"
+              aria-hidden="true"
+            >
+              /
+            </span>
+          </Show>
+          <Show when={childTitle() || title.editing}>
+            <Show
+              when={title.editing}
+              fallback={
+                <h1
+                  data-slot="session-title-child"
+                  classList={{
+                    "truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base grow-1 min-w-0": true,
+                  }}
+                  onClick={openTitleEditor}
+                >
+                  {childTitle()}
+                </h1>
+              }
+            >
+              <InlineInput
+                ref={(el) => {
+                  titleRef = el
+                }}
+                data-slot="session-title-child"
+                value={title.draft}
+                disabled={titleMutation.isPending}
+                classList={{
+                  "block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base": true,
+                  "w-full flex-1 grow-1 min-w-0 pl-1 -ml-1 rounded-[6px]": true,
+                }}
+                style={{
+                  "--inline-input-shadow": "var(--shadow-xs-border-select)",
+                }}
+                onInput={(event) => setTitle("draft", event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation()
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    void saveTitleEditor()
+                    return
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    closeTitleEditor()
+                  }
+                }}
+                onBlur={closeTitleEditor}
+              />
+            </Show>
+          </Show>
+        </div>
+      </div>
+      <Show when={sessionID()} keyed>
+        {(id) => (
+          <div
+            classList={{
+              "shrink-0 flex items-center gap-3": true,
+            }}
+          >
+            <Show when={hasChildSessions()}>
+              <Tooltip
+                value={language.t("dialog.childSessions.description", {
+                  count: String(childCount()),
+                })}
+                placement="bottom"
+              >
+                <button
+                  type="button"
+                  data-slot="session-children"
+                  class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
+                  aria-label={language.t("session.children.open")}
+                  onClick={openChildSessions}
+                >
+                  <Icon name="task" class="size-3.5" />
+                  <span class="text-11-regular tabular-nums">{childCount()}</span>
+                </button>
+              </Tooltip>
+            </Show>
+            <Show when={layout.isDesktop()}>
+              <SessionRunScripts />
+            </Show>
+            <SessionContextUsage placement="bottom" buttonAppearance="default" />
+            <DropdownMenu
+              gutter={4}
+              placement="bottom-end"
+              open={title.menuOpen}
+              onOpenChange={(open) => {
+                setTitle("menuOpen", open)
+                if (open) return
+              }}
+            >
+              <DropdownMenu.Trigger
+                as={IconButton}
+                icon="dot-grid"
+                variant="ghost"
+                class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
+                aria-label={language.t("common.moreOptions")}
+                aria-expanded={title.menuOpen}
+                ref={(el: HTMLButtonElement) => {
+                  more = el
+                }}
+              />
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  style={{ "min-width": "104px" }}
+                  onCloseAutoFocus={(event) => {
+                    if (title.pendingRename) {
+                      event.preventDefault()
+                      setTitle("pendingRename", false)
+                      openTitleEditor()
+                    }
+                  }}
+                >
+                  <Show when={!parentID()}>
+                    <DropdownMenu.Item
+                      onSelect={() => {
+                        setTitle("pendingRename", true)
+                        setTitle("menuOpen", false)
+                      }}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </Show>
+                  <DropdownMenu.Sub>
+                    <DropdownMenu.SubTrigger class="flex items-center gap-2">
+                      <span data-slot="dropdown-menu-item-label" class="flex-1">
+                        {language.t("session.export.action.export")}
+                      </span>
+                      <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
+                    </DropdownMenu.SubTrigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.SubContent class="min-w-[180px]">
+                        <DropdownMenu.Item onSelect={() => void runExport("summary")} disabled={exporting()}>
+                          <DropdownMenu.ItemLabel>{language.t("session.export.action.summary")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => void runExport("full")} disabled={exporting()}>
+                          <DropdownMenu.ItemLabel>{language.t("session.export.action.full")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => void runExport("request")} disabled={exporting()}>
+                          <DropdownMenu.ItemLabel>{language.t("session.export.action.request")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => void runExport("response")} disabled={exporting()}>
+                          <DropdownMenu.ItemLabel>
+                            {language.t("session.export.action.response")}
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item onSelect={() => void runExport("transfer")} disabled={exporting()}>
+                          <DropdownMenu.ItemLabel>
+                            {language.t("session.export.action.transfer")}
+                          </DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
+                      </DropdownMenu.SubContent>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Sub>
+                  <Show when={!layout.isDesktop()}>
+                    <DropdownMenu.Item onSelect={() => command.trigger("terminal.toggle")}>
+                      <DropdownMenu.ItemLabel>{language.t("command.terminal.toggle")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </Show>
+                  <DropdownMenu.Item onSelect={() => void simulateOverflow()} disabled={title.simulatingOverflow}>
+                    <DropdownMenu.ItemLabel>{language.t("session.overflowTest.action")}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                  <Show when={!parentID()}>
+                    <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
+                      <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}>
+                      <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </Show>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu>
+          </div>
+        )}
+      </Show>
+    </div>
+  )
 
   return (
     <div class="relative w-full h-full min-w-0">
@@ -1654,227 +1853,20 @@ export function MessageTimeline(props: {
               "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
             }}
           >
-            <div class="h-12 w-full flex items-center justify-between gap-2">
-              <div
-                class="flex items-center gap-1 min-w-0 flex-1 pr-3"
-              >
-                <div class="flex items-center min-w-0 flex-1 w-full">
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      data-slot="session-title-parent"
-                      class="min-w-0 max-w-[40%] truncate pl-2 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-faint transition-colors hover:text-v2-text-text-muted"
-                      onClick={navigateParent}
-                    >
-                      {parentTitle()}
-                    </button>
-                    <span
-                      data-slot="session-title-separator"
-                      class="-translate-y-[0.5px] pl-2 pr-1 text-[11px] font-medium text-v2-text-text-faint"
-                      aria-hidden="true"
-                    >
-                      /
-                    </span>
-                  </Show>
-                  <Show when={childTitle() || title.editing}>
-                    <Show
-                      when={title.editing}
-                      fallback={
-                        <h1
-                          data-slot="session-title-child"
-                          classList={{
-                            "truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base grow-1 min-w-0": true,
-                          }}
-                          onClick={openTitleEditor}
-                        >
-                          {childTitle()}
-                        </h1>
-                      }
-                    >
-                      <InlineInput
-                        ref={(el) => {
-                          titleRef = el
-                        }}
-                        data-slot="session-title-child"
-                        value={title.draft}
-                        disabled={titleMutation.isPending}
-                        classList={{
-                          "block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base": true,
-                          "w-full flex-1 grow-1 min-w-0 pl-1 -ml-1 rounded-[6px]": true,
-                        }}
-                        style={{
-                          "--inline-input-shadow": "var(--shadow-xs-border-select)",
-                        }}
-                        onInput={(event) => setTitle("draft", event.currentTarget.value)}
-                        onKeyDown={(event) => {
-                          event.stopPropagation()
-                          if (event.key === "Enter") {
-                            event.preventDefault()
-                            void saveTitleEditor()
-                            return
-                          }
-                          if (event.key === "Escape") {
-                            event.preventDefault()
-                            closeTitleEditor()
-                          }
-                        }}
-                        onBlur={closeTitleEditor}
-                      />
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-              <Show when={sessionID()} keyed>
-                {(id) => (
-                  <div
-                    classList={{
-                      "shrink-0 flex items-center gap-3": true,
-                    }}
-                  >
-                    <Show when={hasChildSessions()}>
-                      <Tooltip
-                        value={language.t("dialog.childSessions.description", {
-                          count: String(childCount()),
-                        })}
-                        placement="bottom"
-                      >
-                        <button
-                          type="button"
-                          data-slot="session-children"
-                          class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
-                          aria-label={language.t("session.children.open")}
-                          onClick={openChildSessions}
-                        >
-                          <Icon name="task" class="size-3.5" />
-                          <span class="text-11-regular tabular-nums">{childCount()}</span>
-                        </button>
-                      </Tooltip>
-                    </Show>
-                    <SessionRunScripts />
-                    <SessionContextUsage
-                      placement="bottom"
-                      buttonAppearance="default"
-                    />
-                    <DropdownMenu
-                      gutter={4}
-                      placement="bottom-end"
-                      open={title.menuOpen}
-                      onOpenChange={(open) => {
-                        setTitle("menuOpen", open)
-                        if (open) return
-                      }}
-                    >
-                      <DropdownMenu.Trigger
-                        as={IconButton}
-                        icon="dot-grid"
-                        variant="ghost"
-                        class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
-                        aria-label={language.t("common.moreOptions")}
-                        aria-expanded={title.menuOpen}
-                        ref={(el: HTMLButtonElement) => {
-                          more = el
-                        }}
-                      />
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content
-                          style={{ "min-width": "104px" }}
-                          onCloseAutoFocus={(event) => {
-                            if (title.pendingRename) {
-                              event.preventDefault()
-                              setTitle("pendingRename", false)
-                              openTitleEditor()
-                            }
-                          }}
-                        >
-                          <Show when={!parentID()}>
-                            <DropdownMenu.Item
-                              onSelect={() => {
-                                setTitle("pendingRename", true)
-                                setTitle("menuOpen", false)
-                              }}
-                            >
-                              <DropdownMenu.ItemLabel>{language.t("common.rename")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                          </Show>
-                          <DropdownMenu.Sub>
-                            <DropdownMenu.SubTrigger class="flex items-center gap-2">
-                              <span data-slot="dropdown-menu-item-label" class="flex-1">
-                                {language.t("session.export.action.export")}
-                              </span>
-                              <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
-                            </DropdownMenu.SubTrigger>
-                            <DropdownMenu.Portal>
-                              <DropdownMenu.SubContent class="min-w-[180px]">
-                                <DropdownMenu.Item
-                                  onSelect={() => void runExport("summary")}
-                                  disabled={exporting()}
-                                >
-                                  <DropdownMenu.ItemLabel>
-                                    {language.t("session.export.action.summary")}
-                                  </DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  onSelect={() => void runExport("full")}
-                                  disabled={exporting()}
-                                >
-                                  <DropdownMenu.ItemLabel>
-                                    {language.t("session.export.action.full")}
-                                  </DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  onSelect={() => void runExport("request")}
-                                  disabled={exporting()}
-                                >
-                                  <DropdownMenu.ItemLabel>
-                                    {language.t("session.export.action.request")}
-                                  </DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  onSelect={() => void runExport("response")}
-                                  disabled={exporting()}
-                                >
-                                  <DropdownMenu.ItemLabel>
-                                    {language.t("session.export.action.response")}
-                                  </DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  onSelect={() => void runExport("transfer")}
-                                  disabled={exporting()}
-                                >
-                                  <DropdownMenu.ItemLabel>
-                                    {language.t("session.export.action.transfer")}
-                                  </DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
-                              </DropdownMenu.SubContent>
-                            </DropdownMenu.Portal>
-                          </DropdownMenu.Sub>
-                          <DropdownMenu.Item
-                            onSelect={() => void simulateOverflow()}
-                            disabled={title.simulatingOverflow}
-                          >
-                            <DropdownMenu.ItemLabel>
-                              {language.t("session.overflowTest.action")}
-                            </DropdownMenu.ItemLabel>
-                          </DropdownMenu.Item>
-                          <Show when={!parentID()}>
-                            <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
-                              <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Separator />
-                            <DropdownMenu.Item
-                              onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
-                            >
-                              <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
-                            </DropdownMenu.Item>
-                          </Show>
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu>
-                  </div>
-                )}
-              </Show>
-            </div>
+            {headerRow()}
           </div>
+        </Show>
+        <Show when={!layout.isDesktop()}>
+          <div class="h-3" aria-hidden="true" />
+        </Show>
+        <Show when={!layout.isDesktop() && hasHeader() && mobileMount()}>
+          {(mount) => (
+            <Portal mount={mount()}>
+              <div data-slot="mobile-session-title" class="flex h-full min-w-0 flex-1 items-center">
+                {headerRow()}
+              </div>
+            </Portal>
+          )}
         </Show>
         <div
           data-timeline-virtual-content

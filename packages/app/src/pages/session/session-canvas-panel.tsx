@@ -149,51 +149,81 @@ export function SessionCanvasPanel(props: { canvas: CanvasReference }) {
 
   return (
     <div class="flex h-full min-h-0 flex-col bg-background-base">
-      <div class="flex flex-wrap items-center gap-1 px-3 py-2">
-        <span class="min-w-0 flex-1 truncate text-12-medium text-text-weak" title={props.canvas.path}>
-          {props.canvas.title}
-        </span>
-        <Button
-          size="small"
-          variant="ghost"
-          icon="copy"
-          disabled={!state.copy || state.copying}
-          onClick={() => void copy()}
-        >
-          {i18n.t(state.copying ? "ui.canvas.copying" : state.copied ? "ui.canvas.copied" : "ui.canvas.copyImage")}
-        </Button>
-        <IconButton
-          icon="dash"
-          variant="ghost"
-          aria-label={i18n.t("ui.canvas.zoomOut")}
-          disabled={state.zoom <= 60}
-          onClick={() => setState("zoom", state.zoom - 10)}
-        />
-        <Button
-          size="small"
-          variant="ghost"
-          aria-label={i18n.t("ui.canvas.resetZoom")}
-          onClick={() => setState("zoom", 100)}
-        >
-          {state.zoom}%
-        </Button>
-        <IconButton
-          icon="plus-small"
-          variant="ghost"
-          aria-label={i18n.t("ui.canvas.zoomIn")}
-          disabled={state.zoom >= 180}
-          onClick={() => setState("zoom", state.zoom + 10)}
-        />
-        <Button size="small" variant="ghost" disabled={state.loading} onClick={() => void refresh()}>
-          {i18n.t("ui.canvas.refresh")}
-        </Button>
-        <IconButton
-          icon="expand"
-          variant="ghost"
-          aria-label={i18n.t("ui.canvas.expand")}
-          onClick={() => setState("expanded", true)}
-        />
-      </div>
+      <Show
+        when={layout.isDesktop()}
+        fallback={
+          // 手机：单行紧凑工具栏，只留图标；缩放与全屏在全屏面板里没有意义。
+          <div class="flex h-11 shrink-0 items-center gap-1 pl-4 pr-2">
+            <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={props.canvas.path}>
+              {props.canvas.title}
+            </span>
+            <IconButton
+              icon={state.copied ? "check" : "copy"}
+              variant="ghost"
+              class="size-9 shrink-0"
+              aria-label={i18n.t(
+                state.copying ? "ui.canvas.copying" : state.copied ? "ui.canvas.copied" : "ui.canvas.copyImage",
+              )}
+              disabled={!state.copy || state.copying}
+              onClick={() => void copy()}
+            />
+            <IconButton
+              icon="reset"
+              variant="ghost"
+              class="size-9 shrink-0"
+              aria-label={i18n.t("ui.canvas.refresh")}
+              disabled={state.loading}
+              onClick={() => void refresh()}
+            />
+          </div>
+        }
+      >
+        <div class="flex flex-wrap items-center gap-1 px-3 py-2">
+          <span class="min-w-0 flex-1 truncate text-12-medium text-text-weak" title={props.canvas.path}>
+            {props.canvas.title}
+          </span>
+          <Button
+            size="small"
+            variant="ghost"
+            icon="copy"
+            disabled={!state.copy || state.copying}
+            onClick={() => void copy()}
+          >
+            {i18n.t(state.copying ? "ui.canvas.copying" : state.copied ? "ui.canvas.copied" : "ui.canvas.copyImage")}
+          </Button>
+          <IconButton
+            icon="dash"
+            variant="ghost"
+            aria-label={i18n.t("ui.canvas.zoomOut")}
+            disabled={state.zoom <= 60}
+            onClick={() => setState("zoom", state.zoom - 10)}
+          />
+          <Button
+            size="small"
+            variant="ghost"
+            aria-label={i18n.t("ui.canvas.resetZoom")}
+            onClick={() => setState("zoom", 100)}
+          >
+            {state.zoom}%
+          </Button>
+          <IconButton
+            icon="plus-small"
+            variant="ghost"
+            aria-label={i18n.t("ui.canvas.zoomIn")}
+            disabled={state.zoom >= 180}
+            onClick={() => setState("zoom", state.zoom + 10)}
+          />
+          <Button size="small" variant="ghost" disabled={state.loading} onClick={() => void refresh()}>
+            {i18n.t("ui.canvas.refresh")}
+          </Button>
+          <IconButton
+            icon="expand"
+            variant="ghost"
+            aria-label={i18n.t("ui.canvas.expand")}
+            onClick={() => setState("expanded", true)}
+          />
+        </div>
+      </Show>
       <Show when={state.copyError}>
         <div role="alert" class="px-4 py-2 text-12-regular text-text-strong">
           {state.copyError}

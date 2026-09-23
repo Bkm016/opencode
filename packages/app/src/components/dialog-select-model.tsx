@@ -40,6 +40,9 @@ type ModelState = ReturnType<typeof useLocal>["model"]
 type ModelItem = ReturnType<ModelState["list"]>[number]
 export type ModelIdentity = Pick<ModelItem, "id" | "provider">
 
+// 手机上模型选择以底部面板呈现：不自动聚焦搜索框（避免一打开就弹键盘），也不挂悬停提示。
+const isCompact = () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+
 const modelKey = (model: ModelIdentity) => `${model.provider.id}:${model.id}`
 const manageKey = "action:manage"
 
@@ -115,6 +118,8 @@ const ModelList: Component<{
   const sync = useSync()
   const dialog = useDialog()
 
+  const compact = isCompact()
+
   const models = createMemo(() =>
     model
       .list()
@@ -125,7 +130,7 @@ const ModelList: Component<{
   return (
     <List
       class={`flex-1 px-3 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0 ${props.class ?? ""}`}
-      search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true, action: props.action }}
+      search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: !compact, action: props.action }}
       emptyMessage={language.t("dialog.model.empty")}
       key={(x) => `${x.provider.id}:${x.id}`}
       items={models}
@@ -140,17 +145,21 @@ const ModelList: Component<{
         if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
         return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
       }}
-      itemWrapper={(item, node) => (
-        <Tooltip
-          class="w-full"
-          placement="right-start"
-          gutter={12}
-          openDelay={0}
-          value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
-        >
-          {node}
-        </Tooltip>
-      )}
+      itemWrapper={(item, node) =>
+        compact ? (
+          node
+        ) : (
+          <Tooltip
+            class="w-full"
+            placement="right-start"
+            gutter={12}
+            openDelay={0}
+            value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+          >
+            {node}
+          </Tooltip>
+        )
+      }
       onSelect={(x) => {
         const previous = model.current()
         if (
@@ -234,6 +243,7 @@ export function ModelSelectorPopover(props: {
     openModelSettings()
   }
   const language = useLanguage()
+  const compact = isCompact()
 
   return (
     <Kobalte
@@ -242,7 +252,7 @@ export function ModelSelectorPopover(props: {
         if (next) setStore("dismiss", null)
         setStore("open", next)
       }}
-      modal={false}
+      modal={compact}
       placement="top-start"
       gutter={4}
     >
@@ -263,6 +273,9 @@ export function ModelSelectorPopover(props: {
                 animateSurfaceItems(el, "[data-slot='list-item']")
               })
             })
+          }}
+          onOpenAutoFocus={(event) => {
+            if (compact) event.preventDefault()
           }}
           onEscapeKeyDown={(event) => {
             close("escape")

@@ -47,6 +47,13 @@ export type TitlebarUpdate = {
   install: () => void
 }
 
+/** 移动端会话标题栏的挂载点：手机上会话标题、上下文与菜单并入全局标题栏，只占一行。 */
+export function useTitlebarMobileMount() {
+  const [mount, setMount] = createSignal<HTMLElement | null>(null)
+  onMount(() => setMount(document.getElementById("opencode-titlebar-mobile")))
+  return mount
+}
+
 export function useTitlebarRightMount() {
   const [mount, setMount] = createSignal<HTMLElement | null>(null)
   onMount(() => {
@@ -220,11 +227,15 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     <header
       classList={{
         "shrink-0 relative flex flex-row": true,
-        "h-10 bg-background-base overflow-hidden": true,
+        "bg-background-base overflow-hidden": true,
+        "h-10": isDesktop(),
         "order-last": bottom(),
       }}
       style={{
         "min-height": minHeight(),
+        // 手机上加高到 48px 触控行高，并让出刘海 / 状态栏的安全区。
+        height: isDesktop() ? undefined : "calc(48px + env(safe-area-inset-top, 0px))",
+        "padding-top": isDesktop() ? undefined : "env(safe-area-inset-top, 0px)",
         // Keep native macOS traffic lights clear even when the desktop window is narrow.
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
         // Window controls sit on the left on macOS; titlebar-area-x is 0 elsewhere.
@@ -237,8 +248,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       onMouseDown={drag}
       onDblClick={maximize}
     >
-        <div class="relative h-full min-h-full w-full" style={{ zoom: counterZoom() }}>
-          <div class="flex h-full w-full items-center">
+      <div class="relative h-full min-h-full w-full" style={{ zoom: counterZoom() }}>
+        <div class="flex h-full w-full items-center">
           <div
             data-titlebar-side="left"
             classList={{
@@ -262,18 +273,23 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               </div>
             </Show>
             <Show when={!isDesktop() && !mac()}>
-              <div class="w-[48px] shrink-0 flex items-center justify-center">
+              <div class="w-10 shrink-0 flex items-center justify-center">
                 <IconButton
                   icon="menu"
                   variant="ghost"
-                  class="titlebar-icon rounded-md"
+                  class="titlebar-icon rounded-md size-9"
                   onClick={layout.mobileSidebar.toggle}
                   aria-label={language.t("sidebar.menu.toggle")}
                   aria-expanded={layout.mobileSidebar.opened()}
                 />
               </div>
             </Show>
-            <div class="flex items-center gap-1 shrink-0">
+            {/* 常驻挂载点，桌面隐藏；视口在桌面 / 手机间切换时 Portal 不会丢失目标。 */}
+            <div
+              id="opencode-titlebar-mobile"
+              classList={{ "min-w-0 flex-1 items-center": true, flex: !isDesktop(), hidden: isDesktop() }}
+            />
+            <div classList={{ "items-center gap-1 shrink-0": true, flex: isDesktop(), hidden: !isDesktop() }}>
               <Show when={isDesktop()}>
                 <TooltipKeybind
                   class={web() && !overlay() ? "shrink-0 ml-14" : "shrink-0 ml-2"}
@@ -377,7 +393,9 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
           <div
             data-titlebar-side="right"
             classList={{
-              "relative z-10 flex min-w-0 flex-1 items-center justify-end": true,
+              "relative z-10 flex min-w-0 items-center justify-end": true,
+              "flex-1": isDesktop(),
+              "shrink-0": !isDesktop(),
               "pr-2": !windows(),
             }}
             data-tauri-drag-region
@@ -388,16 +406,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               <div data-tauri-decorum-tb class="flex flex-row" />
             </Show>
           </div>
-          </div>
-
-          <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-            <div
-              id="opencode-titlebar-center"
-              class="pointer-events-auto flex min-w-0 max-w-full justify-center"
-            />
-          </div>
         </div>
 
+        <div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+          <div id="opencode-titlebar-center" class="pointer-events-auto flex min-w-0 max-w-full justify-center" />
+        </div>
+      </div>
     </header>
   )
 }

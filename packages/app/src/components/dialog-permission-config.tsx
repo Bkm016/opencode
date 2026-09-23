@@ -241,10 +241,10 @@ export function DialogPermissionConfig(props: PermissionFormProps) {
           {/* 默认执行动作 */}
           <div class="flex flex-col gap-2">
             <label class="text-13-medium text-text-strong">默认执行策略 (兜底动作)</label>
-            <span class="text-12-regular text-text-subtle">
+            <span class="text-12-regular text-text-weak">
               当请求未匹配下方任何特定规则，或未配置细粒度规则时的全局兜底策略。
             </span>
-            <div class="grid grid-cols-3 gap-2 pt-1">
+            <div class="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-3">
               <For each={ACTION_OPTIONS}>
                 {(opt) => {
                   const isSelected = () => defaultAction() === opt.value
@@ -266,7 +266,7 @@ export function DialogPermissionConfig(props: PermissionFormProps) {
                           <Icon name="check" class="size-3.5 text-text-strong" />
                         </Show>
                       </div>
-                      <span class="text-11-regular text-text-subtle leading-tight">{opt.desc}</span>
+                      <span class="text-11-regular text-text-weak leading-tight">{opt.desc}</span>
                     </button>
                   )
                 }}
@@ -288,7 +288,7 @@ export function DialogPermissionConfig(props: PermissionFormProps) {
               </Button>
             </div>
 
-            <span class="text-12-regular text-text-subtle">
+            <span class="text-12-regular text-text-weak">
               OpenCode 按照从上到下的顺序匹配，最后匹配命中的规则将作为最终裁决依据。
             </span>
 
@@ -304,7 +304,7 @@ export function DialogPermissionConfig(props: PermissionFormProps) {
                 <For each={patterns}>
                   {(item, index) => (
                     <div class="flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-surface-base-hover/40 transition-colors">
-                      <span class="text-11-medium font-mono text-text-subtle w-6 shrink-0 text-center select-none">
+                      <span class="text-11-medium font-mono text-text-weak w-6 shrink-0 text-center select-none">
                         #{index() + 1}
                       </span>
                       <div class="flex-1 min-w-0">

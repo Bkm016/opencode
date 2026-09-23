@@ -1,5 +1,8 @@
-import { Component, createSignal, startTransition } from "solid-js"
+import { Component, Show, createSignal, startTransition } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
@@ -21,18 +24,57 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const platform = usePlatform()
   const initialTab = props.defaultValue === "providers" ? "models" : (props.defaultValue ?? "general")
   const [tab, setTab] = createSignal(initialTab)
+  const dialog = useDialog()
+  // 手机上改为两级导航：先是分区列表，点进某一项再全屏展示该页，顶部栏负责返回与关闭。
+  const compact = createMediaQuery("(max-width: 767px)")
+  const [view, setView] = createSignal<"list" | "detail">(props.defaultValue ? "detail" : "list")
 
   return (
     <Dialog size="x-large" transition>
+      <Show when={compact()}>
+        <div
+          data-slot="settings-mobile-bar"
+          class="flex h-12 w-full shrink-0 items-center gap-1 border-b border-border-weak-base px-2"
+        >
+          <Show
+            when={view() === "detail"}
+            fallback={<span class="pl-2 text-16-medium text-text-strong">{language.t("sidebar.settings")}</span>}
+          >
+            <button
+              type="button"
+              class="flex h-9 items-center gap-0.5 rounded-md pl-1 pr-2 text-14-medium text-text-strong active:bg-surface-base-hover"
+              aria-label={language.t("common.goBack")}
+              onClick={() => setView("list")}
+            >
+              <Icon name="chevron-left" />
+              {language.t("sidebar.settings")}
+            </button>
+          </Show>
+          <div class="flex-1" />
+          <IconButton
+            icon="close"
+            variant="ghost"
+            class="size-9"
+            aria-label={language.t("common.close")}
+            onClick={() => dialog.close()}
+          />
+        </div>
+      </Show>
       <Tabs
         orientation="vertical"
         variant="settings"
         value={tab()}
         onChange={(value) => void startTransition(() => setTab(value))}
-        class="h-full settings-dialog"
+        class="h-full min-h-0 settings-dialog"
+        data-mobile-view={compact() ? view() : undefined}
       >
         <Tabs.List>
-          <div class="flex flex-col justify-between h-full w-full gap-4">
+          <div
+            class="flex flex-col justify-between h-full w-full gap-4"
+            onClick={(event) => {
+              if (compact() && (event.target as HTMLElement).closest("[data-slot='tabs-trigger']")) setView("detail")
+            }}
+          >
             <div class="flex flex-col gap-3 w-full pt-3">
               <div class="flex flex-col gap-3">
                 <div class="flex flex-col gap-1.5">
@@ -42,10 +84,13 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="sliders" />
                       {language.t("settings.tab.general")}
                     </Tabs.Trigger>
-                    <Tabs.Trigger value="shortcuts">
-                      <Icon name="keyboard" />
-                      {language.t("settings.tab.shortcuts")}
-                    </Tabs.Trigger>
+                    {/* 手机没有键盘，快捷键设置在这里没有意义。 */}
+                    <Show when={!compact()}>
+                      <Tabs.Trigger value="shortcuts">
+                        <Icon name="keyboard" />
+                        {language.t("settings.tab.shortcuts")}
+                      </Tabs.Trigger>
+                    </Show>
                     <Tabs.Trigger value="servers">
                       <Icon name="server" />
                       {language.t("status.popover.tab.servers")}

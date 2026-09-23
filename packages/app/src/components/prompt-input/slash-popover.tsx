@@ -53,6 +53,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
         ref={(el) => {
           if (props.popover === "slash") props.setSlashPopoverRef(el)
         }}
+        data-slot="prompt-popover"
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px] bg-surface-raised-stronger-non-alpha shadow-[var(--shadow-lg-border-base)]"
         onMouseDown={(e) => e.preventDefault()}
@@ -98,7 +99,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           <span class="text-text-strong whitespace-nowrap">@{item.name}</span>
                           <Show when={item.description}>
                             {(description) => (
-                              <span class="whitespace-nowrap truncate min-w-0 ml-2 text-text-weak">{description()}</span>
+                              <span class="whitespace-nowrap truncate min-w-0 ml-2 text-text-weak">
+                                {description()}
+                              </span>
                             )}
                           </Show>
                         </div>
@@ -124,7 +127,6 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       </button>
                     )
                   }
-
                 }}
               </For>
             </Show>
@@ -169,7 +171,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       </div>
                       <div class="flex items-center gap-2 shrink-0">
                         <Show when={cmd.type === "custom" && cmd.source !== "command"}>
-                          <span class="text-11-regular px-1.5 py-0.5 rounded bg-surface-base text-text-subtle">
+                          <span class="text-11-regular px-1.5 py-0.5 rounded bg-surface-base text-text-weak">
                             {cmd.source === "skill"
                               ? props.t("prompt.slash.badge.skill")
                               : cmd.source === "mcp"
@@ -178,7 +180,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           </span>
                         </Show>
                         <Show when={keybind()}>
-                          <span class="text-12-regular text-text-subtle">{keybind()}</span>
+                          <span class="text-12-regular text-text-weak">{keybind()}</span>
                         </Show>
                       </div>
                     </button>

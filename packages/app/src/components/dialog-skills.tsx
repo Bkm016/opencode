@@ -354,12 +354,12 @@ export function DialogSkills(props: { directory: string }) {
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="truncate text-14-medium text-text-strong">{skill.name}</span>
               <Show when={skill.location === "<built-in>"}>
-                <span class="shrink-0 text-10-regular font-mono text-text-subtle px-1 rounded bg-surface-base border border-border-weak-base/50">
+                <span class="shrink-0 text-10-regular font-mono text-text-weak px-1 rounded bg-surface-base border border-border-weak-base/50">
                   built-in
                 </span>
               </Show>
               <Show when={repo}>
-                <span class="shrink-0 text-10-regular font-mono text-text-subtle px-1 rounded bg-surface-base border border-border-weak-base/50">
+                <span class="shrink-0 text-10-regular font-mono text-text-weak px-1 rounded bg-surface-base border border-border-weak-base/50">
                   {repo!.name}
                 </span>
               </Show>
@@ -440,7 +440,7 @@ export function DialogSkills(props: { directory: string }) {
                     <span class="text-13-medium text-text-strong">
                       {language.t("dialog.skills.cloud.repository")}
                     </span>
-                    <span class="text-11-regular text-text-subtle font-mono">
+                    <span class="text-11-regular text-text-weak font-mono">
                       ({cloudList.latest?.length ?? 0})
                     </span>
                   </button>
@@ -550,8 +550,8 @@ export function DialogSkills(props: { directory: string }) {
                   <Show
                     when={!cloudList.loading || (cloudList.latest?.length ?? 0) > 0}
                     fallback={
-                      <div class="flex items-center gap-2 py-2 px-1 text-12-regular text-text-subtle">
-                        <span class="w-2 h-2 rounded-full bg-text-subtle/50 animate-pulse" />
+                      <div class="flex items-center gap-2 py-2 px-1 text-12-regular text-text-weak">
+                        <span class="w-2 h-2 rounded-full bg-text-weak animate-pulse" />
                         <span>{language.t("common.loading")}</span>
                       </div>
                     }
@@ -560,7 +560,7 @@ export function DialogSkills(props: { directory: string }) {
                       when={(cloudList.latest?.length ?? 0) > 0}
                       fallback={
                         <Show when={!store.formOpen}>
-                          <div class="flex items-center justify-between py-1 text-12-regular text-text-subtle">
+                          <div class="flex items-center justify-between py-1 text-12-regular text-text-weak">
                             <span>{language.t("dialog.skills.cloud.empty")}</span>
                           </div>
                         </Show>
@@ -580,7 +580,7 @@ export function DialogSkills(props: { directory: string }) {
                                 <span
                                   classList={{
                                     "w-2 h-2 rounded-full shrink-0": true,
-                                    "bg-text-subtle/50": !repo.configured,
+                                    "bg-text-weak": !repo.configured,
                                     "bg-emerald-500": repo.state === "ready",
                                     "bg-amber-500": repo.state === "modified" || repo.state === "ahead",
                                     "bg-sky-500": repo.state === "behind",
@@ -592,7 +592,7 @@ export function DialogSkills(props: { directory: string }) {
                                 <Show when={repo.branch}>
                                   {(branch) => (
                                     <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/50 flex items-center gap-1 shrink-0">
-                                      <Icon name="branch" class="w-3 h-3 text-text-subtle" />
+                                      <Icon name="branch" class="w-3 h-3 text-text-weak" />
                                       <span>{branch()}</span>
                                     </Tag>
                                   )}
@@ -620,7 +620,7 @@ export function DialogSkills(props: { directory: string }) {
                                 </Show>
                                 <Show when={repo.repository}>
                                   {(remoteUrl) => (
-                                    <span class="truncate text-11-regular font-mono text-text-subtle max-w-[200px]" title={remoteUrl()}>
+                                    <span class="truncate text-11-regular font-mono text-text-weak max-w-[200px]" title={remoteUrl()}>
                                       {remoteUrl()}
                                     </span>
                                   )}

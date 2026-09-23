@@ -343,7 +343,7 @@ export function DialogMcpConfig(props: McpFormProps) {
                   />
                   <Show when={parsedCommandPreview().length > 0}>
                     <div class="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span class="text-11-regular text-text-subtle shrink-0">参数拆解:</span>
+                      <span class="text-11-regular text-text-weak shrink-0">参数拆解:</span>
                       <For each={parsedCommandPreview()}>
                         {(arg) => (
                           <span class="px-1.5 py-0.5 rounded text-11-medium font-mono bg-surface-weak-base text-text-strong border border-border-weak-base">

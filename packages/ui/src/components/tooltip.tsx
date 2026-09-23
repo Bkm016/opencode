@@ -33,6 +33,9 @@ export function TooltipKeybind(props: TooltipKeybindProps) {
   )
 }
 
+// 触屏没有悬停，提示会在点按后卡住不消失，所以在纯触屏设备上不显示悬停提示。
+const touchOnly = () => typeof window !== "undefined" && window.matchMedia("(hover: none)").matches
+
 export function Tooltip(props: TooltipProps) {
   let ref: HTMLDivElement | undefined
   const [state, setState] = createStore({
@@ -104,7 +107,7 @@ export function Tooltip(props: TooltipProps) {
 
   return (
     <Switch>
-      <Match when={local.inactive}>{local.children}</Match>
+      <Match when={local.inactive || (!local.forceOpen && touchOnly())}>{local.children}</Match>
       <Match when={true}>
         <KobalteTooltip
           gutter={4}

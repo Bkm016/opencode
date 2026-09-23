@@ -213,7 +213,7 @@ export function DialogFetchModels(props: {
       title={
         <div class="flex flex-col gap-0.5">
           <span class="text-16-medium text-text-strong">获取可用模型: {props.providerName}</span>
-          <span class="text-11-regular text-text-subtle font-mono truncate">{endpoint()}</span>
+          <span class="text-11-regular text-text-weak font-mono truncate">{endpoint()}</span>
         </div>
       }
       size="large"
@@ -277,7 +277,7 @@ export function DialogFetchModels(props: {
                       {form(model.id).name || model.id}
                     </span>
                     <Show when={(form(model.id).name || model.id) !== model.id}>
-                      <span class="text-11-regular text-text-subtle font-mono truncate">{model.id}</span>
+                      <span class="text-11-regular text-text-weak font-mono truncate">{model.id}</span>
                     </Show>
                     <Icon
                       name="chevron-down"

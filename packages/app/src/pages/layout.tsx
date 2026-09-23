@@ -2197,16 +2197,17 @@ export default function LegacyLayout(props: ParentProps) {
                   />
                 </div>
               </Show>
-
             </Show>
 
             <Show when={!isDesktop()}>
+              {/* 手机抽屉：盖住整屏（含标题栏），右侧留出遮罩，点遮罩收起。 */}
               <div
                 classList={{
-                  "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
+                  "fixed inset-0 z-40 transition-opacity duration-200": true,
                   "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
                   "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
                 }}
+                style={{ "background-color": "rgba(0, 0, 0, 0.45)" }}
                 onClick={(e) => {
                   if (e.target === e.currentTarget) layout.mobileSidebar.hide()
                 }}
@@ -2215,9 +2216,13 @@ export default function LegacyLayout(props: ParentProps) {
                 aria-label={language.t("sidebar.nav.projectsAndSessions")}
                 data-component="sidebar-nav-mobile"
                 classList={{
-                  "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
-                  "translate-x-0": layout.mobileSidebar.opened(),
-                  "-translate-x-full": !layout.mobileSidebar.opened(),
+                  "@container fixed inset-y-0 left-0 z-50 w-[min(86vw,340px)] overflow-hidden bg-background-base transition-[transform,visibility] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]": true,
+                  "translate-x-0 visible shadow-[0_0_48px_rgba(0,0,0,0.35)]": layout.mobileSidebar.opened(),
+                  "-translate-x-full invisible": !layout.mobileSidebar.opened(),
+                }}
+                style={{
+                  "padding-top": "env(safe-area-inset-top, 0px)",
+                  "padding-bottom": "env(safe-area-inset-bottom, 0px)",
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -2234,11 +2239,7 @@ export default function LegacyLayout(props: ParentProps) {
                   !state.sizing,
               }}
               style={{
-                left: isDesktop()
-                  ? layout.sidebar.opened()
-                    ? `${side()}px`
-                    : "0px"
-                  : undefined,
+                left: isDesktop() ? (layout.sidebar.opened() ? `${side()}px` : "0px") : undefined,
               }}
             >
               <main

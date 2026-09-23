@@ -185,3 +185,28 @@
     transform: scale(0.98);
   }
 }
+
+/*
+ * 手机：非 fit 的弹窗（设置、搜索、选择目录等）铺满全屏并避开刘海与底部横条，
+ * 只放一两行内容的 fit 确认框仍然居中显示。
+ */
+@media (max-width: 767px) {
+  [data-component="dialog"]:not([data-fit]) [data-slot="dialog-container"] {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+
+    [data-slot="dialog-content"] {
+      height: 100%;
+      min-height: 0;
+      border-radius: 0;
+      box-shadow: none;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+
+  [data-component="dialog"][data-fit] [data-slot="dialog-container"] {
+    width: calc(100vw - 32px);
+  }
+}

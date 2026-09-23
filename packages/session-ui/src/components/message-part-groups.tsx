@@ -184,7 +184,13 @@ export function groupParts(parts: { messageID: string; part: Part }[]): PartGrou
 /** 兼容保留旧版判断函数 */
 const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list_dir"])
 export function isContextGroupTool(part: Part): part is ToolPart {
-  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(part.tool)
+  if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(part.tool)) return false
+  // read 返回图片/PDF 附件时需要单独渲染，不能折叠进 context 组单行展示
+  if (part.tool === "read" && part.state.status === "completed") {
+    const hasImage = (part.state.attachments ?? []).some((a) => a.mime.startsWith("image/"))
+    if (hasImage) return false
+  }
+  return true
 }
 
 export function isComputerUseGroupTool(part: Part): part is ToolPart {

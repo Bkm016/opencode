@@ -527,20 +527,6 @@
         "@types/semver": "^7.5.8",
       },
     },
-    "packages/sdk-next": {
-      "name": "@opencode-ai/sdk-next",
-      "dependencies": {
-        "@opencode-ai/client": "workspace:*",
-        "@opencode-ai/core": "workspace:*",
-        "@opencode-ai/server": "workspace:*",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-      },
-    },
     "packages/sdk/js": {
       "name": "@opencode-ai/sdk",
       "version": "1.18.3",
@@ -1292,8 +1278,6 @@
     "@opencode-ai/script": ["@opencode-ai/script@workspace:packages/script"],
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@workspace:packages/sdk/js"],
-
-    "@opencode-ai/sdk-next": ["@opencode-ai/sdk-next@workspace:packages/sdk-next"],
 
     "@opencode-ai/server": ["@opencode-ai/server@workspace:packages/server"],
 

@@ -1898,6 +1898,39 @@ describe("session.message-v2.fromError", () => {
     expect(result.data.message).not.toContain("sk-live-secret")
   })
 
+  test("recognizes OpenAI response.failed payload as retryable api_error", () => {
+    const body = {
+      type: "response.failed",
+      sequence_number: 189,
+      response: {
+        error: {
+          code: "windsurf_proxy_error",
+          message: "Devin did not confirm tool-turn completion or return the next tool call",
+        },
+      },
+    }
+    const result = MessageV2.fromError({ message: JSON.stringify(body) }, { providerID })
+
+    expect(result).toStrictEqual({
+      name: "APIError",
+      data: {
+        message: "Devin did not confirm tool-turn completion or return the next tool call",
+        isRetryable: true,
+        responseBody: JSON.stringify(body),
+      },
+    })
+  })
+
+  test("recognizes response.failed context_length_exceeded as context overflow", () => {
+    const body = {
+      type: "response.failed",
+      response: { error: { code: "context_length_exceeded", message: "Prompt too long" } },
+    }
+    const result = MessageV2.fromError({ message: JSON.stringify(body) }, { providerID })
+
+    expect(SessionV1.ContextOverflowError.isInstance(result)).toBe(true)
+  })
+
   test("serializes unknown inputs", () => {
     const result = MessageV2.fromError(123, { providerID })
 

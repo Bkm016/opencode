@@ -90,6 +90,20 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
   if (!body) return
 
   const responseBody = redactSensitiveBodyFields(JSON.stringify(body))
+
+  // 已知终止事件的失败 payload 挂在 `response.error` 而不是 `error`；`response.failed`
+  // 必须识别为可重试，不能漏成 Unknown 错误越过重试清单。
+  if (body.type === "response.failed") {
+    const error = json(body.response?.error)
+    const message =
+      typeof error?.message === "string" ? redactSensitiveBodyFields(error.message) : "OpenAI Responses response failed"
+    const code = typeof error?.code === "string" ? error.code : undefined
+    if (code === "context_length_exceeded" || isContextOverflow(message)) {
+      return { type: "context_overflow", message, responseBody }
+    }
+    return { type: "api_error", message, isRetryable: true, responseBody }
+  }
+
   if (body.type !== "error") return
 
   switch (body?.error?.code) {

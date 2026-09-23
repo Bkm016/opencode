@@ -14,8 +14,6 @@ ci:
 ignore:
 wip:
 
-For anything in the packages/web use the docs: prefix.
-
 prefer to explain WHY something was done from an end user perspective instead of
 WHAT was done.
 

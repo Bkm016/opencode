@@ -1,9 +1,9 @@
 <p align="center">
   <a href="https://opencode.ai">
     <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <source srcset=".github/assets/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
+      <source srcset=".github/assets/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
+      <img src=".github/assets/logo-ornate-light.svg" alt="OpenCode logo">
     </picture>
   </a>
 </p>
@@ -15,7 +15,7 @@
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![OpenCode](.github/assets/screenshot.png)](https://opencode.ai)
 
 > [anomalyco/opencode](https://github.com/anomalyco/opencode) 的个人 fork（[Bkm016/opencode](https://github.com/Bkm016/opencode)）。**非官方**，与 OpenCode 团队无隶属关系。
 
@@ -23,7 +23,7 @@
 
 ### 这是什么
 
-OpenCode 是开源 AI 编程助手，支持终端（TUI）、桌面应用与 Web，可对接多种模型提供商。
+OpenCode 是开源 AI 编程助手，可对接多种模型提供商。本 fork 只保留桌面应用、Web 与 `serve` 服务端。
 
 官方文档：https://opencode.ai/docs
 
@@ -31,6 +31,8 @@ OpenCode 是开源 AI 编程助手，支持终端（TUI）、桌面应用与 Web
 
 ### 本 Fork 核心改动
 
+- **精简仓库** — 移除终端 TUI（及 `run` / `attach` / `pr` 命令）、官网、控制台、统计站与云部署等上游运营模块
+- **Web 可安装为 PWA** — 独立窗口运行，标题栏与系统窗口按钮融合
 - **移除逆天新布局** — 去掉 `newLayout` / v2 双路径，只保留一套统一布局
 - **异步任务工具** — `task_async` 批量拉起子会话，支持 status / wait / followup
 - **内置提示词编辑** — 设置里覆盖 system / agent / tool / compaction 等内置 prompt

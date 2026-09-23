@@ -2405,6 +2405,7 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
+    const dialog = useDialog()
     const args: string[] = []
     if (props.input.offset) args.push("offset=" + props.input.offset)
     if (props.input.limit) args.push("limit=" + props.input.limit)
@@ -2414,17 +2415,42 @@ ToolRegistry.register({
       if (!value || !Array.isArray(value)) return []
       return value.filter((p): p is string => typeof p === "string")
     })
+    // Read 工具把图片/PDF 作为附件下发给模型；这里把同一份内容平铺给用户看
+    const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
     return (
       <>
         <BasicTool
           {...props}
           icon="glasses"
+          defaultOpen={props.defaultOpen ?? images().length > 0}
           trigger={{
             title: i18n.t("ui.tool.read"),
             subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
             args,
           }}
-        />
+        >
+          <Show when={images().length > 0}>
+            <div data-component="read-tool-images">
+              <For each={images()}>
+                {(file) => (
+                  <button
+                    type="button"
+                    data-slot="read-tool-image"
+                    title={props.input.filePath}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      dialog.show(() => (
+                        <ImagePreview src={file.url} alt={file.filename ?? props.input.filePath ?? "image"} />
+                      ))
+                    }}
+                  >
+                    <img src={file.url} alt={file.filename ?? "image"} loading="lazy" />
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </BasicTool>
         <For each={loaded()}>
           {(filepath) => (
             <div data-component="tool-loaded-file">

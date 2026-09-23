@@ -1139,6 +1139,48 @@
   }
 }
 
+/* Read 工具读图后把同一张图平铺给用户，沿用生图工具的网格排版 */
+[data-component="read-tool-images"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+  gap: 8px;
+  width: min(520px, 100%);
+  padding: 10px 0 4px;
+}
+
+[data-slot="read-tool-image"] {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--v2-background-bg-layer-02);
+  cursor: zoom-in;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
+    pointer-events: none;
+    transition: box-shadow 0.15s ease;
+  }
+
+  &:hover::after {
+    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
 [data-component="image-generation-tool-error"] {
   padding: 10px 0 4px;
   font-family: var(--font-family-sans);

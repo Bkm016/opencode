@@ -541,16 +541,28 @@ function renderMathExpressions(html: string): string {
     .join("")
 }
 
-async function highlightCodeBlocks(html: string): Promise<string> {
-  const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
-  const matches = [...html.matchAll(codeBlockRegex)]
-  if (matches.length === 0) return html
-
+/** 以 OpenCode 主题高亮一段代码，返回 shiki 生成的 <pre> HTML；颜色取自主题 CSS 变量，随亮暗主题切换。 */
+export async function highlightCode(code: string, lang?: string): Promise<string> {
   const highlighter = await getSharedHighlighter({
     themes: ["OpenCode"],
     langs: [],
     preferredHighlighter: "shiki-wasm",
   })
+  const language = markdownLanguage(lang)
+  if (language !== "text" && !highlighter.getLoadedLanguages().includes(language)) {
+    await highlighter.loadLanguage(markdownLanguages[language])
+  }
+  return highlighter.codeToHtml(code, {
+    lang: language,
+    theme: "OpenCode",
+    tabindex: false,
+  })
+}
+
+async function highlightCodeBlocks(html: string): Promise<string> {
+  const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
+  const matches = [...html.matchAll(codeBlockRegex)]
+  if (matches.length === 0) return html
 
   let result = html
   for (const match of matches) {
@@ -562,16 +574,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
 
-    const language = markdownLanguage(lang)
-    if (language !== "text" && !highlighter.getLoadedLanguages().includes(language)) {
-      await highlighter.loadLanguage(markdownLanguages[language])
-    }
-
-    const highlighted = highlighter.codeToHtml(code, {
-      lang: language,
-      theme: "OpenCode",
-      tabindex: false,
-    })
+    const highlighted = await highlightCode(code, lang)
     result = result.replace(fullMatch, () => highlighted)
   }
 
@@ -593,22 +596,7 @@ export function createMarkdownParser(props: { nativeParser?: NativeMarkdownParse
     },
     katexExtension,
     markedShiki({
-      async highlight(code, lang) {
-        const highlighter = await getSharedHighlighter({
-          themes: ["OpenCode"],
-          langs: [],
-          preferredHighlighter: "shiki-wasm",
-        })
-        const language = markdownLanguage(lang)
-        if (language !== "text" && !highlighter.getLoadedLanguages().includes(language)) {
-          await highlighter.loadLanguage(markdownLanguages[language])
-        }
-        return highlighter.codeToHtml(code, {
-          lang: language,
-          theme: "OpenCode",
-          tabindex: false,
-        })
-      },
+      highlight: highlightCode,
     }),
   )
 

@@ -22,9 +22,11 @@ export function createCanvasTheme(dark: boolean, host: Partial<CanvasChartTheme>
     muted: dark ? "#a3a3a3" : "#737373",
     grid: dark ? "#333333" : "#e5e5e5",
     font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    // 首个系列保持中性，额外类别使用可辨认的标准色，不把装饰性配色强加给每张图。
-    // 当前按参考图使用同色系蓝色层次，不再混入白色大扇区或跨色相的黄绿装饰色。
-    colors: ["#8ec5ff", "#2b7fff", "#155dfc", "#1447e6", "#193cb8", "#0d2466"],
+    // 首个系列保持品牌蓝，单系列图表观感不变；多系列按固定顺序先走青、紫冷色，
+    // 暖色只在第 4 类之后出现。同色系深浅无法区分相邻类别，此顺序经色觉与色盲区分度校验。
+    colors: dark
+      ? ["#3987e5", "#199e70", "#9085e9", "#c98500", "#d55181", "#008300"]
+      : ["#2a78d6", "#1baf7a", "#4a3aa7", "#eda100", "#e87ba4", "#008300"],
     ramp: dark ? ["#4389e5", "#b9ddff"] : ["#74aceb", "#1645a0"],
     surface: dark ? "#242424" : "#fafafa",
     border: dark ? "#525252" : "#d4d4d4",

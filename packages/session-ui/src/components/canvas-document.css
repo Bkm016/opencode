@@ -84,16 +84,16 @@
   /* 当前采用无描边、无投影样式，仅保留底色与留白。 */
   /* 当前改为单一纸面，外层负责底色，不再叠放带圆角的文档卡片。 */
   [data-slot="canvas-document-body"] {
-    max-width: 900px;
+    max-width: 880px;
     margin: 0 auto;
-    padding: 32px 36px;
+    padding: 48px 56px 64px;
     background: transparent;
     border: 0;
     border-radius: 0;
     box-sizing: border-box;
 
     @media (max-width: 640px) {
-      padding: 20px 16px;
+      padding: 24px 18px 40px;
       border-radius: 0;
     }
   }
@@ -102,14 +102,14 @@
   /* 正文内容已包含 h1 时，由组件隐藏 fallback 标题，避免标题重复。 */
   [data-slot="canvas-document-title"] {
     flex-shrink: 0;
-    margin: 0 0 24px;
-    padding-bottom: 12px;
+    margin: 0 0 20px;
+    padding-bottom: 0;
     border-bottom: 0;
-    font-size: 24px;
-    font-weight: 500;
+    font-size: 32px;
+    font-weight: 600;
     color: var(--text-strong);
-    line-height: 1.35;
-    letter-spacing: -0.02em;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
     overflow-wrap: break-word;
   }
 }
@@ -118,8 +118,11 @@
 [data-component="canvas-document"] .canvas-markdown {
   min-width: 0;
   overflow-wrap: break-word;
-  font-size: 14px;
+  color: var(--text-base);
+  font-size: 15px;
   line-height: 1.8;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 
   /* 清除首尾元素外边距，适配嵌套 content 容器 */
   > *:first-child,
@@ -131,41 +134,64 @@
     margin-bottom: 0;
   }
 
+  /* 标题层级拉开字号与字重差，正文退一档字色，让结构一眼可读。 */
   h1 {
-    font-size: 24px;
+    font-size: 32px;
     color: var(--text-strong);
-    font-weight: 500;
-    margin: 32px 0 16px;
-    line-height: 1.35;
-    letter-spacing: -0.02em;
-    padding-bottom: 8px;
+    font-weight: 600;
+    margin: 40px 0 20px;
+    line-height: 1.2;
+    letter-spacing: -0.03em;
+    padding-bottom: 0;
     border-bottom: 0;
   }
 
+  /* 紧跟主标题的第一段作为导语，放大并减弱字色。 */
+  h1 + p,
+  [data-slot="canvas-document-title"] + [data-slot="canvas-document-content"] > p:first-child {
+    font-size: 16.5px;
+    line-height: 1.75;
+    color: var(--text-weak);
+    margin-bottom: 36px;
+  }
+
+  /* 二级标题开启新章节：上方一条极细分隔线划出段落节奏。 */
   h2 {
-    font-size: 17px;
+    font-size: 21px;
     color: var(--text-strong);
-    font-weight: 500;
-    margin: 32px 0 12px;
-    line-height: 1.4;
-    letter-spacing: -0.01em;
+    font-weight: 600;
+    margin: 56px 0 16px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border-weaker-base);
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+  }
+
+  > h2:first-child,
+  [data-slot="canvas-document-content"] > h2:first-child,
+  h1 + h2,
+  hr + h2 {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
   }
 
   h3 {
-    font-size: 15px;
+    font-size: 16.5px;
     color: var(--text-strong);
-    font-weight: 500;
-    margin: 20px 0 8px;
-    line-height: 1.5;
+    font-weight: 600;
+    margin: 36px 0 10px;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
   }
 
   h4,
   h5,
   h6 {
-    font-size: 14px;
+    font-size: 15px;
     color: var(--text-strong);
     font-weight: 600;
-    margin: 16px 0 6px;
+    margin: 24px 0 8px;
     line-height: 1.5;
   }
 
@@ -176,20 +202,21 @@
   }
 
   p {
-    margin: 0 0 16px;
-    font-size: 14px;
-    line-height: 1.8;
+    margin: 0 0 18px;
   }
 
   a {
     color: var(--text-interactive-base);
-    text-decoration: none;
     font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--text-interactive-base) 35%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 120ms ease;
   }
 
   a:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    text-decoration-color: currentColor;
   }
 
   ul,
@@ -210,11 +237,18 @@
 
   li {
     margin-bottom: 6px;
+    padding-left: 4px;
     line-height: 1.8;
   }
 
-  li::marker {
-    color: var(--text-base);
+  ul > li::marker {
+    color: var(--text-interactive-base);
+  }
+
+  ol > li::marker {
+    color: var(--text-weak);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   li > ul,
@@ -229,15 +263,19 @@
 
   /* 引用块：高对比清晰可读，采用克制蓝青强调边框与浅底衬面，避免发灰不可见 */
   /* 取消强调边框，以浅底衬面区分引用。 */
+  /* 引用保持无描边，改用极淡的强调色衬底与更大的内边距。 */
   blockquote {
     border: 0;
-    margin: 16px 0;
-    padding: 10px 16px;
-    background: var(--surface-base);
-    border-radius: 6px;
+    margin: 24px 0;
+    padding: 16px 20px;
+    background: color-mix(
+      in srgb,
+      var(--text-interactive-base) 7%,
+      var(--surface-raised-stronger-non-alpha, transparent)
+    );
+    border-radius: 10px;
     color: var(--text-strong);
-    font-size: 14px;
-    line-height: 1.8;
+    line-height: 1.75;
 
     p {
       margin: 0;
@@ -248,20 +286,49 @@
   }
 
   hr {
-    border: none;
+    border: 0;
+    border-top: 1px solid var(--border-weaker-base);
     height: 0;
-    margin: 28px 0;
+    margin: 40px 0;
   }
 
   pre {
-    margin: 16px 0 20px;
-    padding: 14px 16px;
+    margin: 20px 0 24px;
+    padding: 16px 18px;
     overflow: auto;
     border: 0;
-    border-radius: 6px;
+    border-radius: 10px;
     background: var(--background-stronger);
     font-size: 13px;
-    line-height: 1.6;
+    line-height: 1.65;
+    tab-size: 2;
+  }
+
+  /* 代码块：语言标签 + shiki 逐词着色，底色由画布统一提供。 */
+  .canvas-code {
+    margin: 20px 0 24px;
+    border-radius: 10px;
+    background: var(--background-stronger);
+    overflow: hidden;
+
+    pre {
+      margin: 0;
+      padding: 14px 18px 16px;
+      border-radius: 0;
+      background: transparent;
+    }
+  }
+
+  .canvas-code-lang {
+    padding: 10px 18px 0;
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-weak);
+    user-select: none;
   }
 
   pre code {
@@ -274,54 +341,76 @@
     font-feature-settings: var(--font-family-mono--font-feature-settings);
     color: var(--text-strong);
     font-weight: 500;
-    font-size: 0.88em;
+    font-size: 0.86em;
     padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--surface-base);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--text-interactive-base) 9%, transparent);
     border: 0;
   }
 
   /* 表格整体横滚，宽表不挤压正文列宽 */
+  /* 表格：细线分行，弱化表头，数字等宽；尊重 Markdown 指定的列对齐。 */
   table {
     font-variant-numeric: tabular-nums;
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    margin: 20px 0;
+    margin: 24px 0 28px;
     border: 0;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  thead {
-    background: var(--surface-base);
   }
 
   th {
-    background: var(--surface-base);
-    color: var(--text-strong);
+    color: var(--text-weak);
     font-weight: 600;
-    font-size: 13px;
-    padding: 10px 14px;
-    text-align: left;
+    font-size: 12.5px;
+    letter-spacing: 0.01em;
+    padding: 0 14px 10px;
+    text-align: start;
     border: 0;
+    border-bottom: 1px solid var(--border-weak-base);
+    white-space: nowrap;
+  }
+
+  th[align="center"],
+  td[align="center"] {
+    text-align: center;
+  }
+
+  th[align="right"],
+  td[align="right"] {
+    text-align: right;
+  }
+
+  th:first-child,
+  td:first-child {
+    padding-left: 4px;
+  }
+
+  th:last-child,
+  td:last-child {
+    padding-right: 4px;
   }
 
   td {
-    padding: 10px 14px;
-    font-size: 13px;
+    padding: 12px 14px;
+    font-size: 14px;
     line-height: 1.6;
     color: var(--text-strong);
     border: 0;
+    border-bottom: 1px solid var(--border-weaker-base);
     vertical-align: top;
   }
 
-  tbody tr:nth-child(even) {
-    background: color-mix(in srgb, var(--surface-base) 45%, transparent);
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr {
+    transition: background-color 120ms ease;
   }
 
   tbody tr:hover {
-    background: var(--surface-base-hover);
+    background: color-mix(in srgb, var(--surface-base) 60%, transparent);
   }
 
   /* 图卡片：独立底面 + 边框，与正文阅读节奏分开 */
@@ -329,7 +418,7 @@
   /* 图表作为正文内容直接落在文档纸面上：无套层底色、无边框、无圆角、无阴影， */
   /* SVG 背景由宿主主题设为纸面色，保证图表与正文无缝衔接。 */
   .canvas-diagram {
-    margin: 24px 0 28px;
+    margin: 32px 0 36px;
     padding: 0;
     border: 0;
     border-radius: 0;
@@ -358,7 +447,7 @@
   }
 
   .katex-display {
-    margin: 20px 0;
+    margin: 24px 0 28px;
     padding: 4px 0;
     overflow: visible;
   }

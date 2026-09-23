@@ -53,7 +53,7 @@ export function CanvasDocument(props: CanvasDocumentProps) {
     const paper = paperEl.cloneNode(true) as HTMLDivElement
     paper.style.maxWidth = "none"
     paper.style.width = "100%"
-    paper.style.padding = "32px 36px"
+    paper.style.padding = "48px 56px 64px"
     for (const element of paper.querySelectorAll<HTMLElement>("pre, table, .canvas-diagram, .katex-display")) {
       element.style.overflow = "visible"
     }

@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify"
 import { Marked, Renderer, type Token, type Tokens } from "marked"
 import { CANVAS_GRAPH_STYLE, createCanvasTheme } from "./canvas-theme"
-import { katexExtension, renderKatexToken } from "@opencode-ai/ui/context/marked"
+import { highlightCode, katexExtension, renderKatexToken } from "@opencode-ai/ui/context/marked"
 
 export type CanvasResult = { ok: true; html: string } | { ok: false; error: string }
 
@@ -25,6 +25,13 @@ renderer.link = function ({ href, tokens }) {
   const text = this.parser.parseInline(tokens)
   if (!/^https?:\/\//i.test(href)) return text
   return `<a href="${href.replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${text}</a>`
+}
+// 普通代码块先以转义纯文本占位通过清洗，清洗后再交给 shiki 高亮，与公式的恢复方式一致。
+renderer.code = ({ text, lang }) =>
+  `<pre data-canvas-code="${encodeURIComponent(lang?.trim().split(/\s+/)[0] ?? "")}"><code>${escapeHtml(text)}</code></pre>\n`
+
+function escapeHtml(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
 const marked = new Marked({
@@ -72,7 +79,7 @@ const PURIFY_MARKDOWN = {
     "td",
     "span",
   ],
-  ALLOWED_ATTR: ["href", "target", "rel", "start", "align", "data-canvas-formula"],
+  ALLOWED_ATTR: ["href", "target", "rel", "start", "align", "data-canvas-formula", "data-canvas-code"],
 }
 
 const PURIFY_SVG = {
@@ -145,7 +152,7 @@ function themeVariables() {
 
   // 强化图表节点与连线对比度：克制蓝青底色与明确互动描边，避免发灰发暗
   const nodeBkg = shared.accentSurface
-  const nodeBorder = shared.colors[1]
+  const nodeBorder = shared.colors[0]
   const textStrong = shared.text
   const lineCol = shared.line
   const cardBkg = shared.background
@@ -220,6 +227,35 @@ function sanitizeMarkdownHtml(html: string): string {
       RETURN_DOM_FRAGMENT: true,
     })
     formula.replaceWith(output)
+  }
+  return template.innerHTML
+}
+
+/** 清洗后的代码占位替换为 shiki 高亮结果，并附语言标签；高亮失败时保留原纯文本代码块。 */
+async function highlightCanvasCode(html: string): Promise<string> {
+  if (!html.includes("data-canvas-code")) return html
+  const template = document.createElement("template")
+  template.innerHTML = html
+  for (const pre of template.content.querySelectorAll<HTMLPreElement>("pre[data-canvas-code]")) {
+    const lang = decodeURIComponent(pre.getAttribute("data-canvas-code") ?? "")
+    const code = pre.textContent ?? ""
+    const block = document.createElement("div")
+    block.className = "canvas-code"
+    if (lang) {
+      const label = document.createElement("div")
+      label.className = "canvas-code-lang"
+      label.textContent = lang
+      block.append(label)
+    }
+    const highlighted = await highlightCode(code, lang).catch(() => undefined)
+    const holder = document.createElement("template")
+    holder.innerHTML = highlighted ?? ""
+    const shiki = holder.content.querySelector("pre")
+    // 底色与字色交给画布样式统一控制，只保留 shiki 的逐词着色。
+    shiki?.removeAttribute("style")
+    pre.removeAttribute("data-canvas-code")
+    block.append(shiki ?? pre.cloneNode(true))
+    pre.replaceWith(block)
   }
   return template.innerHTML
 }
@@ -333,7 +369,7 @@ async function renderCanvasSerial(content: string): Promise<CanvasResult> {
           stroke: ${theme.secondaryBorderColor};
           stroke-width: ${CANVAS_GRAPH_STYLE.strokeWidth}px;
         }
-        .node rect { rx: 4px; ry: 4px; }
+        .node rect { rx: 6px; ry: 6px; }
         .node polygon {
           fill: ${theme.primaryColor};
           stroke: ${theme.primaryBorderColor};
@@ -380,15 +416,15 @@ async function renderCanvasSerial(content: string): Promise<CanvasResult> {
     }
   }
 
-  const html = segments
-    .map((segment) => {
+  const parts = await Promise.all(
+    segments.map((segment) => {
       if (segment.kind === "markdown") {
-        return sanitizeMarkdownHtml(marked.parser(segment.markdown ?? []))
+        return highlightCanvasCode(sanitizeMarkdownHtml(marked.parser(segment.markdown ?? [])))
       }
       return `<figure class="canvas-diagram" data-diagram-kind="${segment.kind}" data-diagram-index="${segment.index}">${svgs.get(segment.index) ?? ""}</figure>`
-    })
-    .join("\n")
-  return { ok: true, html }
+    }),
+  )
+  return { ok: true, html: parts.join("\n") }
 }
 
 export function describeError(cause: unknown): string {

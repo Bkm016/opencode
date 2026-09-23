@@ -755,23 +755,29 @@ export async function renderCanvasChart(source: string, theme?: CanvasChartTheme
       strokeCap: "round",
       strokeJoin: "round",
       interpolate: "monotone",
-      point: rows.length <= 24 ? { filled: true, size: 28 } : false,
+      point: rows.length <= 24 ? { filled: true, size: 48, stroke: activeTheme.background, strokeWidth: 2 } : false,
     },
-    area: { interpolate: "monotone", fillOpacity: 0.35, line: { strokeWidth: 1.5 }, point: false },
+    area: {
+      interpolate: "monotone",
+      fillOpacity: 0.22,
+      line: { strokeWidth: CANVAS_GRAPH_STYLE.lineWidth },
+      point: false,
+    },
     point: { filled: true, size: 88, opacity: 0.95, stroke: activeTheme.background, strokeWidth: 1 },
     circle: { size: 88, opacity: 0.95, stroke: activeTheme.background, strokeWidth: 1 },
     square: { size: 72, opacity: 0.95, stroke: activeTheme.background, strokeWidth: 1 },
     tick: { thickness: CANVAS_GRAPH_STYLE.lineWidth, size: 16 },
     rule: { strokeWidth: CANVAS_GRAPH_STYLE.strokeWidth, color: activeTheme.muted },
     rect: { stroke: activeTheme.background, strokeWidth: 1 },
-    bar: { binSpacing: 2, discreteBandSize: { band: 0.7 }, continuousBandSize: 18, cornerRadiusEnd: 2 },
-    arc: { strokeWidth: 0 },
+    // 数据端 4px 圆角贴合基线；相邻填充之间留 2px 纸面缝隙，扇区与堆叠段不糊成一片。
+    bar: { binSpacing: 2, discreteBandSize: { band: 0.7 }, continuousBandSize: 18, cornerRadiusEnd: 4 },
+    arc: { stroke: activeTheme.background, strokeWidth: 2 },
     text: { color: activeTheme.text, font: activeTheme.font, fontSize: CANVAS_GRAPH_STYLE.labelSize },
     range: {
       category: activeTheme.colors,
       // 连续数值使用有序明暗色阶，不能循环类别色板而误导数值大小。
-      heatmap: [activeTheme.colors[0], activeTheme.colors[activeTheme.colors.length - 1]],
-      ramp: activeTheme.ramp ?? [activeTheme.colors[0], activeTheme.colors[activeTheme.colors.length - 1]],
+      heatmap: activeTheme.ramp ?? [activeTheme.colors[0], activeTheme.background],
+      ramp: activeTheme.ramp ?? [activeTheme.colors[0], activeTheme.background],
     },
   } satisfies Config
 

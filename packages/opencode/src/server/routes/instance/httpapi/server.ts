@@ -16,7 +16,6 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { Git } from "@/git"
 import { Installation } from "@/installation"
-import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
@@ -24,7 +23,6 @@ import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
-import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
 import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
@@ -45,7 +43,6 @@ import { SessionShare } from "@/share/session"
 import { ShareNext } from "@/share/share-next"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
-import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
@@ -59,7 +56,6 @@ import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { EventV2 } from "@opencode-ai/core/event"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Npm } from "@opencode-ai/core/npm"
 import { PermissionSaved } from "@opencode-ai/core/permission/saved"
 import { ProjectV2 } from "@opencode-ai/core/project"
@@ -225,9 +221,7 @@ const app = LayerNode.group([
   Git.node,
   Ripgrep.node,
   Storage.node,
-  Snapshot.node,
   Plugin.node,
-  ModelsDev.node,
   Provider.node,
   ProviderAuth.node,
   Agent.node,
@@ -253,7 +247,6 @@ const app = LayerNode.group([
   SessionPrompt.node,
   Instruction.node,
   LLM.node,
-  LSP.node,
   MCP.node,
   McpAuth.node,
   Command.node,
@@ -261,7 +254,6 @@ const app = LayerNode.group([
   ToolRegistry.node,
   Format.node,
   Project.node,
-  Vcs.node,
   Workspace.node,
   Worktree.node,
   Installation.node,
@@ -313,7 +305,7 @@ export function createRoutes(
     Layer.provide(AppNodeBuilderV1.build(app)),
     // Must stay last: layers provided later in this pipe build beneath earlier ones,
     // so Observability must come after every service graph. Otherwise eagerly forked
-    // fibers (e.g. the ModelsDev background refresh) capture Effect's default stdout
+    // fibers (e.g. background refresh loops) capture Effect's default stdout
     // logger and corrupt the TUI (#34730).
     Layer.provideMerge(Observability.layer),
   )

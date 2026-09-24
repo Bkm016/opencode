@@ -234,12 +234,15 @@ function parseJSON(value: unknown) {
 export function policy(opts: {
   provider: string
   parse: (error: unknown) => Err
+  canRetry?: () => boolean
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
   // 自动退避与会话级主动唤醒在这里竞争，Schedule 本身不再重复休眠。
   wait: (ms: number, ready: Effect.Effect<void>) => Effect.Effect<void>
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
+      // 先确认请求仍可安全重放，再发布重试状态或等待；已交付内容不能显示虚假的重试。
+      if (opts.canRetry?.() === false) return Cause.done(meta.attempt)
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)

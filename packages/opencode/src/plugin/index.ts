@@ -146,6 +146,8 @@ const layer = Layer.effect(
           ...(serverUrl ? {} : { fetch: async (...args) => Server.Default().app.fetch(...args) }),
         })
         const cfg = yield* config.get()
+        const pluginStarted = Date.now()
+        const pluginElapsed = () => Date.now() - pluginStarted
         const input: PluginInput = {
           client,
           project: ctx.project,
@@ -164,6 +166,7 @@ const layer = Layer.effect(
         }
 
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
+          const t0 = pluginElapsed()
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
             catch: errorMessage,
@@ -172,6 +175,11 @@ const layer = Layer.effect(
             Effect.option,
           )
           if (init._tag === "Some") hooks.push(init.value)
+          yield* Effect.logInfo("internal plugin init", {
+            directory: ctx.directory,
+            name: plugin.name,
+            ms: pluginElapsed() - t0,
+          })
         }
 
         const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
@@ -179,6 +187,7 @@ const layer = Layer.effect(
         }
         if (plugins.length) yield* config.waitForDependencies()
 
+        const extT0 = pluginElapsed()
         const loaded = yield* Effect.promise(() =>
           PluginLoader.loadExternal({
             items: plugins,
@@ -212,6 +221,7 @@ const layer = Layer.effect(
             },
           }),
         )
+        yield* Effect.logInfo("external plugins loaded", { directory: ctx.directory, ms: pluginElapsed() - extT0 })
         for (const load of loaded) {
           if (!load) continue
 
@@ -237,7 +247,10 @@ const layer = Layer.effect(
           )
         }
 
+        yield* Effect.logInfo("plugins loaded", { directory: ctx.directory, ms: pluginElapsed() })
+
         // Notify plugins of current config
+        const hooksT0 = pluginElapsed()
         for (const hook of hooks) {
           yield* Effect.tryPromise({
             try: () => Promise.resolve((hook as any).config?.(cfg)),
@@ -247,6 +260,7 @@ const layer = Layer.effect(
             Effect.ignore,
           )
         }
+        yield* Effect.logInfo("plugin config hooks done", { directory: ctx.directory, ms: pluginElapsed() - hooksT0 })
 
         const unsubscribe = yield* events.listen((event) => {
           if (event.location?.directory !== ctx.directory) return Effect.void

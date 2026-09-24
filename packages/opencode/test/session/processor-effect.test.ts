@@ -15,6 +15,7 @@ import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionProcessor } from "../../src/session/processor"
+import { SessionRetry } from "../../src/session/retry"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
@@ -543,13 +544,13 @@ it.live("session.processor effect tests reset reasoning state across retries", (
   ),
 )
 
-it.live("session.processor effect tests do not retry unknown json errors", () =>
+it.live("session.processor effect tests do not retry non-transient HTTP errors", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const { processors, session, provider } = yield* boot()
 
-        yield* llm.error(400, { error: { message: "no_kv_space" } })
+        yield* llm.error(422, { error: { message: "invalid input" } })
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "json")
@@ -634,9 +635,10 @@ it.live("session.processor effect tests retry recognized structured json errors"
 )
 
 for (const scenario of [
-  { name: "recovers after a zero-token empty stream", tokens: [0], calls: 2, recovered: true, failed: false },
-  { name: "accepts an empty stop with output tokens", tokens: [91], calls: 1, recovered: false, failed: false },
-  { name: "stops retrying after three empty streams", tokens: [0, 0, 0], calls: 3, recovered: false, failed: true },
+  { name: "accepts an empty stop without usage", response: reply().stop().item(), failed: false },
+  { name: "accepts an empty stop with zero output tokens", response: reply().usage({ input: 10, output: 0 }).stop().item(), failed: false },
+  { name: "accepts an empty stop with output tokens", response: reply().usage({ input: 10, output: 91 }).stop().item(), failed: false },
+  { name: "stops on an empty stream without a finish", response: reply().item(), failed: true },
 ]) {
   it.live(`session.processor ${scenario.name}`, () =>
     provideTmpdirServer(
@@ -646,9 +648,8 @@ for (const scenario of [
 
           // First attempt: role + stop, no content (quiet drop / 0-token finish).
           // 同时覆盖有用量的正常空回复与连续空流，防止两者混为同一种重试。
-          for (const output of scenario.tokens) {
-            yield* llm.push(reply().usage({ input: 10, output }).stop().item())
-          }
+          // 回归契约：明确 stop 是完成，缺少 finish 是失败，都不消费后续排队响应。
+          yield* llm.push(scenario.response)
           yield* llm.text("recovered")
 
           const chat = yield* session.create({})
@@ -681,8 +682,8 @@ for (const scenario of [
           const parts = yield* MessageV2.parts(msg.id)
 
           expect(value).toBe(scenario.failed ? "stop" : "continue")
-          expect(yield* llm.calls).toBe(scenario.calls)
-          expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(scenario.recovered)
+          expect(yield* llm.calls).toBe(1)
+          expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(false)
           if (scenario.failed) {
             expect(handle.message.error).toMatchObject({
               name: "APIError",
@@ -696,7 +697,7 @@ for (const scenario of [
   )
 }
 
-it.live("session.processor retries truncated text without usage", () =>
+it.live("session.processor preserves truncated text without restarting the request", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -735,10 +736,10 @@ it.live("session.processor retries truncated text without usage", () =>
 
         const parts = yield* MessageV2.parts(msg.id)
 
-        expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(2)
-        expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(true)
-        expect(handle.message.error).toBeUndefined()
+        expect(value).toBe("stop")
+        expect(yield* llm.calls).toBe(1)
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["partial"])
+        expect(handle.message.error).toMatchObject({ name: "APIError", data: { isRetryable: false } })
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -1511,7 +1512,7 @@ function repeatingToolReply() {
   })
 }
 
-it.live("session.processor effect tests retry once when text repetition is detected, keeping the partial", () =>
+it.live("session.processor stops repeated output and keeps the partial without restarting", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -1549,32 +1550,41 @@ it.live("session.processor effect tests retry once when text repetition is detec
 
         const parts = yield* MessageV2.parts(msg.id)
         const texts = parts.filter((part): part is SessionV1.TextPart => part.type === "text")
-        const inputs = yield* llm.inputs
-
-        expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(2)
+        expect(value).toBe("stop")
+        expect(yield* llm.calls).toBe(1)
         const textContents = texts.map((part) => part.text)
-        expect(textContents).toEqual([REPEAT_SENTENCE.repeat(2), "recovered answer"])
-        expect(JSON.stringify(inputs[0])).not.toContain("abnormal repetition loop")
-        expect(JSON.stringify(inputs[1])).toContain("abnormal repetition loop")
-        expect(handle.message.error).toBeUndefined()
+        expect(textContents).toEqual([REPEAT_SENTENCE.repeat(2)])
+        expect(handle.message.error).toMatchObject({
+          name: "APIError",
+          data: { message: "Model output entered a repetition loop", isRetryable: false },
+        })
       }),
     { config: (url) => providerCfg(url) },
   ),
 )
 
-it.live("session.processor effect tests keep retrying repeated output until recovery", () =>
+it.live("session.processor does not replay a retryable provider error after text delivery", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const { processors, session, provider } = yield* boot()
+        const events = yield* EventV2Bridge.Service
 
-        yield* llm.push(repeatingReply())
-        yield* llm.push(repeatingReply())
-        yield* llm.text("recovered after two loops")
+        yield* llm.push(raw({
+          head: [{ id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant", content: "partial" } }] }],
+          tail: [{ error: { message: "Connection reset", type: "server_error", code: "server_error", param: null } }],
+        }))
+        yield* llm.text("replayed answer")
 
         const chat = yield* session.create({})
-        const parent = yield* user(chat.id, "loop twice")
+        const retries: number[] = []
+        const off = yield* events.listen((evt) => {
+          if (evt.type !== SessionStatus.Event.Status.type) return Effect.void
+          const data = evt.data as typeof SessionStatus.Event.Status.data.Type
+          if (data.sessionID === chat.id && data.status.type === "retry") retries.push(data.status.attempt)
+          return Effect.void
+        })
+        const parent = yield* user(chat.id, "provider error after output")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
         const handle = yield* processors.create({
@@ -1596,16 +1606,20 @@ it.live("session.processor effect tests keep retrying repeated output until reco
           model: mdl,
           agent: agent(),
           system: [],
-          messages: [{ role: "user", content: "loop twice" }],
+          messages: [{ role: "user", content: "provider error after output" }],
           tools: {},
         })
+        yield* off
 
         const parts = yield* MessageV2.parts(msg.id)
 
-        expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(3)
-        expect(parts.some((part) => part.type === "text" && part.text === "recovered after two loops")).toBe(true)
-        expect(handle.message.error).toBeUndefined()
+        expect(value).toBe("stop")
+        expect(yield* llm.calls).toBe(1)
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["partial"])
+        expect(handle.message.error).toBeDefined()
+        if (!handle.message.error) throw new Error("expected provider error")
+        expect(SessionRetry.retryable(handle.message.error, ref.providerID)).toBeDefined()
+        expect(retries).toEqual([])
       }),
     { config: (url) => providerCfg(url) },
   ),

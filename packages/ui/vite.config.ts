@@ -1,12 +1,10 @@
 import { defineConfig } from "vite"
 import solidPlugin from "vite-plugin-solid"
 import { iconsSpritesheet } from "vite-plugin-icons-spritesheet"
-import fs from "fs"
 
 export default defineConfig({
   plugins: [
     solidPlugin(),
-    providerIconsPlugin(),
     iconsSpritesheet([
       {
         withTypes: true,
@@ -32,28 +30,3 @@ export default defineConfig({
   },
 })
 
-function providerIconsPlugin() {
-  return {
-    name: "provider-icons-plugin",
-    configureServer() {
-      void fetchProviderIcons()
-    },
-    buildStart() {
-      void fetchProviderIcons()
-    },
-  }
-}
-
-async function fetchProviderIcons() {
-  const url = process.env.OPENCODE_MODELS_URL || "https://models.dev"
-  const providers = await fetch(`${url}/api.json`)
-    .then((res) => res.json())
-    .then((json) => Object.keys(json))
-  await Promise.all(
-    providers.map((provider) =>
-      fetch(`${url}/logos/${provider}.svg`)
-        .then((res) => res.text())
-        .then((svg) => fs.writeFileSync(`./src/assets/icons/provider/${provider}.svg`, svg)),
-    ),
-  )
-}

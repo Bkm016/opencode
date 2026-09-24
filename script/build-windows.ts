@@ -35,8 +35,9 @@ if (skipSidecar) {
 
 // --skip-sidecar 时 resources/cli/opencode.exe 必须已经由上一次完整 build 拷好，
 // 否则 electron-builder 的 extraResources 找不到文件直接失败。
-if (skipSidecar && !(await Bun.file("resources/cli/opencode.exe").exists())) {
-  throw new Error("resources/cli/opencode.exe missing — run without --skip-sidecar first")
+const cliExe = path.join(desktopDir, "resources", "cli", "opencode.exe")
+if (skipSidecar && !(await Bun.file(cliExe).exists())) {
+  throw new Error(`${cliExe} missing — run without --skip-sidecar first`)
 }
 await $`bun run build`
 await $`npx electron-builder --win --publish never --config electron-builder.config.ts`

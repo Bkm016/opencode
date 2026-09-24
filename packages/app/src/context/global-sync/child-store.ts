@@ -15,7 +15,6 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
 import { useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
-import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import type { ServerScope } from "@/utils/server-scope"
 
 export function createChildStoreManager(input: {
@@ -24,14 +23,14 @@ export function createChildStoreManager(input: {
   persist: typeof persisted
   isBooting: (directory: string) => boolean
   isLoadingSessions: (directory: string) => boolean
-  onBootstrap: (directory: string) => void
+  // onReady 在拿到 bootstrap 并发槽位后调用，用来激活 provider/reference 等
+  // observer — 避免它们在 sessions/critical 请求之前抢 HTTP 连接。
+  onBootstrap: (directory: string, onReady: () => void) => void
   onMcp: (directory: string, setStore: SetStoreFunction<State>) => void
   onDispose: (directory: string) => void
   translate: (key: string, vars?: Record<string, string | number>) => string
   queryOptions: QueryOptionsApi
-  global: {
-    provider: NormalizedProviderListResponse
-  }
+  global: {}
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
   const metaCache = new Map<string, MetaCache>()
@@ -177,11 +176,6 @@ export function createChildStoreManager(input: {
           const pathQuery = useQuery(() => ({ ...input.queryOptions.path(key), enabled: instanceQueriesEnabled() }))
           const mcpQuery = useQuery(() => ({ ...input.queryOptions.mcp(key), enabled: mcpEnabled() }))
           const mcpResourceQuery = useQuery(() => ({ ...input.queryOptions.mcpResources(key), enabled: mcpEnabled() }))
-          const lspQuery = useQuery(() => ({ ...input.queryOptions.lsp(key), enabled: instanceQueriesEnabled() }))
-          const providerQuery = useQuery(() => ({
-            ...input.queryOptions.providers(key),
-            enabled: instanceQueriesEnabled(),
-          }))
           const referenceQuery = useQuery(() => ({
             ...input.queryOptions.references(key),
             enabled: instanceQueriesEnabled(),
@@ -191,15 +185,6 @@ export function createChildStoreManager(input: {
             project: "",
             projectMeta: initialMeta,
             icon: initialIcon,
-            get provider_ready() {
-              return instanceQueriesEnabled() && !providerQuery.isLoading
-            },
-            get provider() {
-              const EMPTY = { all: new Map(), connected: [], default: {} }
-              if (providerQuery.isLoading) return EMPTY
-              if (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) return input.global.provider
-              return providerQuery.data ?? EMPTY
-            },
             config: {},
             get path() {
               const EMPTY = {
@@ -240,12 +225,6 @@ export function createChildStoreManager(input: {
             },
             get mcp_resource() {
               return mcpResourceQuery.isLoading ? {} : (mcpResourceQuery.data ?? {})
-            },
-            get lsp_ready() {
-              return instanceQueriesEnabled() && !lspQuery.isLoading
-            },
-            get lsp() {
-              return lspQuery.isLoading ? [] : (lspQuery.data ?? [])
             },
             message: {},
             part: {},
@@ -291,9 +270,13 @@ export function createChildStoreManager(input: {
     pinForOwner(key)
     if (options.mcp) enableMcp(directory, key, childStore)
     const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap) activate(key)
+    // activate 必须等 onBootstrap 拿到并发槽位后再触发 — 否则 6 个目录的
+    // provider/reference observer 会在 session.list 之前先把 Chromium 的
+    // HTTP/1.1 socket pool 占满，把真正的首屏请求排到 10s 后。
     if (shouldBootstrap && childStore[0].status === "loading") {
-      input.onBootstrap(directory)
+      input.onBootstrap(directory, () => activate(key))
+    } else if (shouldBootstrap) {
+      activate(key)
     }
     return childStore
   }
@@ -303,9 +286,10 @@ export function createChildStoreManager(input: {
     const childStore = ensureChild(directory)
     if (options.mcp) enableMcp(directory, key, childStore)
     const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap) activate(key)
     if (shouldBootstrap && childStore[0].status === "loading") {
-      input.onBootstrap(directory)
+      input.onBootstrap(directory, () => activate(key))
+    } else if (shouldBootstrap) {
+      activate(key)
     }
     return childStore
   }

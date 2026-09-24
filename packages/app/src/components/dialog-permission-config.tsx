@@ -42,7 +42,6 @@ const COMMON_TOOLS = [
   { value: "glob", label: "Glob 查找 (glob)", desc: "使用模式匹配文件路径" },
   { value: "grep", label: "Grep 检索 (grep)", desc: "正则全文检索文件内容" },
   { value: "list", label: "目录列表 (list)", desc: "列出目录中的文件结构" },
-  { value: "lsp", label: "语言服务器 (lsp)", desc: "代码诊断与符号分析" },
   { value: "doom_loop", label: "死循环熔断 (doom_loop)", desc: "相同输入重复调用的安全拦截" },
 ] as const
 

@@ -8,7 +8,6 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Format } from "../format"
-import { LSP } from "@/lsp/lsp"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
 import { assertExternalDirectoryEffect } from "./external-directory"
@@ -112,7 +111,6 @@ function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
 export const MultiEditTool = Tool.define(
   "multiedit",
   Effect.gen(function* () {
-    const lsp = yield* LSP.Service
     const afs = yield* FSUtil.Service
     const format = yield* Format.Service
     const events = yield* EventV2Bridge.Service
@@ -270,29 +268,19 @@ export const MultiEditTool = Tool.define(
               file: change.filePath,
               event: change.type === "add" ? "add" : "change",
             })
-            yield* lsp.touchFile(change.filePath, "document")
           }
 
-          const diagnostics = yield* lsp.diagnostics()
           const summary = changes
             .map((change) => `${change.type === "add" ? "A" : "M"} ${change.relativePath}`)
             .join("\n")
-          let output = `Success. Updated the following files:\n${summary}`
-          for (const change of changes) {
-            const block = LSP.Diagnostic.report(
-              change.filePath,
-              diagnostics[FSUtil.normalizePath(change.filePath)] ?? [],
-            )
-            if (!block) continue
-            output += `\n\nLSP errors detected in ${change.relativePath}, please fix:\n${block}`
-          }
+          const output = `Success. Updated the following files:\n${summary}`
 
           return {
             title: `${changes.length} file${changes.length === 1 ? "" : "s"}`,
             metadata: {
               diff: totalDiff,
               files,
-              diagnostics,
+              diagnostics: {},
             },
             output,
           }

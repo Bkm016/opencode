@@ -1618,23 +1618,6 @@ export default function LegacyLayout(props: ParentProps) {
 
   function DialogDeleteWorkspace(props: { root: string; directory: string }) {
     const name = createMemo(() => getFilename(props.directory))
-    const [data, setData] = createStore({
-      status: "loading" as "loading" | "ready" | "error",
-      dirty: false,
-    })
-
-    onMount(() => {
-      serverSDK()
-        .client.vcs.status({ directory: props.directory })
-        .then((x) => {
-          const files = x.data ?? []
-          const dirty = files.length > 0
-          setData({ status: "ready", dirty })
-        })
-        .catch(() => {
-          setData({ status: "error", dirty: false })
-        })
-    })
 
     const handleDelete = () => {
       const leaveDeletedWorkspace = !!params.dir && pathKey(currentDir()) === pathKey(props.directory)
@@ -1645,27 +1628,17 @@ export default function LegacyLayout(props: ParentProps) {
       void deleteWorkspace(props.root, props.directory, leaveDeletedWorkspace)
     }
 
-    const description = () => {
-      if (data.status === "loading") return language.t("workspace.status.checking")
-      if (data.status === "error") return language.t("workspace.status.error")
-      if (!data.dirty) return language.t("workspace.status.clean")
-      return language.t("workspace.status.dirty")
-    }
-
     return (
       <Dialog title={language.t("workspace.delete.title")} fit>
         <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
-              {language.t("workspace.delete.confirm", { name: name() })}
-            </span>
-            <span class="text-12-regular text-text-weak">{description()}</span>
-          </div>
+          <span class="text-14-regular text-text-strong">
+            {language.t("workspace.delete.confirm", { name: name() })}
+          </span>
           <div class="flex justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
-            <Button variant="primary" size="large" disabled={data.status === "loading"} onClick={handleDelete}>
+            <Button variant="primary" size="large" onClick={handleDelete}>
               {language.t("workspace.delete.button")}
             </Button>
           </div>
@@ -1677,32 +1650,18 @@ export default function LegacyLayout(props: ParentProps) {
   function DialogResetWorkspace(props: { root: string; directory: string }) {
     const name = createMemo(() => getFilename(props.directory))
     const [state, setState] = createStore({
-      status: "loading" as "loading" | "ready" | "error",
-      dirty: false,
       sessions: [] as Session[],
     })
 
-    const refresh = async () => {
-      const sessions = await serverSDK()
-        .client.session.list({ directory: props.directory })
-        .then((x) => x.data ?? [])
-        .catch(() => [])
-      const active = sessions.filter((session) => session.time.archived === undefined)
-      setState({ sessions: active })
-    }
-
     onMount(() => {
       serverSDK()
-        .client.vcs.status({ directory: props.directory })
-        .then((x) => {
-          const files = x.data ?? []
-          const dirty = files.length > 0
-          setState({ status: "ready", dirty })
-          void refresh()
+        .client.session.list({ directory: props.directory })
+        .then((x) => x.data ?? [])
+        .then((sessions) => {
+          const active = sessions.filter((session) => session.time.archived === undefined)
+          setState({ sessions: active })
         })
-        .catch(() => {
-          setState({ status: "error", dirty: false })
-        })
+        .catch(() => {})
     })
 
     const handleReset = () => {
@@ -1710,17 +1669,8 @@ export default function LegacyLayout(props: ParentProps) {
       void resetWorkspace(props.root, props.directory)
     }
 
-    const archivedCount = () => state.sessions.length
-
-    const description = () => {
-      if (state.status === "loading") return language.t("workspace.status.checking")
-      if (state.status === "error") return language.t("workspace.status.error")
-      if (!state.dirty) return language.t("workspace.status.clean")
-      return language.t("workspace.status.dirty")
-    }
-
     const archivedLabel = () => {
-      const count = archivedCount()
+      const count = state.sessions.length
       if (count === 0) return language.t("workspace.reset.archived.none")
       if (count === 1) return language.t("workspace.reset.archived.one")
       return language.t("workspace.reset.archived.many", { count })
@@ -1734,14 +1684,14 @@ export default function LegacyLayout(props: ParentProps) {
               {language.t("workspace.reset.confirm", { name: name() })}
             </span>
             <span class="text-12-regular text-text-weak">
-              {description()} {archivedLabel()} {language.t("workspace.reset.note")}
+              {archivedLabel()} {language.t("workspace.reset.note")}
             </span>
           </div>
           <div class="flex justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
-            <Button variant="primary" size="large" disabled={state.status === "loading"} onClick={handleReset}>
+            <Button variant="primary" size="large" onClick={handleReset}>
               {language.t("workspace.reset.button")}
             </Button>
           </div>

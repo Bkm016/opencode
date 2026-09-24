@@ -8,9 +8,7 @@ import { FileSystemWatcher } from "./filesystem-watcher"
 import { InstallationEvent } from "./installation-event"
 import { Integration } from "./integration"
 import { LegacyEvent } from "./legacy-event"
-import { LspEvent } from "./lsp-event"
 import { McpEvent } from "./mcp-event"
-import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
 import { PermissionV1 } from "./permission-v1"
 import { Plugin } from "./plugin"
@@ -28,7 +26,6 @@ import { SessionStatusEvent } from "./session-status-event"
 import { SessionTodo } from "./session-todo"
 import { SessionV1 } from "./session-v1"
 import { TuiEvent } from "./tui-event"
-import { VcsEvent } from "./vcs-event"
 import { WorkspaceEvent } from "./workspace-event"
 import { WorktreeEvent } from "./worktree-event"
 
@@ -38,7 +35,6 @@ const sessionV1LiveDefinitions = SessionV1.Event.Definitions.filter((definition)
 const coreDefinitions = Event.inventory(...sessionV1DurableDefinitions, ...SessionEvent.Definitions)
 
 const foundationDefinitions = Event.inventory(
-  ...ModelsDev.Event.Definitions,
   ...Integration.Event.Definitions,
   ...Catalog.Event.Definitions,
   ...coreDefinitions,
@@ -69,7 +65,6 @@ export const Definitions = Event.inventory(
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...SessionGoal.Event.Definitions,
-  ...LspEvent.Definitions,
   ...PermissionV1.Event.Definitions,
   ...TuiEvent.Definitions,
   ...McpEvent.Definitions,
@@ -78,7 +73,6 @@ export const Definitions = Event.inventory(
   ...SessionStatusEvent.Definitions,
   ...QuestionV1.Event.Definitions,
   ...SessionCompactionEvent.Definitions,
-  ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
   ...ServerEvent.Definitions,

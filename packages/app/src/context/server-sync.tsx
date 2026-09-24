@@ -16,11 +16,9 @@ import { ServerSDK } from "./server-sdk"
 import {
   bootstrapDirectory,
   bootstrapGlobal,
-  clearProviderRev,
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
-  loadProvidersQuery,
   loadReferencesQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
@@ -35,7 +33,6 @@ import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
 import { createDirSyncContext } from "./directory-sync"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerConnection, useServer } from "./server"
@@ -51,7 +48,6 @@ type GlobalStore = {
   error?: InitError
   path: Path
   project: Project[]
-  provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
@@ -70,12 +66,6 @@ export const loadMcpResourcesQuery = (scope: ServerScope, directory: string, sdk
     placeholderData: {},
   })
 
-export const loadLspQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
-  queryOptions({
-    queryKey: [scope, directory, "lsp"] as const,
-    queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
-  })
-
 function makeQueryOptionsApi(
   scope: ServerScope,
   serverSDK: () => OpencodeClient,
@@ -84,14 +74,11 @@ function makeQueryOptionsApi(
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
     projects: () => loadProjectsQuery(scope, serverSDK()),
-    providers: (directory: PathKey | null) =>
-      loadProvidersQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     path: (directory: PathKey | null) =>
       loadPathQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     references: (directory: PathKey) => loadReferencesQuery(scope, directory, sdkFor(directory)),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, sdkFor(directory)),
     mcpResources: (directory: PathKey) => loadMcpResourcesQuery(scope, directory, sdkFor(directory)),
-    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
     sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
   }
 }
@@ -122,7 +109,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
 
   const configQuery = useQuery(() => queryOptionsApi.globalConfig())
-  const providerQuery = useQuery(() => queryOptionsApi.providers(null))
   const pathQuery = useQuery(() => queryOptionsApi.path(null))
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
@@ -145,11 +131,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       }
       if (pathQuery.isLoading) return EMPTY
       return pathQuery.data ?? EMPTY
-    },
-    get provider() {
-      const EMPTY = { all: new Map(), connected: [], default: {} }
-      if (providerQuery.isLoading) return EMPTY
-      return providerQuery.data ?? EMPTY
     },
     get config() {
       if (configQuery.isLoading) return {}
@@ -188,17 +169,24 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const bootstrap = useQuery(() => ({
     queryKey: [serverSDK.scope, "bootstrap"],
     queryFn: async () => {
-      await bootstrapGlobal({
-        serverSDK: serverSDK.client,
-        scope: serverSDK.scope,
-        requestFailedTitle: language.t("common.requestFailed"),
-        translate: language.t,
-        formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
-        setGlobalStore: setBootStore,
-        queryClient,
-      })
-      bootedAt = Date.now()
-      return bootedAt
+      // 标记全局 bootstrap 进行中 — 让 server.connected 监听器在启动阶段
+      // 跳过二次全量刷新，否则会重复触发每个目录的 bootstrapInstance。
+      bootingRoot = true
+      try {
+        await bootstrapGlobal({
+          serverSDK: serverSDK.client,
+          scope: serverSDK.scope,
+          requestFailedTitle: language.t("common.requestFailed"),
+          translate: language.t,
+          formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
+          setGlobalStore: setBootStore,
+          queryClient,
+        })
+        bootedAt = Date.now()
+        return bootedAt
+      } finally {
+        bootingRoot = false
+      }
     },
   }))
 
@@ -227,8 +215,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     persist: persisted,
     isBooting: (directory) => booting.has(directory),
     isLoadingSessions: (directory) => sessionLoads.has(directory),
-    onBootstrap: (directory) => {
-      void bootstrapInstance(directory)
+    onBootstrap: (directory, onReady) => {
+      void bootstrapInstance(directory, onReady)
     },
     onMcp: (directory, setStore) => {
       void retry(() =>
@@ -248,13 +236,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       queue.clear(key)
       sessionsLoaded.delete(key)
       sdkCache.delete(key)
-      clearProviderRev(serverSDK.scope, key)
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
-    global: {
-      provider: globalStore.provider,
-    },
+    global: {},
   })
 
   async function loadSessions(directory: string) {
@@ -317,35 +302,74 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return promise
   }
 
-  async function bootstrapInstance(directory: string) {
+  // 首屏会同时拉起所有侧边栏项目的 instance bootstrap；并发太高会让每个请求都变慢，
+  // 且服务端 InstanceStore.load（git discover + config + LSP 等）会互相抢占。
+  // 限流到 3 个并发保证首屏可见性，剩余的排进等待队列。
+  const BOOTSTRAP_CONCURRENCY = 3
+  const waiting: Array<() => void> = []
+  let inFlight = 0
+
+  function acquireSlot() {
+    if (inFlight < BOOTSTRAP_CONCURRENCY) {
+      inFlight += 1
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => {
+      waiting.push(resolve)
+    })
+  }
+
+  function releaseSlot() {
+    const next = waiting.shift()
+    if (next) {
+      next()
+      return
+    }
+    inFlight -= 1
+  }
+
+  async function bootstrapInstance(directory: string, onReady?: () => void) {
     const key = directoryKey(directory)
     if (!key) return
     const pending = booting.get(key)
-    if (pending) return pending
+    if (pending) {
+      // 已有进行中的 bootstrap：把 onReady 追加到当前 promise 尾部，
+      // 这样 activate() 会在拿到槽位（即首个 bootstrap 已 occupy socket）后才触发。
+      if (onReady) void pending.then(onReady)
+      return pending
+    }
 
     children.pin(key)
-    const promise = Promise.resolve().then(async () => {
-      const child = children.ensureChild(directory)
-      const sdk = sdkFor(directory)
-      await bootstrapDirectory({
-        directory,
-        scope: serverSDK.scope,
-        mcp: children.mcp(key),
-        global: {
-          config: globalStore.config,
-          path: globalStore.path,
-          project: globalStore.project,
-          provider: globalStore.provider,
-        },
-        sdk,
-        store: child[0],
-        setStore: child[1],
-        loadSessions,
-        translate: language.t,
-        queryClient,
-        session,
+    const started = Date.now()
+    const promise = acquireSlot()
+      .then(async () => {
+        const waited = Date.now() - started
+        if (waited > 50) console.log(`[bootstrap] ${key} waited ${waited}ms for slot`)
+        // 拿到槽位后才允许 provider/reference observer 启动 — 不然它们会
+        // 在 sessions/critical 之前先把 Chromium socket pool 占满。
+        onReady?.()
+        const child = children.ensureChild(directory)
+        const sdk = sdkFor(directory)
+        await bootstrapDirectory({
+          directory,
+          scope: serverSDK.scope,
+          mcp: children.mcp(key),
+          global: {
+            config: globalStore.config,
+            path: globalStore.path,
+            project: globalStore.project,
+          },
+          sdk,
+          store: child[0],
+          setStore: child[1],
+          loadSessions,
+          translate: language.t,
+          queryClient,
+          session,
+        })
+        console.log(`[bootstrap] ${key} done in ${Date.now() - started}ms`)
       })
-    })
+      .finally(releaseSlot)
 
     booting.set(key, promise)
     void promise.finally(() => {
@@ -378,7 +402,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         setGlobalProject: setProjects,
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
+        // 启动阶段（global bootstrap 或任意 instance bootstrap 还在跑）不重复
+        // 触发全量刷新 — 启动流程本身会拉取这些数据，重复触发只会浪费 socket。
         if (recent) return
+        if (booting.size > 0) return
         for (const directory of Object.keys(children.children)) {
           if (!children.active(directory)) continue
           queue.push(directory)
@@ -400,10 +427,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         if (children.active(directory)) queue.push(directory)
       },
       sessionContent: false,
-      loadLsp: () => {
-        if (!children.active(key)) return
-        void queryClient.fetchQuery(queryOptionsApi.lsp(key))
-      },
       loadReferences: () => {
         if (!children.active(key)) return
         void queryClient.fetchQuery(queryOptionsApi.references(key))
@@ -457,12 +480,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         ...variables,
       })
       bootstrap.refetch()
-      // Invalidate all provider queries so newly configured custom providers
-      // appear immediately in the available provider list across all directories.
-      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
-      queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
-      })
+      // provider 列表完全由 config.provider 派生，invalidate config 就够
+      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, "config"] })
     },
   }))
 

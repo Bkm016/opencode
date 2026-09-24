@@ -17,6 +17,10 @@ export namespace Glob {
       dot: options.dot,
       follow: options.symlink ?? false,
       nodir: options.include !== "all",
+      // Config/plugin scans run inside `.opencode` dirs that often carry their own
+      // `node_modules` and `tmp` (98k+ files on Windows). Without an ignore, glob
+      // walks the entire tree even when the pattern only matches `agent/*.md`.
+      ignore: ["**/node_modules/**", "**/tmp/**"],
     }
   }
 

@@ -10,9 +10,10 @@ import { HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import z from "zod"
 import { LLM } from "../../src/session/llm"
 import { LLMClient, RequestExecutor } from "@opencode-ai/llm/route"
+import { ProviderResponseDump } from "@opencode-ai/llm"
 import { Provider } from "@/provider/provider"
+import { Config } from "@/config/config"
 import { ProviderTransform } from "@/provider/transform"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 
 import { testEffect } from "../lib/effect"
 import type { Agent } from "../../src/agent/agent"
@@ -30,7 +31,7 @@ import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
 
 type ConfigModel = NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]["models"]>[string]
 
-const openAIConfig = (model: ModelsDev.Provider["models"][string], baseURL: string): Partial<ConfigV1.Info> => {
+const openAIConfig = (model: Record<string, any> & { id: string }, baseURL: string): Partial<ConfigV1.Info> => {
   const { experimental: _experimental, ...configModel } = model
   return {
     enabled_providers: ["openai"],
@@ -52,7 +53,7 @@ const openAIConfig = (model: ModelsDev.Provider["models"][string], baseURL: stri
   }
 }
 
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([LLM.node, Provider.node])))
+const it = testEffect(AppNodeBuilder.build(LayerNode.group([LLM.node, Provider.node, Config.node])))
 
 // LLM.stream returns a Stream, not an Effect, so we can't use the serviceUse proxy.
 const drain = (input: LLM.StreamInput) => LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runDrain))
@@ -700,7 +701,7 @@ function createChatStream(text: string) {
 
 const MODELS_FIXTURE = JSON.parse(
   await Bun.file(path.join(import.meta.dir, "../tool/fixtures/models-api.json")).text(),
-) as Record<string, ModelsDev.Provider>
+) as Record<string, Record<string, any> & { models: Record<string, any> }>
 
 function loadFixture(providerID: string, modelID: string) {
   const provider = MODELS_FIXTURE[providerID]
@@ -710,7 +711,7 @@ function loadFixture(providerID: string, modelID: string) {
   return { provider, model }
 }
 
-function configModel(model: ModelsDev.Model) {
+function configModel(model: Record<string, any> & { id: string }) {
   return {
     id: model.id,
     name: model.name,
@@ -1036,6 +1037,91 @@ describe("session.llm.stream", () => {
       }),
     },
   )
+
+  for (const terminal of ["response.completed", "response.incomplete", "response.failed"] as const) {
+    it.instance(
+      `exports raw ${terminal} and receive times alongside AI SDK events`,
+      () =>
+        Effect.gen(function* () {
+          const model = loadFixture("openai", "gpt-5.2").model
+          const final = {
+            type: terminal,
+            sequence_number: 4,
+            response: {
+              id: "resp-dump",
+              status: terminal.slice("response.".length),
+              incomplete_details: null,
+              error: terminal === "response.failed" ? { code: "server_error", message: "upstream failed" } : null,
+              usage: { input_tokens: 1, output_tokens: 1, input_tokens_details: null, output_tokens_details: null },
+              service_tier: null,
+            },
+          }
+          const request = waitRequest(
+            "/responses",
+            createEventResponse(
+              [
+                {
+                  type: "response.created",
+                  response: { id: "resp-dump", created_at: 1, model: model.id, service_tier: null },
+                },
+                {
+                  type: "response.output_item.added",
+                  output_index: 0,
+                  item: { type: "message", id: "item-dump", role: "assistant", content: [] },
+                },
+                { type: "response.output_text.delta", item_id: "item-dump", delta: "Next step", logprobs: null },
+                final,
+              ],
+              true,
+            ),
+          )
+          const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+          const sessionID = SessionID.make(`session-dump-${terminal}`)
+          const started = Date.now()
+          const exit = yield* drain({
+            user: {
+              id: MessageID.make(`msg-dump-${terminal}`),
+              sessionID,
+              role: "user",
+              time: { created: started },
+              agent: "test",
+              model: { providerID: ProviderV2.ID.openai, modelID: resolved.id },
+            },
+            sessionID,
+            model: resolved,
+            agent: { name: "test", mode: "primary", options: {}, permission: [] },
+            system: [],
+            messages: [{ role: "user", content: "Continue" }],
+            tools: {},
+          }).pipe(Effect.exit)
+          if (Exit.isFailure(exit) && terminal !== "response.failed") return yield* Effect.failCause(exit.cause)
+          expect(Exit.isSuccess(exit)).toBe(terminal !== "response.failed")
+          const snapshot = ProviderResponseDump.get(sessionID)
+          expect(snapshot?.runtime).toBe("ai-sdk")
+          if (!snapshot) throw new Error("response snapshot missing")
+          yield* Effect.promise(() => request)
+          const exported = JSON.parse(JSON.stringify(snapshot.body)) as Array<{
+            type: string
+            receivedAt: number
+            rawValue?: { type: string }
+            finishReason?: { unified: string }
+          }>
+          expect(exported.find((part) => part.type === "raw" && part.rawValue?.type === terminal)?.rawValue).toEqual(
+            final,
+          )
+          expect(exported.some((part) => part.type === "text-delta")).toBe(true)
+          if (terminal !== "response.failed") {
+            // 无原因 incomplete 目前也被 SDK 映射为 stop；导出必须保留原始类型，而非改写执行行为。
+            expect(exported.find((part) => part.type === "finish")?.finishReason?.unified).toBe("stop")
+          }
+          for (const part of exported) {
+            expect(part.receivedAt).toBeGreaterThanOrEqual(started)
+            expect(part.receivedAt).toBeLessThanOrEqual(snapshot.at)
+          }
+        }),
+      { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+    )
+  }
 
   it.instance(
     "sends responses API payload for OpenAI models",

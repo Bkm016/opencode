@@ -17,7 +17,6 @@ if (process.env.OPENCODE_FORCE_NODE_BUILD !== "1" && isFreshBuild()) {
   process.exit(0)
 }
 
-const generated = await import("./generate.ts")
 const sourcemap = process.env.OPENCODE_NODE_SOURCEMAP === "1" ? "linked" : "none"
 
 await Bun.build({
@@ -34,7 +33,6 @@ await Bun.build({
   // process and resolves it from the sidecar node_modules at runtime.
   external: ["jsonc-parser", "@lydell/node-pty", "playwright-core"],
   define: {
-    OPENCODE_MODELS_DEV: generated.modelsData,
     OPENCODE_CHANNEL: `'${Script.channel}'`,
   },
   files: {

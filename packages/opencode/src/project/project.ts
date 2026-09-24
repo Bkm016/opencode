@@ -211,9 +211,12 @@ const layer = Layer.effect(
     })
 
     const fromDirectory = Effect.fn("Project.fromDirectory")(function* (directory: string) {
+      const started = Date.now()
+      const elapsed = () => Date.now() - started
       yield* Effect.logInfo("fromDirectory", { directory })
 
       const data = yield* projectV2.resolve(AbsolutePath.make(directory))
+      yield* Effect.logInfo("project resolve done", { directory, ms: elapsed() })
       const worktree = data.id === ProjectV2.ID.make("global") && !data.vcs ? "/" : data.directory
 
       // Phase 2: upsert
@@ -306,6 +309,7 @@ const layer = Layer.effect(
       if (projectID !== ProjectV2.ID.global && data.vcs?.type === "git") {
         yield* projectV2.commit({ store: data.vcs.store, id: data.id })
       }
+      yield* Effect.logInfo("fromDirectory done", { directory, ms: elapsed() })
       return { project: result, sandbox: data.vcs ? data.directory : worktree }
     })
 

@@ -2,7 +2,6 @@ import type {
   Agent,
   Command,
   Config,
-  LspStatus,
   McpResource,
   McpStatus,
   Message,
@@ -16,7 +15,6 @@ import type {
   SnapshotFileDiff,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 
@@ -39,8 +37,6 @@ export type State = {
   project: string
   projectMeta: ProjectMeta | undefined
   icon: string | undefined
-  provider_ready: boolean
-  provider: NormalizedProviderListResponse
   config: Config
   path: Path
   session: Session[]
@@ -67,8 +63,6 @@ export type State = {
   mcp_resource: {
     [key: string]: McpResource
   }
-  lsp_ready: boolean
-  lsp: LspStatus[]
   message: {
     [sessionID: string]: Message[]
   }

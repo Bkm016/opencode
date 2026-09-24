@@ -3,7 +3,6 @@ import * as path from "path"
 import { Effect } from "effect"
 import * as Tool from "./tool"
 import { InputAlias } from "./input-aliases"
-import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch } from "diff"
 import DESCRIPTION from "./write.txt"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -17,8 +16,6 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
 
-const MAX_PROJECT_DIAGNOSTICS_FILES = 5
-
 export const Parameters = Schema.Struct({
   content: Schema.String.annotate({ description: "The content to write to the file" }),
   filePath: Schema.String.annotate({
@@ -29,7 +26,6 @@ export const Parameters = Schema.Struct({
 export const WriteTool = Tool.define(
   "write",
   Effect.gen(function* () {
-    const lsp = yield* LSP.Service
     const fs = yield* FSUtil.Service
     const events = yield* EventV2Bridge.Service
     const format = yield* Format.Service
@@ -73,28 +69,12 @@ export const WriteTool = Tool.define(
             event: exists ? "change" : "add",
           })
 
-          let output = "Wrote file successfully."
-          yield* lsp.touchFile(filepath, "document")
-          const diagnostics = yield* lsp.diagnostics()
-          const normalizedFilepath = FSUtil.normalizePath(filepath)
-          let projectDiagnosticsCount = 0
-          for (const [file, issues] of Object.entries(diagnostics)) {
-            const current = file === normalizedFilepath
-            if (!current && projectDiagnosticsCount >= MAX_PROJECT_DIAGNOSTICS_FILES) continue
-            const block = LSP.Diagnostic.report(current ? filepath : file, issues)
-            if (!block) continue
-            if (current) {
-              output += `\n\nLSP errors detected in this file, please fix:\n${block}`
-              continue
-            }
-            projectDiagnosticsCount++
-            output += `\n\nLSP errors detected in other files:\n${block}`
-          }
+          const output = "Wrote file successfully."
 
           return {
             title: path.relative(instance.worktree, filepath),
             metadata: {
-              diagnostics,
+              diagnostics: {},
               filepath,
               exists: exists,
             },

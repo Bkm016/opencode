@@ -10,7 +10,6 @@ const dir = path.resolve(__dirname, "..")
 
 process.chdir(dir)
 
-const generated = await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
@@ -197,8 +196,7 @@ for (const item of targets) {
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       OPENCODE_VERSION: `'${Script.version}'`,
-      OPENCODE_MODELS_DEV: generated.modelsData,
-      OPENCODE_CHANNEL: `'${Script.channel}'`,
+        OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
     },
   })

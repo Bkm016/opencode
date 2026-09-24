@@ -283,7 +283,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const mcpNames = createMemo(() => Object.keys(sync().data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
   const mcpStatus = (name: string) => sync().data.mcp?.[name]?.status
   const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
-  const lspItems = createMemo(() => sync().data.lsp ?? [])
   const plugins = createMemo(() =>
     (sync().data.config.plugin ?? []).map((item) => (typeof item === "string" ? item : item[0])),
   )
@@ -304,7 +303,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
             label={language.t("status.popover.tab.servers")}
           />
           <TrayTab value="mcp" count={mcpConnected()} label={language.t("status.popover.tab.mcp")} />
-          <TrayTab value="lsp" count={lspItems().length} label={language.t("status.popover.tab.lsp")} />
           <TrayTab value="plugins" count={plugins().length} label={language.t("status.popover.tab.plugins")} />
         </TrayHeader>
 
@@ -359,27 +357,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                     </button>
                   )
                 }}
-              </For>
-            </div>
-          </Show>
-        </Tabs.Content>
-
-        <Tabs.Content value="lsp">
-          <Show when={lspItems().length > 0} fallback={<div class={trayEmpty}>{language.t("dialog.lsp.empty")}</div>}>
-            <div class="flex flex-col gap-px">
-              <For each={lspItems()}>
-                {(item) => (
-                  <div class={trayRow}>
-                    <div
-                      classList={{
-                        "size-1.5 rounded-full shrink-0": true,
-                        "bg-icon-success-base": item.status === "connected",
-                        "bg-icon-critical-base": item.status === "error",
-                      }}
-                    />
-                    <span class="truncate">{item.name || item.id}</span>
-                  </div>
-                )}
               </For>
             </div>
           </Show>

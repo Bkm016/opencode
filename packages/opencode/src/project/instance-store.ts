@@ -25,6 +25,11 @@ export interface LoadInput {
 export interface Interface {
   readonly listLoaded: () => Effect.Effect<InstanceContext[]>
   readonly load: (input: LoadInput) => Effect.Effect<InstanceContext>
+  /**
+   * 只等到 InstanceContext 可用（project 已解析），不等待 bootstrap.run 完成。
+   * 供不依赖 config/plugin 就绪的只读端点使用；需要完整 bootstrap 的调用方仍用 load。
+   */
+  readonly peek: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
   readonly disposeDirectory: (directory: string) => Effect.Effect<void>
@@ -37,6 +42,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/In
 export const use = serviceUse(Service)
 
 interface Entry {
+  // context 在 project.fromDirectory 完成后就绪；deferred 还要再等 bootstrap.run。
+  readonly context: Deferred.Deferred<InstanceContext>
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
@@ -180,8 +187,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       hotReload.set(ctx.directory, state)
     }
 
-    const boot = (input: LoadInput & { directory: string }) =>
+    const boot = (input: LoadInput & { directory: string }, entry: Entry) =>
       Effect.gen(function* () {
+        const started = Date.now()
+        const elapsed = () => Date.now() - started
         const ctx: InstanceContext =
           input.project && input.worktree
             ? {
@@ -196,7 +205,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
                   project: result.project,
                 })),
               )
+        yield* Effect.logInfo("instance project resolved", { directory: input.directory, ms: elapsed() })
+        yield* Deferred.succeed(entry.context, ctx)
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))
+        yield* Effect.logInfo("instance ready", { directory: input.directory, ms: elapsed() })
         return ctx
       }).pipe(Effect.withSpan("InstanceStore.boot"))
 
@@ -210,13 +222,17 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
     const completeLoad = (directory: string, input: LoadInput, entry: Entry) =>
       Effect.gen(function* () {
-        const exit = yield* Effect.exit(boot({ ...input, directory }))
+        // Pause hot reload while booting so a file write during bootstrap cannot
+        // trigger a second reload that races the first boot.
+        pauseHotReload(directory)
+        const exit = yield* Effect.exit(boot({ ...input, directory }, entry))
         if (Exit.isFailure(exit)) {
           yield* removeEntry(directory, entry)
         } else {
           // Attach watchers only after a successful boot so config-time writes cannot self-trigger.
           startHotReload(exit.value)
         }
+        yield* Deferred.done(entry.context, exit).pipe(Effect.asVoid)
         yield* Deferred.done(entry.deferred, exit).pipe(Effect.asVoid)
       })
 
@@ -250,23 +266,38 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       return true
     })
 
-    const load = (input: LoadInput): Effect.Effect<InstanceContext> => {
+    const acquire = (input: LoadInput, stage: "context" | "ready"): Effect.Effect<InstanceContext> => {
       const directory = FSUtil.resolve(input.directory)
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const existing = cache.get(directory)
-          if (existing) return yield* restore(Deferred.await(existing.deferred))
+          if (existing) {
+            // Extend the watcher ignore window while an acquire is in flight so a
+            // concurrent file change cannot trigger a mid-boot reload.
+            const state = hotReload.get(directory)
+            if (state) state.ignoreUntil = Date.now() + 5000
+            const target = stage === "context" ? existing.context : existing.deferred
+            return yield* restore(Deferred.await(target))
+          }
 
-          const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
+          const entry: Entry = {
+            context: Deferred.makeUnsafe<InstanceContext>(),
+            deferred: Deferred.makeUnsafe<InstanceContext>(),
+          }
           cache.set(directory, entry)
           yield* Effect.gen(function* () {
             yield* Effect.logInfo("creating instance", { directory: directory })
             yield* completeLoad(directory, input, entry)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
-          return yield* restore(Deferred.await(entry.deferred))
+          const target = stage === "context" ? entry.context : entry.deferred
+          return yield* restore(Deferred.await(target))
         }),
-      ).pipe(Effect.withSpan("InstanceStore.load"))
+      ).pipe(Effect.withSpan(`InstanceStore.${stage === "context" ? "peek" : "load"}`))
     }
+
+    const load = (input: LoadInput): Effect.Effect<InstanceContext> => acquire(input, "ready")
+
+    const peek = (input: LoadInput): Effect.Effect<InstanceContext> => acquire(input, "context")
 
     const listLoaded = Effect.fn("InstanceStore.listLoaded")(function* () {
       return yield* Effect.forEach([...cache.values()], (entry) => Deferred.await(entry.deferred))
@@ -279,7 +310,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
         return yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
             const previous = cache.get(directory)
-            const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
+            const entry: Entry = {
+              context: Deferred.makeUnsafe<InstanceContext>(),
+              deferred: Deferred.makeUnsafe<InstanceContext>(),
+            }
             cache.set(directory, entry)
             yield* Effect.gen(function* () {
               yield* Effect.logInfo("reloading instance", { directory: directory })
@@ -353,6 +387,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     return Service.of({
       listLoaded,
       load,
+      peek,
       reload,
       dispose,
       disposeDirectory,

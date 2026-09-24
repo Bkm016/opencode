@@ -7,7 +7,6 @@ import * as path from "path"
 import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
 import { InputAlias } from "./input-aliases"
-import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffArrays, diffLines } from "diff"
 import DESCRIPTION from "./edit.txt"
 import { FileSystem } from "@opencode-ai/core/filesystem"
@@ -15,7 +14,6 @@ import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
-import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Bom from "@/util/bom"
@@ -60,7 +58,6 @@ export const Parameters = Schema.Struct({
 export const EditTool = Tool.define(
   "edit",
   Effect.gen(function* () {
-    const lsp = yield* LSP.Service
     const afs = yield* FSUtil.Service
     const format = yield* Format.Service
     const events = yield* EventV2Bridge.Service
@@ -181,7 +178,7 @@ export const EditTool = Tool.define(
             if (change.added) additions += change.count || 0
             if (change.removed) deletions += change.count || 0
           }
-          const filediff: Snapshot.FileDiff = {
+          const filediff: import("@opencode-ai/schema/file-diff").FileDiff.Info = {
             file: filePath,
             patch: diff,
             additions,
@@ -196,16 +193,11 @@ export const EditTool = Tool.define(
             },
           })
 
-          let output = "Edit applied successfully."
-          yield* lsp.touchFile(filePath, "document")
-          const diagnostics = yield* lsp.diagnostics()
-          const normalizedFilePath = FSUtil.normalizePath(filePath)
-          const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
-          if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
+          const output = "Edit applied successfully."
 
           return {
             metadata: {
-              diagnostics,
+              diagnostics: {},
               diff,
               filediff,
             },

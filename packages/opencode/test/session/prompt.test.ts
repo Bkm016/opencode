@@ -14,7 +14,6 @@ import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
-import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
@@ -45,7 +44,6 @@ import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "@opencode-ai/core/shell"
-import { Snapshot } from "../../src/snapshot"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -139,26 +137,6 @@ function makeMcp(instructions: MCP.ServerInstructions[] = []) {
   )
 }
 
-const lsp = Layer.succeed(
-  LSP.Service,
-  LSP.Service.of({
-    init: () => Effect.void,
-    status: () => Effect.succeed([]),
-    hasClients: () => Effect.succeed(false),
-    touchFile: () => Effect.void,
-    diagnostics: () => Effect.succeed({}),
-    hover: () => Effect.succeed(undefined),
-    definition: () => Effect.succeed([]),
-    references: () => Effect.succeed([]),
-    implementation: () => Effect.succeed([]),
-    documentSymbol: () => Effect.succeed([]),
-    workspaceSymbol: () => Effect.succeed([]),
-    prepareCallHierarchy: () => Effect.succeed([]),
-    incomingCalls: () => Effect.succeed([]),
-    outgoingCalls: () => Effect.succeed([]),
-  }),
-)
-
 const processorCreateStarted: Array<() => void> = []
 const blockingProcessor = Layer.succeed(
   SessionProcessor.Service,
@@ -177,7 +155,6 @@ const promptRoot = LayerNode.group([
   Session.node,
   SessionProjector.node,
   MessageV2.node,
-  Snapshot.node,
   LLM.node,
   Env.node,
   AgentSvc.node,
@@ -186,7 +163,6 @@ const promptRoot = LayerNode.group([
   Plugin.node,
   Config.node,
   ProviderSvc.node,
-  LSP.node,
   MCP.node,
   FSUtil.node,
   BackgroundJob.node,
@@ -215,7 +191,6 @@ const promptRoot = LayerNode.group([
 function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
   const replacements = [
     [SessionSummary.node, summary],
-    [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
     [InstanceStore.bootstrapNode, noopBootstrap],
@@ -236,7 +211,6 @@ function makeHttp(input?: {
   )
   const replacements = [
     [SessionSummary.node, summary],
-    [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
     [InstanceStore.bootstrapNode, noopBootstrap],
@@ -1494,6 +1468,44 @@ it.instance("loop continues when finish is tool-calls", () =>
       expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
       expect(result.info.finish).toBe("stop")
     }
+  }),
+)
+
+it.instance("loop accepts an empty stop after consuming tool results and waits for new input", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Empty final after tool",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* writeText(path.join(dir, "probe.txt"), "probe")
+    yield* llm.tool("glob", { pattern: "probe.txt" })
+    yield* llm.push(reply().stop())
+    yield* llm.text("new user answer")
+
+    const result = yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      parts: [{ type: "text", text: "Find probe.txt" }],
+    })
+    expect(result.info).toMatchObject({ role: "assistant", finish: "stop" })
+    if (result.info.role !== "assistant") throw new Error("expected assistant")
+    expect(result.info.error).toBeUndefined()
+    expect(yield* llm.calls).toBe(2)
+    const messages = yield* sessions.messages({ sessionID: session.id })
+    expect(messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")).toMatchObject([
+      { tool: "glob", state: { status: "completed" } },
+    ])
+
+    const next = yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      parts: [{ type: "text", text: "Continue with my next request" }],
+    })
+    expect(next.parts.some((part) => part.type === "text" && part.text === "new user answer")).toBe(true)
+    expect(yield* llm.calls).toBe(3)
   }),
 )
 

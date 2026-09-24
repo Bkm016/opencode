@@ -29,7 +29,6 @@ import { NotFoundError } from "@/storage/storage"
 import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
-import { Vcs } from "@/project/vcs"
 import { InstanceStore } from "@/project/instance-store"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
 import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
@@ -123,7 +122,6 @@ type SessionWarpError =
   | WorkspaceNotFoundError
   | SessionEventsNotFoundError
   | SessionWarpHttpError
-  | Vcs.PatchApplyError
   | HttpClientError.HttpClientError
 type WaitForSyncError = SyncTimeoutError | SyncAbortedError
 type SyncLoopError = SyncHttpError | HttpClientError.HttpClientError
@@ -158,7 +156,6 @@ const layer = Layer.effect(
     const prompt = yield* SessionPrompt.Service
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
-    const vcs = yield* Vcs.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
     const { db } = yield* Database.Service
@@ -590,35 +587,6 @@ const layer = Layer.effect(
           }
         }
 
-        const sourcePatch =
-          input.copyChanges && current?.workspaceID
-            ? yield* runInWorkspace({
-                workspaceID: current?.workspaceID ?? undefined,
-                local: () => vcs.diffRaw(),
-                remote: ({ target }) =>
-                  HttpClientRequest.get(route(target.url, "/vcs/diff/raw"), {
-                    headers: new Headers(target.headers),
-                  }),
-                fallback: "",
-                response: "text",
-              }).pipe(Effect.provide(AppNodeBuilderV1.build(InstanceStore.node)))
-            : ""
-
-        if (sourcePatch) {
-          // Attempt to apply the file changes to the new workspace.
-          // We intentionally do first so if it fails we don't warp
-          // the session.
-          yield* runInWorkspace({
-            workspaceID: input.workspaceID ?? undefined,
-            local: () => vcs.apply({ patch: sourcePatch }),
-            remote: ({ target }) =>
-              HttpClientRequest.post(route(target.url, "/vcs/apply"), {
-                headers: new Headers(target.headers),
-                body: HttpBody.jsonUnsafe({ patch: sourcePatch }),
-              }),
-            fallback: { applied: false },
-          }).pipe(Effect.provide(AppNodeBuilderV1.build(InstanceStore.node)))
-        }
 
         if (input.workspaceID === null) {
           yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: undefined })
@@ -954,7 +922,6 @@ export const node = LayerNode.make({
     SessionPrompt.node,
     httpClient,
     EventV2Bridge.node,
-    Vcs.node,
     RuntimeFlags.node,
     FSUtil.node,
     Database.node,

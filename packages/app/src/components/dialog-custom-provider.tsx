@@ -119,7 +119,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
       form,
       t: language.t,
       disabledProviders: serverSync().data.config.disabled_providers ?? [],
-      existingProviderIDs: new Set(serverSync().data.provider.all.keys()),
+      existingProviderIDs: new Set(Object.keys(serverSync().data.config.provider ?? {})),
     })
     batch(() => {
       setForm("err", output.err)

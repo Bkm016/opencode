@@ -10,7 +10,6 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -1167,130 +1166,6 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pr
 
 export const use = serviceUse(Service)
 
-function cost(c: ModelsDev.Model["cost"]): Model["cost"] {
-  const result: Model["cost"] = {
-    input: c?.input ?? 0,
-    output: c?.output ?? 0,
-    cache: {
-      read: c?.cache_read ?? 0,
-      write: c?.cache_write ?? 0,
-    },
-  }
-  if (c?.tiers) {
-    result.tiers = c.tiers.map((item) => ({
-      input: item.input,
-      output: item.output,
-      cache: {
-        read: item.cache_read ?? 0,
-        write: item.cache_write ?? 0,
-      },
-      tier: item.tier,
-    }))
-  }
-  if (c?.context_over_200k) {
-    result.experimentalOver200K = {
-      cache: {
-        read: c.context_over_200k.cache_read ?? 0,
-        write: c.context_over_200k.cache_write ?? 0,
-      },
-      input: c.context_over_200k.input,
-      output: c.context_over_200k.output,
-    }
-  }
-  return result
-}
-
-function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
-  const base: Model = {
-    id: ModelV2.ID.make(model.id),
-    providerID: ProviderV2.ID.make(provider.id),
-    name: model.name,
-    family: model.family,
-    api: {
-      id: model.id,
-      url: model.provider?.api ?? provider.api ?? "",
-      npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
-    },
-    status: model.status ?? "active",
-    headers: {},
-    options: {},
-    cost: cost(model.cost),
-    limit: {
-      context: model.limit.context,
-      input: model.limit.input,
-      output: model.limit.output,
-    },
-    capabilities: {
-      temperature: model.temperature ?? false,
-      reasoning: model.reasoning ?? false,
-      attachment: model.attachment ?? false,
-      toolcall: model.tool_call ?? true,
-      input: {
-        text: model.modalities?.input?.includes("text") ?? false,
-        audio: model.modalities?.input?.includes("audio") ?? false,
-        image: model.modalities?.input?.includes("image") ?? false,
-        video: model.modalities?.input?.includes("video") ?? false,
-        pdf: model.modalities?.input?.includes("pdf") ?? false,
-      },
-      output: {
-        text: model.modalities?.output?.includes("text") ?? false,
-        audio: model.modalities?.output?.includes("audio") ?? false,
-        image: model.modalities?.output?.includes("image") ?? false,
-        video: model.modalities?.output?.includes("video") ?? false,
-        pdf: model.modalities?.output?.includes("pdf") ?? false,
-      },
-      interleaved: model.interleaved ?? false,
-    },
-    release_date: model.release_date ?? "",
-    variants: {},
-  }
-
-  const variants = ProviderTransform.reasoningVariants(model, base) ?? ProviderTransform.variants(base)
-
-  return {
-    ...base,
-    variants: mapValues(variants, (v) => v),
-  }
-}
-
-export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
-  const models: Record<string, Model> = {}
-  for (const [key, model] of Object.entries(provider.models)) {
-    models[key] = fromModelsDevModel(provider, model)
-    for (const [mode, opts] of Object.entries(model.experimental?.modes ?? {})) {
-      const id = `${model.id}-${mode}`
-      const base = fromModelsDevModel(provider, model)
-      models[id] = {
-        ...base,
-        id: ModelV2.ID.make(id),
-        name: `${model.name} ${mode[0].toUpperCase()}${mode.slice(1)}`,
-        cost: opts.cost ? mergeDeep(base.cost, cost(opts.cost)) : base.cost,
-        options: modeOptions(base, opts.provider?.body),
-        headers: opts.provider?.headers ?? base.headers,
-      }
-    }
-  }
-  return {
-    id: ProviderV2.ID.make(provider.id),
-    source: "custom",
-    name: provider.name,
-    env: [...(provider.env ?? [])],
-    options: {},
-    models,
-  }
-}
-
-function modeOptions(model: Model, body: Record<string, unknown> | undefined) {
-  if (!body) return model.options
-  const options = Object.fromEntries(
-    Object.entries(body).map(([key, value]) => [key.replace(/_([a-z])/g, (_, char) => char.toUpperCase()), value]),
-  )
-  const reasoning = body.reasoning
-  if (model.api.npm !== "@ai-sdk/openai" || !isRecord(reasoning) || typeof reasoning.mode !== "string") return options
-  const { reasoning: _, ...rest } = options
-  return { ...rest, reasoningMode: reasoning.mode }
-}
-
 function modelSuggestions(provider: Info | undefined, modelID: ModelV2.ID, enableExperimentalModels: boolean) {
   const available = provider
     ? Object.keys(provider.models).filter((id) => {
@@ -1328,16 +1203,15 @@ const layer = Layer.effect(
     const auth = yield* Auth.Service
     const env = yield* Env.Service
     const plugin = yield* Plugin.Service
-    const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
 
     const state = yield* InstanceState.make<State>(() =>
       Effect.gen(function* () {
         const bridge = yield* EffectBridge.make()
         const cfg = yield* config.get()
-        const modelsDev = yield* modelsDevSvc.get()
-        const catalog = mapValues(modelsDev, fromModelsDevProvider)
-        const database = mapValues(catalog, toPublicInfo)
+        // models.dev catalog 已彻底移除：provider 信息完全来自 opencode.json 的
+        // `provider` 字段 + env/auth 凭据。不再维护几百个厂商的全量元数据。
+        const database: Record<string, Info> = {}
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1351,11 +1225,16 @@ const layer = Layer.effect(
         const discoveryLoaders: {
           [providerID: string]: CustomDiscoverModels
         } = {}
+        // custom provider loaders 每个都会调 dep.auth/config/env —— 提前一次性缓存，
+        // 避免 ~25 个 loader 重复读盘 + JSON 解析
+        const cachedConfig = yield* Effect.cached(config.get())
+        const cachedEnvAll = yield* Effect.cached(env.all())
+        const cachedAuthAll = yield* Effect.cached(auth.all().pipe(Effect.orDie))
         const dep = {
-          auth: (id: string) => auth.get(id).pipe(Effect.orDie),
-          config: () => config.get(),
-          env: () => env.all(),
-          get: (key: string) => env.get(key),
+          auth: (id: string) => Effect.map(cachedAuthAll, (all) => all[id]),
+          config: () => cachedConfig,
+          env: () => cachedEnvAll,
+          get: (key: string) => Effect.map(cachedEnvAll, (all) => all[key]),
         }
 
         function mergeProvider(providerID: ProviderV2.ID, provider: Partial<Info>) {
@@ -1431,7 +1310,6 @@ const layer = Layer.effect(
               model.provider?.npm ??
               provider.npm ??
               existingModel?.api.npm ??
-              modelsDev[providerID]?.npm ??
               "@ai-sdk/openai-compatible"
             const name = iife(() => {
               if (model.name) return model.name
@@ -1443,7 +1321,7 @@ const layer = Layer.effect(
               api: {
                 id: apiID,
                 npm: apiNpm,
-                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api ?? "",
+                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? "",
               },
               status: model.status ?? existingModel?.status ?? "active",
               name,
@@ -1500,7 +1378,10 @@ const layer = Layer.effect(
               existingModel?.api.npm === parsedModel.api.npm
                 ? (existingModel.variants ?? ProviderTransform.variants(parsedModel))
                 : ProviderTransform.variants(parsedModel)
-            const merged = mergeDeep(variants, model.variants ?? {})
+            const merged = mergeDeep(variants, model.variants ?? {}) as Record<
+              string,
+              Record<string, any> & { disabled?: boolean }
+            >
             parsedModel.variants = mapValues(
               pickBy(merged, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),
@@ -1557,6 +1438,20 @@ const layer = Layer.effect(
           mergeProvider(providerID, patch)
         }
 
+        // custom loader 里很多会动态 import 大包（gitlab-ai-provider、aws-sdk 等），
+        // 但绝大多数 provider 用户根本没配 —— 先用 cheap probe（config / auth / env 命中）
+        // 过滤掉不可能 autoload 的，避免 ~25 个 loader 无意义初始化。
+        const providerEnvList = (id: string) => database[ProviderV2.ID.make(id)]?.env ?? []
+        const envKeySet = new Set(Object.keys(envs))
+        const authKeySet = new Set(Object.keys(auths))
+        const configKeySet = new Set(Object.keys(cfg.provider ?? {}))
+        const mightUseProvider = (id: string) => {
+          if (configKeySet.has(id)) return true
+          if (authKeySet.has(id)) return true
+          // env 字段列出了这个 provider 认的 env var；命中任一即可能 autoload
+          return providerEnvList(id).some((key) => envKeySet.has(key))
+        }
+
         for (const [id, fn] of Object.entries(custom(dep))) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
@@ -1564,6 +1459,7 @@ const layer = Layer.effect(
           if (!data) {
             continue
           }
+          if (!mightUseProvider(id)) continue
           const result = yield* fn(data)
           if (result && (result.autoload || providers[providerID])) {
             if (result.getModel) modelLoaders[providerID] = result.getModel
@@ -1634,7 +1530,10 @@ const layer = Layer.effect(
 
             const configVariants = configProvider?.models?.[modelID]?.variants
             if (configVariants && model.variants) {
-              const merged = mergeDeep(model.variants, configVariants)
+              const merged = mergeDeep(model.variants, configVariants) as Record<
+                string,
+                Record<string, any> & { disabled?: boolean }
+              >
               model.variants = mapValues(
                 pickBy(merged, (v) => !v.disabled),
                 (v) => omit(v, ["disabled"]),
@@ -1651,7 +1550,7 @@ const layer = Layer.effect(
         return {
           models: languages,
           providers,
-          catalog,
+          catalog: database,
           sdk,
           modelLoaders,
           varsLoaders,
@@ -1996,7 +1895,7 @@ export function parseModel(model: string) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsDev.node, RuntimeFlags.node],
+  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, RuntimeFlags.node],
 })
 
 export * as Provider from "./provider"

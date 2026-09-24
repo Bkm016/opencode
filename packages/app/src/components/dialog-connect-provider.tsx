@@ -195,9 +195,7 @@ function ProviderConnection(props: {
     timer.current = undefined
   })
 
-  const provider = createMemo(
-    () => providers.all().get(props.provider) ?? serverSync().data.provider.all.get(props.provider)!,
-  )
+  const provider = createMemo(() => providers.all().get(props.provider)!)
   const fallback = createMemo<ProviderAuthMethod[]>(() => [
     {
       type: "api" as const,

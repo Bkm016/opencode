@@ -1,10 +1,7 @@
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
 import { Plugin } from "../plugin"
 import { Format } from "../format"
-import { LSP } from "@/lsp/lsp"
-import { Snapshot } from "../snapshot"
 import * as Project from "./project"
-import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
 import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
@@ -22,27 +19,29 @@ const layer = Layer.effect(
     // so it can depend on bootstrap without importing this implementation graph.
     const config = yield* Config.Service
     const format = yield* Format.Service
-    const lsp = yield* LSP.Service
     const plugin = yield* Plugin.Service
     const project = yield* Project.Service
     const shareNext = yield* ShareNext.Service
-    const snapshot = yield* Snapshot.Service
-    const vcs = yield* Vcs.Service
 
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
+      const started = Date.now()
+      const elapsed = () => Date.now() - started
       yield* Effect.logInfo("bootstrapping", { directory: ctx.directory })
       // everything depends on config so eager load it for nice traces
       yield* config.get()
+      yield* Effect.logInfo("bootstrap config loaded", { directory: ctx.directory, ms: elapsed() })
       // Plugin can mutate config so it has to be initialized before anything else.
       yield* plugin.init()
+      yield* Effect.logInfo("bootstrap plugin ready", { directory: ctx.directory, ms: elapsed() })
       // Each service self-manages its own slow work via Effect.forkScoped against
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
-        [lsp, shareNext, format, vcs, snapshot, project],
+        [shareNext, format, project],
         (s) => s.init().pipe(Effect.catchCause((cause) => Effect.logWarning("init failed", { cause }))),
         { concurrency: "unbounded", discard: true },
       ).pipe(Effect.withSpan("InstanceBootstrap.init"))
+      yield* Effect.logInfo("bootstrap complete", { directory: ctx.directory, ms: elapsed() })
     }).pipe(Effect.withSpan("InstanceBootstrap"))
 
     return Service.of({ run })
@@ -52,7 +51,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Config.node, Format.node, LSP.node, Plugin.node, Project.node, ShareNext.node, Snapshot.node, Vcs.node],
+  deps: [Config.node, Format.node, Plugin.node, Project.node, ShareNext.node],
 })
 
 export * as InstanceBootstrap from "./bootstrap"

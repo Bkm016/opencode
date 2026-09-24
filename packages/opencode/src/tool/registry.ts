@@ -43,7 +43,6 @@ import { Plugin } from "../plugin"
 import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
-import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@opencode-ai/core/util/glob"
@@ -58,7 +57,6 @@ import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
 import { Goal } from "../session/goal"
-import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -124,7 +122,6 @@ const layer = Layer.effect(
     const listDir = yield* ListDirTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
-    const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
@@ -263,7 +260,6 @@ const layer = Layer.effect(
           goalLessonAdd: Tool.init(goalLessonAdd),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
-          lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
           history_grep: Tool.init(historyGrep),
           history_list: Tool.init(historyList),
@@ -302,7 +298,6 @@ const layer = Layer.effect(
             tool.history_grep,
             tool.history_list,
             ...(tool.execute ? [tool.execute] : []),
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,
@@ -518,7 +513,6 @@ export const node = LayerNode.make({
     SessionStatus.node,
     BackgroundJob.node,
     Provider.node,
-    LSP.node,
     Instruction.node,
     FSUtil.node,
     EventV2Bridge.node,

@@ -30,7 +30,7 @@ import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { MessageV2 } from "./message-v2"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
-import { Snapshot } from "@/snapshot"
+import { FileDiff } from "@opencode-ai/schema/file-diff"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { SessionID, MessageID, PartID } from "./schema"
@@ -176,7 +176,7 @@ const Summary = Schema.Struct({
   additions: Schema.Finite,
   deletions: Schema.Finite,
   files: Schema.Finite,
-  diffs: optional(Schema.Array(Snapshot.FileDiff)),
+  diffs: optional(Schema.Array(FileDiff.Info)),
 })
 
 const Tokens = Schema.Struct({
@@ -446,7 +446,7 @@ export interface Interface {
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
   readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
-  readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
+  readonly diff: (sessionID: SessionID) => Effect.Effect<FileDiff.Info[]>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
@@ -842,7 +842,7 @@ const layer: Layer.Layer<
 
     const diff = Effect.fn("Session.diff")(function* (sessionID: SessionID) {
       void sessionID
-      return [] as Snapshot.FileDiff[]
+      return [] as FileDiff.Info[]
     })
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {

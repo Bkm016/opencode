@@ -369,7 +369,6 @@ export default function Page() {
   const inputController = createPromptInputController({
     sessionKey,
     sessionID: () => params.id,
-    queryOptions: serverSync().queryOptions,
   })
 
   const isDesktop = layout.isDesktop

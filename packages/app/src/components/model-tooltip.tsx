@@ -15,7 +15,8 @@ type ModelInfo = {
     input: InputMap
   }
   modalities?: {
-    input: Array<string>
+    input?: Array<string>
+    output?: Array<string>
   }
   reasoning?: boolean
   limit: {

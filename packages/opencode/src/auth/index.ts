@@ -55,7 +55,11 @@ const layer = Layer.effect(
     const fsys = yield* FSUtil.Service
     const decode = Schema.decodeUnknownOption(Info)
 
+    // auth.json 在一次进程内几乎不变，6 个实例 bootstrap 并发读会重复付 disk+AV 开销。
+    // set/remove 时清掉缓存让下次读到新值。
+    let cached: Record<string, Info> | undefined
     const all = Effect.fn("Auth.all")(function* () {
+      if (cached) return cached
       if (process.env.OPENCODE_AUTH_CONTENT) {
         try {
           return JSON.parse(process.env.OPENCODE_AUTH_CONTENT)
@@ -63,7 +67,9 @@ const layer = Layer.effect(
       }
 
       const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>
-      return Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
+      const parsed = Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
+      if (!process.env.OPENCODE_AUTH_CONTENT) cached = parsed
+      return parsed
     })
 
     const get = Effect.fn("Auth.get")(function* (providerID: string) {
@@ -78,6 +84,7 @@ const layer = Layer.effect(
       yield* fsys
         .writeJson(file, { ...data, [norm]: info }, 0o600)
         .pipe(Effect.mapError(fail("Failed to write auth data")))
+      cached = undefined
     })
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
@@ -86,6 +93,7 @@ const layer = Layer.effect(
       delete data[key]
       delete data[norm]
       yield* fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
+      cached = undefined
     })
 
     return Service.of({ get, all, set, remove })

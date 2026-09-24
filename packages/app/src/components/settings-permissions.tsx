@@ -129,13 +129,6 @@ const KNOWN_TOOLS: Record<string, ToolMeta> = {
     icon: "file-tree",
     defaultAction: "allow",
   },
-  lsp: {
-    id: "lsp",
-    title: "语言服务器",
-    description: "运行代码语法树、符号定义与诊断查询",
-    icon: "code",
-    defaultAction: "allow",
-  },
   doom_loop: {
     id: "doom_loop",
     title: "死循环熔断",

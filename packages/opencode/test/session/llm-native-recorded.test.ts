@@ -1,6 +1,5 @@
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { HttpRecorder } from "@opencode-ai/http-recorder"
 import { HttpRecorderInternal } from "@opencode-ai/http-recorder/internal"
 import { describe, expect, test } from "bun:test"
@@ -50,10 +49,10 @@ type RecordedScenario = {
   readonly recordAuth?: () => Auth.Info | undefined
   readonly replayAuth?: Auth.Info
   readonly stableID?: string
-  readonly config: (model: ModelsDev.Provider["models"][string]) => Partial<ConfigV1.Info>
+  readonly config: (model: Record<string, any> & { id: string }) => Partial<ConfigV1.Info>
 }
 
-const cloneModel = (model: ModelsDev.Provider["models"][string]) => {
+const cloneModel = (model: Record<string, any> & { id: string }) => {
   const cloned = structuredClone(model)
   const { experimental, ...rest } = cloned
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The config schema accepts the same model shape except object-valued experimental metadata.
@@ -95,7 +94,7 @@ const providerConfig = (input: {
   readonly env: string[]
   readonly npm: string
   readonly api: string
-  readonly model: ModelsDev.Provider["models"][string]
+  readonly model: Record<string, any> & { id: string }
   readonly options: Record<string, unknown>
 }): Partial<ConfigV1.Info> => ({
   enabled_providers: [input.providerID],
@@ -255,7 +254,7 @@ async function loadFixture(providerID: string, modelID: string) {
   return model
 }
 
-const modelsFixture = Filesystem.readJson<Record<string, ModelsDev.Provider>>(
+const modelsFixture = Filesystem.readJson<Record<string, Record<string, any> & { models: Record<string, any> }>>(
   path.join(import.meta.dir, "../tool/fixtures/models-api.json"),
 )
 
@@ -287,7 +286,7 @@ function recordedNativeLLMLayer(scenario: RecordedScenario) {
   ])
 }
 
-const writeConfig = (directory: string, scenario: RecordedScenario, model: ModelsDev.Provider["models"][string]) =>
+const writeConfig = (directory: string, scenario: RecordedScenario, model: Record<string, any> & { id: string }) =>
   Effect.promise(() =>
     Bun.write(
       path.join(directory, "opencode.json"),

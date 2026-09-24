@@ -16,18 +16,17 @@ import { batch } from "solid-js"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State } from "./types"
 import type { ServerSession } from "../server-session"
-import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
+import { cmp, normalizeAgentList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery, loadMcpResourcesQuery } from "../server-sync"
-import { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
-import { ScopedKey, type ServerScope } from "@/utils/server-scope"
+import type { ServerScope } from "@/utils/server-scope"
+import { directoryKey } from "./utils"
 
 type GlobalStore = {
   ready: boolean
   path: Path
   project: Project[]
-  provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
@@ -54,12 +53,6 @@ function waitForPaint() {
 
 function errors(list: PromiseSettledResult<unknown>[]) {
   return list.filter((item): item is PromiseRejectedResult => item.status === "rejected").map((item) => item.reason)
-}
-
-const providerRev = new Map<string, number>()
-
-export function clearProviderRev(scope: ServerScope, directory: string) {
-  providerRev.delete(ScopedKey.from(scope, directory))
 }
 
 function runAll(list: Array<() => Promise<unknown>>) {
@@ -112,16 +105,25 @@ export async function bootstrapGlobal(input: {
   setGlobalStore: SetStoreFunction<GlobalStore>
   queryClient: QueryClient
 }) {
+  const started = Date.now()
+  const elapsed = () => Date.now() - started
+  const tag = "[bootstrap:global]"
+  const timed = <T>(name: string, fn: () => Promise<T>) => () =>
+    fn().then((x) => {
+      console.log(`${tag} ${name} ${elapsed()}ms`)
+      return x
+    })
   const slow = [
-    () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK)),
-    () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverSDK)),
-    () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
-    () =>
+    timed("config", () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK))),
+    timed("path", () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK))),
+    timed("projects", () =>
       input.queryClient
         .fetchQuery(loadProjectsQuery(input.scope, input.serverSDK))
         .then((data) => input.setGlobalStore("project", data)),
+    ),
   ]
   await runAll(slow)
+  console.log(`${tag} done ${elapsed()}ms`)
   // showErrors({
   //   errors: errors(),
   //   title: input.requestFailedTitle,
@@ -178,12 +180,6 @@ function warmSessions(input: {
   ).then(() => undefined)
 }
 
-export const loadProvidersQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
-  queryOptions({
-    queryKey: [scope, directory, "providers"],
-    queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
-  })
-
 export const loadAgentsQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
@@ -203,7 +199,7 @@ export const loadReferencesQuery = (scope: ServerScope, directory: string, sdk: 
     placeholderData: [],
   })
 
-export async function bootstrapDirectory(input: {
+export function bootstrapDirectory(input: {
   directory: string
   scope: ServerScope
   mcp: boolean
@@ -216,11 +212,14 @@ export async function bootstrapDirectory(input: {
     config: Config
     path: Path
     project: Project[]
-    provider: NormalizedProviderListResponse
   }
   queryClient: QueryClient
   session?: ServerSession
 }) {
+  // queryKey 必须用规范化后的 key — child-store 的 observers 用规范化 key，
+  // 这里若用原始 input.directory，Windows 下 C:/ vs C:\ 会产生不同的 queryKey
+  // 导致 TanStack 无法去重，同一个端点被重复请求两次。
+  const key = directoryKey(input.directory)
   const loading = input.store.status !== "complete"
   const seededProject = projectID(input.directory, input.global.project)
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
@@ -231,16 +230,20 @@ export async function bootstrapDirectory(input: {
   }
   if (loading) input.setStore("status", "partial")
 
-  const revKey = ScopedKey.from(input.scope, input.directory)
-  const rev = (providerRev.get(revKey) ?? 0) + 1
-  providerRev.set(revKey, rev)
-  ;(async () => {
+  return (async () => {
+    const bootStarted = Date.now()
+    const elapsed = () => Date.now() - bootStarted
+    const tag = `[bootstrap:${getFilename(input.directory)}]`
     // 会话加载优先单独跑，别被 VCS/provider 等慢任务连累（非项目目录如桌面会卡在 vcs.get 超时）。
-    const sessionsPromise = Promise.resolve(input.loadSessions(input.directory))
-    const slow = [
+    const sessionsPromise = Promise.resolve(input.loadSessions(input.directory)).then(() => {
+      console.log(`${tag} sessions ${elapsed()}ms`)
+    })
+    // critical：首屏/侧边栏可见性所必需的最小集合（agents、config、session.status、
+    // project/path 回退）。这些失败会导致 status 保持 partial，不进入 complete。
+    const critical = [
       () =>
         input.queryClient
-          .ensureQueryData(loadAgentsQuery(input.scope, input.directory, input.sdk))
+          .ensureQueryData(loadAgentsQuery(input.scope, key, input.sdk))
           .then((data) => input.setStore("agent", data)),
       () =>
         retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
@@ -276,13 +279,17 @@ export async function bootstrapDirectory(input: {
         (() => retry(() => input.sdk.project.current()).then((x) => input.setStore("project", x.data!.id))),
       !seededPath &&
         (() =>
-          input.queryClient.ensureQueryData(loadPathQuery(input.scope, input.directory, input.sdk)).then((data) => {
+          input.queryClient.ensureQueryData(loadPathQuery(input.scope, key, input.sdk)).then((data) => {
             const next = projectID(data.directory ?? input.directory, input.global.project)
             if (next) input.setStore("project", next)
           })),
+    ].filter(Boolean) as (() => Promise<any>)[]
 
+    // deferred：不阻塞首屏标记，错误只走 toast。permission/question/mcp/providers/
+    // references/command 列表慢或失败都不该把侧边栏骨架卡住。
+    const deferred = [
       input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
-      () => input.queryClient.fetchQuery(loadReferencesQuery(input.scope, input.directory, input.sdk)),
+      () => input.queryClient.fetchQuery(loadReferencesQuery(input.scope, key, input.sdk)),
       () =>
         retry(() =>
           input.sdk.permission.list().then((x) => {
@@ -343,33 +350,49 @@ export async function bootstrapDirectory(input: {
             )
           }),
         ),
-      input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
-      input.mcp && (() => input.queryClient.fetchQuery(loadMcpResourcesQuery(input.scope, input.directory, input.sdk))),
-      () =>
-        input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)).catch((err) => {
-          const project = getFilename(input.directory)
-          showToast({
-            variant: "error",
-            title: input.translate("toast.project.reloadFailed.title", { project }),
-            description: formatServerError(err, input.translate),
-          })
-        }),
+      input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, key, input.sdk))),
+      input.mcp && (() => input.queryClient.fetchQuery(loadMcpResourcesQuery(input.scope, key, input.sdk))),
     ].filter(Boolean) as (() => Promise<any>)[]
 
     await waitForPaint()
-    const slowErrs = errors(await runAll(slow))
-    // 会话加载结果单独收口，慢任务出错不影响会话列表渲染。
-    await sessionsPromise.catch(() => undefined)
-    if (slowErrs.length > 0) {
-      console.error("Failed to finish bootstrap instance", slowErrs[0])
+    console.log(`${tag} paint ${elapsed()}ms`)
+    // critical 与 sessions 同时跑；deferred 并发启动但不 await 其结果，
+    // 任一失败只弹 toast，不阻塞 status: "complete" 的判定。
+    const criticalErrsPromise = runAll(critical).then((list) => {
+      console.log(`${tag} critical ${elapsed()}ms`)
+      return errors(list)
+    })
+    const deferredErrsPromise = runAll(deferred).then((list) => {
+      console.log(`${tag} deferred ${elapsed()}ms`)
+      return errors(list)
+    })
+    const [criticalErrs] = await Promise.all([criticalErrsPromise, sessionsPromise.catch(() => undefined)])
+    console.log(`${tag} complete ${elapsed()}ms`)
+    if (criticalErrs.length > 0) {
+      console.error("Failed to finish bootstrap instance", criticalErrs[0])
       const project = getFilename(input.directory)
       showToast({
         variant: "error",
         title: input.translate("toast.project.reloadFailed.title", { project }),
-        description: formatServerError(slowErrs[0], input.translate),
+        description: formatServerError(criticalErrs[0], input.translate),
       })
     }
 
-    if (loading && slowErrs.length === 0) input.setStore("status", "complete")
+    if (loading && criticalErrs.length === 0) input.setStore("status", "complete")
+
+    // deferred 失败只在后台 toast；若关键路径已成功，这里不重复打扰。
+    // 槽位应在 critical 完成后立即释放，让排队目录尽快启动 — deferred 的
+    // references/permission/question 不阻塞首屏。
+    void deferredErrsPromise.then((errs) => {
+      if (errs.length === 0) return
+      console.error("Deferred bootstrap tasks failed", errs[0])
+      if (criticalErrs.length > 0) return
+      const project = getFilename(input.directory)
+      showToast({
+        variant: "error",
+        title: input.translate("toast.project.reloadFailed.title", { project }),
+        description: formatServerError(errs[0], input.translate),
+      })
+    })
   })()
 }

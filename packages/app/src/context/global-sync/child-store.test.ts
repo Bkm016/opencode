@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import { createRoot, getOwner, type Owner } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
 import type { State } from "./types"
 import type { QueryOptionsApi } from "../server-sync"
 import { ServerScope } from "@/utils/server-scope"
@@ -16,12 +15,10 @@ const persist: typeof import("@/utils/persist").persisted = (_target, store) => 
 ]
 
 const child = () => createStore({} as State)
-const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 
 const queryOptionsApi = {
   globalConfig: () => ({ queryKey: ["globalConfig"], queryFn: async () => ({}) }),
   projects: () => ({ queryKey: ["projects"], queryFn: async () => [] }),
-  providers: (directory: string | null) => ({ queryKey: [directory, "providers"], queryFn: async () => provider }),
   path: (directory: string | null) => ({
     queryKey: [directory, "path"],
     queryFn: async () => ({
@@ -39,7 +36,6 @@ const queryOptionsApi = {
   agents: (directory: string) => ({ queryKey: [directory, "agents"], queryFn: async () => [] }),
   mcp: (directory: string) => ({ queryKey: [directory, "mcp"], queryFn: async () => ({}) }),
   mcpResources: (directory: string) => ({ queryKey: [directory, "mcpResources"], queryFn: async () => ({}) }),
-  lsp: (directory: string) => ({ queryKey: [directory, "lsp"], queryFn: async () => [] }),
   references: (directory: string) => ({ queryKey: [directory, "references"], queryFn: async () => [] }),
   sessions: (directory: string) => ({ queryKey: [directory, "loadSessions"] as const }),
 } as unknown as QueryOptionsApi
@@ -65,8 +61,6 @@ beforeAll(async () => {
         get data() {
           if (options().queryKey?.[1] === "path") throw new Error("pending path data read")
           if (options().queryKey?.[1] === "mcp") return options().enabled ? { demo: { status: "disabled" } } : undefined
-          if (options().queryKey?.[1] === "lsp") return []
-          if (options().queryKey?.[1] === "providers") return provider
           return undefined
         },
       }
@@ -96,7 +90,7 @@ describe("createChildStoreManager", () => {
       onDispose() {},
       translate: (key) => key,
       queryOptions: queryOptionsApi,
-      global: { provider },
+      global: {},
     })
 
     Array.from({ length: 30 }, (_, index) => `/pinned-${index}`).forEach((directory) => {
@@ -129,7 +123,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
+        global: {},
       })
     })
 
@@ -161,7 +155,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
+        global: {},
       })
     })
 
@@ -196,14 +190,15 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
+        global: {},
       })
     })
 
     try {
       if (!manager) throw new Error("manager required")
       const [store, setStore] = manager.child("/project", { bootstrap: false })
-      expect(querySingles.length - offset).toBe(6)
+      // path / mcp / mcpResources / references 共 4 个 useQuery
+      expect(querySingles.length - offset).toBe(4)
       const query = querySingles[offset + 1]
       const resourceQuery = querySingles[offset + 2]
       if (!query) throw new Error("query required")
@@ -238,14 +233,17 @@ describe("createChildStoreManager", () => {
         persist,
         isBooting: () => false,
         isLoadingSessions: () => false,
-        onBootstrap(directory) {
+        onBootstrap(directory, onReady) {
           bootstraps.push(directory)
+          // 真实实现里 onReady 在拿到并发槽位后才触发 activate；
+          // 测试里立即调用模拟槽位可用。
+          onReady()
         },
         onMcp() {},
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider },
+        global: {},
       })
     })
 
@@ -254,21 +252,17 @@ describe("createChildStoreManager", () => {
       const [store] = manager.child("/project", { bootstrap: false })
       const queries = querySingles.slice(offset)
 
-      expect(queries).toHaveLength(6)
+      // path / mcp / mcpResources / references —— bootstrap:false 时全部 disabled
+      expect(queries).toHaveLength(4)
       expect(queries[0]?.().enabled).toBe(false)
       expect(queries[3]?.().enabled).toBe(false)
-      expect(queries[4]?.().enabled).toBe(false)
-      expect(queries[5]?.().enabled).toBe(false)
       expect(store.path.directory).toBe("/project")
-      expect(store.provider_ready).toBe(false)
-      expect(store.lsp_ready).toBe(false)
       expect(bootstraps).toEqual([])
 
+      // bootstrap 激活 instanceQueriesEnabled → path + references enabled（mcp 由独立 signal 控制）
       manager.child("/project")
       expect(queries[0]?.().enabled).toBe(true)
       expect(queries[3]?.().enabled).toBe(true)
-      expect(queries[4]?.().enabled).toBe(true)
-      expect(queries[5]?.().enabled).toBe(true)
       expect(bootstraps).toEqual(["/project"])
 
       manager.child("/project", { bootstrap: false })

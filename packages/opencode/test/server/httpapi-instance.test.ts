@@ -230,23 +230,17 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("serves path and VCS info endpoints", () =>
+  it.live("serves path endpoint", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
 
-      const [paths, vcs] = yield* Effect.all(
-        [
-          HttpClientRequest.get(InstancePaths.path).pipe(directoryHeader(dir), HttpClient.execute),
-          HttpClientRequest.get(InstancePaths.vcs).pipe(directoryHeader(dir), HttpClient.execute),
-        ],
-        { concurrency: "unbounded" },
+      const paths = yield* HttpClientRequest.get(InstancePaths.path).pipe(
+        directoryHeader(dir),
+        HttpClient.execute,
       )
 
       expect(paths.status).toBe(200)
       expect(yield* paths.json).toMatchObject({ directory: dir, worktree: dir })
-
-      expect(vcs.status).toBe(200)
-      expect(yield* vcs.json).toMatchObject({ branch: expect.any(String) })
     }),
   )
 })

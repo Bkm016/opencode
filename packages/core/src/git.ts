@@ -2,7 +2,7 @@ export * as Git from "./git"
 
 import path from "path"
 import { randomUUID } from "crypto"
-import { Context, Effect, Layer, Schema, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath, RelativePath } from "./schema"
 import { FSUtil } from "./fs-util"
@@ -181,7 +181,12 @@ const layer = Layer.effect(
     const locked = <A, E, R>(repository: Repository, effect: Effect.Effect<A, E, R>) =>
       locks.withLock(repository.gitDirectory)(effect)
 
-    const discover = Effect.fn("Git.repo.discover")(function* (input: AbsolutePath) {
+    // discover 是 instance bootstrap 的热点路径：每个 open project 至少调一次。
+    // 用单次 `git rev-parse` 一次性返回 toplevel/git-dir/common-dir（各占一行），
+    // 并对 in-flight 调用按目录去重，避免并行 bootstrap 同一目录时重复子进程。
+    const discoverByDir = new Map<string, Deferred.Deferred<Repository | undefined>>()
+
+    const discoverOnce = Effect.fnUntraced(function* (input: AbsolutePath) {
       const dotgit = yield* fs.up({ targets: [".git"], start: input }).pipe(
         Effect.map((matches) => matches[0]),
         Effect.catch(() => Effect.succeed(undefined)),
@@ -190,17 +195,36 @@ const layer = Layer.effect(
 
       const cwd = path.dirname(dotgit)
       const git = run(cwd, proc)
-      const topLevel = yield* git(["rev-parse", "--show-toplevel"])
-      const gitDir = yield* git(["rev-parse", "--git-dir"])
-      const commonDir = yield* git(["rev-parse", "--git-common-dir"])
-      if (gitDir.exitCode !== 0 || commonDir.exitCode !== 0) return undefined
+      const result = yield* git(["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"])
+      if (result.exitCode !== 0) return undefined
+
+      const lines = result.text.split("\n").map((line) => line.trim())
+      const [topLevelLine, gitDirLine, commonDirLine] = lines
+      if (!gitDirLine || !commonDirLine) return undefined
 
       return new Repository({
-        worktree: AbsolutePath.make(topLevel.exitCode === 0 ? resolvePath(cwd, topLevel.text) : cwd),
-        gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDir.text)),
-        commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDir.text)),
+        worktree: AbsolutePath.make(topLevelLine ? resolvePath(cwd, topLevelLine) : cwd),
+        gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDirLine)),
+        commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDirLine)),
       })
     })
+
+    const discover = Effect.fn("Git.repo.discover")((input: AbsolutePath) =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const key = FSUtil.resolve(input)
+          const pending = discoverByDir.get(key)
+          if (pending) return yield* restore(Deferred.await(pending))
+
+          const deferred = Deferred.makeUnsafe<Repository | undefined>()
+          discoverByDir.set(key, deferred)
+          const exit = yield* restore(Effect.exit(discoverOnce(input)))
+          discoverByDir.delete(key)
+          yield* Deferred.done(deferred, exit)
+          return yield* exit
+        }),
+      ),
+    )
 
     const remote = Effect.fn("Git.remote.get")(function* (repository: Repository, name = "origin") {
       const result = yield* run(repository.worktree, proc)(["remote", "get-url", name])

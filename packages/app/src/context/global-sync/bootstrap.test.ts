@@ -2,13 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project, Session } from "@opencode-ai/sdk/v2/client"
-import type { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
-import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstrap"
+import { bootstrapDirectory, loadPathQuery } from "./bootstrap"
 import type { State } from "./types"
 import { createServerSession } from "../server-session"
 import { ServerScope } from "@/utils/server-scope"
-
-const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 
 function directoryState() {
   return createStore<State>({
@@ -19,8 +16,6 @@ function directoryState() {
     project: "",
     projectMeta: undefined,
     icon: undefined,
-    provider_ready: true,
-    provider,
     config: {},
     path: {
       state: "",
@@ -45,8 +40,6 @@ function directoryState() {
     mcp_ready: true,
     mcp: {},
     mcp_resource: {},
-    lsp_ready: true,
-    lsp: [],
     message: {},
     part: {},
     part_text_accum_delta: {},
@@ -58,7 +51,9 @@ describe("bootstrapDirectory", () => {
     const mcpReads: string[] = []
     const [store, setStore] = directoryState()
 
-    await bootstrapDirectory({
+    // bootstrap 是 async — fire-and-forget 才能在 critical 完成前观察到 partial。
+    // await 之后 store.status 一定已经走到 complete。
+    const boot = bootstrapDirectory({
       directory: "/project",
       scope: ServerScope.local,
       mcp: false,
@@ -76,7 +71,6 @@ describe("bootstrapDirectory", () => {
           database: { path: "", data: "", tables: [] },
         },
         project: [{ id: "project", worktree: "/project" } as Project],
-        provider,
       },
       sdk: {
         app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
@@ -97,7 +91,6 @@ describe("bootstrapDirectory", () => {
             return { data: {} }
           },
         },
-        provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
       } as unknown as OpencodeClient,
       store,
       setStore,
@@ -107,8 +100,7 @@ describe("bootstrapDirectory", () => {
     })
 
     expect(store.status).toBe("partial")
-
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await boot
 
     expect(store.status).toBe("complete")
     expect(mcpReads).toEqual([])
@@ -116,7 +108,9 @@ describe("bootstrapDirectory", () => {
 
   test("seeds session status even while warming session info stalls", async () => {
     const [store, setStore] = directoryState()
-    const stalled = Promise.withResolvers<never>()
+    // session.get 挂起模拟慢响应 — resolve 的 warming 不该阻塞 status seeding
+    // 或 bootstrap 本身。使用可手动 resolve 的 promise，等断言完了再放行。
+    const stalled = Promise.withResolvers<{ data?: Session }>()
     const client = {
       app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
       config: { get: async () => ({ data: {} }) },
@@ -129,7 +123,6 @@ describe("bootstrapDirectory", () => {
       question: { list: async () => ({ data: [] }) },
       v2: { reference: { list: async () => ({ data: { data: [] } }) } },
       mcp: { status: async () => ({ data: {} }) },
-      provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
     } as unknown as OpencodeClient
     const session = createServerSession(client)
     const stale: Session = {
@@ -144,7 +137,10 @@ describe("bootstrapDirectory", () => {
     session.remember(stale)
     session.set("session_status", stale.id, { type: "busy" })
 
-    await bootstrapDirectory({
+    // session.get 挂起时 bootstrap 不会立即 resolve —— warm resolve 挂在 critical 里。
+    // 只需等 session_status 被 seeded（也就是说 status handler 的同步部分已跑完），
+    // 再手动放行 stalled promise 让 bootstrap 收尾。
+    const boot = bootstrapDirectory({
       directory: "/project",
       scope: ServerScope.local,
       mcp: false,
@@ -162,7 +158,6 @@ describe("bootstrapDirectory", () => {
           database: { path: "", data: "", tables: [] },
         },
         project: [{ id: "project", worktree: "/project" } as Project],
-        provider,
       },
       sdk: client,
       store,
@@ -180,6 +175,9 @@ describe("bootstrapDirectory", () => {
 
     expect(session.data.session_status["ses_busy"]?.type).toBe("busy")
     expect(session.data.session_status[stale.id]).toBeUndefined()
+
+    stalled.resolve({ data: undefined })
+    await boot
   })
 })
 
@@ -190,10 +188,5 @@ describe("query keys", () => {
 
     expect([...loadPathQuery(ServerScope.local, "/repo", client).queryKey]).toEqual(["local", "/repo", "path"])
     expect([...loadPathQuery(remote, "/repo", client).queryKey]).toEqual(["https://debian.example", "/repo", "path"])
-    expect([...loadProvidersQuery(remote, null, client).queryKey]).toEqual([
-      "https://debian.example",
-      null,
-      "providers",
-    ])
   })
 })

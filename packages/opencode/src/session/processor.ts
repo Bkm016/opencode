@@ -8,7 +8,6 @@ import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
-import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
@@ -32,8 +31,6 @@ import { parseJSON } from "partial-json"
 import path from "node:path"
 
 const DOOM_LOOP_THRESHOLD = 3
-const REPETITION_RETRY_PROMPT =
-  "The previous attempt was interrupted because it entered an abnormal repetition loop. Start over, avoid repeating the same text, and continue the task normally."
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -75,7 +72,6 @@ type ToolCall = {
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   shouldBreak: boolean
-  snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
   currentText: SessionV1.TextPart | undefined
@@ -91,7 +87,6 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const session = yield* Session.Service
     const config = yield* Config.Service
-    const snapshot = yield* Snapshot.Service
     const agents = yield* Agent.Service
     const llm = yield* LLM.Service
     const permission = yield* Permission.Service
@@ -104,17 +99,12 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
-      // Pre-capture snapshot before the LLM stream starts. The AI SDK
-      // may execute tools internally before emitting start-step events,
-      // so capturing inside the event handler can be too late.
-      const initialSnapshot = yield* snapshot.track()
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
         model: input.model,
         toolcalls: {},
         shouldBreak: false,
-        snapshot: initialSnapshot,
         blocked: false,
         needsCompaction: false,
         currentText: undefined,
@@ -122,9 +112,8 @@ const layer = Layer.effect(
       }
       let aborted = false
       // True once this attempt produced any assistant text, reasoning, or tool work.
-      // Empty drains (mid-stream drop surfaced as a quiet finish) must retry, not idle.
+      // 已输出内容的请求不能透明重放，否则会重复回答或重复执行工具。
       let hasOutput = false
-      let repetitionRetry = false
       // Tools map for the active stream (includes non-enumerable nameAliases).
       let activeTools: Record<string, unknown> = {}
       const repetitionBuffers = new Map<string, string>()
@@ -332,18 +321,6 @@ const layer = Layer.effect(
         }
       })
 
-      const failRepetition = Effect.fnUntraced(function* () {
-        repetitionRetry = true
-        return yield* Effect.fail(
-          new SessionV1.APIError({
-            message: "Model output entered a repetition loop",
-            isRetryable: true,
-            responseHeaders: { "retry-after-ms": "0" },
-            metadata: { reason: "output_repetition" },
-          }),
-        )
-      })
-
       const guardEvent = Effect.fnUntraced(function* (value: StreamEvent) {
         // 工具参数允许包含重复的补丁或文件内容；跨轮次的相同工具调用由 doom-loop 权限单独处理。
         if (value.type !== "text-delta" && value.type !== "reasoning-delta") return
@@ -353,7 +330,13 @@ const layer = Layer.effect(
         if (!detectRepetition(accumulated)) return
         const kind = value.type === "text-delta" ? "text" : "reasoning"
         yield* settleRepetitionPart(kind, value.id)
-        return yield* failRepetition()
+        return yield* Effect.fail(
+          new SessionV1.APIError({
+            message: "Model output entered a repetition loop",
+            isRetryable: false,
+            metadata: { reason: "output_repetition" },
+          }),
+        )
       })
 
       const toolResultOutput = (
@@ -634,7 +617,6 @@ const layer = Layer.effect(
           }
 
           case "step-start":
-            if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
             if (value.requestBodyBytes !== undefined) {
               ctx.assistantMessage.requestBodyBytes = value.requestBodyBytes
               yield* session.updateMessage(ctx.assistantMessage)
@@ -643,13 +625,11 @@ const layer = Layer.effect(
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
-              snapshot: ctx.snapshot,
               type: "step-start",
             })
             return
 
           case "step-finish": {
-            const completedSnapshot = yield* snapshot.track()
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,
@@ -662,7 +642,6 @@ const layer = Layer.effect(
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
-              snapshot: completedSnapshot,
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.assistantMessage.sessionID,
               type: "step-finish",
@@ -670,20 +649,6 @@ const layer = Layer.effect(
               cost: usage.cost,
             })
             yield* session.updateMessage(ctx.assistantMessage)
-            if (ctx.snapshot) {
-              const patch = yield* snapshot.patch(ctx.snapshot)
-              if (patch.files.length) {
-                yield* session.updatePart({
-                  id: PartID.ascending(),
-                  messageID: ctx.assistantMessage.id,
-                  sessionID: ctx.sessionID,
-                  type: "patch",
-                  hash: patch.hash,
-                  files: patch.files,
-                })
-              }
-              ctx.snapshot = undefined
-            }
             yield* summary
               .summarize({
                 sessionID: ctx.sessionID,
@@ -765,21 +730,6 @@ const layer = Layer.effect(
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
-        if (ctx.snapshot) {
-          const patch = yield* snapshot.patch(ctx.snapshot)
-          if (patch.files.length) {
-            yield* session.updatePart({
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.sessionID,
-              type: "patch",
-              hash: patch.hash,
-              files: patch.files,
-            })
-          }
-          ctx.snapshot = undefined
-        }
-
         if (ctx.currentText) {
           if (ctx.currentText.text) {
             const end = Date.now()
@@ -866,9 +816,7 @@ const layer = Layer.effect(
         })
         const cfg = yield* config.get()
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
-        repetitionRetry = false
         activeTools = streamInput.tools
-        let emptyAttempts = 0
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
@@ -879,11 +827,7 @@ const layer = Layer.effect(
             // Drop stale finish from a previous incomplete attempt so retries start clean.
             ctx.assistantMessage.finish = undefined
             yield* status.set(ctx.sessionID, { type: "busy" })
-            const stream = llm.stream(
-              repetitionRetry
-                ? { ...streamInput, system: [...streamInput.system, REPETITION_RETRY_PROMPT] }
-                : streamInput,
-            )
+            const stream = llm.stream(streamInput)
 
             yield* stream.pipe(
               Stream.tap((event) => Effect.gen(function* () {
@@ -894,16 +838,10 @@ const layer = Layer.effect(
               Stream.runDrain,
             )
 
-            // Quiet incomplete turns (0-token drop / unknown finish) must not idle the session.
-            // Treat them as retryable stream failures so SessionRetry keeps going until real output or abort.
+            // 完成信号由协议决定，正文或 usage 为空不能把明确的 stop 改成隐式续跑。
             if (aborted || ctx.needsCompaction || ctx.blocked || ctx.assistantMessage.error) return
             const finish = ctx.assistantMessage.finish
-            // 正常 stop 且有输出 token 的空正文是供应商的明确结束，不按网络静默丢包重试。
-            const incomplete =
-              !finish ||
-              finish === "unknown" ||
-              finish === "other" ||
-              (!hasOutput && ctx.assistantMessage.tokens.output === 0 && finish !== "tool-calls" && finish !== "content-filter")
+            const incomplete = !finish || finish === "unknown" || finish === "other"
             if (!incomplete) {
               // stop/length 却全程零 token（无 usage）疑似上游截断后伪造的正常结束；
               // usage 在既有语义里可选，只打日志不重试，避免误伤从不返回 usage 的供应商。
@@ -924,7 +862,6 @@ const layer = Layer.effect(
               }
               return
             }
-            if (!hasOutput) emptyAttempts += 1
             ctx.assistantMessage.finish = undefined
             // Must fail (not throw): throws become defects and bypass Effect.retry.
             return yield* Effect.fail(
@@ -932,8 +869,8 @@ const layer = Layer.effect(
                 message: hasOutput
                   ? `Provider stream ended incompletely (${finish ?? "no-finish"})`
                   : "Provider stream ended without output",
-                // 真正的空流最多重试两次，避免供应商持续空响应时无限循环。
-                isRetryable: hasOutput || emptyAttempts <= 2,
+                // 无完成标记是失败，不猜测供应商意图或注入继续指令重新生成。
+                isRetryable: false,
               }),
             )
           }).pipe(
@@ -953,6 +890,8 @@ const layer = Layer.effect(
               SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
+                // 保留输出前的网络退避；内容或工具已交付后，错误直接交给用户处理。
+                canRetry: () => !hasOutput && !ctx.assistantMessage.finish,
                 set: (info) => {
                   return status.set(ctx.sessionID, {
                     type: "retry",
@@ -995,7 +934,6 @@ export const node = LayerNode.make({
   deps: [
     Session.node,
     Config.node,
-    Snapshot.node,
     Agent.node,
     LLM.node,
     Permission.node,

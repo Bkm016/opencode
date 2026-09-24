@@ -40,48 +40,29 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     )
 
     const configProviders = createMemo(() => serverSync().data.config.provider ?? {})
-    const configuredSet = createMemo(() => new Set(Object.keys(configProviders())))
 
-    // 彻底尊重本地配置：一旦用户配置了 provider，只允许配置文件里的提供商，历史 db/凭据渠道直接剔除
-    const connectedProviders = createMemo(() => {
-      const set = configuredSet()
-      if (set.size > 0) {
-        const fromProviders = providers.connected().filter((p) => set.has(p.id))
-        if (fromProviders.length > 0) return fromProviders
-        // 若 providers 在会话切换或加载过渡期暂时为空，使用本地配置即时补全，杜绝模型列表闪烁或瞬间清空
-        return Object.entries(configProviders()).map(([id, p]) => ({
-          id,
-          name: p.name ?? id,
-          source: "config" as const,
-          env: [],
-          options: p,
-          models: Object.fromEntries(
-            Object.entries(p.models ?? {}).map(([modelID, m]) => [
-              modelID,
-              {
-                id: modelID,
-                name: m.name ?? modelID,
-                providerID: id,
-                status: "active" as const,
-                variants: m.variants,
-                capabilities: {
-                  reasoning: Boolean(m.variants && Object.keys(m.variants).length > 0),
-                  tools: true,
-                  attachment: true,
-                },
-              },
-            ]),
-          ),
-        }))
-      }
-      return providers.connected().filter((p) => p.id !== "opencode")
-    })
-
+    // 模型列表只来自 opencode.json 配置，不依赖 provider catalog / connected 概念
     const available = createMemo(() =>
-      connectedProviders().flatMap((p) =>
-        Object.values(p.models).map((m) => ({
-          ...m,
-          provider: p,
+      Object.entries(configProviders()).flatMap(([id, p]) =>
+        Object.entries(p.models ?? {}).map(([modelID, m]) => ({
+          id: modelID,
+          name: m.name ?? modelID,
+          providerID: id,
+          provider: { id, name: p.name ?? id },
+          status: "active" as const,
+          release_date: "",
+          family: "",
+          cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          limit: { context: m.limit?.context ?? 0, input: m.limit?.input, output: m.limit?.output ?? 0 },
+          modalities: m.modalities,
+          variants: m.variants,
+          capabilities: {
+            reasoning: Boolean(m.variants && Object.keys(m.variants).length > 0),
+            tools: true,
+            attachment: true,
+            input: { text: true, image: false, audio: false, video: false, pdf: false },
+            output: { text: true, image: false, audio: false, video: false, pdf: false },
+          },
         })),
       ),
     )

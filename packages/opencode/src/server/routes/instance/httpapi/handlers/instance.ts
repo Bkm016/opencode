@@ -6,8 +6,6 @@ import type { InstanceContext } from "@/project/instance-context"
 import { Format } from "@/format"
 import { Database } from "@opencode-ai/core/database/database"
 import { Global } from "@opencode-ai/core/global"
-import { LSP } from "@/lsp/lsp"
-import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { sql } from "drizzle-orm"
 import { Effect } from "effect"
@@ -16,7 +14,7 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import fs from "fs/promises"
 import path from "path"
 import { InstanceHttpApi } from "../api"
-import { ApiRunScriptError, ApiVcsApplyError } from "../groups/instance"
+import { ApiRunScriptError } from "../groups/instance"
 import { RunScript } from "@opencode-ai/core/run-script"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
 import { Location } from "@opencode-ai/schema/location"
@@ -51,9 +49,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const command = yield* Command.Service
     const config = yield* Config.Service
     const format = yield* Format.Service
-    const lsp = yield* LSP.Service
     const skill = yield* Skill.Service
-    const vcs = yield* Vcs.Service
     const { db } = yield* Database.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
@@ -137,36 +133,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       }
     })
 
-    const getVcs = Effect.fn("InstanceHttpApi.vcs")(function* () {
-      const [branch, default_branch] = yield* Effect.all([vcs.branch(), vcs.defaultBranch()], {
-        concurrency: "unbounded",
-      })
-      return { branch, default_branch }
-    })
-
-    const getVcsStatus = Effect.fn("InstanceHttpApi.vcsStatus")(function* () {
-      return yield* vcs.status()
-    })
-
-    const getVcsDiffRaw = Effect.fn("InstanceHttpApi.vcsDiffRaw")(function* () {
-      return yield* vcs.diffRaw()
-    })
-
-    const applyVcs = Effect.fn("InstanceHttpApi.vcsApply")(function* (ctx: { payload: Vcs.ApplyInput }) {
-      return yield* vcs.apply(ctx.payload).pipe(
-        Effect.mapError(
-          (error) =>
-            new ApiVcsApplyError({
-              name: "VcsApplyError",
-              data: {
-                message: error.message,
-                reason: error.reason,
-              },
-            }),
-        ),
-      )
-    })
-
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
       yield* command.reload
       return yield* command.list()
@@ -220,10 +186,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* skill.all()
     })
 
-    const getLsp = Effect.fn("InstanceHttpApi.lsp")(function* () {
-      return yield* lsp.status()
-    })
-
     const getFormatter = Effect.fn("InstanceHttpApi.formatter")(function* () {
       return yield* format.status()
     })
@@ -232,16 +194,11 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("dispose", dispose)
       .handle("reload", reload)
       .handle("path", getPath)
-      .handle("vcs", getVcs)
-      .handle("vcsStatus", getVcsStatus)
-      .handle("vcsDiffRaw", getVcsDiffRaw)
-      .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
       .handle("commandGetRun", getRunFile)
       .handle("commandUpdateRun", updateRun)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
-      .handle("lsp", getLsp)
       .handle("formatter", getFormatter)
   }),
 )

@@ -1,9 +1,7 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"
 
-import { mapValues } from "remeda"
 import { Effect, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -39,13 +37,6 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const config = yield* cfg.get()
-      const all = yield* ModelsDev.Service.use((s) => s.get())
-      const disabled = new Set(config.disabled_providers ?? [])
-      const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-      const filtered: Record<string, (typeof all)[string]> = {}
-      for (const [key, value] of Object.entries(all)) {
-        if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) filtered[key] = value
-      }
       const connected = yield* provider.list()
       const configuredProviderIDs = config.provider ? Object.keys(config.provider) : []
       if (configuredProviderIDs.length > 0) {
@@ -59,13 +50,14 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       } else if (!config.provider?.["opencode"] && connected["opencode" as ProviderV2.ID]) {
         delete connected["opencode" as ProviderV2.ID]
       }
-      const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
-      )
+
+      // 不再返回 models.dev 全量 catalog（5MB+，几百个 provider 的完整元数据）。
+      // 用户的模型在 opencode.json 里写死，前端只需要已连接 provider 的模型
+      // 信息做选择器和计费显示。all 字段保留名字但只含 connected — UI 用
+      // `all().get(id)` 查到的就是已连接 provider 的完整 Info。
       return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
-        default: Provider.defaultModelIDs(providers),
+        all: Object.values(connected).map(Provider.toPublicInfo),
+        default: Provider.defaultModelIDs(connected),
         connected: Object.keys(connected),
       }
     })

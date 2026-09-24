@@ -110,7 +110,6 @@ export function applyDirectoryEvent(input: {
   setStore: SetStoreFunction<State>
   push: (directory: string) => void
   directory: string
-  loadLsp: () => void
   loadReferences?: () => void
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   sessionContent?: boolean
@@ -311,9 +310,6 @@ export function applyDirectoryEvent(input: {
       )
       break
     }
-    case "vcs.branch.updated": {
-      break
-    }
     case "permission.asked": {
       const permission = event.properties as PermissionRequest
       const permissions = input.store.permission[permission.sessionID]
@@ -385,10 +381,6 @@ export function applyDirectoryEvent(input: {
           draft.splice(result.index, 1)
         }),
       )
-      break
-    }
-    case "lsp.updated": {
-      input.loadLsp()
       break
     }
     case "reference.updated": {

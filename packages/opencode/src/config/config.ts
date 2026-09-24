@@ -12,6 +12,7 @@ import { Auth } from "../auth"
 import { Env } from "../env"
 import { applyEdits, modify } from "jsonc-parser"
 import { InstallationLocal, InstallationVersion } from "@opencode-ai/core/installation/version"
+import semver from "semver"
 import { existsSync } from "fs"
 import { Account } from "@/account/account"
 import { isRecord } from "@/util/record"
@@ -187,6 +188,32 @@ const layer = Layer.effect(
 
     const readConfigFile = (filepath: string) => fs.readFileStringSafe(filepath).pipe(Effect.orDie)
 
+    // `directories` includes Global.Path.config and ~/.opencode for every project,
+    // so each instance would rescan the same dirs. Memoize the pure per-dir scans
+    // (command/agent/mode/plugin lists) process-wide — they're pure disk reads.
+    const dirScanCache = new Map<string, Promise<{
+      command: Awaited<ReturnType<typeof ConfigCommand.load>>
+      agent: Awaited<ReturnType<typeof ConfigAgent.load>>
+      mode: Awaited<ReturnType<typeof ConfigAgent.loadMode>>
+      plugins: Awaited<ReturnType<typeof ConfigPlugin.load>>
+    }>>()
+
+    const scanDirectory = (dir: string) => {
+      const hit = dirScanCache.get(dir)
+      if (hit) return hit
+      const pending = (async () => {
+        const [command, agent, mode, plugins] = await Promise.all([
+          ConfigCommand.load(dir),
+          ConfigAgent.load(dir),
+          ConfigAgent.loadMode(dir),
+          ConfigPlugin.load(dir),
+        ])
+        return { command, agent, mode, plugins }
+      })()
+      dirScanCache.set(dir, pending)
+      return pending
+    }
+
     const fetchRemoteJson = Effect.fnUntraced(function* <S extends Schema.Top>(
       url: string,
       headers: Record<string, string> | undefined,
@@ -316,7 +343,10 @@ const layer = Layer.effect(
 
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
+        const cfgT0 = Date.now()
+        const cfgElapsed = () => Date.now() - cfgT0
         const auth = yield* authSvc.all().pipe(Effect.orDie)
+        yield* Effect.logInfo("config auth loaded", { directory: ctx.directory, ms: cfgElapsed() })
 
         let result: Info = {}
         const authEnv: Record<string, string> = {}
@@ -400,6 +430,7 @@ const layer = Layer.effect(
 
         const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
         yield* merge(Global.Path.config, global, "global")
+        yield* Effect.logInfo("config global merged", { directory: ctx.directory, ms: cfgElapsed() })
 
         if (Flag.OPENCODE_CONFIG) {
           yield* merge(Flag.OPENCODE_CONFIG, yield* loadFile(Flag.OPENCODE_CONFIG, authEnv))
@@ -411,6 +442,7 @@ const layer = Layer.effect(
             yield* merge(file, yield* loadFile(file, authEnv), "local")
           }
         }
+        yield* Effect.logInfo("config project files merged", { directory: ctx.directory, ms: cfgElapsed() })
 
         result.agent = result.agent || {}
         result.mode = result.mode || {}
@@ -423,6 +455,10 @@ const layer = Layer.effect(
         }
 
         const deps: Fiber.Fiber<void>[] = []
+
+        // Warm the per-dir scans in parallel — they're cached in `dirScanCache`, so the
+        // sequential merge below picks up already-resolved results.
+        for (const dir of directories) void scanDirectory(dir)
 
         for (const dir of directories) {
           if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
@@ -438,35 +474,41 @@ const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
-          const dep = yield* npmSvc
-            .install(dir, {
-              add: [
-                {
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                },
-              ],
-            })
-            .pipe(
-              Effect.exit,
-              Effect.tap((exit) =>
-                Exit.isFailure(exit)
-                  ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
-                  : Effect.void,
-              ),
-              Effect.asVoid,
-              Effect.forkDetach,
-            )
-          deps.push(dep)
+          // Local dev builds have no baked-in version; skipping entirely avoids
+          // both the registry lookup for a `@local` tag that does not exist and
+          // the per-instance `resolve latest` round-trip that slows startup.
+          if (!InstallationLocal) {
+            const dep = yield* npmSvc
+              .install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: semver.valid(InstallationVersion) ? InstallationVersion : undefined,
+                  },
+                ],
+              })
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
+                    : Effect.void,
+                ),
+                Effect.asVoid,
+                Effect.forkDetach,
+              )
+            deps.push(dep)
+          }
 
-          result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
+          const scanned = yield* Effect.promise(() => scanDirectory(dir))
+          result.command = mergeDeep(result.command ?? {}, scanned.command)
+          result.agent = mergeDeep(result.agent ?? {}, scanned.agent)
+          result.agent = mergeDeep(result.agent ?? {}, scanned.mode)
           // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs and we only need to attach origin metadata here.
-          const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-          yield* mergePluginOrigins(dir, list)
+          yield* mergePluginOrigins(dir, scanned.plugins)
         }
+        yield* Effect.logInfo("config directories scanned", { directory: ctx.directory, ms: cfgElapsed() })
 
         if (process.env.OPENCODE_CONFIG_CONTENT) {
           const source = "OPENCODE_CONFIG_CONTENT"
@@ -578,6 +620,7 @@ const layer = Layer.effect(
         if (result.autoshare === true && !result.share) {
           result.share = "auto"
         }
+        yield* Effect.logInfo("config instance state done", { directory: ctx.directory, ms: cfgElapsed() })
 
         if (Flag.OPENCODE_DISABLE_AUTOCOMPACT) {
           result.compaction = { ...result.compaction, auto: false }
@@ -637,6 +680,7 @@ const layer = Layer.effect(
     // Per-directory instance config lives in InstanceState and is cleared by
     // InstanceStore.reload/dispose via registerDisposer.
     const invalidate = Effect.fn("Config.invalidate")(function* () {
+      dirScanCache.clear()
       yield* invalidateGlobal
     })
 

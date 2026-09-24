@@ -14,7 +14,9 @@ await $`cd ../opencode && bun script/build-node.ts`
 // 把完整 CLI（含 serve / skill cloud 等 fork 私有指令）打进安装包，
 // 用户装完可在 resources/cli/opencode.exe 直接调用。
 if (process.platform === "win32") {
-  await $`cd ../opencode && bun script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui`
+  // --skip-install：build.ts 默认每次跑 bun install --os="*" --cpu="*" 拉全平台依赖，
+  // 本地反复构建时 ghostty-web 等 github tarball 常因网络/EPERM 挂掉；node_modules 已在就直接复用。
+  await $`cd ../opencode && bun script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui --skip-install`
   const src = "../opencode/dist/opencode-windows-x64/bin/opencode.exe"
   const dest = windowsify("resources/cli/opencode")
   await $`mkdir -p resources/cli`

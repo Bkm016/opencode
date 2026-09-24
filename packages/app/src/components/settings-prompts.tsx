@@ -167,7 +167,6 @@ const LOCAL_CATALOG: PromptCatalogItem[] = [
   { id: "tool.task", group: "tool", title: "task", description: "Tool description for the task tool" },
   { id: "tool.skill", group: "tool", title: "skill", description: "Tool description for the skill tool" },
   { id: "tool.question", group: "tool", title: "question", description: "Tool description for the question tool" },
-  { id: "tool.lsp", group: "tool", title: "lsp", description: "Tool description for the lsp tool" },
   { id: "tool.webfetch", group: "tool", title: "webfetch", description: "Tool description for the webfetch tool" },
   { id: "tool.websearch", group: "tool", title: "websearch", description: "Tool description for the websearch tool" },
   {

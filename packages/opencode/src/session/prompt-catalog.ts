@@ -31,7 +31,6 @@ import TOOL_GLOB from "../tool/glob.txt"
 import TOOL_TASK from "../tool/task.txt"
 import TOOL_SKILL from "../tool/skill.txt"
 import TOOL_QUESTION from "../tool/question.txt"
-import TOOL_LSP from "../tool/lsp.txt"
 import TOOL_WEBFETCH from "../tool/webfetch.txt"
 import TOOL_WEBSEARCH from "../tool/websearch.txt"
 import TOOL_TODOWRITE from "../tool/todowrite.txt"
@@ -295,13 +294,6 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "question",
     description: "Tool description for the question tool",
     default: TOOL_QUESTION,
-  },
-  {
-    id: "tool.lsp",
-    group: "tool",
-    title: "lsp",
-    description: "Tool description for the lsp tool",
-    default: TOOL_LSP,
   },
   {
     id: "tool.webfetch",

@@ -10,9 +10,7 @@ import { Config } from "@/config/config"
 import { Git } from "@/git"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Storage } from "@/storage/storage"
-import { Snapshot } from "@/snapshot"
 import { Plugin } from "@/plugin"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"
 import { ProviderAuth } from "@/provider/auth"
 import { Agent } from "@/agent/agent"
@@ -32,7 +30,6 @@ import { SessionSummary } from "@/session/summary"
 import { SessionPrompt } from "@/session/prompt"
 import { Instruction } from "@/session/instruction"
 import { LLM } from "@/session/llm"
-import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Command } from "@/command"
@@ -41,7 +38,6 @@ import { ToolRegistry } from "@/tool/registry"
 import { Format } from "@/format"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
-import { Vcs } from "@/project/vcs"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
@@ -67,9 +63,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Config.node,
     Git.node,
     Storage.node,
-    Snapshot.node,
     Plugin.node,
-    ModelsDev.node,
     Provider.node,
     ProviderAuth.node,
     Agent.node,
@@ -94,7 +88,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     SessionPrompt.node,
     Instruction.node,
     LLM.node,
-    LSP.node,
     MCP.node,
     McpAuth.node,
     Command.node,
@@ -103,7 +96,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     Format.node,
     InstanceStore.node,
     Project.node,
-    Vcs.node,
     Workspace.node,
     Worktree.node,
     Installation.node,

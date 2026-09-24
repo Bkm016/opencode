@@ -317,7 +317,8 @@ const live: Layer.Layer<
             )
           },
           // Copilot returns the authoritative billed amount only in provider-specific response fields.
-          includeRawChunks: input.model.providerID.includes("github-copilot"),
+          // 响应导出同时保留上游原始事件，避免 SDK 将 incomplete 映射成 stop 后丢失证据。
+          includeRawChunks: true,
           async experimental_repairToolCall(failed) {
             const requested = failed.toolCall.toolName
             const resolved = ToolNameAlias.resolveToolName(
@@ -460,7 +461,8 @@ const live: Layer.Layer<
                         controller.close()
                         return
                       }
-                      parts.push(next.value)
+                      // 仅快照附带接收时间（Unix 毫秒）；执行链继续消费未经修改的 SDK 事件。
+                      parts.push({ ...next.value, receivedAt: Date.now() })
                       controller.enqueue(next.value)
                     },
                     cancel(reason) {

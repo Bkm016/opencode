@@ -18,7 +18,6 @@ const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(er
 type QueuedServerEvent = { directory: string; payload: Event }
 
 const coalescedKey = (event: QueuedServerEvent) => {
-  if (event.payload.type === "lsp.updated") return `lsp.updated:${event.directory}`
   if (event.payload.type === "message.part.updated") {
     const part = event.payload.properties.part
     return `message.part.updated:${event.directory}:${part.messageID}:${part.id}`

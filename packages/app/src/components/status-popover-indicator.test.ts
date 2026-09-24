@@ -28,15 +28,10 @@ describe("serverStatusDotClass", () => {
 
 describe("hasNonBlockingServiceIssue", () => {
   test("detects MCP failures that do not block chatting", () => {
-    expect(hasNonBlockingServiceIssue({ mcp: ["failed"], lsp: [] })).toBe(true)
-    expect(hasNonBlockingServiceIssue({ mcp: ["needs_auth"], lsp: [] })).toBe(true)
-    expect(hasNonBlockingServiceIssue({ mcp: ["needs_client_registration"], lsp: [] })).toBe(true)
-    expect(hasNonBlockingServiceIssue({ mcp: ["connected", "disabled"], lsp: [] })).toBe(false)
-  })
-
-  test("detects LSP failures that do not block chatting", () => {
-    expect(hasNonBlockingServiceIssue({ mcp: [], lsp: ["error"] })).toBe(true)
-    expect(hasNonBlockingServiceIssue({ mcp: [], lsp: ["connected"] })).toBe(false)
+    expect(hasNonBlockingServiceIssue({ mcp: ["failed"] })).toBe(true)
+    expect(hasNonBlockingServiceIssue({ mcp: ["needs_auth"] })).toBe(true)
+    expect(hasNonBlockingServiceIssue({ mcp: ["needs_client_registration"] })).toBe(true)
+    expect(hasNonBlockingServiceIssue({ mcp: ["connected", "disabled"] })).toBe(false)
   })
 })
 

@@ -36,7 +36,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
-import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
+
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
@@ -1547,83 +1547,42 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       data-component="prompt-model-control"
                       classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
                     >
-                      <Show
-                        when={props.controls.model.paid}
-                        fallback={
-                          <TooltipKeybind
-                            placement="top"
-                            gutter={4}
-                            title={language.t("command.model.choose")}
-                            keybind={command.keybind("model.choose")}
-                          >
-                            <Button
-                              data-action="prompt-model"
-                              as="div"
-                              variant="ghost"
-                              size="normal"
-                              class="min-w-0 max-w-[320px] text-13-regular text-text-base group"
-                              style={control()}
-                              onClick={() => {
-                                dialog.show(() => <DialogSelectModelUnpaid model={props.controls.model.selection} />)
-                              }}
-                            >
-                              <Show when={props.controls.model.selection.current()}>
-                                {(m) => (
-                                  <ProviderIcon
-                                    id={m().provider.id}
-                                    model={m().id}
-                                    family={m().family}
-                                    class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                                    style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                                  />
-                                )}
-                              </Show>
-                              <span class="truncate">
-                                {props.controls.model.selection.current()?.name ??
-                                  language.t("dialog.model.select.title")}
-                              </span>
-                              <Icon name="chevron-down" size="small" class="shrink-0" />
-                            </Button>
-                          </TooltipKeybind>
-                        }
+                      <TooltipKeybind
+                        placement="top"
+                        gutter={4}
+                        title={language.t("command.model.choose")}
+                        keybind={command.keybind("model.choose")}
                       >
-                        <TooltipKeybind
-                          placement="top"
-                          gutter={4}
-                          title={language.t("command.model.choose")}
-                          keybind={command.keybind("model.choose")}
+                        <ModelSelectorPopover
+                          model={props.controls.model.selection}
+                          triggerAs={Button}
+                          triggerProps={{
+                            variant: "ghost",
+                            size: "normal",
+                            style: control(),
+                            class: "min-w-0 max-w-[320px] text-13-regular text-text-base group",
+                            "data-action": "prompt-model",
+                          }}
+                          onClose={restoreFocus}
                         >
-                          <ModelSelectorPopover
-                            model={props.controls.model.selection}
-                            triggerAs={Button}
-                            triggerProps={{
-                              variant: "ghost",
-                              size: "normal",
-                              style: control(),
-                              class: "min-w-0 max-w-[320px] text-13-regular text-text-base group",
-                              "data-action": "prompt-model",
-                            }}
-                            onClose={restoreFocus}
-                          >
-                            <Show when={props.controls.model.selection.current()}>
-                              {(m) => (
-                                <ProviderIcon
-                                  id={m().provider.id}
-                                  model={m().id}
-                                  family={m().family}
-                                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                                />
-                              )}
-                            </Show>
-                            <span class="truncate">
-                              {props.controls.model.selection.current()?.name ??
-                                language.t("dialog.model.select.title")}
-                            </span>
-                            <Icon name="chevron-down" size="small" class="shrink-0" />
-                          </ModelSelectorPopover>
-                        </TooltipKeybind>
-                      </Show>
+                          <Show when={props.controls.model.selection.current()}>
+                            {(m) => (
+                              <ProviderIcon
+                                id={m().provider.id}
+                                model={m().id}
+                                family={m().family}
+                                class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
+                                style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+                              />
+                            )}
+                          </Show>
+                          <span class="truncate">
+                            {props.controls.model.selection.current()?.name ??
+                              language.t("dialog.model.select.title")}
+                          </span>
+                          <Icon name="chevron-down" size="small" class="shrink-0" />
+                        </ModelSelectorPopover>
+                      </TooltipKeybind>
                     </div>
                     <Show when={showVariantControl()}>
                       <div

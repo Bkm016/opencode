@@ -17,7 +17,6 @@ import type {
   PullRequestEvent,
 } from "@octokit/webhooks-types"
 import { UI } from "../ui"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { InstanceRef } from "@/effect/instance-ref"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
@@ -156,7 +155,7 @@ export const githubInstall = Effect.fn("Cli.github.install")(function* () {
   const maybeCtx = yield* InstanceRef
   if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
   const ctx = maybeCtx
-  const modelsDev = yield* ModelsDev.Service
+  const providerSvc = yield* Provider.Service
   const gitSvc = yield* Git.Service
   yield* Effect.promise(async () => {
     {
@@ -165,8 +164,9 @@ export const githubInstall = Effect.fn("Cli.github.install")(function* () {
       const app = await getAppInfo()
       await installGitHubApp()
 
-      const providers = await Effect.runPromise(modelsDev.get()).then((p) => {
-        // TODO: add guide for copilot, for now just hide it
+      // provider 目录来自当前实例的 config + auth，不再拉取 models.dev
+      const providers = await Effect.runPromise(providerSvc.list()).then((result) => {
+        const p = { ...result } as Record<string, Provider.Info>
         delete p["github-copilot"]
         return p
       })

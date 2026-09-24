@@ -376,14 +376,15 @@
     height: 0 !important;
   }
 
+  /* --oc-sheet-bg 仅在手机底部面板中定义，桌面端须回落到托盘底色，否则吸顶分组标题透明并与模型行重叠。 */
   .prompt-model-tray [data-slot="list-header"] {
-    background: var(--oc-sheet-bg) !important;
+    background: var(--oc-sheet-bg, var(--prompt-tray-bg)) !important;
     padding-inline: 12px !important;
     font-size: 13px !important;
   }
 
   .prompt-model-tray [data-slot="list-header"]::after {
-    background: linear-gradient(to bottom, var(--oc-sheet-bg), transparent) !important;
+    background: linear-gradient(to bottom, var(--oc-sheet-bg, var(--prompt-tray-bg)), transparent) !important;
   }
 
   [data-component="select-content"] [data-slot="select-select-item"] {
@@ -401,6 +402,67 @@
 
   .prompt-model-tray [data-slot="list-group"]:last-child {
     padding-bottom: 4px;
+  }
+
+  /*
+   * 状态托盘：沿用模型托盘的表面，页签收紧为 26px 胶囊，避免默认 48px 页签栏撑高浮层。
+   * pill 变体自带深色页签栏底色与 32px 高度，选择器须带上同样的变体属性才能覆盖。
+   */
+  .status-tray [data-component="tabs"][data-variant="pill"] {
+    height: auto;
+    background: transparent;
+  }
+
+  .status-tray [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-list"] {
+    height: auto;
+    padding: 0;
+    gap: 2px;
+    background: transparent;
+  }
+
+  .status-tray
+    [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"]
+    [data-slot="tabs-trigger-wrapper"] {
+    height: 26px;
+    border-radius: 6px;
+    color: var(--text-weak);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .status-tray
+    [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"]
+    [data-slot="tabs-trigger-wrapper"]
+    [data-slot="tabs-trigger"] {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .status-tray
+    [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"]
+    [data-slot="tabs-trigger-wrapper"]:hover:not(:disabled) {
+    background: var(--surface-raised-base-hover);
+    color: var(--text-strong);
+  }
+
+  .status-tray
+    [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"]
+    [data-slot="tabs-trigger-wrapper"]:has([data-selected]),
+  .status-tray
+    [data-component="tabs"][data-variant="pill"][data-orientation="horizontal"]
+    [data-slot="tabs-trigger-wrapper"]:has([data-selected]):hover:not(:disabled) {
+    background: var(--surface-raised-base-hover);
+    color: var(--text-strong);
+  }
+
+  .status-tray [data-slot="status-tray-count"] {
+    color: var(--text-weaker);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .status-tray [data-component="tabs"] [data-slot="tabs-content"] {
+    min-height: 0;
+    overflow-y: auto;
   }
 }
 

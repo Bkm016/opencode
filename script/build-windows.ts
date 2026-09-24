@@ -22,7 +22,7 @@ console.log(`Building Windows desktop (channel=${channel}, skipSidecar=${skipSid
 
 $.cwd(desktopDir)
 if (skipSidecar) {
-  // 仅同步版本号与资源，不重建 server sidecar。
+  // 仅同步版本号与资源，不重建 server sidecar；CLI 沿用上一次 prebuild 拷到 resources/cli/ 的产物。
   await $`bun ./scripts/copy-icons.ts ${channel}`
   await $`bun ./scripts/copy-metainfo.ts ${channel}`
   const pkg = await Bun.file("./package.json").json()
@@ -32,7 +32,14 @@ if (skipSidecar) {
 } else {
   await $`bun ./scripts/prepare.ts`
 }
+
+// --skip-sidecar 时 resources/cli/opencode.exe 必须已经由上一次完整 build 拷好，
+// 否则 electron-builder 的 extraResources 找不到文件直接失败。
+if (skipSidecar && !(await Bun.file("resources/cli/opencode.exe").exists())) {
+  throw new Error("resources/cli/opencode.exe missing — run without --skip-sidecar first")
+}
 await $`bun run build`
 await $`npx electron-builder --win --publish never --config electron-builder.config.ts`
 
+// 打出的安装包会带 resources/cli/opencode.exe（完整 CLI，含 serve / skill cloud）。
 console.log(`Done. Artifacts in ${path.join(desktopDir, "dist")}`)

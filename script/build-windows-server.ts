@@ -1,21 +1,30 @@
-// Build a standalone Windows x64 opencode-server.exe that includes `opencode serve`.
+// Build a standalone Windows x64 opencode.exe CLI that includes `opencode serve`
+// and fork-only commands like `opencode skill cloud`.
 // Usage: bun ./script/build-windows-server.ts
-// Output: packages/opencode/dist/opencode-server-windows-x64/bin/opencode-server.exe
+// Output: packages/opencode/dist/opencode-cli-windows-x64/opencode.exe (+ .zip 便于分发)
 import { $ } from "bun"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const opencodeDir = path.join(rootDir, "packages", "opencode")
-const srcExe = path.join(opencodeDir, "dist", "opencode-windows-x64", "bin", "opencode.exe")
-const dstDir = path.join(opencodeDir, "dist", "opencode-server-windows-x64", "bin")
-const dstExe = path.join(dstDir, "opencode-server.exe")
+const distDir = path.join(opencodeDir, "dist")
+const srcExe = path.join(distDir, "opencode-windows-x64", "bin", "opencode.exe")
+const outDir = path.join(distDir, "opencode-cli-windows-x64")
+const outExe = path.join(outDir, "opencode.exe")
+const outZip = path.join(distDir, "opencode-cli-windows-x64.zip")
 
 $.cwd(opencodeDir)
 await $`bun ./script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui`
 
-await $`mkdir -p ${dstDir}`
-await $`mv -f ${srcExe} ${dstExe}`
+await $`mkdir -p ${outDir}`
+await $`cp -f ${srcExe} ${outExe}`
 
-console.log(`Done. Binary at ${dstExe}`)
-console.log("Run: opencode-server.exe serve --hostname 0.0.0.0 --port 4096")
+// 打成 zip 方便直接发给别人，解压即用；PowerShell 的 Expand-Archive 可解。
+await $`rm -f ${outZip}`
+await $`zip -j ${outZip} ${outExe}`
+
+console.log(`Done.`)
+console.log(`  exe: ${outExe}`)
+console.log(`  zip: ${outZip}`)
+console.log("Run: opencode.exe serve --hostname 0.0.0.0 --port 4096")

@@ -27,5 +27,6 @@ out-test-main/
 src/renderer/out-test-main/
 
 resources/opencode-cli*
+resources/cli/
 resources/icons
 resources/*.metainfo.xml

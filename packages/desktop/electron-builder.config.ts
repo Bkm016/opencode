@@ -75,6 +75,12 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    // 完整 CLI（含 serve / skill cloud），装完在 resources/cli/opencode.exe 可直接调用。
+    {
+      from: "resources/cli/",
+      to: "cli/",
+      filter: ["opencode.exe"],
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

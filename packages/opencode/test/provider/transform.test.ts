@@ -2342,14 +2342,14 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
     expect(result[1].content[0]).toEqual({ type: "text", text: "Answer" })
   })
 
-  test("does not filter for non-anthropic providers", () => {
-    const openaiModel = {
+  test("does not filter providers outside the covered SDKs", () => {
+    const gatewayModel = {
       ...anthropicModel,
-      providerID: "openai",
+      providerID: "vercel",
       api: {
-        id: "gpt-4",
-        url: "https://api.openai.com",
-        npm: "@ai-sdk/openai",
+        id: "some-model",
+        url: "https://api.vercel.ai",
+        npm: "@ai-sdk/vercel",
       },
     }
 
@@ -2361,7 +2361,7 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
       },
     ] as any[]
 
-    const result = ProviderTransform.message(msgs, openaiModel, {})
+    const result = ProviderTransform.message(msgs, gatewayModel, {})
 
     expect(result).toHaveLength(2)
     expect(result[0].content).toBe("")
@@ -2387,6 +2387,109 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
       { type: "text", text: "I checked your home directory and looked for PDF files." },
       { type: "tool-call", toolCallId: "toolu_1", toolName: "read", input: { filePath: "/root" } },
       { type: "tool-call", toolCallId: "toolu_2", toolName: "glob", input: { pattern: "**/*.pdf" } },
+    ])
+  })
+})
+
+describe("ProviderTransform.message - openai chat empty assistant filtering", () => {
+  const openaiChatModel = {
+    id: "asgard-openai/kimi-k3",
+    providerID: "asgard-openai",
+    api: {
+      id: "kimi-k3",
+      url: "https://example.com/v1",
+      npm: "@ai-sdk/openai",
+    },
+    name: "Kimi K3",
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+    limit: { context: 256000, output: 64000 },
+    status: "active",
+    options: {},
+    headers: {},
+  } as any
+
+  test("drops assistant messages that only contain empty reasoning", () => {
+    const msgs = [
+      { role: "user", content: "Hello" },
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", text: "" }],
+      },
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", text: "still thinking" }],
+      },
+      { role: "user", content: "World" },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, openaiChatModel, {})
+
+    expect(result).toHaveLength(3)
+    expect(result[1].content).toEqual([{ type: "reasoning", text: "still thinking" }])
+  })
+
+  test("drops empty string assistant content but keeps tool calls", () => {
+    const msgs = [
+      { role: "assistant", content: "" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "" },
+          { type: "tool-call", toolCallId: "call-1", toolName: "bash", input: { command: "ls" } },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, openaiChatModel, {})
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toEqual([
+      { type: "tool-call", toolCallId: "call-1", toolName: "bash", input: { command: "ls" } },
+    ])
+  })
+
+  test("applies the same filtering for openai-compatible providers", () => {
+    const compatModel = {
+      ...openaiChatModel,
+      api: { ...openaiChatModel.api, npm: "@ai-sdk/openai-compatible" },
+    }
+    const msgs = [
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", text: "   " }],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, compatModel, {})
+
+    expect(result).toHaveLength(0)
+  })
+
+  test("preserves non-empty text and reasoning", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "plan" },
+          { type: "text", text: "answer" },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, openaiChatModel, {})
+
+    expect(result[0].content).toEqual([
+      { type: "reasoning", text: "plan" },
+      { type: "text", text: "answer" },
     ])
   })
 })

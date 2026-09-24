@@ -165,6 +165,29 @@ function normalizeMessages(
     }
   })
 
+  // OpenAI chat-completions 序列化（@ai-sdk/openai 与 @ai-sdk/openai-compatible）
+  // 会把 assistant 的 text 段拼成字符串 content；消息被 step-start 切成只剩空
+  // reasoning 的块时，就会发出 content: "" 的 assistant 消息被上游 400。
+  // 与 Anthropic/Bedrock 同款处理：清掉整条空串或剥除空 text/reasoning 段。
+  if (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/openai-compatible") {
+    msgs = msgs
+      .map((msg) => {
+        if (msg.role !== "assistant") return msg
+        if (typeof msg.content === "string") {
+          if (msg.content === "") return undefined
+          return msg
+        }
+        const filtered = msg.content.filter((part) => {
+          if (part.type === "text") return part.text !== ""
+          if (part.type === "reasoning") return part.text.trim().length > 0
+          return true
+        })
+        if (filtered.length === 0) return undefined
+        return { ...msg, content: filtered }
+      })
+      .filter((msg): msg is ModelMessage => msg !== undefined)
+  }
+
   // Anthropic rejects messages with empty content - filter out empty string messages
   // and remove empty text/reasoning parts from array content
   if (model.api.npm === "@ai-sdk/anthropic") {

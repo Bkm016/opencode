@@ -90,6 +90,11 @@
     min-height: 0;
     overflow: hidden;
     padding: 0;
+
+    /* 页眉点阵向两侧外扩，窄抽屉里会撑出横向滚动；宽内容（代码、表格、图表）各自滚动。 */
+    > .scroll-view__viewport {
+      overflow-x: hidden;
+    }
   }
 
   /* 文档纸张卡片底面：精致技术讲解文档单独底面，适度边框/圆角/留白 */

@@ -20,6 +20,7 @@ import {
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 
+import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
 import { createStore } from "solid-js/store"
@@ -65,9 +66,11 @@ import { clearSessionFindHighlights, scheduleSessionFindHighlights } from "@/pag
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
-  clampSessionPanelWidth,
-  SESSION_PANEL_WIDTH_MIN,
-  sessionPanelWidthMax,
+  clampDrawerWidth,
+  DRAWER_COLUMN_GUTTER,
+  DRAWER_INSET,
+  DRAWER_WIDTH_MIN,
+  drawerWidthMax,
 } from "@/pages/session/session-panel-width"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionCanvasProvider } from "@/pages/session/session-canvas-provider"
@@ -371,47 +374,33 @@ export default function Page() {
 
   const isDesktop = layout.isDesktop
   const size = createSizing()
-  const desktopTabsOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const desktopSidePanelOpen = desktopTabsOpen
-  // 侧栏目前只有 context 面板；桌面与移动端共用 reviewPanel.opened 判定，
-  // 不再引用已移除的 tabs().active 状态。
-  // Canvas 与 context 共用此开关，具体内容由侧栏内部切换。
-  const mobileContextOpen = createMemo(() => !isDesktop() && view().reviewPanel.opened())
+  // 上下文 / 画板以抽屉形式浮在正文之上：打开时正文宽度不变，手机上铺满整屏。
+  const drawerOpen = createMemo(() => view().reviewPanel.opened())
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(
     () => panelRow,
-    // 宽度未变化时跳过写入，避免 panel 宽度回写反向改变 panelRow 尺寸形成自循环。
     ({ width }) => {
       if (panelRowWidth() === width) return
       setPanelRowWidth(width)
     },
   )
-  // The observer reports the content-box width, which already excludes the row
-  // padding; only the flex gap between the panels remains to subtract.
-  const sessionPanelAvailable = panelRowWidth
-  const sessionPanelMax = createMemo(() => {
-    const available = sessionPanelAvailable()
-    if (available === undefined) return 1000
-    return sessionPanelWidthMax({ available, split: false })
-  })
   // 拖拽中的宽度只保存在本地，避免 pointermove 每帧写入持久化布局。
-  const [sessionDragWidth, setSessionDragWidth] = createSignal<number>()
-  // Clamp at render time so window or sidebar resizes squeeze the chat panel
-  // instead of the side pane, without overwriting the persisted width.
-  const sessionPanelResizedWidth = createMemo(() =>
-    clampSessionPanelWidth({
-      width: sessionDragWidth() ?? layout.session.width(),
-      available: sessionPanelAvailable(),
-      split: false,
-    }),
+  const [drawerDragWidth, setDrawerDragWidth] = createSignal<number>()
+  const drawerMax = createMemo(() => drawerWidthMax(panelRowWidth()))
+  const drawerWidth = createMemo(() =>
+    clampDrawerWidth({ width: drawerDragWidth() ?? layout.drawer.width(), available: panelRowWidth() }),
   )
-  const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    return `${sessionPanelResizedWidth()}px`
+  const centered = createMemo(() => isDesktop())
+  // 桌面端抽屉打开时，若右侧还有余量就把正文列整体左移让位（列宽不变），余量不足时抽屉直接覆盖。
+  const wideColumn = createMediaQuery("(min-width: 1536px)")
+  const drawerAvoid = createMemo(() => {
+    if (!isDesktop() || !drawerOpen()) return 0
+    const available = panelRowWidth()
+    if (available === undefined) return 0
+    const column = (wideColumn() ? 1000 : 800) + DRAWER_COLUMN_GUTTER
+    return Math.max(0, Math.min(drawerWidth() + DRAWER_INSET * 2, available - column))
   })
-  // Chat layout reacts to the shared right rail, not its current content.
-  const centered = createMemo(() => isDesktop() && !desktopSidePanelOpen())
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
   const isChildSession = createMemo(() => !!info()?.parentID)
@@ -1553,41 +1542,28 @@ export default function Page() {
   return (
     <SessionRouteFrame>
       <SessionHeader />
-      <div
-        ref={panelRow}
-        classList={{
-          "flex-1 min-h-0 flex flex-col": true,
-          "flex-row": isDesktop(),
-        }}
-      >
-        <Show when={!mobileContextOpen()}>
-          <div
-            classList={{
-              "@container relative shrink-0 flex flex-col min-h-0 h-full transition-[width]": true,
-              "flex-1": !isDesktop(),
-              "flex-none": isDesktop(),
-              "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                !size.active(),
-            }}
-            style={{
-              width: sessionPanelWidth(),
-            }}
-          >
-            <SessionPanelFrame>{sessionPanelContent()}</SessionPanelFrame>
-          </div>
-        </Show>
+      <div ref={panelRow} class="relative flex-1 min-h-0 flex flex-col">
+        <div
+          class="@container relative flex-1 flex flex-col min-h-0 h-full w-full bg-background-stronger"
+          classList={{
+            "transition-[padding] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none":
+              !size.active(),
+          }}
+          style={{ "padding-right": `${drawerAvoid()}px` }}
+        >
+          <SessionPanelFrame>{sessionPanelContent()}</SessionPanelFrame>
+        </div>
 
-        <Show when={desktopSidePanelOpen() || mobileContextOpen()}>
+        <Show when={drawerOpen()}>
           <SessionSidePanel
             size={size}
-            sessionWidth={sessionPanelResizedWidth}
-            sessionWidthMin={SESSION_PANEL_WIDTH_MIN}
-            sessionWidthMax={sessionPanelMax}
-            availableWidth={sessionPanelAvailable}
-            onSessionResize={(width) => setSessionDragWidth(width)}
-            onSessionResizeEnd={(width) => {
-              layout.session.resize(width)
-              setSessionDragWidth(undefined)
+            width={drawerWidth}
+            widthMin={DRAWER_WIDTH_MIN}
+            widthMax={drawerMax}
+            onResize={(width) => setDrawerDragWidth(width)}
+            onResizeEnd={(width) => {
+              layout.drawer.resize(width)
+              setDrawerDragWidth(undefined)
             }}
           />
         </Show>

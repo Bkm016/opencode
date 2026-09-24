@@ -1869,7 +1869,10 @@ export function MessageTimeline(props: {
         <Show when={!layout.isDesktop()}>
           <div class="h-3" aria-hidden="true" />
         </Show>
-        <Show when={!layout.isDesktop() && hasHeader() && mobileMount()}>
+        {/* 手机上抽屉打开时由抽屉接管标题栏，正文仍保持挂载以保留滚动位置。 */}
+        <Show
+          when={!layout.isDesktop() && hasHeader() && !layout.view(sessionKey).reviewPanel.opened() && mobileMount()}
+        >
           {(mount) => (
             <Portal mount={mount()}>
               <div data-slot="mobile-session-title" class="flex h-full min-w-0 flex-1 items-center">

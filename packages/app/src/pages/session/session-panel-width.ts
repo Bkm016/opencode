@@ -19,3 +19,19 @@ export function clampSessionPanelWidth(input: {
   const max = sessionPanelWidthMax({ available: input.available })
   return Math.min(Math.max(input.width, SESSION_PANEL_WIDTH_MIN), max)
 }
+
+// 右侧抽屉覆盖在正文之上，宽度独立保存；至少给正文留出一条可见边，便于点回正文。
+export const DRAWER_WIDTH_MIN = 320
+const DRAWER_EDGE_MIN = 160
+// 桌面抽屉与窗口边缘的间距，以及正文列让位时两侧保留的留白。
+export const DRAWER_INSET = 8
+export const DRAWER_COLUMN_GUTTER = 64
+
+export function drawerWidthMax(available: number | undefined) {
+  if (available === undefined) return Number.POSITIVE_INFINITY
+  return Math.max(DRAWER_WIDTH_MIN, available - DRAWER_EDGE_MIN)
+}
+
+export function clampDrawerWidth(input: { width: number; available: number | undefined }) {
+  return Math.min(Math.max(input.width, DRAWER_WIDTH_MIN), drawerWidthMax(input.available))
+}

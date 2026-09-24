@@ -10,21 +10,19 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useTitlebarMobileMount } from "@/components/titlebar"
 import { gsapEnter } from "@/utils/gsap-motion"
-import { SIDE_PANEL_WIDTH_MIN } from "@/pages/session/session-panel-width"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import type { Sizing } from "@/pages/session/helpers"
 import { SessionCanvasPanel } from "./session-canvas-panel"
 
+const TAB_CLASS = "text-text-weak aria-pressed:text-text-strong aria-pressed:bg-surface-raised-base-active"
+
 export function SessionSidePanel(props: {
   size: Sizing
-  stacked?: boolean
-  sidePanelSnap?: boolean
-  sessionWidth: () => number
-  sessionWidthMin: number
-  sessionWidthMax: () => number
-  onSessionResize: (width: number) => void
-  onSessionResizeEnd?: (width: number) => void
-  availableWidth: () => number | undefined
+  width: () => number
+  widthMin: number
+  widthMax: () => number
+  onResize: (width: number) => void
+  onResizeEnd?: (width: number) => void
 }) {
   const layout = useLayout()
   const mobileMount = useTitlebarMobileMount()
@@ -36,37 +34,6 @@ export function SessionSidePanel(props: {
     return canvas && view().canvas.active() ? `${sessionKey()}:${canvas.partID}` : undefined
   })
   const open = createMemo(() => view().reviewPanel.opened())
-  const desktopResize = createMemo(() => {
-    if (!open()) return false
-    if (!layout.isDesktop()) return false
-    return props.availableWidth() !== undefined
-  })
-  const panelWidth = createMemo(() => {
-    if (!open()) return "0px"
-    if (!layout.isDesktop()) return "100%"
-    const available = props.availableWidth()
-    if (available === undefined) return "auto"
-    return `${Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidth())}px`
-  })
-  // 保持 handle 挂载，仅响应尺寸边界变化，避免拖拽时重复重建属性对象。
-  const sideSize = createMemo(() => {
-    const available = props.availableWidth()
-    if (available === undefined) return SIDE_PANEL_WIDTH_MIN
-    return Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidth())
-  })
-  const sideMin = SIDE_PANEL_WIDTH_MIN
-  const sideMax = createMemo(() => {
-    const available = props.availableWidth()
-    if (available === undefined) return SIDE_PANEL_WIDTH_MIN
-    return Math.max(SIDE_PANEL_WIDTH_MIN, available - props.sessionWidthMin)
-  })
-  const sessionFromSide = (sideWidth: number) => {
-    const available = props.availableWidth()
-    if (available === undefined) return props.sessionWidth()
-    const sessionMin = props.sessionWidthMin
-    const sessionMax = props.sessionWidthMax()
-    return Math.min(sessionMax, Math.max(sessionMin, available - sideWidth))
-  }
 
   const tabs = () => (
     <>
@@ -74,6 +41,7 @@ export function SessionSidePanel(props: {
         <Button
           size="small"
           variant="ghost"
+          class={TAB_CLASS}
           aria-pressed={!view().canvas.active()}
           onClick={() => view().canvas.showContext()}
         >
@@ -84,6 +52,7 @@ export function SessionSidePanel(props: {
             <Button
               size="small"
               variant="ghost"
+              class={TAB_CLASS}
               aria-pressed={view().canvas.active()}
               onClick={() => view().canvas.open(canvas())}
             >
@@ -106,37 +75,35 @@ export function SessionSidePanel(props: {
 
   return (
     <Show when={open()}>
+      {/* 抽屉浮在正文之上：桌面端靠右、可拖宽；手机端铺满整屏。 */}
       <aside
         id="session-context-panel"
+        ref={(element) => gsapEnter(element, { x: 32, y: 0, duration: 0.32 })}
         aria-label={view().canvas.active() ? i18n.t("ui.canvas.title") : language.t("session.tab.context")}
-        aria-hidden={!open()}
-        inert={!open()}
-        class="relative min-w-0 flex overflow-hidden bg-background-base"
+        class="absolute z-40 min-w-0 flex bg-background-base"
         classList={{
-          "h-full shrink-0": !props.stacked,
-          "h-full min-h-0": props.stacked,
-          "pointer-events-none": !open(),
-          "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.sidePanelSnap,
+          // 桌面：与窗口边缘留出间距的浮动卡片；手机：铺满整屏。
+          "top-2 right-2 bottom-2 rounded-xl shadow-[var(--shadow-lg-border-base)]": layout.isDesktop(),
+          "inset-0": !layout.isDesktop(),
         }}
-        style={{ width: panelWidth() }}
+        style={{ width: layout.isDesktop() ? `${props.width()}px` : undefined }}
       >
-        <Show when={desktopResize()}>
+        <Show when={layout.isDesktop()}>
           <div class="absolute inset-y-0 left-0 z-30 w-0" onPointerDown={() => props.size.start()}>
             <ResizeHandle
               direction="horizontal"
               edge="start"
-              size={sideSize()}
-              min={sideMin}
-              max={sideMax()}
-              onResize={(sideWidth) => props.onSessionResize(sessionFromSide(sideWidth))}
-              onResizeEnd={(sideWidth) => props.onSessionResizeEnd?.(sessionFromSide(sideWidth))}
+              size={props.width()}
+              min={props.widthMin}
+              max={props.widthMax()}
+              onResize={props.onResize}
+              onResizeEnd={props.onResizeEnd}
             />
           </div>
         </Show>
         <Show when={open()}>
-          <div class="size-full min-w-0 flex" ref={(element) => gsapEnter(element, { x: 24, y: 0, duration: 0.38 })}>
-            <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden bg-background-base">
+          <div class="size-full min-w-0 flex rounded-[inherit]">
+            <div class="relative min-w-0 h-full flex-1 flex flex-col overflow-hidden rounded-[inherit] bg-background-base">
               <Show
                 when={layout.isDesktop()}
                 fallback={
@@ -150,7 +117,9 @@ export function SessionSidePanel(props: {
                   </Show>
                 }
               >
-                <div class="h-10 shrink-0 flex items-center justify-between gap-2 px-3 min-w-0">{tabs()}</div>
+                <div class="h-11 shrink-0 flex items-center justify-between gap-2 pl-2 pr-1.5 min-w-0 border-b border-border-weaker-base">
+                  {tabs()}
+                </div>
               </Show>
               <div class="flex-1 min-h-0 min-w-0 overflow-hidden">
                 <Show when={canvasKey()} keyed fallback={<SessionContextTab />}>

@@ -27,6 +27,7 @@ export type { ProjectAvatarVariant }
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_SIDEBAR_WIDTH = 344
 const DEFAULT_SESSION_WIDTH = 600
+const DEFAULT_DRAWER_WIDTH = 480
 const DEFAULT_TERMINAL_HEIGHT = 280
 const DEFAULT_REVIEW_PANEL_OPENED = false
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -180,6 +181,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         session: {
           width: DEFAULT_SESSION_WIDTH,
+        },
+        drawer: {
+          width: DEFAULT_DRAWER_WIDTH,
         },
         mobileSidebar: {
           opened: false,
@@ -556,6 +560,17 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return
           }
           setStore("session", "width", width)
+        },
+      },
+      // 右侧上下文/画板抽屉的宽度，抽屉浮在正文之上，不参与正文宽度计算。
+      drawer: {
+        width: createMemo(() => store.drawer?.width ?? DEFAULT_DRAWER_WIDTH),
+        resize(width: number) {
+          if (!store.drawer) {
+            setStore("drawer", { width })
+            return
+          }
+          setStore("drawer", "width", width)
         },
       },
       mobileSidebar: {

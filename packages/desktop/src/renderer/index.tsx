@@ -255,9 +255,25 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       }
     },
 
-    fetch: (input, init) => {
-      if (input instanceof Request) return fetch(input)
-      return fetch(input, init)
+    // 走主进程 net.fetch：renderer 的 window.fetch 跨域到 CF Access 等服务会被
+    // CORS 预检拦截（CF 不响应 OPTIONS），主进程 Node 网络栈不受此限制。
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const headers: Record<string, string> = {}
+      request.headers.forEach((value, key) => {
+        headers[key] = value
+      })
+      const body = request.body ? await request.arrayBuffer() : undefined
+      const res = await window.api.fetch(request.url, {
+        method: request.method,
+        headers,
+        body: body ? new TextDecoder().decode(body) : undefined,
+      })
+      return new Response(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      })
     },
 
     getDefaultServer: async () => {

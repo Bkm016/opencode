@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process"
 import { stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
-import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, nativeImage, shell } from "electron"
+import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, nativeImage, net, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -60,6 +60,29 @@ export function registerIpcHandlers(deps: Deps) {
     "set-server-request-headers",
     (_event: IpcMainInvokeEvent, origin: string, headers: Record<string, string> | null) =>
       setServerRequestHeaders(origin, headers),
+  )
+  // 渲染进程 fetch 跨域到 CF Access 等服务时受 CORS 预检拦截；
+  // 走主进程 net.fetch 用 Node 网络栈，跳过浏览器 CORS。
+  ipcMain.handle(
+    "fetch",
+    async (
+      _event: IpcMainInvokeEvent,
+      url: string,
+      init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: never },
+    ) => {
+      const response = await net.fetch(url, {
+        method: init?.method,
+        headers: init?.headers,
+        body: init?.body,
+      })
+      const buf = await response.arrayBuffer()
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: buf,
+      }
+    },
   )
   ipcMain.handle("is-first-launch-onboarding-pending", () => deps.isFirstLaunchOnboardingPending())
   ipcMain.handle("finish-first-launch-onboarding", (_event: IpcMainInvokeEvent, createDefaultProject: boolean) =>

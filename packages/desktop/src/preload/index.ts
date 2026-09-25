@@ -69,6 +69,7 @@ const api: ElectronAPI = {
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   setServerRequestHeaders: (origin, headers) => ipcRenderer.invoke("set-server-request-headers", origin, headers),
+  fetch: (url, init) => ipcRenderer.invoke("fetch", url, init),
   isFirstLaunchOnboardingPending: () => ipcRenderer.invoke("is-first-launch-onboarding-pending"),
   finishFirstLaunchOnboarding: (createDefaultProject) =>
     ipcRenderer.invoke("finish-first-launch-onboarding", createDefaultProject),

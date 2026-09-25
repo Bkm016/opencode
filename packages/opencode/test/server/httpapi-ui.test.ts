@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { brotliDecompressSync, gunzipSync } from "node:zlib"
 import { describe, expect } from "bun:test"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { ConfigProvider, Effect, Layer, Option } from "effect"
@@ -323,6 +324,52 @@ describe("HttpApi UI fallback", () => {
       expect(readPath).toBe("/$bunfs/root/assets/app.js")
       expect(response.headers.get("content-type")).toContain("text/javascript")
       expect(yield* responseText(response)).toBe("console.log('embedded')")
+    }),
+  )
+
+  it.live("compresses and caches hashed embedded UI assets", () =>
+    Effect.gen(function* () {
+      const source = "console.log('embedded');\n".repeat(200)
+      const fs = yield* FSUtil.Service
+      const files = { "assets/app-hash.js": "/$bunfs/root/assets/app-hash.js", "index.html": "/$bunfs/root/index.html" }
+      const embeddedFs = {
+        ...fs,
+        readFile: (path: string) =>
+          Effect.succeed(new TextEncoder().encode(path.endsWith(".js") ? source : "<html>opencode</html>")),
+      }
+      const serve = (path: string, headers: Record<string, string> = {}) =>
+        serveEmbeddedUIEffect(path, embeddedFs, files, headers).pipe(Effect.map(HttpServerResponse.toWeb))
+
+      const br = yield* serve("/assets/app-hash.js", { "accept-encoding": "gzip, deflate, br" })
+      expect(br.headers.get("content-encoding")).toBe("br")
+      expect(br.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
+      expect(br.headers.get("vary")).toBe("Accept-Encoding")
+      expect(brotliDecompressSync(Buffer.from(yield* Effect.promise(() => br.arrayBuffer()))).toString()).toBe(source)
+
+      const gzip = yield* serve("/assets/app-hash.js", { "accept-encoding": "gzip" })
+      expect(gzip.headers.get("content-encoding")).toBe("gzip")
+      expect(gunzipSync(Buffer.from(yield* Effect.promise(() => gzip.arrayBuffer()))).toString()).toBe(source)
+
+      const plain = yield* serve("/assets/app-hash.js")
+      expect(plain.headers.get("content-encoding")).toBeNull()
+      expect(yield* responseText(plain)).toBe(source)
+
+      const revalidated = yield* serve("/assets/app-hash.js", { "if-none-match": br.headers.get("etag")! })
+      expect(revalidated.status).toBe(304)
+    }),
+  )
+
+  it.live("never marks the SPA fallback for a missing asset as immutable", () =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const response = yield* serveEmbeddedUIEffect(
+        "/assets/old-hash.js",
+        { ...fs, readFile: () => Effect.succeed(new TextEncoder().encode("<html>opencode</html>")) },
+        { "index.html": "/$bunfs/root/index.html" },
+      ).pipe(Effect.map(HttpServerResponse.toWeb))
+
+      expect(response.headers.get("content-type")).toContain("text/html")
+      expect(response.headers.get("cache-control")).toBe("private, no-cache")
     }),
   )
 

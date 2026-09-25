@@ -2,6 +2,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Effect, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
@@ -48,11 +49,69 @@ function notFound() {
   return HttpServerResponse.jsonUnsafe({ error: "Not Found" }, { status: 404 })
 }
 
-function embeddedUIResponse(file: string, body: Uint8Array) {
+const COMPRESSIBLE_UI_TYPE =
+  /^(?:text\/|application\/(?:javascript|json|wasm|xml|manifest\+json)|image\/(?:svg\+xml|x-icon|vnd\.microsoft\.icon)|font\/ttf)/i
+const COMPRESS_THRESHOLD_BYTES = 1024
+
+// 内嵌 UI 在进程内不会变化：压缩结果与 ETag 按文件缓存，避免每次请求重复压缩数 MB 的主包。
+const encodedUICache = new Map<string, Uint8Array>()
+const etagUICache = new Map<string, string>()
+
+type UIEncoding = "br" | "gzip"
+
+function pickUIEncoding(acceptEncoding: string | undefined): UIEncoding | undefined {
+  const accepted = (acceptEncoding ?? "").toLowerCase()
+  if (/(?:^|,)\s*br\s*(?:;|,|$)/.test(accepted)) return "br"
+  if (accepted.includes("gzip")) return "gzip"
+  return undefined
+}
+
+function encodeUI(key: string, body: Uint8Array, encoding: UIEncoding) {
+  const cacheKey = `${encoding}:${key}`
+  const cached = encodedUICache.get(cacheKey)
+  if (cached) return cached
+  const encoded =
+    encoding === "br"
+      ? brotliCompressSync(body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 9 } })
+      : gzipSync(body, { level: 9 })
+  encodedUICache.set(cacheKey, encoded)
+  return encoded
+}
+
+function uiETag(key: string, body: Uint8Array) {
+  const cached = etagUICache.get(key)
+  if (cached) return cached
+  const etag = `"${createHash("sha1").update(body).digest("base64url")}"`
+  etagUICache.set(key, etag)
+  return etag
+}
+
+function embeddedUIResponse(
+  file: string,
+  body: Uint8Array,
+  input: { immutable: boolean; headers: Record<string, string | undefined> },
+) {
   const mime = FSUtil.mimeType(file)
-  const headers = new Headers({ "content-type": mime })
+  const key = `${file}:${body.byteLength}`
+  const etag = uiETag(key, body)
+  const headers = new Headers({
+    "content-type": mime,
+    etag,
+    vary: "Accept-Encoding",
+    // 带哈希的构建产物永不变化；入口 HTML 与其它文件每次校验，升级后才能立即拿到新入口。
+    // 使用 private：响应需要鉴权，只允许浏览器缓存，不交给共享缓存。
+    "cache-control": input.immutable ? "private, max-age=31536000, immutable" : "private, no-cache",
+  })
   if (mime.startsWith("text/html")) {
     headers.set("content-security-policy", cspForHtml(new TextDecoder().decode(body)))
+  }
+  if (input.headers["if-none-match"]?.split(",").some((value) => value.trim() === etag)) {
+    return HttpServerResponse.empty({ status: 304, headers })
+  }
+  const encoding = pickUIEncoding(input.headers["accept-encoding"])
+  if (encoding && body.byteLength >= COMPRESS_THRESHOLD_BYTES && COMPRESSIBLE_UI_TYPE.test(mime)) {
+    headers.set("content-encoding", encoding)
+    return HttpServerResponse.raw(encodeUI(key, body, encoding), { headers })
   }
   return HttpServerResponse.raw(body, { headers })
 }
@@ -61,12 +120,17 @@ export function serveEmbeddedUIEffect(
   requestPath: string,
   fs: FSUtil.Interface,
   embeddedWebUI: Record<string, string>,
+  requestHeaders: Record<string, string | undefined> = {},
 ) {
-  const file = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
+  const name = requestPath.replace(/^\//, "")
+  const matched = embeddedWebUI[name]
+  const file = matched ?? embeddedWebUI["index.html"] ?? null
   if (!file) return Effect.succeed(notFound())
+  // 只有真实命中的 assets/ 文件才可长期缓存；缺失的旧哈希回落到 index.html，绝不能被永久缓存。
+  const immutable = matched !== undefined && name.startsWith("assets/")
 
   return fs.readFile(file).pipe(
-    Effect.map((body) => embeddedUIResponse(file, body)),
+    Effect.map((body) => embeddedUIResponse(file, body, { immutable, headers: requestHeaders })),
     Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(notFound())),
   )
 }
@@ -83,7 +147,7 @@ export function serveUIEffect(
     const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
     const path = new URL(request.url, "http://localhost").pathname
 
-    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
+    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI, request.headers)
 
     // UI 上游不属于本机信任域，只转发资源协商头，绝不携带凭据或 Referer。
     const upstreamHeaders = Object.fromEntries(

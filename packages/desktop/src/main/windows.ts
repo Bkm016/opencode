@@ -449,6 +449,10 @@ function addDocumentPolicy(response: Response, file: string) {
   if (!file.toLowerCase().endsWith(".html")) return response
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
+  // 204/304 等 null body 状态不允许携带 body，直接丢弃 body 只保留状态与响应头
+  if (response.status === 101 || response.status === 204 || response.status === 205 || response.status === 304) {
+    return new Response(null, { status: response.status, statusText: response.statusText, headers })
+  }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 

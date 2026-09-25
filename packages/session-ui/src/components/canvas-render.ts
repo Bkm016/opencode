@@ -5,13 +5,6 @@ import { highlightCode, katexExtension, renderKatexToken } from "@opencode-ai/ui
 
 export type CanvasResult = { ok: true; html: string } | { ok: false; error: string }
 
-const SUPPORTED_DIAGRAMS = [
-  { type: "flowchart", pattern: /^(?:flowchart|graph)(?=[\s;{]|$)/ },
-  { type: "sequenceDiagram", pattern: /^sequenceDiagram(?=[\s;]|$)/ },
-  { type: "stateDiagram-v2", pattern: /^stateDiagram-v2(?=[\s;]|$)/ },
-  { type: "erDiagram", pattern: /^erDiagram(?=[\s;]|$)/ },
-] as const
-
 const MERMAID_MAX_CODE_LENGTH = 20000
 const MERMAID_MAX_LINES = 400
 const MERMAID_MAX_TEXT_SIZE = 50000
@@ -113,51 +106,45 @@ const PURIFY_SVG = {
   FORBID_ATTR: ["href", "xlink:href"],
 }
 
-/** 模型传入的配置 / 样式 / 交互指令一律整图拒绝，不做局部剥除，避免改变图语义；direction 布局与 accTitle/accDescr 可访问文本保留 */
-const FORBIDDEN_STATEMENT = new RegExp(
-  String.raw`(?:^|[;\n\r])\s*(?:` +
-    [
-      String.raw`%%\s*init\b`,
-      String.raw`classDef\b`,
-      String.raw`class\s+\S`,
-      String.raw`style\s+\S`,
-      String.raw`linkStyle\b`,
-      String.raw`click\b`,
-      String.raw`config\s*[{:]`,
-      String.raw`theme\s*[:{]`,
-      String.raw`icon\s*\(`,
-      String.raw`img\s*\(`,
-      String.raw`image\s*\(`,
-      String.raw`links?\s+`,
-      String.raw`rect\s+`,
-    ].join("|") +
-    String.raw`)`,
-  "i",
-)
-/** init 指令可出现在任意位置并覆盖宿主配置，任何 %%{ 都直接拒绝 */
-const INIT_DIRECTIVE_ANYWHERE = /%%\{/
-/** frontmatter 可能携带 theme / config / icon 资源，同样整图拒绝 */
+/** frontmatter 可能携带 theme / config / icon 资源，在进入 mermaid 前整块剥除 */
 const FRONTMATTER = /^\s*---[ \t]*\r?\n[^]*?\r?\n---[ \t]*(?:\r?\n|$)/
 
-function detectDiagramType(code: string) {
-  const trimmed = code.trim()
-  return SUPPORTED_DIAGRAMS.find((diagram) => diagram.pattern.test(trimmed))
+/** 整行属于宿主不掌控的配置 / 样式 / 交互语句时剥除该语句，保留图形结构 */
+const STRIP_STATEMENT = new RegExp(
+  String.raw`^[ \t]*(?:` +
+    [
+      String.raw`%%\{[^]*?\}%%[ \t]*`, // %%{init:...}%% 指令行
+      String.raw`%%[^\n\r]*`, // 其他 %% 注释 / 指令行
+      String.raw`classDef\b[^\n\r;]*`,
+      String.raw`class\s+[^\n\r;]*`,
+      String.raw`style\s+[^\n\r;]*`,
+      String.raw`linkStyle\b[^\n\r;]*`,
+      String.raw`click\b[^\n\r;]*`,
+    ].join("|") +
+    String.raw`)[;\s]*$`,
+  "gim",
+)
+
+/**
+ * 模型侧可能带入样式 / 交互 / 配置语法。宿主独占外观与交互，渲染前把这些指令剥除；
+ * 保留结构与纯文本，让绝大多数图都能直接出图而不是整图失败。
+ */
+export function sanitizeMermaidCode(code: string): string {
+  let text = code.replace(FRONTMATTER, "")
+  // mermaid 原生支持 <br/> 换行，保留；其余 HTML 标签整体剥除只留文本。
+  text = text.replace(/<\/?(?!(?:br)\b)[a-z][^>]*>/gi, "")
+  // flowchart 节点的 :::class 后缀与 @{...} 形状属性去掉。
+  text = text.replace(/:::+[\w-]+/g, "").replace(/@\{[^}]*\}/g, "")
+  text = text.replace(STRIP_STATEMENT, "")
+  return text
 }
 
-/** 模型原文校验通过才允许进入 mermaid，任何宿主不掌控的指令都直接失败 */
+/** 清洗后仍不合法（空、超长）才整图拒绝；图类型交给 mermaid 自身解析，全类型放行 */
 function checkMermaidCode(code: string): CanvasResult | undefined {
   const trimmed = code.trim()
   if (!trimmed) return { ok: false, error: "空白的 mermaid 图表" }
   if (trimmed.length > MERMAID_MAX_CODE_LENGTH) return { ok: false, error: "mermaid 图表超出大小限制" }
   if (trimmed.split("\n").length > MERMAID_MAX_LINES) return { ok: false, error: "mermaid 图表超出大小限制" }
-  if (FRONTMATTER.test(trimmed)) return { ok: false, error: "mermaid 图表不允许携带 frontmatter 配置" }
-  if (INIT_DIRECTIVE_ANYWHERE.test(trimmed)) return { ok: false, error: "mermaid 图表不允许携带 init 配置指令" }
-  if (!detectDiagramType(trimmed)) {
-    return { ok: false, error: "仅支持 flowchart/graph、sequenceDiagram、stateDiagram-v2、erDiagram 图表" }
-  }
-  if (FORBIDDEN_STATEMENT.test(trimmed) || /:::|@\{|<\/?[a-z]/i.test(trimmed)) {
-    return { ok: false, error: "mermaid 图表包含宿主不支持的样式 / 交互指令，请只保留图形结构与文本" }
-  }
   return undefined
 }
 
@@ -362,8 +349,10 @@ async function renderCanvasSerial(content: string): Promise<CanvasResult> {
   if (diagrams.length + charts.length > 32)
     return { ok: false, error: "A canvas supports at most 32 diagrams; split this explanation into smaller documents." }
   for (const segment of diagrams) {
-    const invalid = checkMermaidCode(segment.code ?? "")
+    const sanitized = sanitizeMermaidCode(segment.code ?? "")
+    const invalid = checkMermaidCode(sanitized)
     if (invalid) return invalid
+    segment.code = sanitized
   }
   const svgs = new Map<number, string>()
 
@@ -387,7 +376,7 @@ async function renderCanvasSerial(content: string): Promise<CanvasResult> {
     const brand = chart.colors[0]
     const accent = chart.colors[2]
     const shadow = theme.darkMode ? "rgba(0,0,0,0.35)" : "rgba(23,23,23,0.06)"
-    // 宿主独占主题与排版，模型侧 init / theme / classDef 等指令已被前置拒绝
+    // 宿主独占主题与排版，模型侧 init / theme / classDef 等指令已在 sanitizeMermaidCode 中剥除
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",

@@ -12,14 +12,12 @@ Supported content:
 - LaTeX math using $...$, $$...$$, or \(...\), rendered with the same KaTeX support as chat. Use aligned environments to split long display equations into readable lines.
 - Standard Markdown syntax (headings, lists, tables, bold, italic, code blocks, blockquotes).
 - GitHub-style callouts: a blockquote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION] renders as a colored callout. Use them sparingly for key takeaways and risks.
-- Mermaid diagrams inside ```mermaid code blocks. Supported diagram types: flowchart, sequenceDiagram, stateDiagram-v2, erDiagram.
+- Mermaid diagrams inside ```mermaid code blocks. All mermaid diagram types render; write normal mermaid syntax and let the host apply theme and styling. `<br/>` works inside labels for line breaks.
 - Data charts inside ```vega-lite code blocks containing a Vega-Lite JSON specification. Use these for bars, lines, areas, scatter plots, pie/donut charts, and layered comparisons. Charts share the desktop theme and are included when copying the canvas as an image.
 
-Strict constraints:
-- DO NOT use raw HTML tags or elements (e.g. <div>, <span>, <script>, <iframe>, <style>).
-- DO NOT use custom CSS.
-- In Mermaid diagrams: DO NOT use %%{init:...}%% directives, YAML frontmatter, style, classDef, class assignments, linkStyle, colored rect blocks, or click bindings/callbacks. Avoid HTML labels and @{...} node attributes; use ordinary nodes, relationships, and plain text. OpenCode owns all visual styling.
+Constraints:
 - The path must point to an existing .md or .markdown file within the current project (max 256 KB).
+- Styling and interactivity are owned by the host: theme, colors, fonts, node shapes, and link/click handlers are applied automatically; any styling or interaction directives in the diagram source are ignored, not an error.
 
 For data charts, use inline data.values containing flat records, mark, and encoding. Use color.field to group series, not custom colors. The palette distinguishes at most 6 color categories; beyond that the host folds pie/donut slices after the top 5 into "Other", drops color that only repeats an axis field, turns crowded column bars horizontal, and splits other charts into one small panel per category. Prefer a top-N plus "Other" breakdown or a bar chart over many-color pies and tangled multi-line charts. Include meaningful field types, labels and units. Layered marks may share the root data. Do not use remote URLs, named datasets, transforms, expressions, parameters, selections, HTML, image marks, or custom config/styles. Precompute derived data before writing the document. The host controls chart dimensions and visual styling.
 

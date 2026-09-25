@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { renderCanvas } from "../../session-ui/src/components/canvas-render"
+import { renderCanvas, sanitizeMermaidCode } from "../../session-ui/src/components/canvas-render"
 import { renderCanvasChart } from "../../session-ui/src/components/canvas-chart"
 
 describe("canvas document rendering", () => {
@@ -187,18 +187,25 @@ describe("canvas document rendering", () => {
     expect(root.textContent).toContain("Unsafe")
   })
 
-  test("refuses model-defined diagram styling instead of partially rewriting the diagram", async () => {
-    for (const code of [
+  test("strips model-defined diagram styling instead of failing the whole diagram", async () => {
+    const cases = [
       '%%{init: {"theme":"dark"}}%%\nflowchart LR\nA --> B',
       "flowchart LR\nA --> B; style A fill:red",
-      "flowchart LR\nA --> B\nclassDef red fill:red",
+      "flowchart LR\nA --> B\nclassDef red fill:red\nlinkStyle 0 stroke:red",
       'flowchart LR\nA --> B\nclick A "https://example.com"',
       "---\nconfig:\n  theme: dark\n---\nflowchart LR\nA --> B",
-    ]) {
-      const result = await renderCanvas(`\`\`\`mermaid\n${code}\n\`\`\``)
-      expect(result.ok).toBe(false)
-      if (result.ok) throw new Error("Forbidden diagram unexpectedly rendered")
-      expect(result.error.length).toBeGreaterThan(0)
+      "flowchart LR\nA:::hot --> B\nclassDef hot fill:red",
+      'sequenceDiagram\nparticipant A\nA->>B: hi<br/>there\nNote over A: keep<br/>me',
+    ]
+    for (const code of cases) {
+      const cleaned = sanitizeMermaidCode(code)
+      // 结构保留：节点与连线还在
+      expect(cleaned).toMatch(/flowchart|sequenceDiagram/)
+      // 样式 / 交互 / 配置语句已剥除
+      expect(cleaned).not.toMatch(/%%\{|classDef|linkStyle|^\s*style\s|^\s*click\s|^\s*class\s|:::/m)
+      expect(cleaned).not.toMatch(/^---\s*$/m)
+      // <br/> 保留供 mermaid 换行
+      if (code.includes("<br/>")) expect(cleaned).toContain("<br/>")
     }
   })
 })

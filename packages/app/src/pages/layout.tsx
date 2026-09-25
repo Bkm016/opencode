@@ -570,19 +570,22 @@ export default function LegacyLayout(props: ParentProps) {
           </div>
         </div>
 
-        <Show when={showList()}>
-          <div class="min-w-0 pt-1 pb-1 pl-4 pr-1">
-            <WorkspaceSessionList
-              slug={() => chatSlug()}
-              mobile={props.mobile}
-              ctx={workspaceSidebarCtx}
-              loading={chatLoading}
-              sessions={chatSessions}
-              flat
-              hideEmpty
-            />
+        {/* 展开/收起跟项目分区同一套 sidebar-reveal 结构，才能有高度过渡动画。 */}
+        <div class="sidebar-reveal" data-open={showList() ? "" : undefined}>
+          <div class="sidebar-reveal-inner">
+            <div class="min-w-0 pt-1 pb-1 pl-4 pr-1">
+              <WorkspaceSessionList
+                slug={() => chatSlug()}
+                mobile={props.mobile}
+                ctx={workspaceSidebarCtx}
+                loading={chatLoading}
+                sessions={chatSessions}
+                flat
+                hideEmpty
+              />
+            </div>
           </div>
-        </Show>
+        </div>
       </section>
     )
   }

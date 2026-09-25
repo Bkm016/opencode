@@ -6,7 +6,6 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -65,7 +64,6 @@ export const ProjectDragOverlay = (props: {
     <Show when={project()}>
       {(p) => (
         <div class="flex items-center gap-2 rounded-lg bg-background-base px-3 py-2 shadow-md">
-          <Icon name="folder" size="small" class="shrink-0 text-icon-base" />
           <span class="text-14-medium text-text-strong">{displayName(p())}</span>
         </div>
       )}
@@ -110,9 +108,16 @@ export const TiledProjectSection = (props: {
   )
   // 项目下任一 session 正在工作时显示指示点；仅统计已 bootstrap 的 local worktree，
   // workspace 子目录的状态由各自行的 busy spinner 负责。
-  const hasWorking = createMemo(() => {
-    const statuses = localChild().store.session_status
-    return Object.values(statuses).some((s) => s.type !== "idle")
+  // 项目下（含 workspace 目录）正在工作的 session 数。session_status 存在全局 session store，
+  // 子目录 store 里的同名字段恒为空，必须按 session 的 directory 反查归属。
+  const workingCount = createMemo(() => {
+    const session = serverSync().session
+    const dirs = new Set([worktree(), ...workspaces()].map(pathKey))
+    return Object.entries(session.data.session_status).filter(([id, status]) => {
+      if ((status?.type ?? "idle") === "idle") return false
+      const directory = session.get(id)?.directory
+      return directory !== undefined && dirs.has(pathKey(directory))
+    }).length
   })
   const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
   // 触屏设备没有 hover，操作按钮常驻显示，否则用户无法新建会话或打开项目菜单。
@@ -196,7 +201,7 @@ export const TiledProjectSection = (props: {
               props.onToggleExpanded()
             }
           }}
-          class="group/project relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
+          class="group/project relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg py-1.5 pl-3 pr-2 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
         >
           <Show when={selected()}>
             <div
@@ -204,10 +209,20 @@ export const TiledProjectSection = (props: {
               class="pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-icon-interactive-base"
             />
           </Show>
-          <Icon name="folder" size="small" class="shrink-0 text-icon-base transition-transform duration-200 group-hover/project:scale-110" />
           <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{displayName(props.project)}</span>
-          <Show when={hasWorking()}>
-            <div class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+          {/* 有会话在工作时：呼吸的强调色小点 + 工作中的会话数，折叠状态下也能看到。
+              非触屏时贴行尾与会话转圈对齐（占用悬停按钮的空位），悬停或菜单展开时淡出让位给按钮。 */}
+          <Show when={workingCount() > 0}>
+            <span
+              class={
+                touch()
+                  ? "flex shrink-0 items-center gap-1.5 px-1"
+                  : "pointer-events-none absolute right-8 top-1/2 flex -translate-y-1/2 items-center gap-1.5 transition-opacity duration-150 group-hover/project:opacity-0 group-focus-within/project:opacity-0 group-has-[[data-expanded]]/project:opacity-0"
+              }
+            >
+              <span aria-hidden="true" class="work-dot" />
+              <span class="text-12-regular tabular-nums text-text-weak">{workingCount()}</span>
+            </span>
           </Show>
           <div
             class="flex shrink-0 items-center"

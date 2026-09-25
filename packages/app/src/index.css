@@ -657,3 +657,64 @@
     min-height: 44px;
   }
 }
+
+/* 侧栏"工作中"状态：会话标题扫光 + 行尾细转圈，项目行呼吸小点；只用强调色点一下，不加框和光效。 */
+.work-shimmer {
+  color: transparent;
+  background: linear-gradient(100deg, var(--text-weak) 0% 38%, var(--text-strong) 50%, var(--text-weak) 62% 100%) 0 0 /
+    250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: work-shimmer 2.4s linear infinite;
+}
+
+.work-spinner {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in srgb, var(--icon-interactive-base) 22%, transparent);
+  border-top-color: var(--icon-interactive-base);
+  animation: work-spin 0.9s cubic-bezier(0.5, 0.15, 0.5, 0.85) infinite;
+}
+
+.work-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--icon-interactive-base);
+  animation: work-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes work-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@keyframes work-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes work-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-shimmer,
+  .work-spinner,
+  .work-dot {
+    animation-duration: 4s;
+  }
+}

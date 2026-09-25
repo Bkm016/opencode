@@ -2,7 +2,6 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
@@ -68,7 +67,7 @@ const SessionRow = (props: {
         navigate(`/${props.slug}/session/${props.session.id}`)
       }}
     >
-      {/* 前置位常驻以保持标题对齐：显示会话最近使用的模型图标；运行时在图标外圈叠加旋转环，待授权状态优先显示提示点 */}
+      {/* 前置位常驻以保持标题对齐：显示会话最近使用的模型图标，待授权状态显示提示点；运行状态由标题扫光和行尾转圈表达 */}
       <div
         class="relative shrink-0 size-6 flex items-center justify-center"
         style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
@@ -77,9 +76,6 @@ const SessionRow = (props: {
           when={props.session.model}
           fallback={
             <Switch>
-              <Match when={props.isWorking()}>
-                <Spinner class="size-[15px]" />
-              </Match>
               <Match when={props.hasPermissions()}>
                 <div class="size-1.5 rounded-full bg-surface-warning-strong" />
               </Match>
@@ -88,13 +84,6 @@ const SessionRow = (props: {
         >
           {(model) => (
             <>
-              <Show when={props.isWorking()}>
-                {/* 旋转弧环绕模型图标，替代原先的独立转圈 */}
-                <div
-                  class="absolute inset-0 rounded-full border border-transparent border-t-current"
-                  style={{ animation: "spin 1.2s linear infinite" }}
-                />
-              </Show>
               <ProviderIcon
                 id={model().providerID}
                 model={model().id}
@@ -108,7 +97,18 @@ const SessionRow = (props: {
           )}
         </Show>
       </div>
-      <span class="min-w-0 flex-1 truncate text-14-regular text-text-strong opacity-70 group-hover/session:opacity-100 group-has-[.active]/session:opacity-100 transition-opacity">{title()}</span>
+      <span
+        classList={{
+          "work-shimmer": props.isWorking(),
+          "opacity-70 group-hover/session:opacity-100 group-has-[.active]/session:opacity-100": !props.isWorking(),
+        }}
+        class="min-w-0 flex-1 truncate text-14-regular text-text-strong transition-opacity"
+      >
+        {title()}
+      </span>
+      <Show when={props.isWorking()}>
+        <span aria-hidden="true" class="work-spinner" />
+      </Show>
     </A>
   )
 }

@@ -29,27 +29,7 @@ const pluginEmptyMessage = (value: string, file: string): JSXElement => {
   )
 }
 
-const listServersByHealth = (
-  list: ServerConnection.Any[],
-  active: ServerConnection.Key | undefined,
-  status: Record<ServerConnection.Key, ServerHealth | undefined>,
-) => {
-  if (!list.length) return list
-  const order = new Map(list.map((url, index) => [url, index] as const))
-  const rank = (value?: ServerHealth) => {
-    if (value?.healthy === true) return 0
-    if (value?.healthy === false) return 2
-    return 1
-  }
 
-  return list.slice().sort((a, b) => {
-    if (ServerConnection.key(a) === active) return -1
-    if (ServerConnection.key(b) === active) return 1
-    const diff = rank(status[ServerConnection.key(a)]) - rank(status[ServerConnection.key(b)])
-    if (diff !== 0) return diff
-    return (order.get(a) ?? 0) - (order.get(b) ?? 0)
-  })
-}
 
 const useDefaultServerKey = (
   get: (() => string | Promise<string | null | undefined> | null | undefined) | undefined,
@@ -135,7 +115,8 @@ function useServerStatusState(): ServerStatusState {
     dialogRun += 1
   })
 
-  const sortedServers = createMemo(() => listServersByHealth(global.servers.list(), server.key, global.servers.health))
+  // 服务器列表保持注册顺序固定，不随健康探测结果或当前选中项重排，避免弹窗内条目跳动。
+  const sortedServers = createMemo(() => global.servers.list())
   const defaultServer = useDefaultServerKey(platform.getDefaultServer)
   const serverItems = createMemo(() =>
     sortedServers().map((conn) => {

@@ -292,7 +292,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             <div classList={{ "items-center gap-1 shrink-0": true, flex: isDesktop(), hidden: !isDesktop() }}>
               <Show when={isDesktop()}>
                 <TooltipKeybind
-                  class={web() && !overlay() ? "shrink-0 ml-14" : "shrink-0 ml-2"}
+                  class="shrink-0 ml-2"
                   placement="bottom"
                   title={language.t("command.sidebar.toggle")}
                   keybind={command.keybind("sidebar.toggle")}

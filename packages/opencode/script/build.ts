@@ -50,6 +50,25 @@ const createEmbeddedWebUIBundle = async () => {
 
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
+// 浏览器工具的 helper 由独立子进程加载，单文件二进制里没有磁盘上的源码与 node_modules，
+// 故预先把 helper 连同 playwright-core 打成单个 ESM 文本内嵌，运行时再落盘到临时目录。
+const createEmbeddedBrowserHelper = async () => {
+  console.log(`Bundling browser helper to embed in the binary`)
+  const result = await Bun.build({
+    entrypoints: ["./src/tool/browser-helper-embedded.ts"],
+    target: "node",
+    format: "esm",
+    minify: true,
+    // chromium-bidi 只在 BiDi 协议下按需加载，CDP 驱动 Chromium 用不到。
+    external: ["chromium-bidi", "chromium-bidi/*"],
+  })
+  const entry = result.outputs.find((output) => output.kind === "entry-point")
+  if (!result.success || !entry) throw new AggregateError(result.logs, "Failed to bundle the browser helper")
+  return `export default ${JSON.stringify(await entry.text())}`
+}
+
+const embeddedBrowserHelper = await createEmbeddedBrowserHelper()
+
 const allTargets: {
   os: string
   arch: "arm64" | "x64"
@@ -191,7 +210,10 @@ for (const item of targets) {
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
-    files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
+    files: {
+      "opencode-browser-helper.gen.ts": embeddedBrowserHelper,
+      ...(embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {}),
+    },
     entrypoints: ["./src/index.ts", ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),

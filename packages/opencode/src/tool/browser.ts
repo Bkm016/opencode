@@ -5,6 +5,7 @@ import { Effect, Schema, Semaphore } from "effect"
 import { Parser } from "htmlparser2"
 import TurndownService from "turndown"
 import type { JSONSchema7 } from "@ai-sdk/provider"
+import { which } from "@opencode-ai/core/util/which"
 import { ToolJsonSchema } from "./json-schema"
 import * as Tool from "./tool"
 import DESCRIPTION from "./browser.txt"
@@ -147,17 +148,48 @@ function nodeExecutable() {
   return "node"
 }
 
+// 单文件二进制构建时内嵌的 helper bundle（已含 playwright-core）；源码运行与桌面 sidecar 下不存在或为空。
+function embeddedHelper(): Promise<string | undefined> {
+  // @ts-expect-error - generated file at build time
+  return import("opencode-browser-helper.gen.ts")
+    .then((module) => (module.default as string | undefined) || undefined)
+    .catch(() => undefined)
+}
+
+// 内嵌 helper 自带依赖：优先用 PATH 里的 node；服务器没装 node 时让单文件二进制自身以 bun 运行时执行。
+function helperCommand(embedded: boolean) {
+  if (!embedded || process.env.OPENCODE_NODE_PATH) return { command: nodeExecutable(), env: {} }
+  const node = which("node")
+  if (node) return { command: node, env: {} }
+  return { command: process.execPath, env: { BUN_BE_BUN: "1" } }
+}
+
 // helper 源文件与编译产物都放 os tmp，避免污染项目目录；内容变化时重建（按源文件 hash 判断）。
 // 返回 script（helper 入口，须为独立 node 子进程可读的真实磁盘路径）与 anchor（createRequire 解析
 // playwright-core 的锚点，须落在宿主依赖树内）。
-async function helperScript(): Promise<{ script: string; anchor: string }> {
+async function helperScript(): Promise<{ script: string; anchor: string; embedded: boolean }> {
+  const embedded = await embeddedHelper()
+  if (embedded) {
+    const fs = await import("node:fs/promises")
+    const crypto = await import("node:crypto")
+    const os = await import("node:os")
+    const hash = crypto.createHash("sha1").update(embedded).digest("hex").slice(0, 12)
+    const target = path.join(os.tmpdir(), `opencode-browser-helper-embedded-${hash}.mjs`)
+    if (!(await fs.stat(target).catch(() => undefined))) {
+      // 先写临时文件再改名，避免并发实例读到写了一半的 helper。
+      const partial = `${target}.${process.pid}.tmp`
+      await fs.writeFile(partial, embedded, "utf8")
+      await fs.rename(partial, target)
+    }
+    return { script: target, anchor: target, embedded: true }
+  }
   // 打包运行时 build-node.ts 已把 helper bundle 成同目录 browser-helper.mjs，直接使用。
   // 本 bundle 跑在 app.asar 内；helper 由独立 node 子进程加载，asar 内文件对子进程不可见，
   // 须映射到 asarUnpack 落盘的 app.asar.unpacked 等价路径（其 node_modules 有 playwright-core，可作锚点）。
   const self = fileURLToPath(import.meta.url).replace("app.asar" + path.sep, "app.asar.unpacked" + path.sep)
   const bundled = path.join(path.dirname(self), "browser-helper.mjs")
   const fs = await import("node:fs/promises")
-  if (await fs.stat(bundled).catch(() => undefined)) return { script: bundled, anchor: bundled }
+  if (await fs.stat(bundled).catch(() => undefined)) return { script: bundled, anchor: bundled, embedded: false }
   // 开发态源码是 .ts，需要即时编译到 os tmp 下的 .mjs；tmp 产物不在宿主依赖树内，锚点回退源码路径。
   const source = self.replace(/browser\.ts$/, "browser-helper.ts")
   const text = await fs.readFile(source, "utf8")
@@ -173,7 +205,7 @@ async function helperScript(): Promise<{ script: string; anchor: string }> {
     })
     await fs.writeFile(target, compiled.outputText, "utf8")
   }
-  return { script: target, anchor: source }
+  return { script: target, anchor: source, embedded: false }
 }
 
 function kill() {
@@ -203,13 +235,14 @@ function touch() {
 }
 
 const spawnHelper = Effect.fn("Browser.spawnHelper")(function* () {
-  const { script, anchor } = yield* Effect.tryPromise({
+  const { script, anchor, embedded } = yield* Effect.tryPromise({
     try: () => helperScript(),
     catch: (error) => new Error(`Failed to prepare the browser helper: ${error instanceof Error ? error.message : error}`),
   })
-  const child = spawn(nodeExecutable(), [script], {
+  const runtime = helperCommand(embedded)
+  const child = spawn(runtime.command, [script], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, OPENCODE_BROWSER_HELPER_RESOLVE: anchor },
+    env: { ...process.env, ...runtime.env, OPENCODE_BROWSER_HELPER_RESOLVE: anchor },
     windowsHide: true,
   })
   child.unref()

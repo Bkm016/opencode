@@ -37,6 +37,8 @@ await Bun.build({
   },
   files: {
     "opencode-web-ui.gen.ts": "",
+    // 桌面 sidecar 使用同目录的 browser-helper.mjs，不内嵌 helper。
+    "opencode-browser-helper.gen.ts": "",
   },
 })
 

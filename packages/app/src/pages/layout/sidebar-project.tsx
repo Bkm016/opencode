@@ -108,6 +108,12 @@ export const TiledProjectSection = (props: {
   const localSessions = createMemo(() =>
     sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
   )
+  // 项目下任一 session 正在工作时显示指示点；仅统计已 bootstrap 的 local worktree，
+  // workspace 子目录的状态由各自行的 busy spinner 负责。
+  const hasWorking = createMemo(() => {
+    const statuses = localChild().store.session_status
+    return Object.values(statuses).some((s) => s.type !== "idle")
+  })
   const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
   // 触屏设备没有 hover，操作按钮常驻显示，否则用户无法新建会话或打开项目菜单。
   const touch = createMediaQuery("(hover: none)")
@@ -200,6 +206,9 @@ export const TiledProjectSection = (props: {
           </Show>
           <Icon name="folder" size="small" class="shrink-0 text-icon-base transition-transform duration-200 group-hover/project:scale-110" />
           <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{displayName(props.project)}</span>
+          <Show when={hasWorking()}>
+            <div class="size-1.5 shrink-0 rounded-full bg-icon-interactive-base" />
+          </Show>
           <div
             class="flex shrink-0 items-center"
             onClick={(event) => event.stopPropagation()}

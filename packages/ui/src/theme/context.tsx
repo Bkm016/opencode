@@ -4,14 +4,14 @@ import { createEffect, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
-import cursorThemeJson from "./themes/cursor.json"
+import claudeThemeJson from "./themes/claude.json"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 import type { DesktopTheme } from "./types"
 
 export type ColorScheme = "light" | "dark" | "system"
 
-const DEFAULT_THEME_ID = "cursor"
+const DEFAULT_THEME_ID = "claude"
 const STORAGE_KEYS = {
   THEME_ID: "opencode-theme-id",
   COLOR_SCHEME: "opencode-color-scheme",
@@ -54,7 +54,7 @@ const names: Record<string, string> = {
   vercel: "Vercel",
   vesper: "Vesper",
 }
-const cursorTheme = cursorThemeJson as DesktopTheme
+const claudeTheme = claudeThemeJson as DesktopTheme
 
 function normalize(id: string | null | undefined) {
   // 旧默认主题统一迁移到当前默认主题。
@@ -153,7 +153,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme
     const [store, setStore] = createStore({
       themes: {
-        [DEFAULT_THEME_ID]: cursorTheme,
+        [DEFAULT_THEME_ID]: claudeTheme,
       } as Record<string, DesktopTheme>,
       themeId,
       colorScheme,

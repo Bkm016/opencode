@@ -1,5 +1,5 @@
 ;(function () {
-  var DEFAULT_THEME_ID = "cursor"
+  var DEFAULT_THEME_ID = "claude"
   var BUILT_IN_THEMES = {
     amoled: true,
     claude: true,

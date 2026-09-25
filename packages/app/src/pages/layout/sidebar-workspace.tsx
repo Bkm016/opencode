@@ -285,7 +285,6 @@ export const WorkspaceSessionList = (props: {
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
     const oneDay = 24 * 60 * 60 * 1000
-    const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime()
     props
       .sessions()
       .filter((session) => !isSessionPinned(session.directory, session.id))
@@ -297,17 +296,17 @@ export const WorkspaceSessionList = (props: {
           groups.push({ key: `flat-${session.id}`, sessions: [session], collapsible: false, defaultOpen: true })
           return
         }
-        // 昨天起的分组按距今天的天数命名，超过七天统一归入“七天前”。
+        // 只保留昨天 / 前天 / 三天前三档，四天及以上统一归入“七天前”。
         const daysAgo = Math.round((today - day) / oneDay)
-        const older = day <= sevenDaysAgo
-        const key = older ? "older" : String(day)
-        const label = older
-          ? language.t("home.sessions.group.sevenDaysAgo")
-          : daysAgo === 1
+        const label =
+          daysAgo === 1
             ? language.t("home.sessions.group.yesterday")
             : daysAgo === 2
               ? language.t("home.sessions.group.dayBeforeYesterday")
-              : language.t("home.sessions.group.daysAgo", { count: daysAgo })
+              : daysAgo === 3
+                ? language.t("home.sessions.group.threeDaysAgo")
+                : language.t("home.sessions.group.sevenDaysAgo")
+        const key = daysAgo <= 3 ? String(day) : "older"
         const group = groups.at(-1)
         if (group?.key === key) {
           group.sessions.push(session)

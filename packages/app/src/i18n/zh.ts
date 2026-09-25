@@ -742,7 +742,7 @@ export const dict = {
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
   "home.sessions.group.dayBeforeYesterday": "前天",
-  "home.sessions.group.daysAgo": "{{count}}天前",
+  "home.sessions.group.threeDaysAgo": "三天前",
   "home.sessions.group.sevenDaysAgo": "七天前",
   "home.sessions.group.pinned": "置顶",
   "home.sessions.group.expandAll": "全部展开",

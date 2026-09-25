@@ -765,7 +765,7 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.dayBeforeYesterday": "2 days ago",
-  "home.sessions.group.daysAgo": "{{count}} days ago",
+  "home.sessions.group.threeDaysAgo": "3 days ago",
   "home.sessions.group.sevenDaysAgo": "7+ days ago",
   "home.sessions.group.pinned": "Pinned",
   "home.sessions.group.expandAll": "Expand all",

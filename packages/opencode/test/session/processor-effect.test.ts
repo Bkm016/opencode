@@ -980,6 +980,76 @@ it.live("session.processor effect tests detect doom loops across assistant messa
   ),
 )
 
+it.live("session.processor effect tests detect alternating doom loops", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(reply().tool("lookup", { query: "a" }))
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "alternating loop")
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        for (const [index, query] of ["b", "a", "b", "a", "b"].entries()) {
+          const history = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: history.id,
+            sessionID: chat.id,
+            type: "tool",
+            tool: "lookup",
+            callID: `history_${index}`,
+            state: {
+              status: "completed",
+              input: { query },
+              output: `result:${query}`,
+              title: "Lookup",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+        }
+
+        let toolExecutions = 0
+        const lookup = tool({
+          description: "Look up information",
+          inputSchema: z.object({ query: z.string() }),
+          execute: async (input) => {
+            toolExecutions += 1
+            return { title: "Lookup", output: `result:${input.query}`, metadata: {} }
+          },
+        })
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+        const result = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "alternating loop" }],
+          tools: { lookup },
+        })
+
+        // 权限拒绝后本轮终止，不再续跑下一次 provider turn。
+        expect(result).toBe("stop")
+      }),
+    { config: (url) => ({ ...providerCfg(url), permission: { doom_loop: "deny" as const } }) },
+  ),
+)
+
 it.live("session.processor effect tests mark pending tools as aborted on cleanup", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

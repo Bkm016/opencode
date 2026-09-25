@@ -31,6 +31,8 @@ import { parseJSON } from "partial-json"
 import path from "node:path"
 
 const DOOM_LOOP_THRESHOLD = 3
+// 交替空转（如 true → echo done → true ...）绕过连续相同检测；窗口内签名不超过两种即视为循环。
+const DOOM_LOOP_WINDOW = 6
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -510,26 +512,20 @@ const layer = Layer.effect(
             if (ctx.toolcalls[value.id]) delete ctx.toolcalls[value.id].preview
 
             // 跨 provider turn 汇总最近 assistant parts，避免每轮新建消息重置 doom-loop 计数。
-            const recentParts = (yield* session.messages({
+            const signatures = (yield* session.messages({
               sessionID: ctx.sessionID,
-              limit: DOOM_LOOP_THRESHOLD,
+              limit: DOOM_LOOP_WINDOW,
             }))
               .flatMap((message) => message.parts)
-              .filter((part): part is SessionV1.ToolPart => part.type === "tool")
-              .slice(-DOOM_LOOP_THRESHOLD)
-
-            if (
-              recentParts.length !== DOOM_LOOP_THRESHOLD ||
-              !recentParts.every(
-                (part) =>
-                  part.type === "tool" &&
-                  part.tool === toolName &&
-                  part.state.status !== "pending" &&
-                  JSON.stringify(part.state.input) === JSON.stringify(input),
-              )
-            ) {
-              return
-            }
+              .filter((part): part is SessionV1.ToolPart => part.type === "tool" && part.state.status !== "pending")
+              .slice(-DOOM_LOOP_WINDOW)
+              .map((part) => JSON.stringify([part.tool, part.state.input]))
+            const current = JSON.stringify([toolName, input])
+            const repeated =
+              signatures.length >= DOOM_LOOP_THRESHOLD &&
+              signatures.slice(-DOOM_LOOP_THRESHOLD).every((signature) => signature === current)
+            const cycling = signatures.length === DOOM_LOOP_WINDOW && new Set(signatures).size <= 2
+            if (!repeated && !cycling) return
 
             const agent = yield* agents.get(ctx.assistantMessage.agent)
             yield* permission.ask({

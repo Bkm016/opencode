@@ -890,8 +890,8 @@ const layer = Layer.effect(
               SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
-                // 保留输出前的网络退避；内容或工具已交付后，错误直接交给用户处理。
-                canRetry: () => !hasOutput && !ctx.assistantMessage.finish,
+                // 已写入的工具结果会随历史一并回发，断流重试只是让模型继续，不会重复执行工具。
+                canRetry: () => !ctx.assistantMessage.finish,
                 set: (info) => {
                   return status.set(ctx.sessionID, {
                     type: "retry",

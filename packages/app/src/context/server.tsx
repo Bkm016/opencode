@@ -185,6 +185,8 @@ export namespace ServerConnection {
     url: string
     username?: string
     password?: string
+    // 自定义请求头，会拼到 SDK 所有请求上（用于 Cloudflare Service Token 之类的服务）。
+    headers?: Record<string, string>
   }
 
   // Regular web connections

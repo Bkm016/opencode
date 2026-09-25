@@ -79,6 +79,14 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   const platform = usePlatform()
   const abort = new AbortController()
 
+  // 浏览器 WebSocket 握手无法带自定义请求头；桌面端需要主进程在
+  // webRequest 钩子中按 origin 注入（如 CF Access Service Token）。
+  try {
+    platform.setServerRequestHeaders?.(new URL(server.http.url).origin, server.http.headers ?? null)
+  } catch {
+    // URL 永远来自规范化后的连接配置，解析失败时跳过 WS 头注入。
+  }
+
   const eventFetch = (() => {
     if (!platform.fetch || !server) return
     try {

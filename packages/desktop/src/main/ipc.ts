@@ -11,7 +11,7 @@ import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
-import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
+import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setServerRequestHeaders, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
@@ -53,6 +53,13 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),
+  )
+  // 渲染进程为远端服务器配置自定义请求头（如 CF Access Service Token），
+  // 由主进程在 webRequest 钩子里注入，覆盖 HTTP 与 WebSocket 握手。
+  ipcMain.handle(
+    "set-server-request-headers",
+    (_event: IpcMainInvokeEvent, origin: string, headers: Record<string, string> | null) =>
+      setServerRequestHeaders(origin, headers),
   )
   ipcMain.handle("is-first-launch-onboarding-pending", () => deps.isFirstLaunchOnboardingPending())
   ipcMain.handle("finish-first-launch-onboarding", (_event: IpcMainInvokeEvent, createDefaultProject: boolean) =>

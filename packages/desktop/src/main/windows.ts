@@ -51,6 +51,29 @@ let relaunchHandler = () => {
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
 const windowIDs = new WeakMap<BrowserWindow, string>()
+// 渲染进程为每个远端服务器配置的自定义请求头（如 CF Access Service Token）。
+// 浏览器 WebSocket 握手无法自行设置请求头，统一在 webRequest 钩子里按 origin 注入。
+const serverRequestHeaders = new Map<string, Record<string, string>>()
+
+export function setServerRequestHeaders(origin: string, headers: Record<string, string> | null) {
+  if (!headers || Object.keys(headers).length === 0) {
+    serverRequestHeaders.delete(origin)
+    return
+  }
+  serverRequestHeaders.set(origin, headers)
+}
+
+// 归一请求 origin：ws:/wss: 换成 http:/https:，保证 WS 握手命中按 HTTP origin 注册的键。
+function normalizeRequestOrigin(raw: string) {
+  try {
+    const url = new URL(raw)
+    if (url.protocol === "ws:") url.protocol = "http:"
+    if (url.protocol === "wss:") url.protocol = "https:"
+    return url.origin
+  } catch {
+    return raw
+  }
+}
 const registry = createWindowRegistry<BrowserWindow>({
   read: () => getStore().get(WINDOW_IDS_KEY),
   write: (ids) => getStore().set(WINDOW_IDS_KEY, ids),
@@ -209,6 +232,14 @@ export function createMainWindow(id: string = randomUUID()) {
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
     upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
+    // HTTP 和 WebSocket 请求都走这里，命中已注册 origin 时补自定义请求头。
+    // ws(s) 与 http(s) 的 origin 不同，统一归一到 http(s) 键。
+    const originHeaders = serverRequestHeaders.get(normalizeRequestOrigin(details.url))
+    if (originHeaders) {
+      for (const [key, value] of Object.entries(originHeaders)) {
+        upsertKeyValue(requestHeaders, key, [value])
+      }
+    }
     callback({ requestHeaders })
   })
 

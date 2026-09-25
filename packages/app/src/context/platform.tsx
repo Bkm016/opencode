@@ -82,6 +82,12 @@ type PlatformBase = {
   /** Set the default server URL to use on app startup (platform-specific) */
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
+  /**
+   * Register custom headers to attach to every request (including WebSocket
+   * upgrades) toward a server origin — desktop main process only.
+   */
+  setServerRequestHeaders?(origin: string, headers: Record<string, string> | null): Promise<void> | void
+
   /** Manage WSL sidecar servers (Electron on Windows only) */
   wslServers?: WslServersPlatform
 

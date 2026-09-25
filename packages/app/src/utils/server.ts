@@ -17,6 +17,7 @@ export function createSdkForServer({
   return createOpencodeClient({
     ...config,
     headers: {
+      ...server.headers,
       ...(config.headers instanceof Headers ? Object.fromEntries(config.headers.entries()) : config.headers),
       ...auth,
     },

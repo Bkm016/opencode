@@ -23,7 +23,8 @@ const healthCache = new Map<
 >()
 
 function cacheKey(server: ServerConnection.HttpBase) {
-  return `${server.url}\n${server.username ?? ""}\n${server.password ?? ""}`
+  // headers 参与缓存键：同一 URL 换 CF Access 凭据后必须重新探测。
+  return `${server.url}\n${server.username ?? ""}\n${server.password ?? ""}\n${JSON.stringify(server.headers ?? {})}`
 }
 
 function timeoutSignal(timeoutMs: number) {

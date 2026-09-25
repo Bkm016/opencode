@@ -26,6 +26,7 @@ interface ServerFormProps {
   name: string
   username: string
   password: string
+  headers: string
   placeholder: string
   busy: boolean
   error: string
@@ -34,8 +35,33 @@ interface ServerFormProps {
   onNameChange: (value: string) => void
   onUsernameChange: (value: string) => void
   onPasswordChange: (value: string) => void
+  onHeadersChange: (value: string) => void
   onSubmit: () => void
   onBack: () => void
+}
+
+// 把 "Key: Value" 每行一条的 textarea 文本解析成 headers 对象；空行和无冒号行忽略。
+export function parseHeadersInput(input: string): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  for (const raw of input.split("\n")) {
+    const line = raw.trim()
+    if (!line) continue
+    const idx = line.indexOf(":")
+    if (idx === -1) continue
+    const key = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (!key || !value) continue
+    headers[key] = value
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
+// 把已存 headers 还原回 textarea 文本，便于编辑表单回填。
+export function formatHeadersInput(headers?: Record<string, string>): string {
+  if (!headers) return ""
+  return Object.entries(headers)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("\n")
 }
 
 function showRequestError(language: ReturnType<typeof useLanguage>, err: unknown) {
@@ -92,6 +118,7 @@ function useServerPreview() {
     value: string,
     username: string,
     password: string,
+    headers: string,
     setStatus: (value: boolean | undefined) => void,
   ) => {
     setStatus(undefined)
@@ -101,6 +128,8 @@ function useServerPreview() {
     const http: ServerConnection.HttpBase = { url: normalized }
     if (username) http.username = username
     if (password) http.password = password
+    const parsed = parseHeadersInput(headers)
+    if (parsed) http.headers = parsed
     const result = await checkServerHealth(http)
     setStatus(result.healthy)
   }
@@ -117,7 +146,8 @@ function ServerForm(props: ServerFormProps) {
       props.onBack()
       return
     }
-    if (event.key !== "Enter" || event.isComposing) return
+    // 多行输入框里 Enter 是换行，不能触发表单提交。
+    if (event.key !== "Enter" || event.isComposing || event.target instanceof HTMLTextAreaElement) return
     event.preventDefault()
     props.onSubmit()
   }
@@ -168,6 +198,16 @@ function ServerForm(props: ServerFormProps) {
             onKeyDown={keyDown}
           />
         </div>
+        <TextField
+          type="text"
+          multiline
+          label={language.t("dialog.server.add.headers")}
+          placeholder={language.t("dialog.server.add.headersPlaceholder")}
+          value={props.headers}
+          disabled={props.busy}
+          onChange={props.onHeadersChange}
+          onKeyDown={keyDown}
+        />
       </div>
     </div>
   )
@@ -204,6 +244,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: "",
       username: DEFAULT_USERNAME,
       password: "",
+      headers: "",
       error: "",
       showForm: false,
       status: undefined as boolean | undefined,
@@ -214,6 +255,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: "",
       username: "",
       password: "",
+      headers: "",
       error: "",
       status: undefined as boolean | undefined,
     },
@@ -225,6 +267,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: "",
       username: DEFAULT_USERNAME,
       password: "",
+      headers: "",
       error: "",
       showForm: false,
       status: undefined,
@@ -237,6 +280,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: "",
       username: "",
       password: "",
+      headers: "",
       error: "",
       status: undefined,
     })
@@ -257,6 +301,8 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       if (store.addServer.name.trim()) conn.displayName = store.addServer.name.trim()
       if (store.addServer.password) conn.http.password = store.addServer.password
       if (store.addServer.password && store.addServer.username) conn.http.username = store.addServer.username
+      const addHeaders = parseHeadersInput(store.addServer.headers)
+      if (addHeaders) conn.http.headers = addHeaders
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
         setStore("addServer", { error: language.t("dialog.server.add.error") })
@@ -285,12 +331,14 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       const name = store.editServer.name.trim() || undefined
       const username = store.editServer.username || undefined
       const password = store.editServer.password || undefined
+      const headers = parseHeadersInput(store.editServer.headers)
       const existingName = input.original.displayName
       if (
         normalized === input.original.http.url &&
         name === existingName &&
         username === input.original.http.username &&
-        password === input.original.http.password
+        password === input.original.http.password &&
+        formatHeadersInput(input.original.http.headers) === store.editServer.headers.trim()
       ) {
         resetEdit()
         return
@@ -299,7 +347,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       const conn: ServerConnection.Http = {
         type: "http",
         displayName: name,
-        http: { url: normalized, username, password },
+        http: { url: normalized, username, password, headers },
       }
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
@@ -374,7 +422,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleAddChange = (value: string) => {
     if (addMutation.isPending) return
     setStore("addServer", { url: value, error: "" })
-    void previewStatus(value, store.addServer.username, store.addServer.password, (next) =>
+    void previewStatus(value, store.addServer.username, store.addServer.password, store.addServer.headers, (next) =>
       setStore("addServer", { status: next }),
     )
   }
@@ -387,7 +435,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleAddUsernameChange = (value: string) => {
     if (addMutation.isPending) return
     setStore("addServer", { username: value, error: "" })
-    void previewStatus(store.addServer.url, value, store.addServer.password, (next) =>
+    void previewStatus(store.addServer.url, value, store.addServer.password, store.addServer.headers, (next) =>
       setStore("addServer", { status: next }),
     )
   }
@@ -395,7 +443,15 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleAddPasswordChange = (value: string) => {
     if (addMutation.isPending) return
     setStore("addServer", { password: value, error: "" })
-    void previewStatus(store.addServer.url, store.addServer.username, value, (next) =>
+    void previewStatus(store.addServer.url, store.addServer.username, value, store.addServer.headers, (next) =>
+      setStore("addServer", { status: next }),
+    )
+  }
+
+  const handleAddHeadersChange = (value: string) => {
+    if (addMutation.isPending) return
+    setStore("addServer", { headers: value, error: "" })
+    void previewStatus(store.addServer.url, store.addServer.username, store.addServer.password, value, (next) =>
       setStore("addServer", { status: next }),
     )
   }
@@ -403,7 +459,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleEditChange = (value: string) => {
     if (editMutation.isPending) return
     setStore("editServer", { value, error: "" })
-    void previewStatus(value, store.editServer.username, store.editServer.password, (next) =>
+    void previewStatus(value, store.editServer.username, store.editServer.password, store.editServer.headers, (next) =>
       setStore("editServer", { status: next }),
     )
   }
@@ -416,7 +472,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleEditUsernameChange = (value: string) => {
     if (editMutation.isPending) return
     setStore("editServer", { username: value, error: "" })
-    void previewStatus(store.editServer.value, value, store.editServer.password, (next) =>
+    void previewStatus(store.editServer.value, value, store.editServer.password, store.editServer.headers, (next) =>
       setStore("editServer", { status: next }),
     )
   }
@@ -424,7 +480,15 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   const handleEditPasswordChange = (value: string) => {
     if (editMutation.isPending) return
     setStore("editServer", { password: value, error: "" })
-    void previewStatus(store.editServer.value, store.editServer.username, value, (next) =>
+    void previewStatus(store.editServer.value, store.editServer.username, value, store.editServer.headers, (next) =>
+      setStore("editServer", { status: next }),
+    )
+  }
+
+  const handleEditHeadersChange = (value: string) => {
+    if (editMutation.isPending) return
+    setStore("editServer", { headers: value, error: "" })
+    void previewStatus(store.editServer.value, store.editServer.username, store.editServer.password, value, (next) =>
       setStore("editServer", { status: next }),
     )
   }
@@ -453,6 +517,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: "",
       username: DEFAULT_USERNAME,
       password: "",
+      headers: "",
       error: "",
       status: undefined,
     })
@@ -466,6 +531,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       name: conn.displayName ?? "",
       username: conn.http.username ?? "",
       password: conn.http.password ?? "",
+      headers: formatHeadersInput(conn.http.headers),
       error: "",
       status: global.servers.health[ServerConnection.key(conn)]?.healthy,
     })
@@ -532,6 +598,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     formName: () => (isAddMode() ? store.addServer.name : store.editServer.name),
     formUsername: () => (isAddMode() ? store.addServer.username : store.editServer.username),
     formPassword: () => (isAddMode() ? store.addServer.password : store.editServer.password),
+    formHeaders: () => (isAddMode() ? store.addServer.headers : store.editServer.headers),
     formError: () => (isAddMode() ? store.addServer.error : store.editServer.error),
     formStatus: () => (isAddMode() ? store.addServer.status : store.editServer.status),
     select,
@@ -545,6 +612,7 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     handleFormNameChange: () => (isAddMode() ? handleAddNameChange : handleEditNameChange),
     handleFormUsernameChange: () => (isAddMode() ? handleAddUsernameChange : handleEditUsernameChange),
     handleFormPasswordChange: () => (isAddMode() ? handleAddPasswordChange : handleEditPasswordChange),
+    handleFormHeadersChange: () => (isAddMode() ? handleAddHeadersChange : handleEditHeadersChange),
   }
 }
 
@@ -668,6 +736,7 @@ export function ServerConnectionForm(props: { controller: ReturnType<typeof useS
         name={props.controller.formName()}
         username={props.controller.formUsername()}
         password={props.controller.formPassword()}
+        headers={props.controller.formHeaders()}
         placeholder={language.t("dialog.server.add.placeholder")}
         busy={props.controller.formBusy()}
         error={props.controller.formError()}
@@ -676,6 +745,7 @@ export function ServerConnectionForm(props: { controller: ReturnType<typeof useS
         onNameChange={props.controller.handleFormNameChange()}
         onUsernameChange={props.controller.handleFormUsernameChange()}
         onPasswordChange={props.controller.handleFormPasswordChange()}
+        onHeadersChange={props.controller.handleFormHeadersChange()}
         onSubmit={props.controller.submitForm}
         onBack={props.controller.resetForm}
       />

@@ -50,6 +50,8 @@ export type ElectronAPI = {
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>
+  /** 注册某个服务器 origin 需要随所有请求（含 WebSocket 握手）发送的自定义请求头 */
+  setServerRequestHeaders: (origin: string, headers: Record<string, string> | null) => Promise<void>
   isFirstLaunchOnboardingPending: () => Promise<boolean>
   finishFirstLaunchOnboarding: (createDefaultProject: boolean) => Promise<string | null>
   isOldLayoutEligible: () => Promise<boolean>

@@ -270,6 +270,10 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       await window.api.setDefaultServerUrl(url)
     },
 
+    setServerRequestHeaders: async (origin, headers) => {
+      await window.api.setServerRequestHeaders(origin, headers)
+    },
+
     wslServers: wslServersApi,
 
     getDisplayBackend: async () => {

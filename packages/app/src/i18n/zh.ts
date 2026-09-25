@@ -353,6 +353,12 @@ export const dict = {
   "dialog.archivedSessions.description": "打开或恢复已归档的会话",
   "dialog.archivedSessions.empty": "没有已归档的会话",
   "dialog.archivedSessions.unarchive": "恢复",
+  "dialog.archivedSessions.manage": "多选",
+  "dialog.archivedSessions.done": "完成",
+  "dialog.archivedSessions.selectAll": "全选",
+  "dialog.archivedSessions.selectedCount": "已选 {{count}} 项",
+  "dialog.archivedSessions.deleteConfirm": "确定删除已选中的 {{count}} 个会话？此操作不可恢复。",
+  "dialog.archivedSessions.deleteFailed": "{{count}} 个会话删除失败",
 
   "dialog.skills.title": "Skills",
   "dialog.skills.description": "当前项目可用的 Skills",

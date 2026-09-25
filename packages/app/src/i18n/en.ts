@@ -339,6 +339,12 @@ export const dict = {
   "dialog.archivedSessions.description": "Open or restore archived sessions",
   "dialog.archivedSessions.empty": "No archived sessions",
   "dialog.archivedSessions.unarchive": "Restore",
+  "dialog.archivedSessions.manage": "Select",
+  "dialog.archivedSessions.done": "Done",
+  "dialog.archivedSessions.selectAll": "Select all",
+  "dialog.archivedSessions.selectedCount": "{{count}} selected",
+  "dialog.archivedSessions.deleteConfirm": "Delete the {{count}} selected sessions? This cannot be undone.",
+  "dialog.archivedSessions.deleteFailed": "Failed to delete {{count}} sessions",
 
   "dialog.skills.title": "Skills",
   "dialog.skills.description": "Skills available to the current project",

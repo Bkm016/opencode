@@ -90,7 +90,10 @@ const SessionRow = (props: {
             <>
               <Show when={props.isWorking()}>
                 {/* 旋转弧环绕模型图标，替代原先的独立转圈 */}
-                <div class="absolute inset-0 animate-spin rounded-full border border-transparent border-t-current [animation-duration:1.2s]" />
+                <div
+                  class="absolute inset-0 rounded-full border border-transparent border-t-current"
+                  style={{ animation: "spin 1.2s linear infinite" }}
+                />
               </Show>
               <ProviderIcon
                 id={model().providerID}

@@ -1,6 +1,13 @@
 :root {
   --animate-pulse: pulse-opacity 2s ease-in-out infinite;
   --animate-pulse-scale: pulse-scale 1.2s ease-in-out infinite;
+  --animate-spin: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse-opacity {

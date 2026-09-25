@@ -13,6 +13,7 @@ import {
 } from "solid-js"
 import gsap from "gsap"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
@@ -518,6 +519,8 @@ export default function LegacyLayout(props: ParentProps) {
   // 聊天区独立组件：跟项目分区同款的 折叠+会话列表，但不进项目拖拽排序容器。
   // 空聊天时不展开——点击头部直接新建会话，不渲染空列表。
   const TiledChatSection = (props: { mobile?: boolean }) => {
+    // 触屏设备没有 hover，聊天行的新建会话按钮常驻显示。
+    const touch = createMediaQuery("(hover: none)")
     const hasSessions = createMemo(() => chatSessions().length > 0)
     const showList = createMemo(() => hasSessions() && chatExpanded())
 
@@ -557,7 +560,12 @@ export default function LegacyLayout(props: ParentProps) {
                 icon="plus"
                 variant="ghost"
                 size="small"
-                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto"
+                class={
+                  "size-6 rounded-md transition-opacity duration-150 " +
+                  (touch()
+                    ? "opacity-100"
+                    : "opacity-0 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto")
+                }
                 data-action="chat-new-session"
                 aria-label={language.t("sidebar.chat.new")}
                 onClick={(event) => {

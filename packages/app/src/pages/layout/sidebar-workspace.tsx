@@ -400,51 +400,46 @@ export const WorkspaceSessionList = (props: {
           </div>
         </div>
       </Show>
-      <Show
-        when={!props.mobile}
-        fallback={sessionItems(props.sessions())}
-      >
-        <Show when={props.flat} fallback={
-          <For each={groups()}>
-            {(group) => (
-              <Show when={group.collapsible} fallback={sessionItems(group.sessions)}>
-                <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isGroupOpen(group)}
-                    onClick={() => setGroupExpanded(group, !isGroupOpen(group))}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault()
-                        setGroupExpanded(group, !isGroupOpen(group))
-                      }
-                    }}
-                    class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak/50 hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
-                  >
-                    <span>{group.label}</span>
-                    <span class="flex items-center gap-1">
-                      <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
-                      <Icon
-                        name="chevron-down"
-                        size="small"
-                        class="shrink-0 text-icon-weaker transition-transform duration-150"
-                        classList={{ "rotate-180": !isGroupOpen(group) }}
-                      />
-                    </span>
-                  </div>
-                  <div class="sidebar-reveal" data-open={isGroupOpen(group) ? "" : undefined}>
-                    <div class="sidebar-reveal-inner">
-                      {sessionItems(group.sessions)}
-                    </div>
+      <Show when={props.flat} fallback={
+        <For each={groups()}>
+          {(group) => (
+            <Show when={group.collapsible} fallback={sessionItems(group.sessions)}>
+              <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isGroupOpen(group)}
+                  onClick={() => setGroupExpanded(group, !isGroupOpen(group))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      setGroupExpanded(group, !isGroupOpen(group))
+                    }
+                  }}
+                  class="flex h-7 cursor-pointer items-center justify-between px-2 text-text-weak/50 hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
+                >
+                  <span>{group.label}</span>
+                  <span class="flex items-center gap-1">
+                    <span class="text-11-regular text-text-weaker">{group.sessions.length}</span>
+                    <Icon
+                      name="chevron-down"
+                      size="small"
+                      class="shrink-0 text-icon-weaker transition-transform duration-150"
+                      classList={{ "rotate-180": !isGroupOpen(group) }}
+                    />
+                  </span>
+                </div>
+                <div class="sidebar-reveal" data-open={isGroupOpen(group) ? "" : undefined}>
+                  <div class="sidebar-reveal-inner">
+                    {sessionItems(group.sessions)}
                   </div>
                 </div>
-              </Show>
-            )}
-          </For>
-        }>
-          {sessionItems(props.sessions())}
-        </Show>
+              </div>
+            </Show>
+          )}
+        </For>
+      }>
+        {sessionItems(props.sessions())}
       </Show>
     </nav>
   )

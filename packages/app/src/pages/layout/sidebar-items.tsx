@@ -68,28 +68,42 @@ const SessionRow = (props: {
         navigate(`/${props.slug}/session/${props.session.id}`)
       }}
     >
-      {/* 前置位常驻以保持标题对齐：运行中与待授权状态优先，空闲时显示会话最近使用的模型图标 */}
+      {/* 前置位常驻以保持标题对齐：显示会话最近使用的模型图标；运行时在图标外圈叠加旋转环，待授权状态优先显示提示点 */}
       <div
-        class="shrink-0 size-6 flex items-center justify-center"
+        class="relative shrink-0 size-6 flex items-center justify-center"
         style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
       >
-        <Switch>
-          <Match when={props.isWorking()}>
-            <Spinner class="size-[15px]" />
-          </Match>
-          <Match when={props.hasPermissions()}>
-            <div class="size-1.5 rounded-full bg-surface-warning-strong" />
-          </Match>
-          <Match when={props.session.model}>
-            {(model) => (
+        <Show
+          when={props.session.model}
+          fallback={
+            <Switch>
+              <Match when={props.isWorking()}>
+                <Spinner class="size-[15px]" />
+              </Match>
+              <Match when={props.hasPermissions()}>
+                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+              </Match>
+            </Switch>
+          }
+        >
+          {(model) => (
+            <>
+              <Show when={props.isWorking()}>
+                {/* 旋转弧环绕模型图标，替代原先的独立转圈 */}
+                <div class="absolute inset-0 animate-spin rounded-full border border-transparent border-t-current [animation-duration:1.2s]" />
+              </Show>
               <ProviderIcon
                 id={model().providerID}
                 model={model().id}
+                classList={{ "opacity-60": props.hasPermissions() }}
                 class="size-3.5 text-icon-base opacity-70 group-hover/session:opacity-100 group-has-[.active]/session:opacity-100 transition-opacity"
               />
-            )}
-          </Match>
-        </Switch>
+              <Show when={props.hasPermissions()}>
+                <div class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-surface-warning-strong" />
+              </Show>
+            </>
+          )}
+        </Show>
       </div>
       <span class="min-w-0 flex-1 truncate text-14-regular text-text-strong opacity-70 group-hover/session:opacity-100 group-has-[.active]/session:opacity-100 transition-opacity">{title()}</span>
     </A>

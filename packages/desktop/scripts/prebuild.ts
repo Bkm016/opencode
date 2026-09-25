@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
+import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -23,21 +24,33 @@ if (process.platform === "win32") {
   await $`cp ${src} ${dest}`
 
   // bun --compile 产物默认是 Bun 包子图标，用 rcedit 把 opencode 图标写进 exe 资源。
-  // electron-winstaller 是 desktop 的间接依赖，直接到 node_modules/.bun 下找 vendor/rcedit.exe。
+  // electron-winstaller 是 desktop 的间接依赖。本地 bun isolated install 落在
+  // node_modules/.bun，CI hoisted install 直接落在 node_modules，两处都找一遍。
   const scriptDir = path.dirname(fileURLToPath(import.meta.url))
   const desktopDir = path.resolve(scriptDir, "..")
   const rootDir = path.resolve(desktopDir, "../..")
-  const rcedit = (
-    await Array.fromAsync(
-      new Bun.Glob("electron-winstaller@*/node_modules/electron-winstaller/vendor/rcedit.exe").scan({
-        cwd: path.join(rootDir, "node_modules", ".bun"),
-        absolute: true,
-      }),
+  const bunDir = path.join(rootDir, "node_modules", ".bun")
+  const rceditCandidates: string[] = []
+  if (existsSync(bunDir)) {
+    rceditCandidates.push(
+      ...(await Array.fromAsync(
+        new Bun.Glob("electron-winstaller@*/node_modules/electron-winstaller/vendor/rcedit.exe").scan({
+          cwd: bunDir,
+          absolute: true,
+        }),
+      )),
     )
-  )[0]
-  if (!rcedit) throw new Error("rcedit.exe not found under node_modules/.bun/electron-winstaller-*")
+  }
+  const hoisted = path.join(rootDir, "node_modules", "electron-winstaller", "vendor", "rcedit.exe")
+  if (existsSync(hoisted)) rceditCandidates.push(hoisted)
+  const rcedit = rceditCandidates[0]
   const icon = path.resolve(desktopDir, `icons/${channel}/icon.ico`)
-  await $`"${rcedit}" "${dest}" --set-icon "${icon}"`
-
-  console.log(`Copied CLI to ${dest} with icon`)
+  if (rcedit) {
+    await $`"${rcedit}" "${dest}" --set-icon "${icon}"`
+    console.log(`Copied CLI to ${dest} with icon`)
+  } else {
+    // electron-winstaller 是 electron-builder 的 optional transitive dep，
+    // CI 的 hoisted install 可能不带它；图标缺失不阻塞构建。
+    console.warn(`Copied CLI to ${dest} (rcedit.exe not found, icon not set)`)
+  }
 }

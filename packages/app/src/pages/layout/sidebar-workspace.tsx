@@ -257,9 +257,6 @@ export const WorkspaceSessionList = (props: {
 }): JSX.Element => {
   const params = useParams()
   const language = useLanguage()
-  const dateFormatter = createMemo(
-    () => new Intl.DateTimeFormat(language.intl(), { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
-  )
   // 分组折叠默认全收起，展开状态按侧栏列表 scope 持久化记忆，刷新后仍生效。
   // 挂载时记录当前命令版本，避免把挂载前的一次性折叠/展开命令重复套用到新列表上。
   const initialCommand = props.ctx.sessionGroupsCommand()
@@ -287,7 +284,7 @@ export const WorkspaceSessionList = (props: {
 
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime()
+    const oneDay = 24 * 60 * 60 * 1000
     const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime()
     props
       .sessions()
@@ -300,13 +297,17 @@ export const WorkspaceSessionList = (props: {
           groups.push({ key: `flat-${session.id}`, sessions: [session], collapsible: false, defaultOpen: true })
           return
         }
+        // 昨天起的分组按距今天的天数命名，超过七天统一归入“七天前”。
+        const daysAgo = Math.round((today - day) / oneDay)
         const older = day <= sevenDaysAgo
         const key = older ? "older" : String(day)
         const label = older
           ? language.t("home.sessions.group.sevenDaysAgo")
-          : day === yesterday
+          : daysAgo === 1
             ? language.t("home.sessions.group.yesterday")
-            : dateFormatter().format(date)
+            : daysAgo === 2
+              ? language.t("home.sessions.group.dayBeforeYesterday")
+              : language.t("home.sessions.group.daysAgo", { count: daysAgo })
         const group = groups.at(-1)
         if (group?.key === key) {
           group.sessions.push(session)

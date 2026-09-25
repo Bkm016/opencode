@@ -431,6 +431,8 @@ export const dict = {
   "dialog.server.add.usernamePlaceholder": "username",
   "dialog.server.add.password": "Password (optional)",
   "dialog.server.add.passwordPlaceholder": "password",
+  "dialog.server.add.headers": "Custom headers (optional)",
+  "dialog.server.add.headersPlaceholder": "One per line, e.g. CF-Access-Client-Id: abc",
   "dialog.server.edit.title": "Edit server",
   "dialog.server.default.title": "Default server",
   "dialog.server.default.description":
@@ -762,6 +764,8 @@ export const dict = {
   "home.sessions.empty.description": "Create a session to get started",
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
+  "home.sessions.group.dayBeforeYesterday": "2 days ago",
+  "home.sessions.group.daysAgo": "{{count}} days ago",
   "home.sessions.group.sevenDaysAgo": "7+ days ago",
   "home.sessions.group.pinned": "Pinned",
   "home.sessions.group.expandAll": "Expand all",

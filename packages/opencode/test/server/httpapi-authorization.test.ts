@@ -1,5 +1,5 @@
 import { NodeHttpServer } from "@effect/platform-node"
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/unstable/httpapi"
@@ -11,7 +11,7 @@ import {
   serverAuthorizationLayer,
 } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { testEffect } from "../lib/effect"
-import { authRateLimit } from "@opencode-ai/server/middleware/auth-rate-limit"
+import { authRateLimit, createAuthFailureTracker } from "@opencode-ai/server/middleware/auth-rate-limit"
 
 const Api = HttpApi.make("test-authorization").add(
   HttpApiGroup.make("test")
@@ -201,4 +201,41 @@ describe("HttpApi authorization middleware", () => {
       expect(response.headers["retry-after"]).toBe("60")
     }),
   )
+})
+
+describe("createAuthFailureTracker", () => {
+  test("never blocks a new address when the table is full", () => {
+    const tracker = createAuthFailureTracker({ limit: 2, capacity: 3 })
+    for (const address of ["a", "b", "c", "d", "e"]) tracker.record(address)
+
+    expect(tracker.size()).toBe(3)
+    expect(tracker.blocked("owner")).toBe(false)
+  })
+
+  test("keeps banning an address until its window expires", () => {
+    let time = 0
+    const tracker = createAuthFailureTracker({ limit: 2, window: 1_000, now: () => time })
+    tracker.record("attacker")
+    tracker.record("attacker")
+
+    expect(tracker.blocked("attacker")).toBe(true)
+    expect(tracker.blocked("other")).toBe(false)
+    time = 1_000
+    expect(tracker.blocked("attacker")).toBe(false)
+    expect(tracker.size()).toBe(0)
+  })
+
+  test("evicts the oldest entry first", () => {
+    let time = 0
+    const tracker = createAuthFailureTracker({ limit: 1, capacity: 2, now: () => time })
+    tracker.record("first")
+    time = 1
+    tracker.record("second")
+    time = 2
+    tracker.record("third")
+
+    expect(tracker.blocked("first")).toBe(false)
+    expect(tracker.blocked("second")).toBe(true)
+    expect(tracker.blocked("third")).toBe(true)
+  })
 })

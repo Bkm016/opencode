@@ -235,6 +235,9 @@ if (Script.release) {
   for (const key of Object.keys(binaries)) {
     if (key.includes("linux")) {
       await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
+    } else if (process.platform === "win32") {
+      // Windows 无内置 zip 命令，用 PowerShell Compress-Archive。
+      await $`powershell -NoProfile -Command "Compress-Archive -Path '*' -DestinationPath '../../${key}.zip' -Force"`.cwd(`dist/${key}/bin`)
     } else {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
     }

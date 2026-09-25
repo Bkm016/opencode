@@ -15,19 +15,25 @@ const outDir = path.join(distDir, "opencode-cli-windows-x64")
 const outExe = path.join(outDir, "opencode.exe")
 const outZip = path.join(distDir, "opencode-cli-windows-x64.zip")
 
-// release channel 让 UI 不显示 DEV/beta 角标
+// release channel 让 UI 不显示 DEV/beta 角标。
+// 不设 OPENCODE_RELEASE：它会触发 zip 打包 + gh release upload，本地构建用不到，
+// 且 Windows 无 zip 命令会失败。
 process.env.OPENCODE_CHANNEL = process.env.OPENCODE_CHANNEL ?? "latest"
-process.env.OPENCODE_RELEASE = process.env.OPENCODE_RELEASE ?? "1"
 
 $.cwd(opencodeDir)
 await $`bun ./script/build.ts --os=win32 --arch=x64`
 
 await $`mkdir -p ${outDir}`
-await $`cp -f ${srcExe} ${outExe}`
+await $`cp ${srcExe} ${outExe}`
 
-// 打成 zip 方便直接发给别人，解压即用；PowerShell 的 Expand-Archive 可解。
+// 打成 zip 方便直接发给别人，解压即用；Windows 无 zip 命令时用 PowerShell。
 await $`rm -f ${outZip}`
-await $`zip -j ${outZip} ${outExe}`
+if (process.platform === "win32") {
+  // Windows 无内置 zip，用 PowerShell Compress-Archive 代替。
+  await $`powershell -NoProfile -Command "Compress-Archive -Path '${outExe}' -DestinationPath '${outZip}' -Force"`
+} else {
+  await $`zip -j ${outZip} ${outExe}`
+}
 
 console.log(`Done.`)
 console.log(`  exe: ${outExe}`)

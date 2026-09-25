@@ -1,4 +1,5 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
+import { createMediaQuery } from "@solid-primitives/media"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -40,6 +41,8 @@ export const SidebarContent = (props: {
   setScrollRef: (el: HTMLDivElement | undefined) => void
 }): JSX.Element => {
   const placement = () => (props.mobile ? "bottom" : "right")
+  // 触屏设备没有 hover，项目栏操作按钮常驻显示，否则移动端无法打开项目入口。
+  const touch = createMediaQuery("(hover: none)")
   return (
     <div class="flex h-full w-full min-w-0 flex-col overflow-hidden bg-background-base">
       {/* 聊天区在项目拖拽排序容器之外渲染，避免展开/收起触发项目排序引擎的 layout 测量。 */}
@@ -47,7 +50,13 @@ export const SidebarContent = (props: {
 
       <div class="group/sidebar-top flex shrink-0 items-center justify-between gap-2 px-3 pt-4 pb-2">
         <span class="min-w-0 flex-1 truncate px-2 text-13-medium text-text-weaker">{props.headerTitle}</span>
-        <div class="flex shrink-0 items-center opacity-0 transition-opacity duration-150 pointer-events-none group-hover/sidebar-top:opacity-100 group-hover/sidebar-top:pointer-events-auto group-focus-within/sidebar-top:opacity-100 group-focus-within/sidebar-top:pointer-events-auto">
+        <div
+          class="flex shrink-0 items-center transition-opacity duration-150"
+          classList={{
+            "opacity-100": touch(),
+            "opacity-0 pointer-events-none group-hover/sidebar-top:opacity-100 group-hover/sidebar-top:pointer-events-auto group-focus-within/sidebar-top:opacity-100 group-focus-within/sidebar-top:pointer-events-auto": !touch(),
+          }}
+        >
           <div class="relative">
             <Show when={props.renderSearch}>{(render) => render()()}</Show>
           </div>

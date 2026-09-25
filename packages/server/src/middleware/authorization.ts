@@ -8,6 +8,18 @@ import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstab
 
 const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
 
+// PWA 安装提示和图标资源需要浏览器匿名加载；这些静态文件不含敏感数据，跨端共享同一份白名单。
+const PUBLIC_PATHS = new Set([
+  "/site.webmanifest",
+  "/web-app-manifest-192x192.png",
+  "/web-app-manifest-512x512.png",
+  "/sw.js",
+])
+
+function isPublicPath(method: string, pathname: string) {
+  return method === "GET" && PUBLIC_PATHS.has(pathname)
+}
+
 function emptyCredential() {
   return { username: "", password: Redacted.make("") }
 }
@@ -40,9 +52,11 @@ export const authorizationLayer = Layer.effect(
     return Authorization.of((effect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest
+        const url = new URL(request.url, "http://localhost")
+        if (isPublicPath(request.method, url.pathname)) return yield* effect
         // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips
         // credential checks here; the connect handler consumes and validates the ticket.
-        if (hasPtyConnectTicketURL(new URL(request.url, "http://localhost"))) return yield* effect
+        if (hasPtyConnectTicketURL(url)) return yield* effect
         const credential = yield* credentialFromRequest(request)
         if (ServerAuth.authorized(credential, config)) return yield* effect
         yield* HttpEffect.appendPreResponseHandler((_request, response) =>

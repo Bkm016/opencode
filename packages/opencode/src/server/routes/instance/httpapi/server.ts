@@ -114,6 +114,7 @@ import { corsVaryFix } from "./middleware/cors-vary"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
+import { authRateLimit } from "@opencode-ai/server/middleware/auth-rate-limit"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
 
@@ -283,6 +284,7 @@ export function createRoutes(
   ).pipe(
     Layer.provide([
       errorLayer,
+      authRateLimit,
       compressionLayer,
       corsVaryFix,
       fenceLayer,

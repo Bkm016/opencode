@@ -10,7 +10,6 @@ import { matchKeybind, parseKeybind } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { useServerSDK } from "@/context/server-sdk"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
@@ -162,15 +161,9 @@ export const Terminal = (props: TerminalProps) => {
   const theme = useTheme()
   const language = useLanguage()
   // Terminal captures its connection for the PTY lifetime, so callers must key it per server/session.
-  const connection = useServerSDK()().server
   const directory = sdk().directory
   const client = sdk().client
   const url = sdk().url
-  const auth = connection.http
-  const username = auth?.username ?? "opencode"
-  const password = auth?.password ?? ""
-  const authToken = connection.type === "http" ? connection.authToken : false
-  const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
   const [local, others] = splitProps(props, [
     "pty",
@@ -507,21 +500,17 @@ export const Terminal = (props: TerminalProps) => {
           })
 
       const connectToken = async () => {
-        const result = await client.pty
-          .connectToken(
-            { ptyID: id, directory },
-            {
-              throwOnError: false,
-              headers: { "x-opencode-ticket": "1" },
-            },
-          )
-          .catch((err: unknown) => {
-            if (err instanceof Error && err.message.includes("Request is not supported")) return
-            throw err
-          })
-        if (!result) return
+        const result = await client.pty.connectToken(
+          { ptyID: id, directory },
+          {
+            throwOnError: false,
+            headers: { "x-opencode-ticket": "1" },
+          },
+        )
         if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
-        if (result.response.status === 404 || result.response.status === 405) return
+        // 旧服务不支持票据时明确失败，不能退回 URL 中的长期密码。
+        if (result.response.status === 404 || result.response.status === 405)
+          throw new Error("PTY tickets are unavailable. Upgrade the server and reconnect.")
         if (result.response.status === 403)
           throw new Error("PTY connect ticket rejected by origin or CSRF checks. Check the server CORS config.")
         throw new Error(`PTY connect ticket failed with ${result.response.status}`)
@@ -556,6 +545,7 @@ export const Terminal = (props: TerminalProps) => {
         })
         if (once.value) return
         if (disposed) return
+        if (!ticket) return
 
         const socket = new WebSocket(
           terminalWebSocketURL({
@@ -564,10 +554,6 @@ export const Terminal = (props: TerminalProps) => {
             directory,
             cursor: seek,
             ticket,
-            sameOrigin,
-            username,
-            password,
-            authToken,
           }),
         )
         socket.binaryType = "arraybuffer"

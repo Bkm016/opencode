@@ -1,8 +1,7 @@
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Effect, Stream } from "effect"
-import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
-import { ProxyUtil } from "../proxy-util"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
@@ -21,12 +20,6 @@ export function cspForHtml(body: string) {
   return csp(match ? createHash("sha256").update(match[2]).digest("base64") : "")
 }
 
-function requestBody(request: HttpServerRequest.HttpServerRequest) {
-  if (request.method === "GET" || request.method === "HEAD") return HttpBody.empty
-  const len = request.headers["content-length"]
-  return HttpBody.stream(request.stream, request.headers["content-type"], len === undefined ? undefined : Number(len))
-}
-
 function proxyResponseHeaders(headers: Record<string, string>) {
   const result = new Headers(headers)
   // FetchHttpClient exposes decoded response bodies, so forwarding upstream
@@ -38,7 +31,10 @@ function proxyResponseHeaders(headers: Record<string, string>) {
 }
 
 export function upstreamURL(path: string) {
-  return new URL(path, UI_UPSTREAM).toString()
+  const url = new URL(UI_UPSTREAM)
+  // 只替换路径，避免双斜线路径把固定 UI 上游变成任意外部主机。
+  url.pathname = path
+  return url.toString()
 }
 
 export function embeddedUI(disableEmbeddedWebUi: boolean) {
@@ -80,15 +76,24 @@ export function serveUIEffect(
   services: { fs: FSUtil.Interface; client: HttpClient.HttpClient; disableEmbeddedWebUi: boolean },
 ) {
   return Effect.gen(function* () {
+    // 未命中的写请求不能把本机 API 请求体发送给外部静态资源服务。
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, HEAD" } })
+    }
     const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
     const path = new URL(request.url, "http://localhost").pathname
 
     if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
 
+    // UI 上游不属于本机信任域，只转发资源协商头，绝不携带凭据或 Referer。
+    const upstreamHeaders = Object.fromEntries(
+      ["accept", "accept-language", "if-none-match", "if-modified-since"].flatMap((key) =>
+        request.headers[key] === undefined ? [] : [[key, request.headers[key]]],
+      ),
+    )
     const response = yield* services.client.execute(
       HttpClientRequest.make(request.method)(upstreamURL(path), {
-        headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
-        body: requestBody(request),
+        headers: upstreamHeaders,
       }),
     )
     const headers = proxyResponseHeaders(response.headers)

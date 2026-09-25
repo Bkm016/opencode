@@ -82,6 +82,10 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
 
 const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unknown> = Effect.fn("Server.listen")(
   function* (opts: ListenOptions) {
+    // 无密码只允许明确的回环地址，不能因 mDNS 或配置变更静默暴露服务。
+    if (!["127.0.0.1", "localhost", "::1"].includes(opts.hostname) && !process.env.OPENCODE_SERVER_PASSWORD) {
+      return yield* Effect.fail(new Error("OPENCODE_SERVER_PASSWORD is required for non-loopback listeners."))
+    }
     const state = yield* startWithPortFallback(opts)
     const address = yield* tcpAddress(state)
     const listenerUrl = makeURL(opts.hostname, address.port)

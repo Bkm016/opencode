@@ -378,7 +378,7 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 
-  it.live("accepts auth token for the web UI", () =>
+  it.live("rejects long-lived auth token URLs for the web UI", () =>
     Effect.gen(function* () {
       const response = yield* uiApp({
         password: "secret",
@@ -387,22 +387,51 @@ describe("HttpApi UI fallback", () => {
         client: httpClient(new Response("<html>opencode</html>", { headers: { "content-type": "text/html" } })),
       }).request(`/?auth_token=${btoa("opencode:secret")}`)
 
-      expect(response.status).toBe(200)
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
+      expect(response.status).toBe(401)
     }),
   )
 
-  it.live("accepts basic auth for the web UI", () =>
+  it.live("accepts basic auth without forwarding secrets to the UI upstream", () =>
     Effect.gen(function* () {
+      let upstream: HttpClientRequest.HttpClientRequest | undefined
       const response = yield* uiApp({
         password: "secret",
         username: "opencode",
         disableEmbeddedWebUi: true,
-      }).request("/", {
-        headers: { authorization: `Basic ${btoa("opencode:secret")}` },
+        client: httpClient(new Response("ui"), (request) => {
+          upstream = request
+        }),
+      }).request("/?auth_token=old-secret", {
+        headers: {
+          authorization: `Basic ${btoa("opencode:secret")}`,
+          cookie: "session=private",
+          referer: "http://localhost/?auth_token=old-secret",
+          "x-api-key": "private",
+          accept: "text/html",
+        },
       })
 
       expect(response.status).toBe(200)
+      expect(upstream?.url).toBe("https://app.opencode.ai/")
+      expect(upstream?.headers.accept).toBe("text/html")
+      expect(upstream?.headers.authorization).toBeUndefined()
+      expect(upstream?.headers.cookie).toBeUndefined()
+      expect(upstream?.headers.referer).toBeUndefined()
+      expect(upstream?.headers["x-api-key"]).toBeUndefined()
+    }),
+  )
+
+  it.live("does not proxy unmatched write requests or their bodies", () =>
+    Effect.gen(function* () {
+      let forwarded = false
+      const response = yield* uiApp({
+        disableEmbeddedWebUi: true,
+        client: httpClient(new Response("ui"), () => {
+          forwarded = true
+        }),
+      }).request("/unknown-api", { method: "POST", body: "private-payload" })
+      expect(response.status).toBe(405)
+      expect(forwarded).toBe(false)
     }),
   )
 

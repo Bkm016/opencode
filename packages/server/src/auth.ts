@@ -1,6 +1,7 @@
 export * as ServerAuth from "./auth"
 
 import { Config as EffectConfig, Context, Effect, Layer, Option, Redacted } from "effect"
+import { createHash, timingSafeEqual } from "node:crypto"
 
 export type Credentials = {
   password?: string
@@ -42,11 +43,13 @@ export function required(config: Info) {
 }
 
 export function authorized(credentials: DecodedCredentials, config: Info) {
-  return (
-    Option.isSome(config.password) &&
-    credentials.username === config.username &&
-    Redacted.value(credentials.password) === config.password.value
-  )
+  if (Option.isNone(config.password)) return false
+  // 固定长度摘要避免长度差异，并统一两套 HTTP API 的恒定时间凭据比较。
+  const expected = createHash("sha256").update(JSON.stringify([config.username, config.password.value])).digest()
+  const actual = createHash("sha256")
+    .update(JSON.stringify([credentials.username, Redacted.value(credentials.password)]))
+    .digest()
+  return timingSafeEqual(expected, actual)
 }
 
 export function header(credentials?: Credentials) {

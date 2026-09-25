@@ -7,7 +7,6 @@ import { type Platform, PlatformProvider } from "@/context/platform"
 import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { handleNotificationClick } from "@/utils/notification-click"
-import { authFromToken } from "@/utils/server"
 import pkg from "../package.json"
 import { ServerConnection } from "./context/server"
 
@@ -161,14 +160,12 @@ if (!import.meta.env.DEV && "serviceWorker" in navigator) {
 }
 
 if (root instanceof HTMLElement) {
-  const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
+  // 清理旧链接中的敏感参数，但不再将 URL 内容升级为服务端凭据。
   clearAuthToken()
   const server: ServerConnection.Http = {
     type: "http",
-    authToken: !!auth,
     http: {
       url: getCurrentUrl(),
-      ...auth,
     },
   }
   render(

@@ -3,6 +3,7 @@ export * as ServerAuth from "./auth"
 import { ConfigService } from "@/effect/config-service"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Config as EffectConfig, Context, Option, Redacted } from "effect"
+export { authorized } from "@opencode-ai/server/auth"
 
 export type Credentials = {
   password?: string
@@ -23,14 +24,6 @@ export type Info = Context.Service.Shape<typeof Config>
 
 export function required(config: Info) {
   return Option.isSome(config.password) && config.password.value !== ""
-}
-
-export function authorized(credentials: DecodedCredentials, config: Info) {
-  return (
-    Option.isSome(config.password) &&
-    credentials.username === config.username &&
-    Redacted.value(credentials.password) === config.password.value
-  )
 }
 
 export function header(credentials?: Credentials) {

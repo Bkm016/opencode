@@ -11,6 +11,7 @@ import {
   serverAuthorizationLayer,
 } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { testEffect } from "../lib/effect"
+import { authRateLimit } from "@opencode-ai/server/middleware/auth-rate-limit"
 
 const Api = HttpApi.make("test-authorization").add(
   HttpApiGroup.make("test")
@@ -47,7 +48,11 @@ const serverHandlers = HttpApiBuilder.group(ServerApi, "test.v2", (handlers) =>
 )
 
 const apiLayer = HttpRouter.serve(
-  HttpApiBuilder.layer(Api).pipe(Layer.provide(handlers), Layer.provide(authorizationLayer)),
+  HttpApiBuilder.layer(Api).pipe(
+    Layer.provide(handlers),
+    Layer.provide(authorizationLayer),
+    Layer.provide(authRateLimit),
+  ),
   { disableListenLog: true, disableLogger: true },
 ).pipe(Layer.provideMerge(NodeHttpServer.layerTest))
 
@@ -116,21 +121,21 @@ describe("HttpApi authorization middleware", () => {
     }),
   )
 
-  itSecret.live("accepts auth token query credentials", () =>
+  itSecret.live("rejects long-lived auth token query credentials", () =>
     Effect.gen(function* () {
       const response = yield* HttpClient.get(`/probe?auth_token=${encodeURIComponent(token("opencode", "secret"))}`)
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
     }),
   )
 
-  itSecret.live("prefers auth token query credentials over basic auth", () =>
+  itSecret.live("does not let a query token override invalid basic auth", () =>
     Effect.gen(function* () {
       const response = yield* HttpClientRequest.get(
         `/probe?auth_token=${encodeURIComponent(token("opencode", "secret"))}`,
       ).pipe(HttpClientRequest.setHeader("authorization", basic("opencode", "wrong")), HttpClient.execute)
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
     }),
   )
 
@@ -145,9 +150,12 @@ describe("HttpApi authorization middleware", () => {
     }),
   )
 
-  itSecret.live("preserves handler errors when auth token query succeeds", () =>
+  itSecret.live("ignores query tokens when valid basic auth is supplied", () =>
     Effect.gen(function* () {
-      const response = yield* HttpClient.get(`/missing?auth_token=${encodeURIComponent(token("opencode", "secret"))}`)
+      const response = yield* HttpClientRequest.get("/missing?auth_token=invalid").pipe(
+        HttpClientRequest.setHeader("authorization", basic("opencode", "secret")),
+        HttpClient.execute,
+      )
 
       expect(response.status).toBe(404)
     }),
@@ -169,6 +177,28 @@ describe("HttpApi authorization middleware", () => {
       expect(response.status).toBe(401)
       expect(response.headers["www-authenticate"] ?? "").toContain("Basic")
       expect(body).toEqual({ _tag: "UnauthorizedError", message: "Authentication required" })
+    }),
+  )
+
+  itV2Secret.live("rejects query passwords on the v2 API", () =>
+    Effect.gen(function* () {
+      const response = yield* HttpClient.get(`/api/probe?auth_token=${encodeURIComponent(token("opencode", "secret"))}`)
+      expect(response.status).toBe(401)
+    }),
+  )
+
+  itSecret.live("limits repeated authentication failures despite spoofed forwarding headers", () =>
+    Effect.gen(function* () {
+      for (let i = 0; i < 30; i++) {
+        const response = yield* getProbe({
+          authorization: basic("opencode", "wrong"),
+          "x-forwarded-for": `192.0.2.${i}`,
+        })
+        expect(response.status).toBe(401)
+      }
+      const response = yield* getProbe()
+      expect(response.status).toBe(429)
+      expect(response.headers["retry-after"]).toBe("60")
     }),
   )
 })

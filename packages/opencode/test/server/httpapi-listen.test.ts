@@ -167,6 +167,16 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 }
 
 describe("HttpApi Server.listen", () => {
+  test("rejects non-loopback listeners without a password before binding", async () => {
+    for (const password of [undefined, ""]) {
+      if (password === undefined) delete process.env.OPENCODE_SERVER_PASSWORD
+      else process.env.OPENCODE_SERVER_PASSWORD = password
+      for (const hostname of ["0.0.0.0", "::", "192.0.2.1"]) {
+        await expect(Server.listen({ hostname, port: 0 })).rejects.toThrow("OPENCODE_SERVER_PASSWORD is required")
+      }
+    }
+  })
+
   testPty("serves HTTP routes and upgrades PTY websocket through Server.listen", async () => {
     await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
     const listener = await startListener()

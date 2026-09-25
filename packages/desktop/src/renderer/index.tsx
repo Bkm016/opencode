@@ -269,7 +269,10 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
         headers,
         body: body ? new TextDecoder().decode(body) : undefined,
       })
-      return new Response(res.body, {
+      // 204/304 等 null body 状态在 Response 构造器中不允许携带 body，需丢弃 body
+      const bodyPayload =
+        res.status === 101 || res.status === 204 || res.status === 205 || res.status === 304 ? null : res.body
+      return new Response(bodyPayload, {
         status: res.status,
         statusText: res.statusText,
         headers: res.headers,

@@ -174,8 +174,14 @@ async function helperScript(): Promise<{ script: string; anchor: string; embedde
     const crypto = await import("node:crypto")
     const os = await import("node:os")
     const hash = crypto.createHash("sha1").update(embedded).digest("hex").slice(0, 12)
-    const target = path.join(os.tmpdir(), `opencode-browser-helper-embedded-${hash}.mjs`)
+    // playwright-core 加载期会 require.resolve("../../../package.json") 定位包根，散放单个
+    // mjs 时该相对层级不存在、子进程启动即崩，故按 lib/server/utils 包结构落盘并补最小 package.json。
+    const root = path.join(os.tmpdir(), `opencode-browser-helper-embedded-${hash}`)
+    const target = path.join(root, "lib", "server", "utils", "browser-helper.mjs")
     if (!(await fs.stat(target).catch(() => undefined))) {
+      await fs.mkdir(path.dirname(target), { recursive: true })
+      // package.json 先于 target 落盘，保证 target 存在时其依赖相对层级已完整。
+      await fs.writeFile(path.join(root, "package.json"), '{"name":"playwright-core"}\n', "utf8")
       // 先写临时文件再改名，避免并发实例读到写了一半的 helper。
       const partial = `${target}.${process.pid}.tmp`
       await fs.writeFile(partial, embedded, "utf8")

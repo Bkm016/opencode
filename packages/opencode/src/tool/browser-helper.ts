@@ -8,8 +8,10 @@ import { createRequire } from "node:module"
 // OPENCODE_BROWSER_HELPER_RESOLVE 指向宿主包内任意文件（通常为本 helper 源路径），
 // 使 createRequire 从宿主依赖树解析 playwright-core，保证与宿主同版本。
 const require2 = createRequire(process.env.OPENCODE_BROWSER_HELPER_RESOLVE ?? import.meta.url)
-const { chromium } = require2("playwright-core") as typeof import("playwright-core")
-const { registry } = require2("playwright-core/lib/server/registry/index") as {
+// 单文件二进制内嵌版由 browser-helper-embedded.ts 预先注入静态打包的 playwright-core，无需磁盘上的依赖树。
+const embedded = (globalThis as { __opencodePlaywright?: { core: unknown; registry: unknown } }).__opencodePlaywright
+const { chromium } = (embedded?.core ?? require2("playwright-core")) as typeof import("playwright-core")
+const { registry } = (embedded?.registry ?? require2("playwright-core/lib/server/registry/index")) as {
   registry: {
     findExecutable(name: string): { executablePath?: () => string | undefined } | undefined
     // 下载并安装可执行文件到本机缓存；接受 findExecutable 返回的描述符。

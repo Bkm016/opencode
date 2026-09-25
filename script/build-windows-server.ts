@@ -1,5 +1,6 @@
 // Build a standalone Windows x64 opencode.exe CLI that includes `opencode serve`
-// and fork-only commands like `opencode skill cloud`.
+// and fork-only commands like `opencode skill cloud`. Embeds the full web UI so
+// `opencode serve` serves the desktop-grade frontend, not the bare fallback.
 // Usage: bun ./script/build-windows-server.ts
 // Output: packages/opencode/dist/opencode-cli-windows-x64/opencode.exe (+ .zip 便于分发)
 import { $ } from "bun"
@@ -14,8 +15,12 @@ const outDir = path.join(distDir, "opencode-cli-windows-x64")
 const outExe = path.join(outDir, "opencode.exe")
 const outZip = path.join(distDir, "opencode-cli-windows-x64.zip")
 
+// release channel 让 UI 不显示 DEV/beta 角标
+process.env.OPENCODE_CHANNEL = process.env.OPENCODE_CHANNEL ?? "latest"
+process.env.OPENCODE_RELEASE = process.env.OPENCODE_RELEASE ?? "1"
+
 $.cwd(opencodeDir)
-await $`bun ./script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui`
+await $`bun ./script/build.ts --os=win32 --arch=x64`
 
 await $`mkdir -p ${outDir}`
 await $`cp -f ${srcExe} ${outExe}`

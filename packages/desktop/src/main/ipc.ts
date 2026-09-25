@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, nativeImage, net, shell } from "electron"
-import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
+import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
@@ -14,6 +14,7 @@ import { getStore, removeStoreFileIfEmpty } from "./store"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setServerRequestHeaders, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
+import { createFetchProxy, type FetchProxyInit } from "./fetch-proxy"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -63,27 +64,25 @@ export function registerIpcHandlers(deps: Deps) {
   )
   // 渲染进程 fetch 跨域到 CF Access 等服务时受 CORS 预检拦截；
   // 走主进程 net.fetch 用 Node 网络栈，跳过浏览器 CORS。
-  ipcMain.handle(
-    "fetch",
-    async (
-      _event: IpcMainInvokeEvent,
-      url: string,
-      init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: never },
-    ) => {
-      const response = await net.fetch(url, {
-        method: init?.method,
-        headers: init?.headers,
-        body: init?.body,
-      })
-      const buf = await response.arrayBuffer()
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body: buf,
-      }
-    },
-  )
+  // 响应头经 invoke 返回，body 按块经 fetch-chunk/fetch-end/fetch-error 推送，SSE 才能实时到达。
+  const fetchProxy = createFetchProxy((url, init) => net.fetch(url, init))
+  const fetchSenders = new WeakSet<WebContents>()
+  ipcMain.handle("fetch", (event: IpcMainInvokeEvent, id: string, url: string, init: FetchProxyInit) => {
+    const sender = event.sender
+    if (!fetchSenders.has(sender)) {
+      fetchSenders.add(sender)
+      sender.once("destroyed", () => fetchProxy.abortPrefix(`${sender.id}:`))
+    }
+    const send = (channel: string, ...args: unknown[]) => {
+      if (!sender.isDestroyed()) sender.send(channel, id, ...args)
+    }
+    return fetchProxy.start(`${sender.id}:${id}`, url, init ?? {}, {
+      chunk: (data) => send("fetch-chunk", data),
+      end: () => send("fetch-end"),
+      error: (message) => send("fetch-error", message),
+    })
+  })
+  ipcMain.on("fetch-abort", (event: IpcMainEvent, id: string) => fetchProxy.abort(`${event.sender.id}:${id}`))
   ipcMain.handle("is-first-launch-onboarding-pending", () => deps.isFirstLaunchOnboardingPending())
   ipcMain.handle("finish-first-launch-onboarding", (_event: IpcMainInvokeEvent, createDefaultProject: boolean) =>
     deps.finishFirstLaunchOnboarding(createDefaultProject),

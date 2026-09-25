@@ -92,7 +92,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     try {
       const url = new URL(server.http.url)
       const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1"
-      if (url.protocol === "http:" && !loopback) return platform.fetch
+      // 远端（含 https + CF Access）事件流同样走 platform.fetch，避免浏览器 CORS 预检拦截。
+      if (!loopback) return platform.fetch
     } catch {
       return
     }

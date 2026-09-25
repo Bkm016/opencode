@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, ServerReadyData, WslServersEvent } from "./types"
+import type { ElectronAPI, FetchStreamHandlers, ServerReadyData, WslServersEvent } from "./types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -14,6 +14,20 @@ let serverReconnectData: ServerReadyData | undefined
 ipcRenderer.on("server-reconnect", (_event, data: ServerReadyData) => {
   serverReconnectData = data
   serverReconnectCallbacks.forEach((callback) => callback(data))
+})
+
+// platform.fetch 的响应体由主进程按块推送，这里按请求 id 分发给 renderer 的流。
+const fetchStreams = new Map<string, FetchStreamHandlers>()
+ipcRenderer.on("fetch-chunk", (_event, id: string, data: Uint8Array) => fetchStreams.get(id)?.chunk(data))
+ipcRenderer.on("fetch-end", (_event, id: string) => {
+  const handlers = fetchStreams.get(id)
+  fetchStreams.delete(id)
+  handlers?.end()
+})
+ipcRenderer.on("fetch-error", (_event, id: string, message: string) => {
+  const handlers = fetchStreams.get(id)
+  fetchStreams.delete(id)
+  handlers?.error(message)
 })
 
 const api: ElectronAPI = {
@@ -69,7 +83,17 @@ const api: ElectronAPI = {
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   setServerRequestHeaders: (origin, headers) => ipcRenderer.invoke("set-server-request-headers", origin, headers),
-  fetch: (url, init) => ipcRenderer.invoke("fetch", url, init),
+  fetch: (id, url, init, handlers) => {
+    fetchStreams.set(id, handlers)
+    return ipcRenderer.invoke("fetch", id, url, init).catch((error) => {
+      fetchStreams.delete(id)
+      throw error
+    })
+  },
+  fetchAbort: (id) => {
+    fetchStreams.delete(id)
+    ipcRenderer.send("fetch-abort", id)
+  },
   isFirstLaunchOnboardingPending: () => ipcRenderer.invoke("is-first-launch-onboarding-pending"),
   finishFirstLaunchOnboarding: (createDefaultProject) =>
     ipcRenderer.invoke("finish-first-launch-onboarding", createDefaultProject),

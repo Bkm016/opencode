@@ -257,21 +257,72 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
     // 走主进程 net.fetch：renderer 的 window.fetch 跨域到 CF Access 等服务会被
     // CORS 预检拦截（CF 不响应 OPTIONS），主进程 Node 网络栈不受此限制。
+    // 响应体按块流式送达：/event 等 SSE 长连接必须边收边读，不能等整个 body 结束。
     fetch: async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init)
+      const signal = request.signal
+      signal.throwIfAborted()
       const headers: Record<string, string> = {}
       request.headers.forEach((value, key) => {
         headers[key] = value
       })
-      const body = request.body ? await request.arrayBuffer() : undefined
-      const res = await window.api.fetch(request.url, {
-        method: request.method,
-        headers,
-        body: body ? new TextDecoder().decode(body) : undefined,
+      const body = request.body ? new Uint8Array(await request.arrayBuffer()) : undefined
+      const id = crypto.randomUUID()
+
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      let settled = false
+      const settle = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener("abort", onAbort)
+        try {
+          fn()
+        } catch {
+          // 消费方已取消流时 close/error 会抛错，忽略即可。
+        }
+      }
+      const stream = new ReadableStream<Uint8Array>({
+        start: (c) => {
+          controller = c
+        },
+        cancel: () => {
+          settled = true
+          signal.removeEventListener("abort", onAbort)
+          window.api.fetchAbort(id)
+        },
+      })
+      let rejectHead: (reason: unknown) => void = () => {}
+      const aborted = new Promise<never>((_, reject) => {
+        rejectHead = reject
+      })
+      function onAbort() {
+        window.api.fetchAbort(id)
+        rejectHead(signal.reason)
+        settle(() => controller.error(signal.reason))
+      }
+      signal.addEventListener("abort", onAbort, { once: true })
+
+      const res = await Promise.race([
+        window.api.fetch(
+          id,
+          request.url,
+          { method: request.method, headers, body },
+          {
+            chunk: (data) => {
+              if (!settled) controller.enqueue(data)
+            },
+            end: () => settle(() => controller.close()),
+            error: (message) => settle(() => controller.error(new TypeError(message))),
+          },
+        ),
+        aborted,
+      ]).catch((error) => {
+        settle(() => controller.error(error))
+        throw error
       })
       // 204/304 等 null body 状态在 Response 构造器中不允许携带 body，需丢弃 body
       const bodyPayload =
-        res.status === 101 || res.status === 204 || res.status === 205 || res.status === 304 ? null : res.body
+        res.status === 101 || res.status === 204 || res.status === 205 || res.status === 304 ? null : stream
       return new Response(bodyPayload, {
         status: res.status,
         statusText: res.statusText,

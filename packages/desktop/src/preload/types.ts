@@ -41,6 +41,12 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type FetchStreamHandlers = {
+  chunk: (data: Uint8Array) => void
+  end: () => void
+  error: (message: string) => void
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -52,11 +58,15 @@ export type ElectronAPI = {
   setDefaultServerUrl: (url: string | null) => Promise<void>
   /** 注册某个服务器 origin 需要随所有请求（含 WebSocket 握手）发送的自定义请求头 */
   setServerRequestHeaders: (origin: string, headers: Record<string, string> | null) => Promise<void>
-  /** 走主进程 net.fetch 发请求，跳过 renderer 的 CORS 限制 */
+  /** 走主进程 net.fetch 发请求，跳过 renderer 的 CORS 限制；返回响应头，body 经 handlers 流式送达 */
   fetch: (
+    id: string,
     url: string,
-    init?: { method?: string; headers?: Record<string, string>; body?: string },
-  ) => Promise<{ status: number; statusText: string; headers: Record<string, string>; body: ArrayBuffer }>
+    init: { method?: string; headers?: Record<string, string>; body?: Uint8Array },
+    handlers: FetchStreamHandlers,
+  ) => Promise<{ status: number; statusText: string; headers: Record<string, string> }>
+  /** 中止 fetch 并停止推送其 body */
+  fetchAbort: (id: string) => void
   isFirstLaunchOnboardingPending: () => Promise<boolean>
   finishFirstLaunchOnboarding: (createDefaultProject: boolean) => Promise<string | null>
   isOldLayoutEligible: () => Promise<boolean>

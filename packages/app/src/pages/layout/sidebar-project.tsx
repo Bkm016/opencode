@@ -21,6 +21,7 @@ import {
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
 import { useIsFetching } from "@tanstack/solid-query"
+import { createMediaQuery } from "@solid-primitives/media"
 import { type LocalProject } from "@/context/layout"
 import { pathKey } from "@/utils/path-key"
 import { pinnedSessionIds } from "@/utils/session-pin"
@@ -108,6 +109,12 @@ export const TiledProjectSection = (props: {
     sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
   )
   const localFetching = useIsFetching(() => queryOptions().sessions(pathKey(worktree())))
+  // 触屏设备没有 hover，操作按钮常驻显示，否则用户无法新建会话或打开项目菜单。
+  const touch = createMediaQuery("(hover: none)")
+  const reveal = () =>
+    touch()
+      ? "size-6 rounded-md opacity-100 transition-opacity duration-150"
+      : "size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
   // 首次加载（会话列表查询进行中或尚未发起）且会话为空时显示骨架屏；查询完成且为空时才显示空态。
   // 首次加载（child store 还在 loading/partial）且会话为空时显示骨架屏；加载完成（complete）且为空时才显示空态。
   const localLoading = () => (localSessions()?.length ?? 0) === 0 && localChild().store.status !== "complete"
@@ -203,7 +210,7 @@ export const TiledProjectSection = (props: {
                 icon="plus"
                 variant="ghost"
                 size="small"
-                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                class={reveal()}
                 data-action="project-new-session"
                 data-project={slug()}
                 aria-label={language.t("command.session.new")}
@@ -219,7 +226,7 @@ export const TiledProjectSection = (props: {
                 icon="expand"
                 variant="ghost"
                 size="small"
-                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                class={reveal()}
                 data-action="sessions-expand-all"
                 data-project={slug()}
                 aria-label={language.t("home.sessions.group.expandAll")}
@@ -235,7 +242,7 @@ export const TiledProjectSection = (props: {
                 icon="collapse"
                 variant="ghost"
                 size="small"
-                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto"
+                class={reveal()}
                 data-action="sessions-collapse-all"
                 data-project={slug()}
                 aria-label={language.t("home.sessions.group.collapseAll")}
@@ -253,7 +260,7 @@ export const TiledProjectSection = (props: {
                 variant="ghost"
                 data-action="project-menu"
                 data-project={slug()}
-                class="size-6 rounded-md opacity-0 transition-opacity duration-150 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto group-focus-within/project:opacity-100 group-focus-within/project:pointer-events-auto data-[expanded]:opacity-100 data-[expanded]:pointer-events-auto"
+                class={reveal() + " data-[expanded]:opacity-100 data-[expanded]:pointer-events-auto"}
                 aria-label={language.t("common.moreOptions")}
               />
               <DropdownMenu.Portal>

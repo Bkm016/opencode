@@ -166,8 +166,8 @@ const WorkspaceActions = (props: {
   <div
     class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 transition-opacity"
     classList={{
-      "opacity-100 pointer-events-auto": props.menuOpen(),
-      "opacity-0 pointer-events-none": !props.menuOpen(),
+      "opacity-100 pointer-events-auto": props.menuOpen() || props.touch(),
+      "opacity-0 pointer-events-none": !props.menuOpen() && !props.touch(),
       "group-hover/workspace:opacity-100 group-hover/workspace:pointer-events-auto": true,
       "group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto": true,
     }}

@@ -820,6 +820,7 @@ export const githubRun = Effect.fn("Cli.github.run")(function* (args: { event?: 
 
     async function subscribeSessionEvents() {
       const TOOL: Record<string, [string, string]> = {
+        todoread: ["Todo", UI.Style.TEXT_WARNING_BOLD],
         todowrite: ["Todo", UI.Style.TEXT_WARNING_BOLD],
         bash: ["Shell", UI.Style.TEXT_DANGER_BOLD],
         edit: ["Edit", UI.Style.TEXT_SUCCESS_BOLD],

@@ -33,6 +33,7 @@ import TOOL_SKILL from "../tool/skill.txt"
 import TOOL_QUESTION from "../tool/question.txt"
 import TOOL_WEBFETCH from "../tool/webfetch.txt"
 import TOOL_WEBSEARCH from "../tool/websearch.txt"
+import TOOL_TODOREAD from "../tool/todoread.txt"
 import TOOL_TODOWRITE from "../tool/todowrite.txt"
 import TOOL_APPLY_PATCH from "../tool/apply_patch.txt"
 import TOOL_PLAN_EXIT from "../tool/plan-exit.txt"
@@ -308,6 +309,13 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "websearch",
     description: "Tool description for the websearch tool",
     default: TOOL_WEBSEARCH,
+  },
+  {
+    id: "tool.todoread",
+    group: "tool",
+    title: "todoread",
+    description: "Tool description for the todoread tool",
+    default: TOOL_TODOREAD,
   },
   {
     id: "tool.todowrite",

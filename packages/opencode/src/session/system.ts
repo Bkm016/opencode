@@ -33,7 +33,7 @@ export function provider(model: Provider.Model, prompts?: Record<string, string>
 }
 
 // 模型请求与只读预览共用同一基础拼装顺序，避免两条路径漂移。
-// 返回未拼接的部分数组，由调用方按需 join；预览场景借此保留各组成部分（模板/env/指令/技能/todo）的边界。
+// 返回未拼接的部分数组，由调用方按需 join；预览场景借此保留各组成部分（模板/env/指令/技能）的边界。
 export function assemble(input: {
   model: Provider.Model
   agent: Agent.Info

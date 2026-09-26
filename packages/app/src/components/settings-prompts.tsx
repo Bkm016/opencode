@@ -170,6 +170,12 @@ const LOCAL_CATALOG: PromptCatalogItem[] = [
   { id: "tool.webfetch", group: "tool", title: "webfetch", description: "Tool description for the webfetch tool" },
   { id: "tool.websearch", group: "tool", title: "websearch", description: "Tool description for the websearch tool" },
   {
+    id: "tool.todoread",
+    group: "tool",
+    title: "todoread",
+    description: "Tool description for the todoread tool",
+  },
+  {
     id: "tool.todowrite",
     group: "tool",
     title: "todowrite",

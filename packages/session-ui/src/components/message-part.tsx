@@ -781,7 +781,7 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const HIDDEN_TOOLS = new Set(["todowrite"])
+const HIDDEN_TOOLS = new Set(["todoread", "todowrite"])
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
@@ -1539,7 +1539,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
   const part = () => props.part as ToolPart
-  if (part().tool === "todowrite") return null
+  if (HIDDEN_TOOLS.has(part().tool)) return null
 
   const hideQuestion = createMemo(
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),

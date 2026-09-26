@@ -443,21 +443,25 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 })
 
 noLLMServer.instance(
-  "system prompt injects the persisted todo list",
+  "system prompt leaves persisted todos out of the provider baseline",
   () =>
     Effect.gen(function* () {
       const { prompt, chat } = yield* boot()
       const todo = yield* Todo.Service
       yield* seed(chat.id)
+
+      const before = yield* prompt.systemPrompt(chat.id)
+      expect(before.join("\n")).not.toContain("<todo-list>")
+
       const todos: Todo.Info[] = [
         { content: "inspect history output", status: "completed", priority: "high" },
         { content: "resume active work", status: "in_progress", priority: "high" },
       ]
       yield* todo.update({ sessionID: chat.id, todos })
 
-      const system = (yield* prompt.systemPrompt(chat.id)).join("\n")
-      expect(system).toContain("<todo-list>")
-      expect(system).toContain(JSON.stringify(todos))
+      const after = (yield* prompt.systemPrompt(chat.id)).join("\n")
+      expect(after).not.toContain("<todo-list>")
+      expect(after).not.toContain(JSON.stringify(todos))
     }),
   { config: cfg },
 )

@@ -94,6 +94,13 @@ const KNOWN_TOOLS: Record<string, ToolMeta> = {
     icon: "brain",
     defaultAction: "allow",
   },
+  todoread: {
+    id: "todoread",
+    title: "待办读取",
+    description: "读取当前会话的持久化待办清单",
+    icon: "circle-check",
+    defaultAction: "allow",
+  },
   todowrite: {
     id: "todowrite",
     title: "待办清单",

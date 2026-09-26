@@ -24,7 +24,7 @@ import {
   TaskFollowupTool,
 } from "./task-async"
 import { Database } from "@opencode-ai/core/database/database"
-import { TodoWriteTool } from "./todo"
+import { TodoReadTool, TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { CanvasTool } from "./canvas"
@@ -122,6 +122,7 @@ const layer = Layer.effect(
     const listDir = yield* ListDirTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
+    const todoRead = yield* TodoReadTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
@@ -254,6 +255,7 @@ const layer = Layer.effect(
           python: Tool.init(python),
           computer_use: Tool.init(computerUse),
           todo: Tool.init(todo),
+          todoRead: Tool.init(todoRead),
           search: Tool.init(websearch),
           skill: Tool.init(skilltool),
           goalUpdate: Tool.init(goalUpdate),
@@ -290,6 +292,7 @@ const layer = Layer.effect(
             tool.fetch,
             tool.browser,
             tool.todo,
+            tool.todoRead,
             tool.search,
             tool.skill,
             tool.patch,

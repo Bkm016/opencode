@@ -37,6 +37,7 @@ const COMMON_TOOLS = [
   { value: "websearch", label: "网页搜索 (websearch)", desc: "通过搜索引擎检索网络" },
   { value: "task", label: "派发子代理 (task)", desc: "启动与调度子智能体" },
   { value: "skill", label: "技能调用 (skill)", desc: "加载与调用 Skill" },
+  { value: "todoread", label: "待办读取 (todoread)", desc: "读取当前待办清单" },
   { value: "todowrite", label: "待办清单 (todowrite)", desc: "创建与更新待办事项" },
   { value: "question", label: "向用户提问 (question)", desc: "交互过程中向用户主动发问" },
   { value: "glob", label: "Glob 查找 (glob)", desc: "使用模式匹配文件路径" },

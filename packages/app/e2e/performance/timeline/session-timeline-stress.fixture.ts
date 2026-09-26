@@ -269,7 +269,7 @@ const childMessages = Array.from({ length: 4 }, (_, index) => [
 ]).flat()
 
 function renderable(part: MessagePart) {
-  if (part.type === "tool" && part.tool === "todowrite") return false
+  if (part.type === "tool" && ["todoread", "todowrite"].includes(part.tool)) return false
   if (part.type === "text") return !!part.text.trim()
   if (part.type === "reasoning") return !!part.text.trim()
   return part.type !== "step-start" && part.type !== "step-finish" && part.type !== "patch"

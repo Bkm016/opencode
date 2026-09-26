@@ -59,7 +59,6 @@ import { usable } from "./overflow"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { Goal } from "./goal"
-import { Todo } from "./todo"
 import { SessionGoal } from "@opencode-ai/schema/session-goal"
 import { LLMEvent } from "@opencode-ai/llm"
 
@@ -154,7 +153,6 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const goalSvc = yield* Goal.Service
-    const todo = yield* Todo.Service
     const { db } = database
     // 每次请求覆盖 Desktop 当前开放项目，避免沿用上一轮状态扩大跨项目授权。
     const openProjectDirs = new Map<SessionID, readonly string[]>()
@@ -1166,12 +1164,11 @@ const layer = Layer.effect(
       goal?: Goal.Info
     }) {
       const cfg = yield* config.get()
-      const [skills, env, instructions, mcpInstructions, todos] = yield* Effect.all([
+      const [skills, env, instructions, mcpInstructions] = yield* Effect.all([
         sys.skills(input.agent),
         sys.environment(),
         instruction.system(),
         sys.mcp(input.agent, input.session.permission),
-        todo.get(input.session.id),
       ])
       const system = [
         ...env,
@@ -1185,17 +1182,6 @@ const layer = Layer.effect(
         // 动态数据（tokensUsed、timeUsedSeconds、lessons）一律不进 system prompt，
         // 避免每个 provider turn 前缀变化破坏 provider 缓存。
         system.push(buildGoalSystemPrompt(input.goal, cfg.prompts))
-      }
-      if (todos.length > 0) {
-        // todo 工具结果可能已被 chunk 折叠；每轮注入当前持久化状态，避免续跑时重复已完成工作。
-        system.push(
-          [
-            "<todo-list>",
-            "Current persisted todo list. Treat it as authoritative and keep it updated with todowrite.",
-            JSON.stringify(todos),
-            "</todo-list>",
-          ].join("\n"),
-        )
       }
       if (input.format?.type === "json_schema") {
         system.push(PromptCatalog.resolve("runtime.structured_output_system", cfg.prompts))
@@ -2418,7 +2404,6 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
     RuntimeFlags.node,
     Goal.node,
-    Todo.node,
     Database.node,
   ],
 })

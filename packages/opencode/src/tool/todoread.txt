@@ -1,0 +1,5 @@
+Read the current session's persisted todo list. Use when resuming prior work, continuing after context compaction, or when the latest todo state may not be in the current context.
+
+- Returns the full list scoped to the current session; an empty list means there are no persisted todos.
+- This is a snapshot for this call only. Do not treat it as live state after another todowrite call.
+- If you already have a fresh read or write result in this context, do not call this again just to repeat the same list.

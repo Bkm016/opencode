@@ -30,7 +30,7 @@ export type SessionItemProps = {
   archiveSession: (session: Session) => Promise<void>
 }
 
-export const PinIcon = (props: { class?: string; label?: string }): JSX.Element => (
+const PinIcon = (props: { class?: string; label?: string }): JSX.Element => (
   <svg
     role={props.label ? "img" : undefined}
     aria-label={props.label}

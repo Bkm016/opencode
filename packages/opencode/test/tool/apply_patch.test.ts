@@ -318,7 +318,7 @@ describe("tool.apply_patch freeform", () => {
 
       yield* expectFailure(
         execute({ patchText }, ctx),
-        "apply_patch verification failed: Failed to read file to update",
+        "missing.txt: file does not exist or is a directory",
       )
     }),
   )
@@ -363,21 +363,25 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: modify.txt\n@@\n-missing\n+changed\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ patchText }, ctx), "failed to match removed/context lines")
       expect(yield* readText(target)).toBe("line1\nline2\n")
     }),
   )
 
-  it.instance("verification failure leaves no side effects", () =>
+  it.instance("applies verified files when another hunk fails", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const { ctx } = makeCtx()
       const patchText =
         "*** Begin Patch\n*** Add File: created.txt\n+hello\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
-      yield* expectReadFailure(path.join(test.directory, "created.txt"))
+      const result = yield* execute({ patchText }, ctx)
+      expect(result.output).toContain("A created.txt")
+      expect(result.output).toContain("Failed to apply 1 file")
+      expect(result.output).toContain("missing.txt: file does not exist or is a directory")
+      expect(yield* readText(path.join(test.directory, "created.txt"))).toBe("hello\n")
     }),
+    { git: true },
   )
 
   it.instance("supports end of file anchor", () =>

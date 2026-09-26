@@ -352,7 +352,9 @@ function computeReplacements(
     if (chunk.change_context) {
       const contextIdx = seekSequence(originalLines, [chunk.change_context], lineIndex)
       if (contextIdx === -1) {
-        throw new Error(`Failed to find context '${chunk.change_context}' in ${filePath}`)
+        throw new Error(
+          `failed to find @@ context '${chunk.change_context}' in ${filePath}. Re-read the file and use an anchor line that exists verbatim`,
+        )
       }
       lineIndex = contextIdx + 1
     }
@@ -385,7 +387,9 @@ function computeReplacements(
       replacements.push([found, pattern.length, newSlice])
       lineIndex = found + pattern.length
     } else {
-      throw new Error(`Failed to find expected lines in ${filePath}:\n${chunk.old_lines.join("\n")}`)
+      throw new Error(
+        `failed to match removed/context lines in ${filePath}:\n${chunk.old_lines.join("\n")}\nRe-read the file and provide exact unchanged lines`,
+      )
     }
   }
 

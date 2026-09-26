@@ -149,10 +149,15 @@ function nodeExecutable() {
 }
 
 // 单文件二进制构建时内嵌的 helper bundle（已含 playwright-core）；源码运行与桌面 sidecar 下不存在或为空。
+// 桌面 sidecar 的 gen 文件是空 stub，经 bun CJS 互操作后 default 为空对象而非 undefined，
+// 只按 truthy 判断会把它当 bundle 传给写文件与 createHash，报 "Received an instance of Object"。
 function embeddedHelper(): Promise<string | undefined> {
   // @ts-expect-error - generated file at build time
   return import("opencode-browser-helper.gen.ts")
-    .then((module) => (module.default as string | undefined) || undefined)
+    .then((module) => {
+      const embedded: unknown = module.default
+      return typeof embedded === "string" && embedded.length > 0 ? embedded : undefined
+    })
     .catch(() => undefined)
 }
 

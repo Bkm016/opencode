@@ -13,8 +13,4 @@
     },
   },
   "mcp": {},
-  "tools": {
-    "github-triage": false,
-    "github-pr-search": false,
-  },
 }

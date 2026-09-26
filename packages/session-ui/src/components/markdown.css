@@ -264,6 +264,7 @@
   }
 
   /* Tables */
+  /* 宽表整体横向滚动，不再压缩列宽把中文挤成一字一行；滚动条使用细条样式替代系统原生滚动条 */
   table {
     width: 100%;
     border-collapse: collapse;
@@ -271,6 +272,36 @@
     font-size: var(--font-size-base);
     display: block;
     overflow-x: auto;
+    /* 细滚动条与最后一行内容之间留出间距 */
+    padding-bottom: 4px;
+
+    /* Chromium 设置 scrollbar-width / scrollbar-color 后会忽略 ::-webkit-scrollbar，只给不支持该伪元素的浏览器兜底 */
+    @supports not selector(::-webkit-scrollbar) {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklch, var(--v2-text-text-base) 20%, transparent) transparent;
+    }
+
+    &::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    /* 默认弱化滑块，悬停表格时再加深，避免静止阅读时抢视线 */
+    &::-webkit-scrollbar-thumb {
+      background: color-mix(in oklch, var(--v2-text-text-base) 12%, transparent);
+      border-radius: 999px;
+    }
+
+    &:hover::-webkit-scrollbar-thumb {
+      background: color-mix(in oklch, var(--v2-text-text-base) 24%, transparent);
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in oklch, var(--v2-text-text-base) 36%, transparent);
+    }
   }
 
   th,
@@ -282,10 +313,17 @@
     vertical-align: top;
   }
 
+  /* 内容列保底宽度：列多时撑出横向滚动，而不是把每列压成一两个字宽 */
+  td {
+    min-width: 8em;
+  }
+
   th {
     color: var(--v2-text-text-base);
     font-weight: var(--font-weight-medium);
     border-bottom: 0.5px solid var(--v2-border-border-base);
+    /* 表头不折行，列宽至少容纳完整表头 */
+    white-space: nowrap;
   }
 
   /* Images */

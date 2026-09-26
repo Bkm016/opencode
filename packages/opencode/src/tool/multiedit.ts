@@ -139,19 +139,34 @@ export const MultiEditTool = Tool.define(
             }
           >()
 
+          const failures: Array<{ index: number; relativePath: string; error: string }> = []
+          const failedFiles = new Set<string>()
+
           for (const [index, entry] of edits.entries()) {
-             const filePath = resolveInputPath(instance.directory, entry.filePath)
+            const filePath = resolveInputPath(instance.directory, entry.filePath)
+            // A file whose earlier edit already failed is skipped: subsequent
+            // oldStrings were written against content that no longer applies.
+            if (failedFiles.has(filePath)) continue
+            const relative = path.relative(instance.worktree, filePath).replaceAll("\\", "/")
             yield* assertExternalDirectoryEffect(ctx, filePath)
 
             let state = byFile.get(filePath)
             if (!state) {
               const info = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (info?.type === "Directory") {
-                throw new Error(`edits[${index}]: path is a directory, not a file: ${filePath}`)
+                failedFiles.add(filePath)
+                failures.push({ index, relativePath: relative, error: "path is a directory, not a file" })
+                continue
               }
               if (!info) {
                 if (entry.oldString !== "") {
-                  throw new Error(`edits[${index}]: File ${filePath} not found`)
+                  failedFiles.add(filePath)
+                  failures.push({
+                    index,
+                    relativePath: relative,
+                    error: "file does not exist",
+                  })
+                  continue
                 }
                 state = {
                   relativePath: path.relative(instance.worktree, filePath).replaceAll("\\", "/"),
@@ -174,14 +189,25 @@ export const MultiEditTool = Tool.define(
             }
 
             if (entry.oldString === entry.newString) {
-              throw new Error(`edits[${index}]: No changes to apply: oldString and newString are identical.`)
+              failedFiles.add(filePath)
+              failures.push({
+                index,
+                relativePath: state.relativePath,
+                error: "no changes to apply: oldString and newString are identical",
+              })
+              continue
             }
 
             if (entry.oldString === "") {
               if (state.existed || state.content !== "") {
-                throw new Error(
-                  `edits[${index}]: oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement.`,
-                )
+                failedFiles.add(filePath)
+                failures.push({
+                  index,
+                  relativePath: state.relativePath,
+                  error:
+                    "oldString cannot be empty when editing an existing file. Provide the exact text to replace, or use write for an intentional full-file replacement",
+                })
+                continue
               }
               const next = Bom.split(entry.newString)
               state.bom = state.bom || next.bom
@@ -198,7 +224,8 @@ export const MultiEditTool = Tool.define(
               state.content = next.text
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              throw new Error(`edits[${index}] (${state.relativePath}): ${message}`)
+              failedFiles.add(filePath)
+              failures.push({ index, relativePath: state.relativePath, error: message })
             }
           }
 
@@ -233,6 +260,10 @@ export const MultiEditTool = Tool.define(
           }
 
           if (changes.length === 0) {
+            if (failures.length > 0) {
+              const detail = failures.map((f) => `edits[${f.index}] (${f.relativePath}): ${f.error}`).join("\n")
+              throw new Error(`multiedit failed: no edits could be applied.\n${detail}`)
+            }
             throw new Error("No changes to apply: all edits left file contents unchanged.")
           }
 
@@ -273,7 +304,11 @@ export const MultiEditTool = Tool.define(
           const summary = changes
             .map((change) => `${change.type === "add" ? "A" : "M"} ${change.relativePath}`)
             .join("\n")
-          const output = `Success. Updated the following files:\n${summary}`
+          let output = `Success. Updated the following files:\n${summary}`
+          if (failures.length > 0) {
+            const failedLines = failures.map((f) => `F edits[${f.index}] (${f.relativePath}): ${f.error}`)
+            output += `\n\nFailed to apply ${failures.length} edit${failures.length === 1 ? "" : "s"}:\n${failedLines.join("\n")}`
+          }
 
           return {
             title: `${changes.length} file${changes.length === 1 ? "" : "s"}`,

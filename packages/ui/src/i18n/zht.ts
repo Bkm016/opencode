@@ -318,4 +318,7 @@ export const dict = {
   "ui.question.multiHint": "可多選",
   "ui.question.singleHint": "選擇一個答案",
   "ui.question.custom.placeholder": "輸入你的答案...",
+  "ui.diagram.zoomIn": "放大（Ctrl + 滾輪）",
+  "ui.diagram.zoomOut": "縮小（Ctrl + 滾輪）",
+  "ui.diagram.resetView": "重設檢視（雙擊）",
 } satisfies Partial<Record<Keys, string>>

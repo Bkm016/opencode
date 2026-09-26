@@ -15,6 +15,30 @@
     display: none;
   }
 
+  /* 可平移缩放的图：视口裁剪溢出内容，内边距移到 figure 上，使变换原点与视口左上角重合，锚点缩放计算无需补偿偏移 */
+  [data-slot="markdown-diagram-output"][data-pannable] {
+    padding: 0;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+
+    figure {
+      padding: 12px 16px;
+      transform-origin: 0 0;
+    }
+
+    /* 禁止浏览器原生图片拖拽抢走指针事件 */
+    img {
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+  }
+
+  [data-slot="markdown-diagram-output"][data-dragging] {
+    cursor: grabbing;
+  }
+
   figure {
     margin: 0;
   }
@@ -61,6 +85,9 @@
     top: 4px;
     right: 4px;
     z-index: 1;
+    /* 缩放按钮与源码切换按钮横向并排 */
+    display: flex;
+    gap: 2px;
   }
 
   [data-component="icon-button-v2"] {

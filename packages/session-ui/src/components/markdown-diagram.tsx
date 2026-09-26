@@ -20,7 +20,7 @@ export function disposeMarkdownDiagrams(root: Element) {
 export function decorateMarkdownDiagrams(
   root: HTMLElement,
   source: string,
-  labels: { loading: string; source: string; preview: string },
+  labels: { loading: string; source: string; preview: string; zoomIn: string; zoomOut: string; resetView: string },
 ) {
   if (!/(?:`{3,}|~{3,})\s*(?:mermaid|vega-lite)\b/i.test(source)) return
   const codes: Tokens.Code[] = []
@@ -63,22 +63,120 @@ export function decorateMarkdownDiagrams(
       output.hidden = show
       setSourceVisible(show)
     }
+    // 平移缩放只作用于 Mermaid 流程图等结构图；Vega-Lite 数据图保持静态展示。
+    const pannable = language === "mermaid"
+    const view = { x: 0, y: 0, scale: 1 }
+    const applyView = () => {
+      const stage = output.firstElementChild
+      if (stage instanceof HTMLElement)
+        stage.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`
+    }
+    // 以视口内某点为锚缩放：保持该点下的图内容位置不变。
+    const zoomAt = (factor: number, px: number, py: number) => {
+      const scale = Math.min(8, Math.max(0.25, view.scale * factor))
+      view.x = px - (scale * (px - view.x)) / view.scale
+      view.y = py - (scale * (py - view.y)) / view.scale
+      view.scale = scale
+      applyView()
+    }
+    const zoomCenter = (factor: number) => zoomAt(factor, output.clientWidth / 2, output.clientHeight / 2)
+    const resetView = () => {
+      Object.assign(view, { x: 0, y: 0, scale: 1 })
+      applyView()
+    }
     const disposeToggle = render(
       () => (
-        <TooltipV2 placement="top" value={sourceVisible() ? labels.preview : labels.source}>
-          <IconButtonV2
-            type="button"
-            size="normal"
-            variant="ghost-muted"
-            aria-label={sourceVisible() ? labels.preview : labels.source}
-            aria-pressed={sourceVisible()}
-            icon={<Icon name="code" />}
-            onClick={() => showSource(!sourceVisible())}
-          />
-        </TooltipV2>
+        <>
+          {pannable && !sourceVisible() && (
+            <>
+              <TooltipV2 placement="top" value={labels.zoomOut}>
+                <IconButtonV2
+                  type="button"
+                  size="normal"
+                  variant="ghost-muted"
+                  aria-label={labels.zoomOut}
+                  icon={<Icon name="minus" />}
+                  onClick={() => zoomCenter(1 / 1.25)}
+                />
+              </TooltipV2>
+              <TooltipV2 placement="top" value={labels.zoomIn}>
+                <IconButtonV2
+                  type="button"
+                  size="normal"
+                  variant="ghost-muted"
+                  aria-label={labels.zoomIn}
+                  icon={<Icon name="plus" />}
+                  onClick={() => zoomCenter(1.25)}
+                />
+              </TooltipV2>
+              <TooltipV2 placement="top" value={labels.resetView}>
+                <IconButtonV2
+                  type="button"
+                  size="normal"
+                  variant="ghost-muted"
+                  aria-label={labels.resetView}
+                  icon={<Icon name="reset" />}
+                  onClick={resetView}
+                />
+              </TooltipV2>
+            </>
+          )}
+          <TooltipV2 placement="top" value={sourceVisible() ? labels.preview : labels.source}>
+            <IconButtonV2
+              type="button"
+              size="normal"
+              variant="ghost-muted"
+              aria-label={sourceVisible() ? labels.preview : labels.source}
+              aria-pressed={sourceVisible()}
+              icon={<Icon name="code" />}
+              onClick={() => showSource(!sourceVisible())}
+            />
+          </TooltipV2>
+        </>
       ),
       toggle,
     )
+    const gestures = new AbortController()
+    if (pannable) {
+      output.dataset.pannable = ""
+      // 普通滚轮保留给聊天列表滚动，仅 Ctrl + 滚轮（含触控板双指捏合）缩放，避免阅读时误触。
+      output.addEventListener(
+        "wheel",
+        (event) => {
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          const rect = output.getBoundingClientRect()
+          const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY
+          zoomAt(Math.exp(-delta * 0.002), event.clientX - rect.left, event.clientY - rect.top)
+        },
+        { passive: false, signal: gestures.signal },
+      )
+      output.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (event.button !== 0) return
+          const start = { x: event.clientX - view.x, y: event.clientY - view.y }
+          output.setPointerCapture(event.pointerId)
+          output.dataset.dragging = ""
+          const move = (next: PointerEvent) => {
+            view.x = next.clientX - start.x
+            view.y = next.clientY - start.y
+            applyView()
+          }
+          const end = () => {
+            delete output.dataset.dragging
+            output.removeEventListener("pointermove", move)
+            output.removeEventListener("pointerup", end)
+            output.removeEventListener("pointercancel", end)
+          }
+          output.addEventListener("pointermove", move)
+          output.addEventListener("pointerup", end)
+          output.addEventListener("pointercancel", end)
+        },
+        { signal: gestures.signal },
+      )
+      output.addEventListener("dblclick", resetView, { signal: gestures.signal })
+    }
     showSource(false)
     const parent = old ?? wrapper
     parent.replaceWith(host)
@@ -97,6 +195,8 @@ export function decorateMarkdownDiagrams(
         status.setAttribute("role", result.ok ? "status" : "alert")
         status.textContent = result.ok ? "" : result.error
         if (result.ok) output.innerHTML = result.html
+        // 主题切换会整体重绘，新节点沿用用户当前的平移缩放状态。
+        if (result.ok) applyView()
         if (!result.ok) showSource(true)
       } catch (error) {
         if (disposed || current !== run) return
@@ -117,6 +217,7 @@ export function decorateMarkdownDiagrams(
         disposed = true
         run++
         observer.disconnect()
+        gestures.abort()
         disposeToggle()
       },
     })

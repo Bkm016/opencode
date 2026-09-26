@@ -389,6 +389,9 @@ export function Markdown(
       loading: i18n.t("ui.canvas.loading"),
       source: i18n.t("ui.diagram.source"),
       preview: i18n.t("ui.diagram.preview"),
+      zoomIn: i18n.t("ui.diagram.zoomIn"),
+      zoomOut: i18n.t("ui.diagram.zoomOut"),
+      resetView: i18n.t("ui.diagram.resetView"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -426,6 +429,9 @@ export function Markdown(
         loading: labels.loading,
         source: labels.source,
         preview: labels.preview,
+        zoomIn: labels.zoomIn,
+        zoomOut: labels.zoomOut,
+        resetView: labels.resetView,
       })
       if (updated.querySelector('[data-component="markdown-diagram"]')) updated.dataset.diagramSource = block.raw
     })

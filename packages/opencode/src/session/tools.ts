@@ -490,6 +490,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           const truncated = yield* truncate.output(textParts.join("\n\n"), {}, input.agent)
           const metadata = {
             ...result.metadata,
+            // 供前端区分 MCP 调用并拆出服务名与原始工具名（服务名可能自带下划线，不能靠拆工具名推断）
+            ...(entry.server && { mcp: { server: entry.server, tool: entry.def.name } }),
             truncated: truncated.truncated,
             ...(truncated.truncated && { outputPath: truncated.outputPath }),
           }

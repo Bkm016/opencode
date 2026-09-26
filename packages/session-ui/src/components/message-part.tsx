@@ -81,6 +81,7 @@ import {
   type ToolGroupItemProps,
 } from "./message-part-groups"
 import { GenericToolGroup as BaseGenericToolGroup, ContextToolGroup, PythonToolGroup } from "./tool-group"
+import { McpGroupItem, McpGroupSummary, mcpInfo } from "./mcp-tool"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard } from "./edit-tool-card"
 import { ScriptToolCard } from "./script-tool-card"
@@ -1471,6 +1472,42 @@ export const ToolRegistry = {
   render: getTool,
 }
 
+// 未注册专属渲染器但名字带下划线的内建工具，避免被按 MCP 工具名（服务名_工具名）误认
+const BUILTIN_TOOLS = new Set([
+  "goal_lesson_add",
+  "plan_exit",
+  "task_abort",
+  "task_wait",
+  "task_status",
+  "task_result",
+  "codebase_search",
+  "file_search",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
+])
+const knownTool = (tool: string) => BUILTIN_TOOLS.has(tool) || !!getTool(tool)
+
+// 注册 MCP 工具分组：连续的 MCP 调用聚合成一组，逐条展示服务名、工具名、参数与结果
+ToolGroupRegistry.register({
+  id: "mcp",
+  match: (part) => !!mcpInfo(part, knownTool),
+  title: {
+    active: (i18n) => i18n.t("ui.sessionTurn.status.callingMcp"),
+    done: (i18n) => i18n.t("ui.sessionTurn.status.calledMcp"),
+  },
+  renderSummary: ({ parts }) => <McpGroupSummary parts={parts} known={knownTool} />,
+  renderItem: (itemProps) => (
+    <McpGroupItem
+      part={itemProps.part}
+      known={knownTool}
+      // 整组只有一个服务时标题已写明，行首不再重复服务名
+      showServer={new Set(itemProps.parts.map((part) => mcpInfo(part, knownTool)?.server)).size > 1}
+    />
+  ),
+  componentName: "mcp-tool-group",
+})
+
 ToolRegistry.register({ name: "canvas", render: CanvasTool })
 ToolRegistry.register({ name: "computer_use", render: ComputerUseTool })
 ToolRegistry.register({ name: "browser", render: BrowserTool })
@@ -1569,7 +1606,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
       tool === "canvas" ||
       tool === "computer_use" ||
       tool === "image_generation" ||
-      tool === "invalid"
+      tool === "invalid" ||
+      mcpInfo(part(), knownTool)
     ) {
       return undefined
     }

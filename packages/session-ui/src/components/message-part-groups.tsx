@@ -14,7 +14,7 @@ export type PartRef = {
   partID: string
 }
 
-export type ToolGroupID = "context" | "computerUse" | "browser" | "python" | "bash" | "history" | "web"
+export type ToolGroupID = "context" | "computerUse" | "browser" | "python" | "bash" | "history" | "web" | "mcp"
 
 export type PartGroup =
   | {

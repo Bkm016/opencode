@@ -1623,7 +1623,8 @@
 }
 
 [data-component="python-tool-group-trigger"],
-[data-component="bash-tool-group-trigger"] {
+[data-component="bash-tool-group-trigger"],
+[data-component="mcp-tool-group-trigger"] {
   width: 100%;
   min-height: 24px;
   display: flex;
@@ -1633,13 +1634,15 @@
   cursor: default;
 
   [data-slot="python-tool-group-title"],
-  [data-slot="bash-tool-group-title"] {
+  [data-slot="bash-tool-group-title"],
+  [data-slot="mcp-tool-group-title"] {
     flex-shrink: 1;
     min-width: 0;
   }
 
   [data-slot="python-tool-group-total-duration"],
-  [data-slot="bash-tool-group-total-duration"] {
+  [data-slot="bash-tool-group-total-duration"],
+  [data-slot="mcp-tool-group-total-duration"] {
     font-family: var(--font-family-mono, monospace);
     font-variant-numeric: tabular-nums;
     font-size: 11px;
@@ -1659,16 +1662,106 @@
 }
 
 [data-component="python-tool-group-list"],
-[data-component="bash-tool-group-list"] {
+[data-component="bash-tool-group-list"],
+[data-component="mcp-tool-group-list"] {
   padding: 3px 0 18px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
 
   [data-slot="python-tool-group-item"],
-  [data-slot="bash-tool-group-item"] {
+  [data-slot="bash-tool-group-item"],
+  [data-slot="mcp-tool-group-item"] {
     min-width: 0;
     padding: 0;
+  }
+}
+
+/* MCP 调用详情：参数用键值列表，结果按 JSON 格式化；与命令输出同一套边框与字号 */
+[data-component="mcp-output"] {
+  width: 100%;
+  margin: 4px 0 6px;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: 6px;
+  overflow: hidden;
+
+  [data-slot="mcp-section"] + [data-slot="mcp-section"] {
+    border-top: 0.5px solid var(--v2-border-border-base);
+  }
+
+  [data-slot="mcp-label"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding: 2px 6px 0 12px;
+    font-size: 11px;
+    color: var(--v2-text-text-faint);
+  }
+
+  [data-slot="mcp-size"] {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="mcp-label-tail"] {
+    margin-left: auto;
+    display: inline-flex;
+  }
+
+  [data-slot="mcp-args"] {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 16px;
+    margin: 0;
+    padding: 2px 12px 12px;
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    font-size: 12.5px;
+    line-height: 1.55;
+
+    dt {
+      color: var(--v2-text-text-faint);
+    }
+
+    dd {
+      margin: 0;
+      min-width: 0;
+      color: var(--v2-text-text-base);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  [data-slot="mcp-scroll"] {
+    max-height: 260px;
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+
+  [data-slot="mcp-pre"] {
+    margin: 0;
+    padding: 0 12px 12px;
+
+    code {
+      font-family: var(--font-family-mono);
+      font-feature-settings: var(--font-family-mono--font-feature-settings);
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--v2-text-text-base);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  [data-slot="mcp-section"][data-kind="error"] {
+    [data-slot="mcp-label"] {
+      color: var(--v2-state-fg-danger);
+    }
+
+    [data-slot="mcp-pre"] code {
+      color: var(--v2-state-fg-danger);
+    }
   }
 }
 

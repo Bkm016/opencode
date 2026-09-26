@@ -27,6 +27,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { ToolNameAlias } from "@/tool/name-alias"
+import { errorMessage } from "@/util/error"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -407,21 +408,24 @@ const live: Layer.Layer<
                         runtime: "ai-sdk",
                       })
                     }
-                    if (apiError?.responseBody !== undefined) {
-                      ProviderResponseDump.record({
-                        sessionID: input.sessionID,
-                        model: input.model.id,
-                        provider: input.model.providerID,
-                        route: "ai-sdk",
-                        protocol: "ai-sdk",
-                        url: apiError?.url,
-                        status: apiError?.statusCode,
-                        headers: apiError?.responseHeaders,
-                        body: apiError.responseBody,
-                        error: true,
-                        runtime: "ai-sdk",
-                      })
-                    }
+                    // 无 responseBody 时仍记录一份错误快照（如网络中断），
+                    // 否则导出"最近响应"会在模型报错时返回空。
+                    ProviderResponseDump.record({
+                      sessionID: input.sessionID,
+                      model: input.model.id,
+                      provider: input.model.providerID,
+                      route: "ai-sdk",
+                      protocol: "ai-sdk",
+                      url: apiError?.url,
+                      status: apiError?.statusCode,
+                      headers: apiError?.responseHeaders,
+                      body:
+                        apiError?.responseBody !== undefined
+                          ? apiError.responseBody
+                          : { error: errorMessage(error) },
+                      error: true,
+                      runtime: "ai-sdk",
+                    })
                     throw error
                   }
                   const body = result.request?.body
@@ -443,41 +447,42 @@ const live: Layer.Layer<
                   }
                   // AI SDK 不暴露原始 HTTP body；缓冲 stream parts 作为可调试响应快照。
                   const parts: unknown[] = []
+                  const recordResponse = (error?: boolean) =>
+                    ProviderResponseDump.record({
+                      sessionID: input.sessionID,
+                      model: input.model.id,
+                      provider: input.model.providerID,
+                      route: "ai-sdk",
+                      protocol: "ai-sdk",
+                      headers: result.response?.headers,
+                      body: parts,
+                      error,
+                      runtime: "ai-sdk",
+                    })
                   const reader = result.stream.getReader()
                   const stream = new ReadableStream({
                     async pull(controller) {
-                      const next = await reader.read()
-                      if (next.done) {
-                        ProviderResponseDump.record({
-                          sessionID: input.sessionID,
-                          model: input.model.id,
-                          provider: input.model.providerID,
-                          route: "ai-sdk",
-                          protocol: "ai-sdk",
-                          headers: result.response?.headers,
-                          body: parts,
-                          runtime: "ai-sdk",
-                        })
-                        controller.close()
-                        return
+                      try {
+                        const next = await reader.read()
+                        if (next.done) {
+                          recordResponse()
+                          controller.close()
+                          return
+                        }
+                        // 仅快照附带接收时间（Unix 毫秒）；执行链继续消费未经修改的 SDK 事件。
+                        parts.push({ ...(next.value as object), receivedAt: Date.now() })
+                        controller.enqueue(next.value)
+                      } catch (error) {
+                        // 流中读取失败（断流、response.failed 等）时仍落盘错误快照，
+                        // 保证导出"最近响应"在模型报错场景不为空。
+                        parts.push({ type: "stream-error", error: errorMessage(error), receivedAt: Date.now() })
+                        recordResponse(true)
+                        controller.error(error)
                       }
-                      // 仅快照附带接收时间（Unix 毫秒）；执行链继续消费未经修改的 SDK 事件。
-                      parts.push({ ...next.value, receivedAt: Date.now() })
-                      controller.enqueue(next.value)
                     },
                     cancel(reason) {
-                      if (parts.length > 0) {
-                        ProviderResponseDump.record({
-                          sessionID: input.sessionID,
-                          model: input.model.id,
-                          provider: input.model.providerID,
-                          route: "ai-sdk",
-                          protocol: "ai-sdk",
-                          headers: result.response?.headers,
-                          body: parts,
-                          runtime: "ai-sdk",
-                        })
-                      }
+                      // 取消（中断/下游失败）时快照不完整，标记 error 以便导出端区分。
+                      recordResponse(true)
                       return reader.cancel(reason)
                     },
                   })

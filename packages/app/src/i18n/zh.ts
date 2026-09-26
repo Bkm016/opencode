@@ -939,7 +939,6 @@ export const dict = {
   "lsp.tooltip.none": "没有 LSP 服务器",
   "lsp.label.connected": "{{count}} LSP",
 
-  "prompt.loading": "正在加载提示...",
 
   "terminal.loading": "正在加载终端...",
   "terminal.title": "终端",

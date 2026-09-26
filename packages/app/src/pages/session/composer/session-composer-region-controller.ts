@@ -4,7 +4,7 @@ import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PromptInputState } from "@/components/prompt-input"
 import { useSync } from "@/context/sync"
-import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
+import { setSessionHandoff } from "@/pages/session/handoff"
 import type { SessionComposerController } from "./session-composer-state"
 
 export type SessionComposerFollowupDock = {
@@ -128,7 +128,6 @@ export function createSessionComposerRegionController(input: {
     parentID,
     child: () => !!parentID(),
     showComposer: () => !input.state.blocked() || !!parentID(),
-    handoffPrompt: () => getSessionHandoff(input.sessionKey())?.prompt,
     promptReady: input.prompt.ready,
     dock: () => (store.ready && input.state.dock()) || value() > 0.001,
     dockProgress: value,

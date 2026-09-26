@@ -89,23 +89,18 @@ export function SessionComposerRegion(props: {
           <Show
             when={controller.promptReady()}
             fallback={
-              <>
-                <Show when={rolled()} keyed>
-                  {(revert) => (
-                    <div class="pb-2">
-                      <SessionRevertDock
-                        items={revert.items}
-                        restoring={revert.restoring}
-                        disabled={revert.disabled}
-                        onRestore={revert.onRestore}
-                      />
-                    </div>
-                  )}
-                </Show>
-                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
-                  {controller.handoffPrompt() || language.t("prompt.loading")}
-                </div>
-              </>
+              <Show when={rolled()} keyed>
+                {(revert) => (
+                  <div class="pb-2">
+                    <SessionRevertDock
+                      items={revert.items}
+                      restoring={revert.restoring}
+                      disabled={revert.disabled}
+                      onRestore={revert.onRestore}
+                    />
+                  </div>
+                )}
+              </Show>
             }
           >
             <Show when={rolled()} keyed>

@@ -919,7 +919,6 @@ export const dict = {
   "session.overflowTest.toast.failed.title": "觸發 Overflow 失敗",
   "lsp.tooltip.none": "沒有 LSP 伺服器",
   "lsp.label.connected": "{{count}} LSP",
-  "prompt.loading": "正在載入提示...",
   "terminal.loading": "正在載入終端機...",
   "terminal.title": "終端機",
   "terminal.title.numbered": "終端機 {{number}}",

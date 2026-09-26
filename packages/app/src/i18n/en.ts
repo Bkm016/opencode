@@ -991,7 +991,6 @@ export const dict = {
   "lsp.tooltip.none": "No LSP servers",
   "lsp.label.connected": "{{count}} LSP",
 
-  "prompt.loading": "Loading prompt...",
   "terminal.loading": "Loading terminal...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",

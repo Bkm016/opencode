@@ -30,6 +30,23 @@ export type SessionItemProps = {
   archiveSession: (session: Session) => Promise<void>
 }
 
+export const PinIcon = (props: { class?: string; label?: string }): JSX.Element => (
+  <svg
+    role={props.label ? "img" : undefined}
+    aria-label={props.label}
+    aria-hidden={props.label ? undefined : "true"}
+    viewBox="0 0 24 24"
+    class={`shrink-0 rotate-45 ${props.class ?? ""}`}
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12 17v5M9 3h6M10 3v7.5l-3.5 3.2V17h11v-3.3L14 10.5V3" />
+  </svg>
+)
+
 const SessionRow = (props: {
   session: Session
   slug: string
@@ -43,6 +60,7 @@ const SessionRow = (props: {
   warmFocus: () => void
 }): JSX.Element => {
   const navigate = useNavigate()
+  const language = useLanguage()
   const title = () => sessionTitle(props.session.title)
 
   return (
@@ -108,6 +126,13 @@ const SessionRow = (props: {
       </span>
       <Show when={props.isWorking()}>
         <span aria-hidden="true" class="work-spinner" />
+      </Show>
+      {/* 置顶标记：悬停时让位给行尾的归档按钮 */}
+      <Show when={props.pinned() && !props.isWorking()}>
+        <PinIcon
+          label={language.t("home.sessions.group.pinned")}
+          class="size-3.5 text-icon-brand-base group-hover/session:hidden group-focus-within/session:hidden"
+        />
       </Show>
     </A>
   )

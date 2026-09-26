@@ -18,7 +18,7 @@ import { type LocalProject } from "@/context/layout"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
-import { SessionItem, SessionSkeleton } from "./sidebar-items"
+import { PinIcon, SessionItem, SessionSkeleton } from "./sidebar-items"
 import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
 import { sessionGroupOpen, setSessionGroupOpen } from "@/utils/session-groups"
 import { sortedRootSessions } from "./helpers"
@@ -270,15 +270,15 @@ export const WorkspaceSessionList = (props: {
 
   const groups = createMemo(() => {
     const groups: SessionGroup[] = []
-    // 置顶会话集中在最前的“置顶”分组，跟时间分区走同一条渲染路径。
+    // 置顶会话集中在最前、常驻展开，下方以分隔线与时间分区隔开，行尾带图钉标记。
     const pinned = props.sessions().filter((session) => isSessionPinned(session.directory, session.id))
     if (pinned.length > 0) {
       groups.push({
         key: "pinned",
         label: language.t("home.sessions.group.pinned"),
         sessions: pinned,
-        collapsible: true,
-        defaultOpen: false,
+        collapsible: false,
+        defaultOpen: true,
       })
     }
 
@@ -291,9 +291,24 @@ export const WorkspaceSessionList = (props: {
       .forEach((session) => {
         const date = new Date(session.time.updated ?? session.time.created)
         const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-        // 今天的会话直接平铺，不加分组头、不参与折叠命令。
+        // 今天的会话平铺、不参与折叠命令；有置顶时加“今天”标题，与置顶区分开。
         if (day === today) {
-          groups.push({ key: `flat-${session.id}`, sessions: [session], collapsible: false, defaultOpen: true })
+          if (pinned.length === 0) {
+            groups.push({ key: `flat-${session.id}`, sessions: [session], collapsible: false, defaultOpen: true })
+            return
+          }
+          const last = groups.at(-1)
+          if (last?.key === "today") {
+            last.sessions.push(session)
+            return
+          }
+          groups.push({
+            key: "today",
+            label: language.t("home.sessions.group.today"),
+            sessions: [session],
+            collapsible: false,
+            defaultOpen: true,
+          })
           return
         }
         // 只保留昨天 / 前天 / 三天前三档，四天及以上统一归入“七天前”。
@@ -403,7 +418,28 @@ export const WorkspaceSessionList = (props: {
       <Show when={props.flat} fallback={
         <For each={groups()}>
           {(group) => (
-            <Show when={group.collapsible} fallback={sessionItems(group.sessions)}>
+            <Show
+              when={group.collapsible}
+              fallback={
+                <Show when={group.label} fallback={sessionItems(group.sessions)}>
+                  <div
+                    data-slot={`session-group-${group.key}`}
+                    class="mt-0.5 flex flex-col gap-0.5 first:mt-0"
+                    classList={{
+                      "pb-1.5 mb-1 border-b border-border-weak-base": group.key === "pinned",
+                    }}
+                  >
+                    <div class="flex h-7 items-center gap-1.5 px-2 text-text-weak">
+                      <Show when={group.key === "pinned"}>
+                        <PinIcon class="size-3.5 text-icon-brand-base" />
+                      </Show>
+                      <span>{group.label}</span>
+                    </div>
+                    {sessionItems(group.sessions)}
+                  </div>
+                </Show>
+              }
+            >
               <div class="mt-0.5 flex flex-col gap-0.5 first:mt-0">
                 <div
                   role="button"

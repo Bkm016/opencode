@@ -354,7 +354,8 @@ const layer = Layer.effect(
           const base64Data =
             isRecord(rawResult) && typeof rawResult.result === "string" && rawResult.result.length > 0
               ? rawResult.result
-              : typeof rawResult === "string" && rawResult.length > 0
+              : // 兼容直接返回 Base64 的结果；JSON 字符串包装不能被当成图片字节写出坏文件。
+                typeof rawResult === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(rawResult) && rawResult.length > 0
                 ? rawResult
                 : undefined
 
@@ -547,12 +548,19 @@ const layer = Layer.effect(
               return
             }
             const rawOutput = toolResultOutput(value)
-            if (value.name === "image_generation") {
+            if (value.name !== "read" && (rawOutput.attachments?.length ?? 0) > 0) {
               const { mkdir, writeFile } = yield* Effect.promise(() => import("node:fs/promises"))
               // 图片附件供本轮视觉消费，独立文件供后续 read/编辑；仅在写入成功后向模型公布真实路径。
+              // read 的附件是磁盘已有文件的投影，不再复制一份并谎报新路径。
               for (const attachment of rawOutput.attachments ?? []) {
                 if (!attachment.url.startsWith("data:image/")) continue
-                const filepath = path.join(ctx.assistantMessage.path.cwd, ".opencode", "images", `${attachment.id}.png`)
+                const ext = attachment.mime.split("/")[1]?.split("+")[0] ?? "png"
+                const filepath = path.join(
+                  ctx.assistantMessage.path.cwd,
+                  ".opencode",
+                  "images",
+                  `${attachment.id}.${ext === "jpeg" ? "jpg" : ext}`,
+                )
                 const saved = yield* Effect.tryPromise(async () => {
                   await mkdir(path.dirname(filepath), { recursive: true })
                   await writeFile(filepath, Buffer.from(attachment.url.slice(attachment.url.indexOf(",") + 1), "base64"), { flag: "wx" })

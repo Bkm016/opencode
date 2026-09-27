@@ -14,7 +14,9 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import type { Sizing } from "@/pages/session/helpers"
 import { SessionCanvasPanel } from "./session-canvas-panel"
 
-const TAB_CLASS = "text-text-weak aria-pressed:text-text-strong aria-pressed:bg-surface-raised-base-active"
+// 切换项只靠底色区分选中态，不使用描边或阴影，保持面板头部轻量。
+const TAB_CLASS =
+  "h-6 rounded-md px-2.5 border-none shadow-none text-text-weak hover:text-text-strong aria-pressed:text-text-strong aria-pressed:bg-surface-base"
 
 export function SessionSidePanel(props: {
   size: Sizing
@@ -37,7 +39,7 @@ export function SessionSidePanel(props: {
 
   const tabs = () => (
     <>
-      <div class="flex min-w-0 items-center gap-1">
+      <div class="flex min-w-0 items-center gap-0.5">
         <Button
           size="small"
           variant="ghost"
@@ -117,7 +119,7 @@ export function SessionSidePanel(props: {
                   </Show>
                 }
               >
-                <div class="h-11 shrink-0 flex items-center justify-between gap-2 pl-2 pr-1.5 min-w-0 border-b border-border-weaker-base">
+                <div class="h-12 shrink-0 flex items-center justify-between gap-2 pl-3 pr-2 min-w-0">
                   {tabs()}
                 </div>
               </Show>

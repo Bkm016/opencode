@@ -185,6 +185,14 @@
     position: relative;
   }
 
+  /* 屏幕外的代码块跳过样式、布局与绘制：长会话里代码着色节点占了 DOM 的大头，
+     任何整页样式重算（开弹窗、滚动、缩放窗口）都要算一遍。占位高度按行数精确给出，
+     保证虚拟列表测高不变；渲染过一次后浏览器会记住真实高度。 */
+  [data-component="markdown-code"] > pre {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto calc(var(--code-lines, 1) * 1lh);
+  }
+
   [data-component="markdown-code"][data-code-kind="shell"] .shiki {
     background: var(--markdown-shell-code-background);
     border-color: var(--markdown-shell-code-border);

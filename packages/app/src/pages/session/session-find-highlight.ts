@@ -6,6 +6,9 @@ type Layer = {
   root: HTMLDivElement
   host: HTMLElement
   cleanup: Array<() => void>
+  // 聊天区 DOM 每变一次加一；没变时复用文字索引，滚动重绘和重试不再重扫整个会话。
+  version: number
+  observer: MutationObserver
 }
 
 let layer: Layer | undefined
@@ -26,8 +29,24 @@ function ensureLayer(host: HTMLElement) {
   root.style.cssText =
     "position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden;"
   container.appendChild(root)
-  layer = { root, host, cleanup: [] }
-  return layer
+  const next: Layer = {
+    root,
+    host,
+    cleanup: [],
+    version: 0,
+    observer: new MutationObserver(() => {
+      next.version++
+    }),
+  }
+  next.observer.observe(host, { subtree: true, childList: true, characterData: true })
+  layer = next
+  return next
+}
+
+function domVersion(current: Layer) {
+  // 回调是异步的，同一任务里刚发生的变动要先取出来，避免用到过期索引。
+  if (current.observer.takeRecords().length > 0) current.version++
+  return current.version
 }
 
 export function clearSessionFindHighlights() {
@@ -37,68 +56,108 @@ export function clearSessionFindHighlights() {
   }
   for (const stop of layer.cleanup) stop()
   layer.cleanup = []
+  layer.observer.disconnect()
   layer.root.remove()
   layer = undefined
 }
 
+const SKIP_SELECTOR = "script, style, [data-slot='markdown-copy-button']"
+
 function collectTextNodes(root: Node) {
   const nodes: Text[] = []
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  if (root instanceof Element && root.closest(SKIP_SELECTOR)) return nodes
+  // 遇到要排除的元素直接跳过整棵子树，而不是对每个文字节点都向上 closest()：
+  // 长会话里代码着色产生上万个文字节点，逐个 closest() 要数秒。
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node instanceof Element && node.matches(SKIP_SELECTOR) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  })
   let node = walker.nextNode()
   while (node) {
-    if (node instanceof Text && node.data.length > 0) {
-      const parent = node.parentElement
-      if (parent && !parent.closest("script, style, [data-slot='markdown-copy-button']")) {
-        nodes.push(node)
-      }
-    }
+    if (node instanceof Text && node.data.length > 0) nodes.push(node)
     node = walker.nextNode()
   }
   return nodes
 }
 
-function buildTextIndex(root: Element) {
+// map 按 start 递增，二分找到包含 offset 的文字节点。
+function findIndexItem(map: TextIndex["map"], offset: number) {
+  let lo = 0
+  let hi = map.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (map[mid]!.end <= offset) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+type TextIndex = { text: string; lower: string; map: Array<{ node: Text; start: number; end: number }> }
+
+const indexCache = new WeakMap<Element, { layer: Layer; version: number; index: TextIndex }>()
+
+function buildTextIndex(root: Element, current?: Layer): TextIndex {
+  const version = current ? domVersion(current) : -1
+  const cached = indexCache.get(root)
+  if (current && cached && cached.layer === current && cached.version === version) return cached.index
   const nodes = collectTextNodes(root)
-  let text = ""
-  const map: Array<{ node: Text; start: number; end: number }> = []
+  const parts: string[] = []
+  let length = 0
+  const map: TextIndex["map"] = []
   for (const node of nodes) {
-    const start = text.length
-    text += node.data
-    map.push({ node, start, end: text.length })
+    const start = length
+    parts.push(node.data)
+    length += node.data.length
+    map.push({ node, start, end: length })
   }
-  return { text, map }
+  const text = parts.join("")
+  const index = { text, lower: text.toLowerCase(), map }
+  if (current) indexCache.set(root, { layer: current, version, index })
+  return index
 }
 
-function rangeFromIndex(index: ReturnType<typeof buildTextIndex>, start: number, end: number) {
+// 匹配位置只存纯数据，不持有 Range：存活的 Range 会让浏览器在每次 DOM 变动时逐个更新，
+// 长会话里上千个匹配会让查找期间的任何渲染慢几十倍。需要测量时借用同一个 Range。
+type Hit = { startNode: Text; startOffset: number; endNode: Text; endOffset: number }
+
+const scratch = typeof document === "undefined" ? undefined : new Range()
+
+function withRange<T>(hit: Hit, fn: (range: Range) => T) {
+  const range = scratch ?? new Range()
+  range.setStart(hit.startNode, Math.min(hit.startOffset, hit.startNode.data.length))
+  range.setEnd(hit.endNode, Math.min(hit.endOffset, hit.endNode.data.length))
+  try {
+    return fn(range)
+  } finally {
+    range.setStart(document, 0)
+    range.collapse(true)
+  }
+}
+
+function rangeFromIndex(index: TextIndex, start: number, end: number): Hit | undefined {
   if (start >= end || start < 0 || end > index.text.length) return
-  let startNode: Text | undefined
-  let startOffset = 0
-  let endNode: Text | undefined
-  let endOffset = 0
-  for (const item of index.map) {
-    if (!startNode && start < item.end) {
-      startNode = item.node
-      startOffset = start - item.start
-    }
-    if (end <= item.end) {
-      endNode = item.node
-      endOffset = end - item.start
-      break
-    }
+  if (index.map.length === 0) return
+  const first = index.map[findIndexItem(index.map, start)]
+  const last = index.map[findIndexItem(index.map, end - 1)]
+  if (!first || !last) return
+  const startNode = first.node
+  const startOffset = start - first.start
+  const endNode = last.node
+  const endOffset = end - last.start
+  return {
+    startNode,
+    startOffset: Math.max(0, Math.min(startOffset, startNode.data.length)),
+    endNode,
+    endOffset: Math.max(0, Math.min(endOffset, endNode.data.length)),
   }
-  if (!startNode || !endNode) return
-  const range = new Range()
-  range.setStart(startNode, Math.max(0, Math.min(startOffset, startNode.data.length)))
-  range.setEnd(endNode, Math.max(0, Math.min(endOffset, endNode.data.length)))
-  return range
 }
 
-function rangesForQuery(root: Element, query: string, caseSensitive: boolean) {
+function rangesForQuery(root: Element, query: string, caseSensitive: boolean, current?: Layer) {
   const needle = caseSensitive ? query : query.toLowerCase()
-  if (!needle) return [] as Range[]
-  const index = buildTextIndex(root)
-  const haystack = caseSensitive ? index.text : index.text.toLowerCase()
-  const ranges: Range[] = []
+  if (!needle) return [] as Hit[]
+  const index = buildTextIndex(root, current)
+  const haystack = caseSensitive ? index.text : index.lower
+  const ranges: Hit[] = []
   let from = 0
   while (from < haystack.length) {
     const at = haystack.indexOf(needle, from)
@@ -124,15 +183,14 @@ function indexPartRoots(scope: ParentNode) {
   return roots
 }
 
-function paintRanges(host: HTMLElement, ranges: Range[], active: Range | undefined) {
+function paintRanges(host: HTMLElement, ranges: Hit[], active: Hit | undefined) {
   const current = ensureLayer(host)
-  current.root.replaceChildren()
   const viewport = host.getBoundingClientRect()
   const origin = current.root.getBoundingClientRect()
   const clipCache = new Map<Element, { left: number; top: number; right: number; bottom: number }>()
 
-  const clipsFor = (range: Range) => {
-    const owner = range.startContainer.parentElement
+  const clipsFor = (hit: Hit) => {
+    const owner = hit.startNode.parentElement
     if (!owner) return viewport
     const cached = clipCache.get(owner)
     if (cached) return cached
@@ -165,12 +223,30 @@ function paintRanges(host: HTMLElement, ranges: Range[], active: Range | undefin
     return clip
   }
 
-  const add = (range: Range, kind: "all" | "active") => {
-    const rects = range.getClientRects()
+  const boxes = document.createDocumentFragment()
+  // 先用所在代码块/段落的外框粗筛：屏幕外代码块开了 content-visibility，
+  // 直接量匹配文字会强制渲染整个代码块。
+  const blockCache = new Map<Element, boolean>()
+  const nearViewport = (hit: Hit) => {
+    const owner = hit.startNode.parentElement
+    const block = owner?.closest("pre") ?? owner
+    if (!block) return true
+    const cached = blockCache.get(block)
+    if (cached !== undefined) return cached
+    const rect = block.getBoundingClientRect()
+    const near = rect.bottom >= viewport.top && rect.top <= viewport.bottom
+    blockCache.set(block, near)
+    return near
+  }
+  const add = (hit: Hit, kind: "all" | "active") => {
+    if (!nearViewport(hit)) return
+    const rects = withRange(hit, (range) => Array.from(range.getClientRects()))
     for (const rect of rects) {
       if (rect.width < 1 || rect.height < 1) continue
+      // 不在可视区内的匹配不画，长会话里大部分匹配都在屏幕外。
+      if (rect.bottom < viewport.top || rect.top > viewport.bottom) continue
       // Clip to host viewport so highlights never spill outside the chat pane.
-      const clip = clipsFor(range)
+      const clip = clipsFor(hit)
       const left = Math.max(clip.left, rect.left) - origin.left
       const top = Math.max(clip.top, rect.top) - origin.top
       const right = Math.min(clip.right, rect.right) - origin.left
@@ -190,17 +266,18 @@ function paintRanges(host: HTMLElement, ranges: Range[], active: Range | undefin
         "border-radius:2px",
         kind === "active" ? "background:rgba(250,204,21,0.72)" : "background:rgba(250,204,21,0.4)",
       ].join(";")
-      current.root.appendChild(box)
+      boxes.appendChild(box)
     }
   }
 
   for (const range of ranges) add(range, "all")
   if (active) add(active, "active")
+  current.root.replaceChildren(boxes)
 }
 
-function scrollRangeIntoView(range: Range, host: HTMLElement) {
+function scrollRangeIntoView(hit: Hit, host: HTMLElement) {
   const scrollables: HTMLElement[] = []
-  let parent = range.startContainer.parentElement
+  let parent = hit.startNode.parentElement
   while (parent) {
     const style = getComputedStyle(parent)
     if (/^(auto|clip|hidden|scroll)$/.test(style.overflowY)) scrollables.push(parent)
@@ -209,7 +286,7 @@ function scrollRangeIntoView(range: Range, host: HTMLElement) {
   }
 
   for (const scrollable of scrollables) {
-    const rect = range.getBoundingClientRect()
+    const rect = withRange(hit, (range) => range.getBoundingClientRect())
     const viewport = scrollable.getBoundingClientRect()
     if (rect.top < viewport.top) {
       scrollable.scrollTop += rect.top - viewport.top - (viewport.height - rect.height) / 2
@@ -226,12 +303,22 @@ function bindRepaint(host: HTMLElement, repaint: () => void) {
   for (const stop of current.cleanup) stop()
   current.cleanup = []
 
-  const onScroll = () => repaint()
-  const onResize = () => repaint()
-  host.addEventListener("scroll", onScroll, { passive: true })
-  window.addEventListener("resize", onResize)
-  current.cleanup.push(() => host.removeEventListener("scroll", onScroll))
-  current.cleanup.push(() => window.removeEventListener("resize", onResize))
+  // 滚动事件一帧内可能触发多次，合并到下一帧只重绘一次。
+  let frame: number | undefined
+  const schedule = () => {
+    if (frame !== undefined) return
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      repaint()
+    })
+  }
+  host.addEventListener("scroll", schedule, { passive: true })
+  window.addEventListener("resize", schedule)
+  current.cleanup.push(() => host.removeEventListener("scroll", schedule))
+  current.cleanup.push(() => window.removeEventListener("resize", schedule))
+  current.cleanup.push(() => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+  })
 }
 
 export function applySessionFindHighlights(input: {
@@ -257,21 +344,23 @@ export function applySessionFindHighlights(input: {
   const active = input.matches[input.activeIndex]
 
   const collect = () => {
+    const current = ensureLayer(host)
     const roots = indexPartRoots(host)
-    const nextAll: Range[] = []
-    const nextSeen = new Set<Element>()
+    const nextAll: Hit[] = []
+    const byRoot = new Map<Element, Hit[]>()
     for (const match of input.matches) {
       const root = roots.get(match.partID)
       if (!root) continue
-      if (nextSeen.has(root)) continue
-      nextSeen.add(root)
-      nextAll.push(...rangesForQuery(root, query, caseSensitive))
+      if (byRoot.has(root)) continue
+      const hits = rangesForQuery(root, query, caseSensitive, current)
+      byRoot.set(root, hits)
+      nextAll.push(...hits)
     }
-    let nextActive: Range | undefined
+    let nextActive: Hit | undefined
     if (active) {
       const root = roots.get(active.partID)
       if (root) {
-        const local = rangesForQuery(root, query, caseSensitive)
+        const local = byRoot.get(root) ?? rangesForQuery(root, query, caseSensitive, current)
         const localIndex = input.matches
           .slice(0, input.activeIndex)
           .filter((item) => roots.get(item.partID) === root).length

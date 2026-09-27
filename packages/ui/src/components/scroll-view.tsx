@@ -211,6 +211,19 @@ export function ScrollView(props: ScrollViewProps) {
     setState("thumbTop", boundedTop)
   }
 
+  // 滚动事件里同步读 scrollHeight 会强制整页样式重算与布局，一帧内可能触发多次；合并到下一帧只算一次。
+  let thumbFrame: number | undefined
+  const scheduleThumb = () => {
+    if (thumbFrame !== undefined) return
+    thumbFrame = requestAnimationFrame(() => {
+      thumbFrame = undefined
+      updateThumb()
+    })
+  }
+  onCleanup(() => {
+    if (thumbFrame !== undefined) cancelAnimationFrame(thumbFrame)
+  })
+
   onMount(() => {
     if (local.viewportRef) {
       local.viewportRef(viewportRef)
@@ -360,7 +373,7 @@ export function ScrollView(props: ScrollViewProps) {
         class="scroll-view__viewport"
         data-scrollable
         onScroll={(e) => {
-          updateThumb()
+          scheduleThumb()
           markScrolling()
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}

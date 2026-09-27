@@ -159,7 +159,16 @@ function disposeCopyButtons(root: Element) {
   hosts.forEach(disposeCopyButton)
 }
 
+// 供 CSS 按行数给屏幕外代码块精确占位（见 markdown.css 的 content-visibility）。
+function setCodeLines(pre: HTMLElement, text: string) {
+  let lines = 1
+  for (let i = text.indexOf("\n"); i !== -1 && i < text.length - 1; i = text.indexOf("\n", i + 1)) lines++
+  const value = String(lines)
+  if (pre.style.getPropertyValue("--code-lines") !== value) pre.style.setProperty("--code-lines", value)
+}
+
 function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
+  setCodeLines(block, block.textContent ?? "")
   const parent = block.parentElement
   if (!parent) return
   const wrapped = parent.getAttribute("data-component") === "markdown-code"
@@ -635,6 +644,7 @@ function updateCodeBlock(
     while (code.children.length > keep) code.lastElementChild?.remove()
     const incoming = tail.slice(keep - stableCount).map(createTokenSpan)
     incoming.forEach((span) => code.appendChild(span))
+    if (code.parentElement) setCodeLines(code.parentElement, code.textContent ?? "")
     renderedCodeTokens.set(next, {
       language: block.language,
       generation: block.generation,
@@ -653,6 +663,7 @@ function updateCodeBlock(
   codeElement.className = `language-${block.language}`
   ;[...block.stable, ...block.unstable].map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
   pre.appendChild(codeElement)
+  setCodeLines(pre, codeElement.textContent ?? "")
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))
   next.appendChild(wrapper)

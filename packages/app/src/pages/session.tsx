@@ -487,9 +487,36 @@ export default function Page() {
     return key
   })
 
+  // 连续快速切换会话时暂缓挂载消息时间线，只渲染最终停下的会话：
+  // 每次挂载都会同步重建整条时间线（长会话数百毫秒），连点时点击会排队，界面看起来卡住。
+  // 单次切换不受影响，照常立即渲染。
+  const [timelineHold, setTimelineHold] = createSignal(false)
+  let lastSwitchAt = 0
+  let holdTimer: number | undefined
+  createComputed((prev) => {
+    const key = sessionKey()
+    if (key === prev) return key
+    const now = performance.now()
+    const rapid = now - lastSwitchAt < 800
+    lastSwitchAt = now
+    if (holdTimer !== undefined) clearTimeout(holdTimer)
+    holdTimer = undefined
+    if (!rapid) {
+      setTimelineHold(false)
+      return key
+    }
+    setTimelineHold(true)
+    holdTimer = window.setTimeout(() => {
+      holdTimer = undefined
+      setTimelineHold(false)
+    }, 400)
+    return key
+  })
+
   onCleanup(() => {
     if (deferFrame !== undefined) cancelAnimationFrame(deferFrame)
     if (deferTimer !== undefined) clearTimeout(deferTimer)
+    if (holdTimer !== undefined) clearTimeout(holdTimer)
   })
 
   let todoFrame: number | undefined
@@ -1412,7 +1439,7 @@ export default function Page() {
             {/* Always key on session id so chat remounts even while messages are still loading. */}
             <Show when={params.id} keyed>
               {(_id) => (
-                <Show when={messagesReady()}>
+                <Show when={messagesReady() && !timelineHold()}>
                   <MessageTimeline
                     actions={actions}
                     scroll={ui.scroll}
@@ -1459,7 +1486,8 @@ export default function Page() {
         </Switch>
       </div>
 
-      {(() => {
+      {/* untrack：创建过程中读到的 ready/dock 等信号不能被外层插入点追踪，否则每次切会话整个输入区都会重建。 */}
+      {untrack(() => {
         const controller = createSessionComposerRegionController({
           state: composer,
           sessionKey,
@@ -1534,7 +1562,7 @@ export default function Page() {
             }
           />
         )
-      })()}
+      })}
     </>
   )
 

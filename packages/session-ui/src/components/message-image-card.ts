@@ -181,7 +181,13 @@ export async function copyAsImageCard(options: ImageCardOptions): Promise<boolea
   Object.assign(body.style, { margin: "0", maxWidth: "100%", overflow: "visible" })
   // 导出图不能横向滚动，长代码行折行显示而不是被截断。
   for (const pre of body.querySelectorAll<HTMLElement>("pre")) {
-    Object.assign(pre.style, { whiteSpace: "pre-wrap", overflowWrap: "anywhere", overflow: "visible" })
+    // 克隆体放在屏幕外，须关掉 content-visibility，否则代码块会被跳过渲染成空白。
+    Object.assign(pre.style, {
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
+      overflow: "visible",
+      contentVisibility: "visible",
+    })
   }
   for (const node of body.querySelectorAll<HTMLElement>("table, [data-component='markdown-code']")) {
     node.style.overflow = "visible"

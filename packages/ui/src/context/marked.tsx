@@ -541,8 +541,31 @@ function renderMathExpressions(html: string): string {
     .join("")
 }
 
+// 高亮结果缓存：切回已看过的会话时代码块会重新解析，shiki 在主线程上逐行着色很慢，同一段代码直接复用结果。
+const highlightCache = new Map<string, Promise<string>>()
+const HIGHLIGHT_CACHE_MAX = 500
+
 /** 以 OpenCode 主题高亮一段代码，返回 shiki 生成的 <pre> HTML；颜色取自主题 CSS 变量，随亮暗主题切换。 */
-export async function highlightCode(code: string, lang?: string): Promise<string> {
+export function highlightCode(code: string, lang?: string): Promise<string> {
+  const key = `${lang ?? ""}\0${code}`
+  const hit = highlightCache.get(key)
+  if (hit) {
+    highlightCache.delete(key)
+    highlightCache.set(key, hit)
+    return hit
+  }
+  const result = renderHighlight(code, lang)
+  highlightCache.set(key, result)
+  result.catch(() => highlightCache.delete(key))
+  while (highlightCache.size > HIGHLIGHT_CACHE_MAX) {
+    const first = highlightCache.keys().next().value
+    if (first === undefined) break
+    highlightCache.delete(first)
+  }
+  return result
+}
+
+async function renderHighlight(code: string, lang?: string): Promise<string> {
   const highlighter = await getSharedHighlighter({
     themes: ["OpenCode"],
     langs: [],

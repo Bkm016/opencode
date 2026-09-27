@@ -63,6 +63,8 @@ const getBase = (appId: string): Configuration => ({
   },
   // 本地打包不做最高压缩：安装包略大，但省掉大量压缩时间；CI 发布保持默认。
   ...(process.env.GITHUB_ACTIONS !== "true" ? { compression: "store" as const } : {}),
+  // 原生依赖（node-pty、parcel watcher）都用预编译包，打包时无需按 Electron ABI 重新编译。
+  npmRebuild: false,
   files: ["out/**/*", "resources/**/*"],
   // Native pty prebuilds must stay outside asar; server loads them from out/main/server/node_modules.
   // browser-helper.js 由独立 node 子进程加载，asar 内文件对子进程不可见，须连同其外部依赖一起 unpack。

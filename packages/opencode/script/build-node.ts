@@ -4,6 +4,7 @@ import { Script } from "@opencode-ai/script"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import { isFresh } from "./fresh"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -12,7 +13,7 @@ const outFile = path.join(dir, "dist/node/node.js")
 
 process.chdir(dir)
 
-if (process.env.OPENCODE_FORCE_NODE_BUILD !== "1" && isFreshBuild()) {
+if (process.env.OPENCODE_FORCE_NODE_BUILD !== "1" && isFresh(outFile)) {
   console.log("Build skipped (dist/node is up to date)")
   process.exit(0)
 }
@@ -52,34 +53,3 @@ if (sourcemap === "none") {
 }
 
 console.log("Build complete")
-
-function isFreshBuild() {
-  if (!fs.existsSync(outFile)) return false
-  const outMtime = fs.statSync(outFile).mtimeMs
-  const roots = [
-    path.join(dir, "src"),
-    path.join(dir, "script"),
-    path.join(dir, "package.json"),
-    path.resolve(dir, "../core/src"),
-    path.resolve(dir, "../protocol/src"),
-    path.resolve(dir, "../schema/src"),
-    path.resolve(dir, "../server/src"),
-  ]
-  for (const root of roots) {
-    if (newestMtime(root) > outMtime) return false
-  }
-  return true
-}
-
-function newestMtime(target: string): number {
-  if (!fs.existsSync(target)) return 0
-  const stat = fs.statSync(target)
-  if (!stat.isDirectory()) return stat.mtimeMs
-  let newest = stat.mtimeMs
-  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".cache") continue
-    const child = newestMtime(path.join(target, entry.name))
-    if (child > newest) newest = child
-  }
-  return newest
-}

@@ -39,7 +39,8 @@ const cliExe = path.join(desktopDir, "resources", "cli", "opencode.exe")
 if (skipSidecar && !(await Bun.file(cliExe).exists())) {
   throw new Error(`${cliExe} missing — run without --skip-sidecar first`)
 }
-await $`bun run build`
+// 直接调 electron-vite：`bun run build` 会触发 package.json 的 prebuild 钩子，把上面已跑过的 prebuild 再跑一遍。
+await $`npx electron-vite build`
 await $`npx electron-builder --win --publish never --config electron-builder.config.ts`
 
 // 打出的安装包会带 resources/cli/opencode.exe（完整 CLI，含 serve / skill cloud）。

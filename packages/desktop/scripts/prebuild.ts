@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { isFresh } from "../../opencode/script/fresh"
 import { resolveChannel, windowsify } from "./utils"
 
 const channel = resolveChannel()
@@ -14,14 +15,22 @@ await $`cd ../opencode && bun script/build-node.ts`
 
 // 把完整 CLI（含 serve / skill cloud 等 fork 私有指令）打进安装包，
 // 用户装完可在 resources/cli/opencode.exe 直接调用。
-if (process.platform === "win32") {
+const cliDest = windowsify("resources/cli/opencode")
+// CLI 编译时写死了 channel，换 channel 必须重编。
+const cliStamp = "resources/cli/opencode.channel"
+const cliChannel = existsSync(cliStamp) ? await Bun.file(cliStamp).text() : ""
+if (process.platform === "win32" && cliChannel === channel && isFresh(cliDest)) {
+  // 源码没动时直接复用上次拷好的 CLI，省掉 bun --compile 与 rcedit。
+  console.log(`CLI skipped (${cliDest} is up to date)`)
+} else if (process.platform === "win32") {
   // --skip-install：build.ts 默认每次跑 bun install --os="*" --cpu="*" 拉全平台依赖，
   // 本地反复构建时 ghostty-web 等 github tarball 常因网络/EPERM 挂掉；node_modules 已在就直接复用。
   await $`cd ../opencode && bun script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui --skip-install`
   const src = "../opencode/dist/opencode-windows-x64/bin/opencode.exe"
-  const dest = windowsify("resources/cli/opencode")
+  const dest = cliDest
   await $`mkdir -p resources/cli`
   await $`cp ${src} ${dest}`
+  await Bun.write(cliStamp, channel)
 
   // bun --compile 产物默认是 Bun 包子图标，用 rcedit 把 opencode 图标写进 exe 资源。
   // electron-winstaller 是 desktop 的间接依赖。本地 bun isolated install 落在

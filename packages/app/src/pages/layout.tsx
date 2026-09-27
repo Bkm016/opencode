@@ -50,6 +50,7 @@ import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
 import { prefersReducedMotion } from "@/utils/gsap-motion"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { useCommand, type CommandOption } from "@/context/command"
 import { getDraggableId } from "@/utils/solid-dnd"
@@ -523,6 +524,12 @@ export default function LegacyLayout(props: ParentProps) {
     const touch = createMediaQuery("(hover: none)")
     const hasSessions = createMemo(() => chatSessions().length > 0)
     const showList = createMemo(() => hasSessions() && chatExpanded())
+    // 头部操作按钮：触屏常驻，桌面端仅悬停或聚焦时显示。
+    const reveal = () =>
+      "size-6 rounded-md transition-opacity duration-150 " +
+      (touch()
+        ? "opacity-100"
+        : "opacity-0 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto")
 
     const handleClick = () => {
       if (!hasSessions()) {
@@ -555,17 +562,28 @@ export default function LegacyLayout(props: ParentProps) {
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
+            {/* 归档入口不依赖当前是否有会话：会话全部归档后列表为空，仍需能找回。 */}
+            <Tooltip value={language.t("sidebar.project.archivedSessions")} placement="top">
+              <IconButton
+                icon="archive"
+                variant="ghost"
+                size="small"
+                class={reveal()}
+                data-action="chat-archived-sessions"
+                aria-label={language.t("sidebar.project.archivedSessions")}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  openChatArchived()
+                }}
+              />
+            </Tooltip>
             <Show when={hasSessions()}>
               <IconButton
                 icon="plus"
                 variant="ghost"
                 size="small"
-                class={
-                  "size-6 rounded-md transition-opacity duration-150 " +
-                  (touch()
-                    ? "opacity-100"
-                    : "opacity-0 pointer-events-none group-hover/chat:opacity-100 group-hover/chat:pointer-events-auto group-focus-within/chat:opacity-100 group-focus-within/chat:pointer-events-auto")
-                }
+                class={reveal()}
                 data-action="chat-new-session"
                 aria-label={language.t("sidebar.chat.new")}
                 onClick={(event) => {
@@ -602,6 +620,15 @@ export default function LegacyLayout(props: ParentProps) {
     const directory = chatDirectory()
     if (!directory) return
     navigate(`/${base64Encode(directory)}/session`)
+  }
+
+  // 聊天区归档复用项目归档弹窗，按桌面目录过滤。
+  const openChatArchived = () => {
+    const directory = chatDirectory()
+    if (!directory) return
+    void import("@/components/dialog-archived-sessions").then((x) => {
+      dialog.show(() => <x.DialogArchivedSessions directory={directory} />)
+    })
   }
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {

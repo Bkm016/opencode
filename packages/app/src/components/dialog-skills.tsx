@@ -61,6 +61,9 @@ export function DialogSkills(props: { directory: string }) {
     editingName: undefined as string | undefined,
     action: undefined as string | undefined,
     reposExpanded: true,
+    // 当前展示部署公钥的远端仓库；GitHub 部署公钥全局唯一，每个仓库各有一把
+    keyRepository: undefined as string | undefined,
+    keyCopied: false,
   })
 
   const [skills, { refetch }] = createResource(
@@ -85,6 +88,36 @@ export function DialogSkills(props: { directory: string }) {
     },
   )
 
+  // 密钥在服务端按远端仓库懒生成，添加仓库前即可先取得公钥去平台登记
+  const [deployKey] = createResource(
+    () => store.keyRepository,
+    async (repository) => {
+      const result = await serverSDK().client.v2.deployKey.get({ repository })
+      if (result.error || !result.data) {
+        throw new Error(errorMessage(result.error, language.t("dialog.skills.cloud.error")))
+      }
+      return result.data
+    },
+  )
+  // resource 处于 errored 时读取 latest 会抛错，渲染只使用已就绪的值
+  const readyDeployKey = () => (deployKey.state === "ready" ? deployKey() : undefined)
+
+  const copyDeployKey = () => {
+    const publicKey = readyDeployKey()?.publicKey
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!publicKey || !clipboard?.writeText) {
+      showToast({ variant: "error", title: language.t("dialog.skills.cloud.key.copyFailed") })
+      return
+    }
+    void clipboard.writeText(publicKey).then(
+      () => {
+        setStore("keyCopied", true)
+        setTimeout(() => setStore("keyCopied", false), 1500)
+      },
+      () => showToast({ variant: "error", title: language.t("dialog.skills.cloud.key.copyFailed") }),
+    )
+  }
+
   const isCloudSkill = (skill: SkillV2Info) => {
     if (skill.location === "<built-in>") return false
     const repos = cloudList.latest
@@ -100,11 +133,7 @@ export function DialogSkills(props: { directory: string }) {
   const cloudSkills = createMemo(() => (skills() ?? []).filter((skill) => isCloudSkill(skill)))
 
   const globalSkills = createMemo(() =>
-    (skills() ?? []).filter(
-      (skill) =>
-        !isProjectSkill(skill, props.directory) &&
-        !isCloudSkill(skill),
-    ),
+    (skills() ?? []).filter((skill) => !isProjectSkill(skill, props.directory) && !isCloudSkill(skill)),
   )
 
   const skillRepo = (skill: SkillV2Info) => {
@@ -437,12 +466,8 @@ export function DialogSkills(props: { directory: string }) {
                       }}
                     />
                     <Icon name="cloud-upload" class="w-4 h-4 text-text-weak shrink-0" />
-                    <span class="text-13-medium text-text-strong">
-                      {language.t("dialog.skills.cloud.repository")}
-                    </span>
-                    <span class="text-11-regular text-text-weak font-mono">
-                      ({cloudList.latest?.length ?? 0})
-                    </span>
+                    <span class="text-13-medium text-text-strong">{language.t("dialog.skills.cloud.repository")}</span>
+                    <span class="text-11-regular text-text-weak font-mono">({cloudList.latest?.length ?? 0})</span>
                   </button>
 
                   <div class="flex items-center gap-1.5">
@@ -478,7 +503,9 @@ export function DialogSkills(props: { directory: string }) {
                   <div class="flex items-center justify-between gap-3 text-12-regular text-text-weak py-0.5">
                     <div class="flex items-center gap-2 text-text-critical">
                       <Icon name="warning" class="w-4 h-4 shrink-0" />
-                      <span class="truncate">{errorMessage(cloudList.error, language.t("dialog.skills.cloud.error"))}</span>
+                      <span class="truncate">
+                        {errorMessage(cloudList.error, language.t("dialog.skills.cloud.error"))}
+                      </span>
                     </div>
                     <Button size="small" variant="ghost" onClick={() => void refetchCloudList()}>
                       {language.t("dialog.skills.retry")}
@@ -531,6 +558,15 @@ export function DialogSkills(props: { directory: string }) {
                       </div>
                       <Button
                         size="small"
+                        variant="ghost"
+                        icon="shield"
+                        disabled={!store.formRepository.trim()}
+                        onClick={() => setStore({ keyRepository: store.formRepository.trim(), keyCopied: false })}
+                      >
+                        {language.t("dialog.skills.cloud.key.show")}
+                      </Button>
+                      <Button
+                        size="small"
                         variant="secondary"
                         disabled={!!store.action || !store.formRepository.trim()}
                         onClick={() => void handleConfigure()}
@@ -542,6 +578,71 @@ export function DialogSkills(props: { directory: string }) {
                             : language.t("dialog.skills.cloud.connect")}
                       </Button>
                     </div>
+                    <span class="text-11-regular text-text-weak">
+                      {language.t("dialog.skills.cloud.repository.description")}
+                    </span>
+                  </div>
+                </Show>
+
+                {/* 当前仓库专属的部署公钥 */}
+                <Show when={store.keyRepository}>
+                  <div class="flex flex-col gap-2 p-3 rounded-md bg-surface-base border border-border-weak-base">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="truncate text-12-medium text-text-strong" title={store.keyRepository}>
+                        {language.t("dialog.skills.cloud.key.title", {
+                          repository: readyDeployKey()?.repository ?? store.keyRepository ?? "",
+                        })}
+                      </span>
+                      <div class="flex shrink-0 items-center gap-1">
+                        <Show when={readyDeployKey()}>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            icon={store.keyCopied ? "check" : "copy"}
+                            onClick={copyDeployKey}
+                          >
+                            {store.keyCopied
+                              ? language.t("dialog.skills.cloud.key.copied")
+                              : language.t("dialog.skills.cloud.key.copy")}
+                          </Button>
+                        </Show>
+                        <IconButton
+                          icon="close-small"
+                          size="small"
+                          variant="ghost"
+                          title={language.t("common.close")}
+                          onClick={() => setStore({ keyRepository: undefined, keyCopied: false })}
+                        />
+                      </div>
+                    </div>
+                    <span class="text-11-regular text-text-weak">
+                      {language.t("dialog.skills.cloud.key.description")}
+                    </span>
+                    <Show when={deployKey.loading}>
+                      <span class="text-12-regular text-text-weak">
+                        {language.t("dialog.skills.cloud.key.loading")}
+                      </span>
+                    </Show>
+                    <Show when={deployKey.state === "errored"}>
+                      <div class="flex items-center gap-2 text-12-regular text-text-critical">
+                        <Icon name="warning" class="w-4 h-4 shrink-0" />
+                        <span class="break-all">
+                          {errorMessage(deployKey.error, language.t("dialog.skills.cloud.error"))}
+                        </span>
+                      </div>
+                    </Show>
+                    <Show when={readyDeployKey()}>
+                      {(key) => (
+                        <>
+                          <code class="block rounded-md bg-surface-weak-base px-3 py-2 font-mono text-11-regular text-text-strong break-all select-text">
+                            {key().publicKey}
+                          </code>
+                          <span class="text-11-regular text-text-weak break-all select-text">
+                            {language.t("dialog.skills.cloud.key.privateKeyPath")}: {key().privateKeyPath}
+                          </span>
+                        </>
+                      )}
+                    </Show>
                   </div>
                 </Show>
 
@@ -566,112 +667,127 @@ export function DialogSkills(props: { directory: string }) {
                         </Show>
                       }
                     >
-                    <div class="flex flex-col gap-1.5 max-h-[115px] overflow-y-auto pr-1">
-                      <For each={cloudList.latest}>
-                        {(repo) => {
-                          const isSyncing = () => store.action === `sync:${repo.name}`
-                          const isUpdating = () => store.action === `update:${repo.name}`
-                          const isRemoving = () => store.action === `remove:${repo.name}`
+                      <div class="flex flex-col gap-1.5 max-h-[115px] overflow-y-auto pr-1">
+                        <For each={cloudList.latest}>
+                          {(repo) => {
+                            const isSyncing = () => store.action === `sync:${repo.name}`
+                            const isUpdating = () => store.action === `update:${repo.name}`
+                            const isRemoving = () => store.action === `remove:${repo.name}`
 
-                          return (
-                            <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-surface-base/70 border border-border-weak-base/50 min-h-[32px] group">
-                              {/* 左侧：状态与元信息 */}
-                              <div class="flex min-w-0 flex-1 items-center gap-2">
-                                <span
-                                  classList={{
-                                    "w-2 h-2 rounded-full shrink-0": true,
-                                    "bg-text-weak": !repo.configured,
-                                    "bg-emerald-500": repo.state === "ready",
-                                    "bg-amber-500": repo.state === "modified" || repo.state === "ahead",
-                                    "bg-sky-500": repo.state === "behind",
-                                    "bg-red-500": repo.state === "diverged",
-                                  }}
-                                />
-                                <span class="text-12-medium text-text-strong font-mono shrink-0">{repo.name}</span>
-                                <span class="text-11-regular text-text-weak shrink-0">{repoStateText(repo.state)}</span>
-                                <Show when={repo.branch}>
-                                  {(branch) => (
-                                    <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/50 flex items-center gap-1 shrink-0">
-                                      <Icon name="branch" class="w-3 h-3 text-text-weak" />
-                                      <span>{branch()}</span>
-                                    </Tag>
-                                  )}
-                                </Show>
-                                <Show when={repo.changes}>
-                                  {(count) => (
-                                    <Tag class="text-10-regular text-amber-500 bg-surface-base border-amber-500/30 shrink-0">
-                                      {language.t("dialog.skills.cloud.changes", { count: count() })}
-                                    </Tag>
-                                  )}
-                                </Show>
-                                <Show when={repo.ahead}>
-                                  {(count) => (
-                                    <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
-                                      {language.t("dialog.skills.cloud.ahead", { count: count() })}
-                                    </Tag>
-                                  )}
-                                </Show>
-                                <Show when={repo.behind}>
-                                  {(count) => (
-                                    <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
-                                      {language.t("dialog.skills.cloud.behind", { count: count() })}
-                                    </Tag>
-                                  )}
-                                </Show>
-                                <Show when={repo.repository}>
-                                  {(remoteUrl) => (
-                                    <span class="truncate text-11-regular font-mono text-text-weak max-w-[200px]" title={remoteUrl()}>
-                                      {remoteUrl()}
-                                    </span>
-                                  )}
-                                </Show>
-                              </div>
+                            return (
+                              <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-surface-base/70 border border-border-weak-base/50 min-h-[32px] group">
+                                {/* 左侧：状态与元信息 */}
+                                <div class="flex min-w-0 flex-1 items-center gap-2">
+                                  <span
+                                    classList={{
+                                      "w-2 h-2 rounded-full shrink-0": true,
+                                      "bg-text-weak": !repo.configured,
+                                      "bg-emerald-500": repo.state === "ready",
+                                      "bg-amber-500": repo.state === "modified" || repo.state === "ahead",
+                                      "bg-sky-500": repo.state === "behind",
+                                      "bg-red-500": repo.state === "diverged",
+                                    }}
+                                  />
+                                  <span class="text-12-medium text-text-strong font-mono shrink-0">{repo.name}</span>
+                                  <span class="text-11-regular text-text-weak shrink-0">
+                                    {repoStateText(repo.state)}
+                                  </span>
+                                  <Show when={repo.branch}>
+                                    {(branch) => (
+                                      <Tag class="text-10-regular text-text-weak bg-surface-base border-border-base/50 flex items-center gap-1 shrink-0">
+                                        <Icon name="branch" class="w-3 h-3 text-text-weak" />
+                                        <span>{branch()}</span>
+                                      </Tag>
+                                    )}
+                                  </Show>
+                                  <Show when={repo.changes}>
+                                    {(count) => (
+                                      <Tag class="text-10-regular text-amber-500 bg-surface-base border-amber-500/30 shrink-0">
+                                        {language.t("dialog.skills.cloud.changes", { count: count() })}
+                                      </Tag>
+                                    )}
+                                  </Show>
+                                  <Show when={repo.ahead}>
+                                    {(count) => (
+                                      <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
+                                        {language.t("dialog.skills.cloud.ahead", { count: count() })}
+                                      </Tag>
+                                    )}
+                                  </Show>
+                                  <Show when={repo.behind}>
+                                    {(count) => (
+                                      <Tag class="text-10-regular text-sky-400 bg-surface-base border-sky-500/30 shrink-0">
+                                        {language.t("dialog.skills.cloud.behind", { count: count() })}
+                                      </Tag>
+                                    )}
+                                  </Show>
+                                  <Show when={repo.repository}>
+                                    {(remoteUrl) => (
+                                      <span
+                                        class="truncate text-11-regular font-mono text-text-weak max-w-[200px]"
+                                        title={remoteUrl()}
+                                      >
+                                        {remoteUrl()}
+                                      </span>
+                                    )}
+                                  </Show>
+                                </div>
 
-                              {/* 右侧：单仓库操作按钮组 */}
-                              <div class="flex shrink-0 items-center gap-0.5">
-                                <IconButton
-                                  icon="download"
-                                  size="small"
-                                  variant="ghost"
-                                  title={language.t("dialog.skills.cloud.update")}
-                                  disabled={!!store.action || !repo.configured}
-                                  onClick={() => void handleUpdate(repo.name)}
-                                />
-                                <IconButton
-                                  icon="cloud-upload"
-                                  size="small"
-                                  variant="ghost"
-                                  title={language.t("dialog.skills.cloud.sync")}
-                                  disabled={!!store.action || !repo.configured}
-                                  onClick={() => void handleSync(repo.name)}
-                                />
-                                <IconButton
-                                  icon="edit-small-2"
-                                  size="small"
-                                  variant="ghost"
-                                  title={language.t("dialog.skills.cloud.edit")}
-                                  disabled={!!store.action}
-                                  onClick={() => startEdit(repo)}
-                                />
-                                <IconButton
-                                  icon="trash"
-                                  size="small"
-                                  variant="ghost"
-                                  title={language.t("dialog.skills.cloud.delete.title")}
-                                  disabled={!!store.action}
-                                  onClick={() => void handleRemove(repo.name)}
-                                />
+                                {/* 右侧：单仓库操作按钮组 */}
+                                <div class="flex shrink-0 items-center gap-0.5">
+                                  <IconButton
+                                    icon="download"
+                                    size="small"
+                                    variant="ghost"
+                                    title={language.t("dialog.skills.cloud.update")}
+                                    disabled={!!store.action || !repo.configured}
+                                    onClick={() => void handleUpdate(repo.name)}
+                                  />
+                                  <IconButton
+                                    icon="cloud-upload"
+                                    size="small"
+                                    variant="ghost"
+                                    title={language.t("dialog.skills.cloud.sync")}
+                                    disabled={!!store.action || !repo.configured}
+                                    onClick={() => void handleSync(repo.name)}
+                                  />
+                                  {/* 密钥按与传输协议无关的仓库标识生成，HTTPS 远端改成 SSH 后仍复用同一把 */}
+                                  <Show when={repo.repository}>
+                                    <IconButton
+                                      icon="shield"
+                                      size="small"
+                                      variant="ghost"
+                                      title={language.t("dialog.skills.cloud.key.show")}
+                                      onClick={() => setStore({ keyRepository: repo.repository, keyCopied: false })}
+                                    />
+                                  </Show>
+                                  <IconButton
+                                    icon="edit-small-2"
+                                    size="small"
+                                    variant="ghost"
+                                    title={language.t("dialog.skills.cloud.edit")}
+                                    disabled={!!store.action}
+                                    onClick={() => startEdit(repo)}
+                                  />
+                                  <IconButton
+                                    icon="trash"
+                                    size="small"
+                                    variant="ghost"
+                                    title={language.t("dialog.skills.cloud.delete.title")}
+                                    disabled={!!store.action}
+                                    onClick={() => void handleRemove(repo.name)}
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          )
-                        }}
-                      </For>
-                    </div>
+                            )
+                          }}
+                        </For>
+                      </div>
+                    </Show>
                   </Show>
                 </Show>
-              </Show>
-            </div>
-          </Show>
+              </div>
+            </Show>
 
             <div class="flex flex-1 min-h-0">
               <div
@@ -702,7 +818,12 @@ export function DialogSkills(props: { directory: string }) {
                 {(skill) => (
                   <div class="flex flex-1 min-w-0 flex-col overflow-y-auto no-scrollbar">
                     <div class="sticky top-0 z-10 flex items-start gap-3 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-5 py-4">
-                      <Button variant="ghost" size="small" class="sm:hidden" onClick={() => setStore("selected", undefined)}>
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        class="sm:hidden"
+                        onClick={() => setStore("selected", undefined)}
+                      >
                         {language.t("dialog.skills.back")}
                       </Button>
                       <div class="flex min-w-0 flex-1 flex-col gap-1">
@@ -726,9 +847,7 @@ export function DialogSkills(props: { directory: string }) {
                     <div class="flex flex-col gap-5 px-5 py-4">
                       <div class="flex flex-col gap-1.5">
                         <span class="text-12-medium text-text-weak">{language.t("dialog.skills.source")}</span>
-                        <span class="break-all text-12-regular text-text-base select-text">
-                          {skill.location}
-                        </span>
+                        <span class="break-all text-12-regular text-text-base select-text">{skill.location}</span>
                       </div>
                       <div class="flex flex-col gap-2">
                         <span class="text-12-medium text-text-weak">{language.t("dialog.skills.instructions")}</span>

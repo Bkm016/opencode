@@ -52,6 +52,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SkillCloud } from "@opencode-ai/core/skill-cloud"
+import { DeployKey } from "@opencode-ai/core/deploy-key"
 
 export const AppLayer = AppNodeBuilderV1.build(
   LayerNode.group([
@@ -68,6 +69,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     ProviderAuth.node,
     Agent.node,
     Skill.node,
+    DeployKey.node,
     SkillCloud.node,
     Discovery.node,
     Question.node,

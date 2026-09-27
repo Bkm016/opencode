@@ -667,19 +667,23 @@ const scenarios: Scenario[] = [
     object(body)
     check(body.healthy === true, "v2 server should report healthy")
   }),
-  http.protected.get("/api/deploy-key", "v2.deployKey.get").jsonEffect(200, (body) =>
-    Effect.gen(function* () {
-      object(body)
-      check(body.algorithm === "ssh-ed25519", "deploy key should use Ed25519")
-      check(typeof body.publicKey === "string" && body.publicKey.startsWith("ssh-ed25519 "), "public key missing")
-      if (typeof body.publicKeyPath !== "string") throw new Error("public key path missing")
-      if (typeof body.privateKeyPath !== "string") throw new Error("private key path missing")
-      const publicKeyPath = body.publicKeyPath
-      const privateKeyPath = body.privateKeyPath
-      check(yield* Effect.promise(() => Bun.file(publicKeyPath).exists()), "public key file should exist")
-      check(yield* Effect.promise(() => Bun.file(privateKeyPath).exists()), "private key file should exist")
-    }),
-  ),
+  http.protected
+    .get("/api/deploy-key", "v2.deployKey.get")
+    .at(() => ({ path: "/api/deploy-key?repository=git%40github.com%3Aacme%2Fskills.git" }))
+    .jsonEffect(200, (body) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.repository === "github.com/acme/skills", "deploy key should belong to the requested repository")
+        check(body.algorithm === "ssh-ed25519", "deploy key should use Ed25519")
+        check(typeof body.publicKey === "string" && body.publicKey.startsWith("ssh-ed25519 "), "public key missing")
+        if (typeof body.publicKeyPath !== "string") throw new Error("public key path missing")
+        if (typeof body.privateKeyPath !== "string") throw new Error("private key path missing")
+        const publicKeyPath = body.publicKeyPath
+        const privateKeyPath = body.privateKeyPath
+        check(yield* Effect.promise(() => Bun.file(publicKeyPath).exists()), "public key file should exist")
+        check(yield* Effect.promise(() => Bun.file(privateKeyPath).exists()), "private key file should exist")
+      }),
+    ),
   http.protected
     .get("/api/skill/cloud/list", "v2.skillCloud.list")
     .global()

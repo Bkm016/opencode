@@ -119,6 +119,7 @@ import type {
   ProjectCopiesRemoveOutput,
   ProjectCopiesRefreshInput,
   ProjectCopiesRefreshOutput,
+  DeployKeysGetInput,
   DeployKeysGetOutput,
 } from "./types"
 import { ClientError } from "./client-error"
@@ -1044,9 +1045,16 @@ export function make(options: ClientOptions) {
         ),
     },
     deployKeys: {
-      get: (requestOptions?: RequestOptions) =>
+      get: (input: DeployKeysGetInput, requestOptions?: RequestOptions) =>
         request<DeployKeysGetOutput>(
-          { method: "GET", path: `/api/deploy-key`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
+          {
+            method: "GET",
+            path: `/api/deploy-key`,
+            query: { repository: input["repository"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
           requestOptions,
         ),
     },

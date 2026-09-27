@@ -1,3 +1,4 @@
+import { DeployKey } from "@opencode-ai/core/deploy-key"
 import { SkillCloud } from "@opencode-ai/core/skill-cloud"
 import { Effect } from "effect"
 import { EOL } from "node:os"
@@ -113,6 +114,22 @@ const CloudRemoveCommand = effectCmd({
   }),
 })
 
+const CloudKeyCommand = effectCmd({
+  command: "key <repository>",
+  describe: "show the SSH deploy key dedicated to a cloud skill repository",
+  instance: false,
+  builder: (yargs) =>
+    yargs.positional("repository", {
+      type: "string",
+      describe: "Git repository URL",
+      demandOption: true,
+    }),
+  handler: Effect.fn("Cli.skill.cloud.key")(function* (args) {
+    const deployKey = yield* DeployKey.Service
+    output(yield* deployKey.get(args.repository).pipe(Effect.catch((error) => fail(error.detail))))
+  }),
+})
+
 const CloudCommand = cmd({
   command: "cloud",
   describe: "manage cloud skill repositories",
@@ -124,6 +141,7 @@ const CloudCommand = cmd({
       .command(CloudUpdateCommand)
       .command(CloudSyncCommand)
       .command(CloudRemoveCommand)
+      .command(CloudKeyCommand)
       .demandCommand(),
   async handler() {},
 })

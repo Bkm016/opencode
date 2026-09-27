@@ -69,28 +69,25 @@ test("cloudSkills.status uses the managed repository endpoint", async () => {
   })
 })
 
-test("deployKeys.get uses the server-wide deploy key endpoint", async () => {
+test("deployKeys.get requests the deploy key of one repository", async () => {
+  const key = {
+    repository: "github.com/acme/skills",
+    algorithm: "ssh-ed25519",
+    publicKey: "ssh-ed25519 AAAA opencode-deploy@github.com/acme/skills",
+    publicKeyPath: "/data/ssh/deploy/github.com/acme/skills/id_ed25519.pub",
+    privateKeyPath: "/data/ssh/deploy/github.com/acme/skills/id_ed25519",
+  }
   const client = OpenCode.make({
     baseUrl: "http://localhost:3000",
     fetch: async (input) => {
-      expect(typeof input === "string" ? input : input instanceof URL ? input.href : input.url).toBe(
-        "http://localhost:3000/api/deploy-key",
-      )
-      return Response.json({
-        algorithm: "ssh-ed25519",
-        publicKey: "ssh-ed25519 AAAA opencode-deploy",
-        publicKeyPath: "/data/ssh/opencode_deploy.pub",
-        privateKeyPath: "/data/ssh/opencode_deploy",
-      })
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+      expect(url.pathname).toBe("/api/deploy-key")
+      expect(url.searchParams.get("repository")).toBe("git@github.com:acme/skills.git")
+      return Response.json(key)
     },
   })
 
-  expect(await client.deployKeys.get()).toEqual({
-    algorithm: "ssh-ed25519",
-    publicKey: "ssh-ed25519 AAAA opencode-deploy",
-    publicKeyPath: "/data/ssh/opencode_deploy.pub",
-    privateKeyPath: "/data/ssh/opencode_deploy",
-  })
+  expect(await client.deployKeys.get({ repository: "git@github.com:acme/skills.git" })).toEqual(key)
 })
 
 test("sessions.get returns the wire projection", async () => {

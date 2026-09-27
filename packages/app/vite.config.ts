@@ -2,7 +2,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { createHash } from "node:crypto"
 import { readdirSync, readFileSync } from "node:fs"
 import { defineConfig, type Plugin } from "vite"
-import desktopPlugin from "./vite"
+import desktopPlugin from "./vite.js"
 
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT

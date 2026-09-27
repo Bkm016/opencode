@@ -31,6 +31,15 @@ export default [
         worker: {
           format: "es",
         },
+        build: {
+          rolldownOptions: {
+            output: {
+              // Oxc 的 compress 改写会让界面热路径（长会话滚动、查找）实测慢 20~35%，
+              // 只保留变量名压缩与去空白，运行速度与 Vite 7 的 esbuild 产物持平。
+              minify: { compress: false, mangle: true, codegen: { removeWhitespace: true } },
+            },
+          },
+        },
       }
     },
   },

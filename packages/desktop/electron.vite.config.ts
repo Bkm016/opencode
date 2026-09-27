@@ -90,6 +90,12 @@ async function copyServerNodeModule(name: string) {
     )
   }
   const to = path.join(SERVER_OUT, "node_modules", ...name.split("/"))
+  // buildStart 与 writeBundle 各调一次；同版本已拷贝过就跳过，避免反复删除重拷上千个文件。
+  const [srcPkg, dstPkg] = await Promise.all([
+    fs.readFile(path.join(src, "package.json"), "utf8"),
+    fs.readFile(path.join(to, "package.json"), "utf8").catch(() => undefined),
+  ])
+  if (srcPkg === dstPkg) return
   await fs.rm(to, { recursive: true, force: true })
   await fs.mkdir(path.dirname(to), { recursive: true })
   await fs.cp(src, to, { recursive: true })
@@ -101,10 +107,10 @@ export default defineConfig({
       "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel),
     },
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
         // Keep this identical to electron-vite's Node 20.11+ shim. Its regex insertion can
-        // corrupt bundled TypeScript, while a Rollup banner places the shim safely.
+        // corrupt bundled TypeScript, while an output banner places the shim safely.
         output: {
           banner: `
 // -- CommonJS Shims --
@@ -139,7 +145,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
   },
   preload: {
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: { index: "src/preload/index.ts" },
         output: {
           format: "cjs",
@@ -153,8 +159,11 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
-      sourcemap: true,
-      rollupOptions: {
+      // sourcemap 只用于上传 Sentry（上传后即删除）；未配置 Sentry 时生成它纯属浪费构建时间和包体积。
+      sourcemap: !!sentry,
+      // 逐个 gzip 1600+ 产物只为打印体积报告，跳过。
+      reportCompressedSize: false,
+      rolldownOptions: {
         input: {
           main: "src/renderer/index.html",
         },

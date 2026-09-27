@@ -706,8 +706,10 @@ const adaptGroup17 = (raw: RawClient["server.projectCopy"]) => ({
   refresh: Endpoint17_2(raw),
 })
 
-const Endpoint18_0 = (raw: RawClient["server.deployKey"]) => () =>
-  raw["deployKey.get"]({}).pipe(Effect.mapError(mapClientError))
+type Endpoint18_0Request = Parameters<RawClient["server.deployKey"]["deployKey.get"]>[0]
+type Endpoint18_0Input = { readonly repository: Endpoint18_0Request["query"]["repository"] }
+const Endpoint18_0 = (raw: RawClient["server.deployKey"]) => (input: Endpoint18_0Input) =>
+  raw["deployKey.get"]({ query: { repository: input["repository"] } }).pipe(Effect.mapError(mapClientError))
 
 const adaptGroup18 = (raw: RawClient["server.deployKey"]) => ({ get: Endpoint18_0(raw) })
 

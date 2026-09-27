@@ -5,7 +5,6 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventModelsDevRefreshed
   | EventIntegrationUpdated
   | EventIntegrationConnectionUpdated
   | EventCatalogUpdated
@@ -72,7 +71,6 @@ export type Event =
   | EventSessionGoalCleared
   | EventSessionGoalLessonUpdated
   | EventSessionGoalLessonDeleted
-  | EventLspUpdated
   | EventPermissionAsked
   | EventPermissionReplied
   | EventTuiPromptAppend2
@@ -89,7 +87,6 @@ export type Event =
   | EventQuestionReplied
   | EventQuestionRejected
   | EventSessionCompacted
-  | EventVcsBranchUpdated
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
@@ -787,13 +784,6 @@ export type GlobalEvent = {
   payload:
     | {
         id: string
-        type: "models-dev.refreshed"
-        properties: {
-          [key: string]: unknown
-        }
-      }
-    | {
-        id: string
         type: "integration.updated"
         properties: {
           [key: string]: unknown
@@ -1455,13 +1445,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "lsp.updated"
-        properties: {
-          [key: string]: unknown
-        }
-      }
-    | {
-        id: string
         type: "permission.asked"
         properties: {
           id: string
@@ -1631,13 +1614,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "vcs.branch.updated"
-        properties: {
-          branch?: string
-        }
-      }
-    | {
-        id: string
         type: "workspace.ready"
         properties: {
           name: string
@@ -1760,10 +1736,12 @@ export type PermissionConfig =
       bash?: PermissionRuleConfig
       task?: PermissionRuleConfig
       external_directory?: PermissionRuleConfig
+      todoread?: PermissionActionConfig
       todowrite?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
+      browser?: PermissionRuleConfig
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
@@ -2515,26 +2493,6 @@ export type Path = {
   database: DatabaseInfo
 }
 
-export type VcsInfo = {
-  branch?: string
-  default_branch?: string
-}
-
-export type VcsFileStatus = {
-  file: string
-  additions: number
-  deletions: number
-  status: "added" | "deleted" | "modified"
-}
-
-export type VcsApplyError = {
-  name: "VcsApplyError"
-  data: {
-    message: string
-    reason: "non-git" | "not-clean"
-  }
-}
-
 export type Command = {
   name: string
   description?: string
@@ -2574,13 +2532,6 @@ export type Agent = {
     [key: string]: unknown
   }
   steps?: number
-}
-
-export type LspStatus = {
-  id: string
-  name: string
-  root: string
-  status: "connected" | "error"
 }
 
 export type FormatterStatus = {
@@ -3109,7 +3060,6 @@ export type QuestionRejected2 = {
 }
 
 export type V2Event =
-  | ModelsDevRefreshed
   | IntegrationUpdated
   | IntegrationConnectionUpdated
   | CatalogUpdated
@@ -3176,7 +3126,6 @@ export type V2Event =
   | SessionGoalCleared
   | SessionGoalLessonUpdated
   | SessionGoalLessonDeleted
-  | LspUpdated
   | PermissionAsked
   | PermissionReplied
   | TuiPromptAppend
@@ -3193,7 +3142,6 @@ export type V2Event =
   | QuestionReplied2
   | QuestionRejected2
   | SessionCompacted
-  | VcsBranchUpdated
   | WorkspaceReady
   | WorkspaceFailed
   | WorkspaceStatus
@@ -3214,6 +3162,14 @@ export type ProjectCopyError = {
   data: {
     message: string
     forceRequired?: boolean
+  }
+}
+
+export type DeployKeyError = {
+  name: "DeployKeyError"
+  data: {
+    reason: "invalid_repository" | "unavailable"
+    message: string
   }
 }
 
@@ -5321,23 +5277,6 @@ export type SkillCloudRemoveInput = {
   name: string
 }
 
-export type ModelsDevRefreshed = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "models-dev.refreshed"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    [key: string]: unknown
-  }
-}
-
 export type IntegrationUpdated = {
   id: string
   metadata?: {
@@ -6050,23 +5989,6 @@ export type SessionGoalLessonDeleted = {
   }
 }
 
-export type LspUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "lsp.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    [key: string]: unknown
-  }
-}
-
 export type PermissionAsked = {
   id: string
   metadata?: {
@@ -6341,23 +6263,6 @@ export type SessionCompacted = {
   }
 }
 
-export type VcsBranchUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "vcs.branch.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    branch?: string
-  }
-}
-
 export type WorkspaceReady = {
   id: string
   metadata?: {
@@ -6526,18 +6431,11 @@ export type ProjectCopyCopy = {
 }
 
 export type DeployKeyInfo = {
+  repository: string
   algorithm: "ssh-ed25519"
   publicKey: string
   publicKeyPath: string
   privateKeyPath: string
-}
-
-export type EventModelsDevRefreshed = {
-  id: string
-  type: "models-dev.refreshed"
-  properties: {
-    [key: string]: unknown
-  }
 }
 
 export type EventIntegrationUpdated = {
@@ -7267,14 +7165,6 @@ export type EventSessionGoalLessonDeleted = {
   }
 }
 
-export type EventLspUpdated = {
-  id: string
-  type: "lsp.updated"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
 export type EventPermissionAsked = {
   id: string
   type: "permission.asked"
@@ -7402,14 +7292,6 @@ export type EventSessionCompacted = {
   type: "session.compacted"
   properties: {
     sessionID: string
-  }
-}
-
-export type EventVcsBranchUpdated = {
-  id: string
-  type: "vcs.branch.updated"
-  properties: {
-    branch?: string
   }
 }
 
@@ -8651,122 +8533,6 @@ export type PathGetResponses = {
 
 export type PathGetResponse = PathGetResponses[keyof PathGetResponses]
 
-export type VcsGetData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs"
-}
-
-export type VcsGetErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsGetError = VcsGetErrors[keyof VcsGetErrors]
-
-export type VcsGetResponses = {
-  /**
-   * VCS info
-   */
-  200: VcsInfo
-}
-
-export type VcsGetResponse = VcsGetResponses[keyof VcsGetResponses]
-
-export type VcsStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/status"
-}
-
-export type VcsStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsStatusError = VcsStatusErrors[keyof VcsStatusErrors]
-
-export type VcsStatusResponses = {
-  /**
-   * VCS status
-   */
-  200: Array<VcsFileStatus>
-}
-
-export type VcsStatusResponse = VcsStatusResponses[keyof VcsStatusResponses]
-
-export type VcsDiffRawData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/diff/raw"
-}
-
-export type VcsDiffRawErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type VcsDiffRawError = VcsDiffRawErrors[keyof VcsDiffRawErrors]
-
-export type VcsDiffRawResponses = {
-  /**
-   * Raw VCS diff
-   */
-  200: string
-}
-
-export type VcsDiffRawResponse = VcsDiffRawResponses[keyof VcsDiffRawResponses]
-
-export type VcsApplyData = {
-  body?: {
-    patch: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/vcs/apply"
-}
-
-export type VcsApplyErrors = {
-  /**
-   * VcsApplyError | InvalidRequestError
-   */
-  400: VcsApplyError | InvalidRequestError
-}
-
-export type VcsApplyError2 = VcsApplyErrors[keyof VcsApplyErrors]
-
-export type VcsApplyResponses = {
-  /**
-   * VCS patch applied
-   */
-  200: {
-    applied: boolean
-  }
-}
-
-export type VcsApplyResponse = VcsApplyResponses[keyof VcsApplyResponses]
-
 export type CommandListData = {
   body?: never
   path?: never
@@ -8929,34 +8695,6 @@ export type AppSkillsResponses = {
 }
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
-
-export type LspStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/lsp"
-}
-
-export type LspStatusErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type LspStatusError = LspStatusErrors[keyof LspStatusErrors]
-
-export type LspStatusResponses = {
-  /**
-   * LSP server status
-   */
-  200: Array<LspStatus>
-}
-
-export type LspStatusResponse = LspStatusResponses[keyof LspStatusResponses]
 
 export type FormatterStatusData = {
   body?: never
@@ -12572,9 +12310,9 @@ export type ExperimentalWorkspaceWarpData = {
 
 export type ExperimentalWorkspaceWarpErrors = {
   /**
-   * WorkspaceWarpError | VcsApplyError | InvalidRequestError
+   * WorkspaceWarpError | InvalidRequestError
    */
-  400: WorkspaceWarpError | VcsApplyError | InvalidRequestError
+  400: WorkspaceWarpError | InvalidRequestError
   /**
    * NotFoundError
    */
@@ -15019,15 +14757,17 @@ export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V
 export type V2DeployKeyGetData = {
   body?: never
   path?: never
-  query?: never
+  query: {
+    repository: string
+  }
   url: "/api/deploy-key"
 }
 
 export type V2DeployKeyGetErrors = {
   /**
-   * InvalidRequestError
+   * DeployKeyError | InvalidRequestError
    */
-  400: InvalidRequestError
+  400: DeployKeyError | InvalidRequestError
   /**
    * UnauthorizedError
    */

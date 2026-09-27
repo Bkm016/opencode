@@ -72,7 +72,11 @@ const gitConfig = [
 ] as const
 
 function sanitizeName(name: string) {
-  const cleaned = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "")
+  const cleaned = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
   return cleaned || "skills"
 }
 
@@ -131,12 +135,13 @@ const layer = Layer.effect(
     const environment = Effect.fnUntraced(function* (repository?: string) {
       const base = { GIT_TERMINAL_PROMPT: "0" }
       if (!repository || !sshRepository(repository)) return base
-      const key = yield* deployKey.get().pipe(
+      // 部署公钥在 GitHub 等平台全局唯一，只能挂到一个仓库，因此每个远端使用各自的密钥。
+      const key = yield* deployKey.get(repository).pipe(
         Effect.mapError(
           (cause) =>
             new OperationError({
               reason: "authentication",
-              detail: "the managed SSH deploy key is unavailable",
+              detail: `the managed SSH deploy key for ${repository} is unavailable: ${cause.detail}`,
               cause,
             }),
         ),
@@ -359,7 +364,8 @@ const layer = Layer.effect(
       }
 
       const origin = yield* run(targetDir, ["remote", "get-url", "origin"])
-      const command = origin.exitCode === 0 ? ["remote", "set-url", "origin", repository] : ["remote", "add", "origin", repository]
+      const command =
+        origin.exitCode === 0 ? ["remote", "set-url", "origin", repository] : ["remote", "add", "origin", repository]
       yield* requireSuccess(yield* run(targetDir, command, repository))
       return yield* inspectRepo(targetDir, name)
     })
@@ -385,10 +391,7 @@ const layer = Layer.effect(
         return yield* inspectRepo(repo.directory, repo.name)
       }
 
-      yield* requireSuccess(
-        yield* run(repo.directory, ["merge", "--ff-only", `origin/${branch}`]),
-        "merge_conflict",
-      )
+      yield* requireSuccess(yield* run(repo.directory, ["merge", "--ff-only", `origin/${branch}`]), "merge_conflict")
       return yield* inspectRepo(repo.directory, repo.name)
     })
 
@@ -474,7 +477,11 @@ const layer = Layer.effect(
         }
       }
       yield* requireSuccess(
-        yield* run(target.directory, ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`], target.repository),
+        yield* run(
+          target.directory,
+          ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`],
+          target.repository,
+        ),
       )
       return yield* inspectRepo(target.directory, target.name)
     })

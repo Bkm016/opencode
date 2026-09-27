@@ -131,8 +131,6 @@ import type {
   InstanceReloadErrors,
   InstanceReloadResponses,
   LocationRef,
-  LspStatusErrors,
-  LspStatusResponses,
   McpAddErrors,
   McpAddResponses,
   McpAuthAuthenticateErrors,
@@ -453,14 +451,6 @@ import type {
   V2SkillCloudUpdateResponses,
   V2SkillListErrors,
   V2SkillListResponses,
-  VcsApplyErrors,
-  VcsApplyResponses,
-  VcsDiffRawErrors,
-  VcsDiffRawResponses,
-  VcsGetErrors,
-  VcsGetResponses,
-  VcsStatusErrors,
-  VcsStatusResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -2177,142 +2167,6 @@ export class Path extends HeyApiClient {
   }
 }
 
-export class Diff extends HeyApiClient {
-  /**
-   * Get raw VCS diff
-   *
-   * Retrieve a raw patch for current uncommitted changes.
-   */
-  public raw<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<VcsDiffRawResponses, VcsDiffRawErrors, ThrowOnError>({
-      url: "/vcs/diff/raw",
-      ...options,
-      ...params,
-    })
-  }
-}
-
-export class Vcs extends HeyApiClient {
-  /**
-   * Get VCS info
-   *
-   * Retrieve version control system (VCS) information for the current project, such as git branch.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<VcsGetResponses, VcsGetErrors, ThrowOnError>({
-      url: "/vcs",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get VCS status
-   *
-   * Retrieve changed files in the current working tree without patches.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<VcsStatusResponses, VcsStatusErrors, ThrowOnError>({
-      url: "/vcs/status",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Apply VCS patch
-   *
-   * Apply a raw patch to the current working tree.
-   */
-  public apply<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      patch?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "patch" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<VcsApplyResponses, VcsApplyErrors, ThrowOnError>({
-      url: "/vcs/apply",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  private _diff?: Diff
-  get diff(): Diff {
-    return (this._diff ??= new Diff({ client: this.client }))
-  }
-}
-
 export class Command extends HeyApiClient {
   /**
    * List commands
@@ -2408,38 +2262,6 @@ export class Command extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
-    })
-  }
-}
-
-export class Lsp extends HeyApiClient {
-  /**
-   * Get LSP status
-   *
-   * Get LSP server status
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<LspStatusResponses, LspStatusErrors, ThrowOnError>({
-      url: "/lsp",
-      ...options,
-      ...params,
     })
   }
 }
@@ -8045,12 +7867,19 @@ export class DeployKey extends HeyApiClient {
   /**
    * Get deploy key
    *
-   * Get the public half and managed file locations of the server-wide SSH deploy key.
+   * Get the public half and managed file locations of the SSH deploy key dedicated to one remote repository, generating it when needed.
    */
-  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      repository: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "repository" }] }])
     return (options?.client ?? this.client).get<V2DeployKeyGetResponses, V2DeployKeyGetErrors, ThrowOnError>({
       url: "/api/deploy-key",
       ...options,
+      ...params,
     })
   }
 }
@@ -8205,19 +8034,9 @@ export class OpencodeClient extends HeyApiClient {
     return (this._path ??= new Path({ client: this.client }))
   }
 
-  private _vcs?: Vcs
-  get vcs(): Vcs {
-    return (this._vcs ??= new Vcs({ client: this.client }))
-  }
-
   private _command?: Command
   get command(): Command {
     return (this._command ??= new Command({ client: this.client }))
-  }
-
-  private _lsp?: Lsp
-  get lsp(): Lsp {
-    return (this._lsp ??= new Lsp({ client: this.client }))
   }
 
   private _formatter?: Formatter

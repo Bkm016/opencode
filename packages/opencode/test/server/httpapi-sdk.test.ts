@@ -569,7 +569,7 @@ describe("HttpApi SDK", () => {
       Effect.gen(function* () {
         const project = yield* capture(() => sdk.project.current())
         const projects = yield* capture(() => sdk.project.list())
-        const deployKey = yield* capture(() => sdk.v2.deployKey.get())
+        const deployKey = yield* capture(() => sdk.v2.deployKey.get({ repository: "git@github.com:acme/skills.git" }))
         const skillCloud = yield* capture(() => sdk.v2.skillCloud.status())
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
@@ -577,9 +577,7 @@ describe("HttpApi SDK", () => {
         const agents = yield* capture(() => sdk.app.agents())
         const skills = yield* capture(() => sdk.app.skills())
         const tools = yield* capture(() => sdk.tool.ids())
-        const vcs = yield* capture(() => sdk.vcs.get())
         const formatter = yield* capture(() => sdk.formatter.status())
-        const lsp = yield* capture(() => sdk.lsp.status())
 
         return {
           statuses: statuses({
@@ -593,16 +591,13 @@ describe("HttpApi SDK", () => {
             agents,
             skills,
             tools,
-            vcs,
             formatter,
-            lsp,
           }),
           project: { worktreeSelected: record(project.data).worktree === directory },
-          deployKey: { publicKey: record(deployKey.data).publicKey },
+          deployKey: { repository: record(deployKey.data).repository },
           skillCloud: { configured: record(skillCloud.data).configured },
           paths: { directorySelected: record(paths.data).directory === directory },
           hasProject: array(projects.data).length > 0,
-          vcs: { hasBranch: typeof record(vcs.data).branch === "string" },
         }
       }),
     ),
@@ -992,9 +987,10 @@ describe("HttpApi SDK", () => {
         expect(body.length).toBe(1)
         expect(record(body[0]).sessions).toBe(true)
         expect(array(record(body[0]).openProjectDirectories)).toEqual([directory])
-        expect(typeof record(compact.data).sessionsRemoved === "number" || record(compact.data).sessionsRemoved === undefined).toBe(
-          true,
-        )
+        expect(
+          typeof record(compact.data).sessionsRemoved === "number" ||
+            record(compact.data).sessionsRemoved === undefined,
+        ).toBe(true)
       }),
   )
 })

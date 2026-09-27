@@ -35,6 +35,15 @@ opencode skill cloud configure <git-url> [--name <repo-name>]
 
 If the user did not supply a URL, ask for one. Do not invent a repository.
 
+SSH repositories authenticate with a deploy key dedicated to that remote
+repository; hosts such as GitHub allow one deploy key per repository only.
+Before configuring an SSH repository, print its public key and ask the user to
+register it on that repository (with write access if they will sync):
+
+```bash
+opencode skill cloud key <git-url>
+```
+
 ## Update before editing
 
 Pull remote changes with safe fast-forward updates:

@@ -120,6 +120,13 @@ export type ProjectCopyError = {
 export const isProjectCopyError = (value: unknown): value is ProjectCopyError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "ProjectCopyError"
 
+export type DeployKeyError = {
+  readonly name: "DeployKeyError"
+  readonly data: { readonly reason: "invalid_repository" | "unavailable"; readonly message: string }
+}
+export const isDeployKeyError = (value: unknown): value is DeployKeyError =>
+  typeof value === "object" && value !== null && "name" in value && value["name"] === "DeployKeyError"
+
 export type HealthGetOutput = { readonly healthy: true }
 
 export type LocationGetInput = {
@@ -2877,7 +2884,10 @@ export type ProjectCopiesRefreshInput = {
 
 export type ProjectCopiesRefreshOutput = void
 
+export type DeployKeysGetInput = { readonly repository: { readonly repository: string }["repository"] }
+
 export type DeployKeysGetOutput = {
+  readonly repository: string
   readonly algorithm: "ssh-ed25519"
   readonly publicKey: string
   readonly publicKeyPath: string

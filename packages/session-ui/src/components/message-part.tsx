@@ -83,7 +83,7 @@ import {
 import { GenericToolGroup as BaseGenericToolGroup, ContextToolGroup, PythonToolGroup } from "./tool-group"
 import { McpGroupItem, McpGroupSummary, mcpInfo } from "./mcp-tool"
 import { ImageGenerationTool } from "./image-generation-tool"
-import { EditToolCard, MultiEditToolCard } from "./edit-tool-card"
+import { EditToolCard, MultiEditToolCard, type MultiEditFileItem } from "./edit-tool-card"
 import { ScriptToolCard } from "./script-tool-card"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { BrowserTool } from "./browser-tool"
@@ -3748,6 +3748,48 @@ function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
     if (list.length !== 1) return
     return list[0]
   })
+  // 流式期间 files() 每个 token 都是新对象，直接 map 会让 <For> 重建所有文件的 Diff 造成闪烁；
+  // 按位置复用条目、字段改为读当前值的 getter，只有文件数变化时才增删条目。
+  const item = (index: number): MultiEditFileItem => {
+    const file = () => files()[index]
+    return {
+      get relativePath() {
+        return file()?.relativePath ?? ""
+      },
+      get filePath() {
+        return file()?.filePath ?? ""
+      },
+      get type() {
+        return file()?.type
+      },
+      get additions() {
+        return file()?.additions ?? 0
+      },
+      get deletions() {
+        return file()?.deletions ?? 0
+      },
+      renderContent: () => (
+        <Show when={file()?.view.fileDiff}>
+          {(fileDiff) => (
+            <Dynamic
+              component={fileComponent}
+              mode="diff"
+              virtualize={props.virtualizeDiff}
+              streaming={pending()}
+              fileDiff={fileDiff()}
+              hunkSeparators={fileDiff().isPartial ? "simple" : "line-info-basic"}
+              onRendered={props.onContentRendered}
+            />
+          )}
+        </Show>
+      ),
+    }
+  }
+  const items = createMemo<MultiEditFileItem[]>((previous = []) => {
+    const count = files().length
+    if (count === previous.length) return previous
+    return Array.from({ length: count }, (_, index) => previous[index] ?? item(index))
+  })
 
   return (
     <Show
@@ -3758,24 +3800,7 @@ function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
           status={props.status}
           defaultOpen={pending() || props.defaultOpen}
           onViewFile={props.onViewFile}
-          files={files().map((file) => ({
-            relativePath: file.relativePath,
-            filePath: file.filePath,
-            type: file.type,
-            additions: file.additions,
-            deletions: file.deletions,
-            renderContent: () => (
-              <Dynamic
-                component={fileComponent}
-                mode="diff"
-                virtualize={props.virtualizeDiff}
-                streaming={pending()}
-                fileDiff={file.view.fileDiff}
-                hunkSeparators={file.view.fileDiff.isPartial ? "simple" : "line-info-basic"}
-                onRendered={props.onContentRendered}
-              />
-            ),
-          }))}
+          files={items()}
         />
       }
     >

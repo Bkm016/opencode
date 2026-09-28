@@ -107,7 +107,7 @@ export default defineConfig({
       "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel),
     },
     build: {
-      rolldownOptions: {
+      rollupOptions: {
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
         // Keep this identical to electron-vite's Node 20.11+ shim. Its regex insertion can
         // corrupt bundled TypeScript, while an output banner places the shim safely.
@@ -145,7 +145,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
   },
   preload: {
     build: {
-      rolldownOptions: {
+      rollupOptions: {
         input: { index: "src/preload/index.ts" },
         output: {
           format: "cjs",
@@ -163,7 +163,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       sourcemap: !!sentry,
       // 逐个 gzip 1600+ 产物只为打印体积报告，跳过。
       reportCompressedSize: false,
-      rolldownOptions: {
+      rollupOptions: {
         input: {
           main: "src/renderer/index.html",
         },

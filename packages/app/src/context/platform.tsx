@@ -32,7 +32,8 @@ type PlatformBase = {
   version?: string
 
   /** Open a URL in the default browser */
-  openLink(url: string): void
+  // Relative file links use the current local workspace directory.
+  openLink(url: string, baseDirectory?: string): void
 
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>

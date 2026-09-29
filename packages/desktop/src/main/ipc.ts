@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, nativeImage, net, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
@@ -206,23 +206,20 @@ export function registerIpcHandlers(deps: Deps) {
     },
   )
 
-  ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {
-    void shell.openExternal(url)
+  ipcMain.on("open-link", (_event: IpcMainEvent, url: string, baseDirectory?: string) => {
+    void openLink(url, baseDirectory).catch((error: unknown) => {
+      void dialog.showMessageBox({
+        type: "error",
+        message: "Unable to open link",
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    })
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     const resolvedPath = path.startsWith("~/") || path.startsWith("~\\") ? join(homedir(), path.slice(2)) : path
     if (!app) {
-      const error = await shell.openPath(resolvedPath)
-      if (!error) return
-      const exists = await stat(resolvedPath).then(
-        () => true,
-        () => false,
-      )
-      if (!exists) throw new Error(error)
-      // 系统没有关联 JSON 编辑器时仍应让用户能定位已写入的文件。
-      shell.showItemInFolder(resolvedPath)
-      return
+      return openLocalPath(resolvedPath)
     }
     await new Promise<void>((resolve, reject) => {
       if (process.platform === "darwin") {
@@ -346,4 +343,43 @@ export function broadcastServerReconnect(data: ServerReadyData) {
       win.webContents.send("server-reconnect", data)
     }
   }
+}
+
+async function openLink(url: string, baseDirectory?: string) {
+  const href = url.trim()
+  const target = new URL(href, "oc://renderer/")
+  if (target.protocol !== "oc:") return shell.openExternal(target.href)
+  if (target.host !== "renderer" || target.username || target.password) {
+    throw new Error("Unsupported local file link")
+  }
+  if (!baseDirectory || !isAbsolute(baseDirectory)) {
+    throw new Error("File links require a local project workspace")
+  }
+
+  // 相对链接属于项目目录，不属于应用渲染资源；保留原始路径以校验 URL 归一化前的 ..。
+  const path = decodeURIComponent(href.replace(/^(?:oc:)?\/\/renderer(?=\/|[?#]|$)/i, "").split(/[?#]/, 1)[0])
+    .replace(/\\/g, "/")
+    .replace(/^\//, "")
+  if (!path || /[:\u0000-\u001f]/.test(path) || isAbsolute(path)) {
+    throw new Error("Invalid project file path")
+  }
+  const file = resolve(baseDirectory, path)
+  // 同时约束字面路径和真实路径，阻止 ..、符号链接及 Windows junction 越出工作区。
+  const paths = [relative(baseDirectory, file), relative(await realpath(baseDirectory), await realpath(file))]
+  if (paths.some((path) => path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path))) {
+    throw new Error("File link is outside the project workspace")
+  }
+  return openLocalPath(file)
+}
+
+async function openLocalPath(path: string) {
+  const error = await shell.openPath(path)
+  if (!error) return
+  const exists = await stat(path).then(
+    () => true,
+    () => false,
+  )
+  if (!exists) throw new Error(error)
+  // 系统没有关联 JSON 编辑器时仍应让用户能定位已写入的文件。
+  shell.showItemInFolder(path)
 }

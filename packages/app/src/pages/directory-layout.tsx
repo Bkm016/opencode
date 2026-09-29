@@ -9,9 +9,10 @@ import { SDKProvider } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
-import type { ServerConnection } from "@/context/server"
+import { type ServerConnection, useServer } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { useServerSync } from "@/context/server-sync"
+import { usePlatform } from "@/context/platform"
 
 export function DirectoryDataProvider(
   props: ParentProps<{
@@ -25,6 +26,8 @@ export function DirectoryDataProvider(
   const params = useParams()
   const sync = useSync()
   const serverSync = useServerSync()
+  const platform = usePlatform()
+  const server = useServer()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
   const href = (sessionID: string, targetDirectory?: string) => {
@@ -67,7 +70,25 @@ export function DirectoryDataProvider(
           onNavigateToSession={(sessionID: string, directory?: string) => navigate(href(sessionID, directory))}
           onSessionHref={href}
         >
-          <LocalProvider>{props.children}</LocalProvider>
+          <LocalProvider>
+            <div
+              class="contents"
+              on:click={(event) => {
+                if (event.defaultPrevented || platform.platform !== "desktop") return
+                const link =
+                  event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.external-link") : null
+                const href = link?.getAttribute("href")
+                if (!link || !href || href.startsWith("#")) return
+                if (link.protocol !== "oc:" && /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href)) return
+                // 在目录作用域内接管文件链接，保留原始 href，避免浏览器提前归一化 ..。
+                event.preventDefault()
+                event.stopPropagation()
+                platform.openLink(href, server.isLocal() ? directory : undefined)
+              }}
+            >
+              {props.children}
+            </div>
+          </LocalProvider>
         </DataProvider>
       )}
     </Show>

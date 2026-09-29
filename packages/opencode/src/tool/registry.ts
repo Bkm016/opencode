@@ -7,6 +7,8 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
+import { ShellJobTool } from "./shell-job"
+import { ShellJobs } from "./shell/jobs"
 import { PythonTool } from "./python"
 import { ComputerUseTool } from "./computer-use"
 import { BrowserTool } from "./browser"
@@ -127,6 +129,7 @@ const layer = Layer.effect(
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
+    const shellJob = yield* ShellJobTool
     const python = yield* PythonTool
     const computerUse = yield* ComputerUseTool
     const browser = yield* BrowserTool
@@ -237,6 +240,7 @@ const layer = Layer.effect(
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
+          shellJob: Tool.init(shellJob),
           read: Tool.init(read),
           list_dir: Tool.init(listDir),
           glob: Tool.init(globtool),
@@ -276,6 +280,7 @@ const layer = Layer.effect(
             tool.python,
             ...(process.platform === "win32" ? [tool.computer_use] : []),
             tool.shell,
+            tool.shellJob,
             tool.read,
             tool.list_dir,
             tool.glob,
@@ -530,6 +535,7 @@ export const node = LayerNode.make({
     Database.node,
     Ripgrep.node,
     InstanceStore.node,
+    ShellJobs.locationNode,
   ],
 })
 

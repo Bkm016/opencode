@@ -10,6 +10,8 @@ import { Markdown } from "./markdown"
  * 由 task 工具在后台任务完成或失败时以 synthetic 用户消息写入。
  */
 export interface TaskNotification {
+  /** 通知来源：子代理任务或后台 shell 作业 */
+  kind?: "task" | "shell"
   /** 子代理会话 ID */
   sessionID?: string
   /** 任务终态 */
@@ -21,6 +23,7 @@ export interface TaskNotification {
 }
 
 const ENVELOPE = /^\s*<task([^>]*)>([\s\S]*?)<\/task>\s*$/
+const SHELL_ENVELOPE = /^\s*<bash_job([^>]*)>([\s\S]*?)<\/bash_job>\s*$/
 const SUMMARY = /<summary>([\s\S]*?)<\/summary>/
 
 /**
@@ -31,6 +34,21 @@ const SUMMARY = /<summary>([\s\S]*?)<\/summary>/
  * @return 解析出的任务通知，无法解析时为 undefined
  */
 export function parseTaskNotification(text: string): TaskNotification | undefined {
+  const shell = SHELL_ENVELOPE.exec(text)
+  if (shell) {
+    const attrs = shell[1] ?? ""
+    const inner = shell[2] ?? ""
+    const code = /\bexit_code="([^"]*)"/.exec(attrs)?.[1]
+    const open = inner.indexOf("<output>")
+    const close = inner.lastIndexOf("</output>")
+    const body = open !== -1 && close > open ? inner.slice(open + "<output>".length, close) : ""
+    return {
+      kind: "shell",
+      state: code === "0" ? "completed" : "error",
+      summary: SUMMARY.exec(inner)?.[1]?.trim() || undefined,
+      text: body.trim() ? "```\n" + body.trim() + "\n```" : "",
+    }
+  }
   const match = ENVELOPE.exec(text)
   if (!match) return
   const attrs = match[1] ?? ""
@@ -58,7 +76,12 @@ export function parseTaskNotification(text: string): TaskNotification | undefine
 export function TaskNotificationCard(props: { notification: TaskNotification }) {
   const i18n = useI18n()
   const error = createMemo(() => props.notification.state === "error")
-  const title = createMemo(() => props.notification.summary || i18n.t("ui.taskNotification.title"))
+  const shell = createMemo(() => props.notification.kind === "shell")
+  const title = createMemo(
+    () =>
+      props.notification.summary ||
+      i18n.t(shell() ? "ui.shellNotification.title" : "ui.taskNotification.title"),
+  )
   const [open, setOpen] = createSignal(false)
   // 收起动画播完前保持正文挂载，避免 DOM 瞬间消失
   const [bodyMounted, setBodyMounted] = createSignal(false)
@@ -99,7 +122,11 @@ export function TaskNotificationCard(props: { notification: TaskNotification }) 
     <Card data-kind="task-notification" data-open={open() ? "true" : "false"} variant={error() ? "error" : "normal"}>
       <button type="button" data-slot="task-notification-trigger" aria-expanded={open()} onClick={toggle}>
         <span data-slot="task-notification-icon">
-          <Icon name={error() ? "circle-ban-sign" : "subagent"} size="small" style={{ "stroke-width": 1.5 }} />
+          <Icon
+            name={shell() ? "console" : error() ? "circle-ban-sign" : "subagent"}
+            size="small"
+            style={{ "stroke-width": 1.5 }}
+          />
         </span>
         <span data-slot="task-notification-title">{title()}</span>
         <span

@@ -1,3 +1,4 @@
+import { ShellJobBadges, ShellJobControls, shellJobSubtitle, shellJobTitleKey } from "./script-tool-card"
 import { Show, Index, createMemo, createSignal, createEffect, onCleanup, type JSX } from "solid-js"
 import stripAnsi from "strip-ansi"
 import type { AssistantMessage, ToolPart } from "@opencode-ai/sdk/v2"
@@ -319,6 +320,104 @@ function ContextToolRow(props: { part: ToolPart }) {
   )
 }
 
+/** 命令分组里的 bash_job 条目：动作 + 作业命令（write 为输入内容），展开后显示本次读到的输出；终端会回显输入，不再单列 */
+function ShellJobGroupItem(props: { part: ToolPart }) {
+  const i18n = useI18n()
+  const [open, setOpen] = createSignal(false)
+  const pending = () => props.part.state.status === "pending" || props.part.state.status === "running"
+  const input = createMemo(() => (props.part.state.input ?? {}) as Record<string, any>)
+  const meta = createMemo(
+    () => (("metadata" in props.part.state ? (props.part.state as any).metadata : undefined) ?? {}) as Record<string, any>,
+  )
+  const title = createMemo(() => i18n.t(shellJobTitleKey(input().action)))
+  const subtitle = createMemo(() => shellJobSubtitle(input(), meta()) ?? "")
+  const output = createMemo(() => {
+    const raw =
+      input().action === "list"
+        ? props.part.state.status === "completed"
+          ? (props.part.state as any).output
+          : ""
+        : (meta().output ?? (props.part.state.status === "completed" ? (props.part.state as any).output : ""))
+    return typeof raw === "string" ? stripAnsi(raw).replace(/\r\n?/g, "\n").trimEnd() : ""
+  })
+  const errorText = createMemo(() =>
+    props.part.state.status === "error" ? String(props.part.state.error ?? "").replace(/^Error:\s*/, "") : "",
+  )
+  const status = createMemo(() => {
+    if (input().action === "list") return undefined
+    if (meta().waitingForInput === true) return { text: i18n.t("ui.tool.shellJob.waitingInput"), fail: false }
+    if (meta().status === "exited" && typeof meta().exit === "number")
+      return { text: `${i18n.t("ui.tool.shell.exit")} ${meta().exit}`, fail: meta().exit !== 0 }
+    return undefined
+  })
+  const duration = createMemo(() => formatToolDuration(props.part))
+  const expandable = () => !!(output() || errorText())
+
+  return (
+    <div data-component="bash-item-container" data-open={open() ? "true" : "false"}>
+      <div
+        data-component="context-tool-row"
+        classList={{ "cursor-pointer": expandable() }}
+        onClick={() => expandable() && setOpen(!open())}
+      >
+        <div data-slot="context-tool-main">
+          <span data-slot="context-tool-tag">{title()}</span>
+          <span data-slot="context-tool-target" title={subtitle()}>
+            <TextShimmer text={subtitle()} active={pending()} />
+          </span>
+        </div>
+        <div data-slot="context-tool-meta">
+          <Show when={pending()}>
+            <span data-slot="context-tool-running">
+              <Spinner class="size-3" />
+            </span>
+          </Show>
+          <Show when={!pending() && duration()}>
+            <span data-slot="context-tool-duration">{duration()}</span>
+          </Show>
+          <Show when={status()}>
+            {(value) => (
+              <span data-slot="bash-trigger-exit" data-exit={value().fail ? "fail" : "info"}>
+                {value().text}
+              </span>
+            )}
+          </Show>
+          <Show when={errorText()}>
+            <span data-slot="bash-trigger-exit" data-exit="fail" title={errorText()}>
+              {i18n.t("ui.toolErrorCard.failed")}
+            </span>
+          </Show>
+          <Show when={expandable()}>
+            <span class="edit-tool-card-arrow" data-open={open() ? "true" : "false"}>
+              <Icon name="chevron-down" size="small" />
+            </span>
+          </Show>
+        </div>
+      </div>
+      <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
+        <div class="edit-tool-card-body-inner">
+          <Show when={open()}>
+            <div data-component="bash-output">
+              <div data-slot="bash-scroll" data-scrollable tabIndex={0} role="region" aria-label={i18n.t("ui.scrollView.ariaLabel")}>
+                <Show when={output()}>
+                  <pre data-slot="bash-pre" data-section="output">
+                    <code>{output()}</code>
+                  </pre>
+                </Show>
+                <Show when={errorText()}>
+                  <pre data-slot="bash-pre" data-section="error">
+                    <code>{errorText()}</code>
+                  </pre>
+                </Show>
+              </div>
+            </div>
+          </Show>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * 通用的脚本/命令行执行类工具条目组件
  * 彻底收敛 bash 与 python 的重复 DOM、滚动定位、复制及卡片逻辑。
@@ -425,6 +524,7 @@ function ScriptGroupItem(props: {
           <Show when={!pending() && duration()}>
             <span data-slot="context-tool-duration">{duration()}</span>
           </Show>
+          <ShellJobControls metadata={meta} title={scriptPreview()} />
           <Show when={!pending() && failed()}>
             <span data-slot="bash-trigger-exit" data-exit="fail">
               {i18n.t("ui.tool.shell.exit")} {exit()}
@@ -734,15 +834,25 @@ ToolGroupRegistry.register({
     done: (i18n) => i18n.t("ui.sessionTurn.status.ranCommands"),
   },
   renderSummary({ parts, i18n }) {
+    const commands = parts.filter((part) => part.tool === "bash").length
+    const ops = parts.length - commands
+    const items = [
+      commands > 0 &&
+        i18n.t(commands === 1 ? "ui.messagePart.bash.command.one" : "ui.messagePart.bash.command.other", {
+          count: commands,
+        }),
+      ops > 0 &&
+        i18n.t(ops === 1 ? "ui.messagePart.bashJob.op.one" : "ui.messagePart.bashJob.op.other", { count: ops }),
+    ].filter(Boolean)
     return (
       <span>
-        {parts.length === 1
-          ? i18n.t("ui.messagePart.bash.command.one", { count: 1 })
-          : i18n.t("ui.messagePart.bash.command.other", { count: parts.length })}
+        {items.join(" · ")}
+        <ShellJobBadges parts={parts} />
       </span>
     )
   },
   renderItem(itemProps) {
+    if (itemProps.part.tool === "bash_job") return <ShellJobGroupItem part={itemProps.part} />
     return (
       <ScriptGroupItem
         part={itemProps.part}

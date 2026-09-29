@@ -177,10 +177,12 @@ export function args(file: string, command: string, cwd: string) {
         [[ -f ~/.zshenv ]] && source ~/.zshenv >/dev/null 2>&1 || true
         [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && source "\${ZDOTDIR:-$HOME}/.zshrc" >/dev/null 2>&1 || true
         cd -- "$1"
-        eval ${JSON.stringify(command)}
+        eval "$2"
       `,
       "opencode",
       cwd,
+      // 命令作为位置参数传入：嵌进双引号字符串会让 $var 在 eval 前就被展开
+      command,
     ]
   }
   if (n === "bash") {
@@ -191,10 +193,12 @@ export function args(file: string, command: string, cwd: string) {
         shopt -s expand_aliases
         [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
         cd -- "$1"
-        eval ${JSON.stringify(command)}
+        eval "$2"
       `,
       "opencode",
       cwd,
+      // 命令作为位置参数传入：嵌进双引号字符串会让 $var 在 eval 前就被展开
+      command,
     ]
   }
   if (n === "cmd") return ["/c", command]
@@ -203,7 +207,12 @@ export function args(file: string, command: string, cwd: string) {
 }
 
 /** Spawn target for running `command` in `file` (bin + argv). */
-export function launch(file: string, command: string, cwd: string): { command: string; args: string[] } {
+export function launch(
+  file: string,
+  command: string,
+  cwd: string,
+  opts?: { interactive?: boolean },
+): { command: string; args: string[] } {
   if (process.platform === "win32" && ps(file)) {
     // 写入带 BOM 的 UTF-8 临时脚本并用 -File 执行：-EncodedCommand 在 Windows PowerShell 5.1 下
     // 会先走 ANSI 命令行解码，CJK 脚本内容会被破坏（如“开发”→“闂l讲”）。脚本文件以 BOM 标记
@@ -214,7 +223,12 @@ export function launch(file: string, command: string, cwd: string): { command: s
     // 引号当字面字符传给 -File，导致 "Illegal characters in path"。
     return {
       command: process.env.COMSPEC || "cmd.exe",
-      args: ["/d", "/c", `chcp 65001>nul & ${shell} -NoLogo -NoProfile -NonInteractive -File ${script}`],
+      // 后台交互作业跑在 PTY 里，需要允许 Read-Host 等交互输入
+      args: [
+        "/d",
+        "/c",
+        `chcp 65001>nul & ${shell} -NoLogo -NoProfile${opts?.interactive ? "" : " -NonInteractive"} -File ${script}`,
+      ],
     }
   }
   return { command: file, args: args(file, command, cwd) }

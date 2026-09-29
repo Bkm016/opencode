@@ -14,6 +14,10 @@ export function parameterSchema() {
     workdir: Schema.optional(Schema.String).annotate({
       description: "Working directory, local or remote. Defaults to the current directory.",
     }),
+    background: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Run in a background PTY and return a job id immediately (for servers, watchers, REPLs, or prompts). Manage it with bash_job. Local only.",
+    }),
     host: Schema.optional(Schema.String).annotate({
       description: "SSH config alias or user@ip. Omit for local execution; remote commands use bash and require key authentication.",
     }),

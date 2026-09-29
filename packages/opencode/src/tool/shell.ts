@@ -1,4 +1,4 @@
-import { Deferred, Effect, Fiber, Stream } from "effect"
+import { Deferred, Effect, Fiber, Option, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import { mkdir } from "node:fs/promises"
@@ -25,6 +25,9 @@ import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { SessionRunState } from "@/session/run-state"
+import { ShellJobs } from "./shell/jobs"
+import { LocationServiceMap } from "@opencode-ai/core/location-services"
+import type { TaskPromptOps } from "./task"
 
 export { Parameters } from "./shell/prompt"
 
@@ -226,7 +229,7 @@ function preview(text: string) {
   return "...\n\n" + text.slice(-MAX_METADATA_LENGTH)
 }
 
-function tail(text: string, maxLines: number, maxBytes: number) {
+export function tail(text: string, maxLines: number, maxBytes: number) {
   const lines = text.split("\n")
   if (lines.length <= maxLines && Buffer.byteLength(text, "utf-8") <= maxBytes) {
     return {
@@ -292,6 +295,39 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
       command: input.command,
     },
   })
+})
+
+/** bash_job 往 shell 作业写入时的权限检查：按 shell 语法扫描出的每条命令走 bash 权限。 */
+export const askInput = Effect.fn("ShellTool.askInput")(function* (
+  ctx: Tool.Context,
+  text: string,
+  kind: "shell" | "ps" | "repl",
+  job: { id: string; command: string },
+) {
+  const scan: Scan = { dirs: new Set(), patterns: new Set(), always: new Set() }
+  if (kind !== "repl") {
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const tree = yield* Effect.acquireRelease(parse(text, kind === "ps"), (tree) =>
+          Effect.sync(() => tree.delete()),
+        )
+        for (const node of commands(tree.rootNode)) {
+          const tokens = parts(node).map((item) => item.text)
+          const cmd = kind === "ps" ? tokens[0]?.toLowerCase() : tokens[0]
+          if (!tokens.length || (cmd && CWD.has(cmd))) continue
+          scan.patterns.add(source(node))
+          scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+        }
+      }),
+    )
+  }
+  const program = job.command.trim().split(/\s+/)[0] ?? ""
+  for (const line of text.split("\n").map((item) => item.trim())) {
+    if (!line || scan.patterns.size) continue
+    scan.patterns.add(kind === "repl" ? `${program} ${line}` : line)
+    scan.always.add(kind === "repl" ? `${program} *` : line)
+  }
+  yield* ask(ctx, scan, { command: text })
 })
 
 // 远端执行：spawn 本地 ssh，脚本通过 stdin 喂给远端 bash -s，本地 shell 完全不参与解析，避免转义地狱。
@@ -365,6 +401,8 @@ export const ShellTool = Tool.define(
     const plugin = yield* Plugin.Service
     const flags = yield* RuntimeFlags.Service
     const runState = yield* SessionRunState.Service
+    // 可选依赖：测试等精简环境没有 location 服务时后台模式不可用，前台执行不受影响
+    const locations = yield* Effect.serviceOption(LocationServiceMap.Service)
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
@@ -648,6 +686,100 @@ export const ShellTool = Tool.define(
       }
     })
 
+    const background = Effect.fn("ShellTool.background")(function* (
+      input: {
+        shell: string
+        command: string
+        cwd: string
+        env: NodeJS.ProcessEnv
+        logDir: string
+        directory: string
+        description?: string
+      },
+      ctx: Tool.Context,
+    ) {
+      const context = yield* Effect.context<never>()
+      const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
+      const limits = yield* trunc.limits()
+      // 后台作业自行退出时写入一条 synthetic 用户消息：会话忙时下一步即可见，空闲时随下一条用户消息进入上下文
+      const note: ShellJobs.Note = (info, output) => {
+        if (!ops) return
+        const code = info.exitCode ?? "unknown"
+        Effect.runForkWith(context)(
+          ops
+            .prompt({
+              sessionID: ctx.sessionID as never,
+              agent: ctx.agent,
+              noReply: true,
+              parts: [
+                {
+                  type: "text",
+                  synthetic: true,
+                  text: [
+                    `<bash_job id="${info.id}" state="exited" exit_code="${code}">`,
+                    `<summary>Background command exited (code ${code}): ${info.description || info.command.split("\n")[0]}</summary>`,
+                    "<output>",
+                    tail(output, 40, limits.maxBytes).text || "(no new output)",
+                    "</output>",
+                    "</bash_job>",
+                  ].join("\n"),
+                },
+              ],
+            })
+            .pipe(Effect.ignore),
+        )
+      }
+      const job = yield* ShellJobs.start({
+        sessionID: ctx.sessionID,
+        directory: input.directory,
+        shell: input.shell,
+        command: input.command,
+        description: input.description,
+        cwd: input.cwd,
+        env: input.env,
+        logDir: input.logDir,
+        note,
+      }).pipe(
+        Effect.provideService(
+          LocationServiceMap.Service,
+          Option.getOrThrowWith(locations, () => new Error("background shell jobs are unavailable in this environment")),
+        ),
+      )
+      yield* ctx.metadata({
+        metadata: { output: "", background: true, jobId: job.info.id, status: "running" },
+      })
+      const first = yield* ShellJobs.settle(job, { minMs: 1000, quietMs: 700, maxMs: 5000, signal: ctx.abort })
+      const state = ShellJobs.view(job)
+      if (state.status !== "running") ShellJobs.markReported(job)
+      const shown = tail(first.text.replace(/\n+$/, ""), limits.maxLines, limits.maxBytes)
+      const head = [
+        `Background job ${state.id} ${state.status === "running" ? "is running" : `exited with code ${state.exitCode ?? "unknown"}`} (pid ${state.pid}).`,
+        `Full log: ${state.log}`,
+      ]
+      if (state.waitingForInput) head.push("The process appears to be waiting for input; send it with bash_job action=write.")
+      const body = shown.cut ? `...(earlier output omitted, see log)\n${shown.text}` : shown.text || "(no output yet)"
+      const foot =
+        state.status === "running"
+          ? `Manage with bash_job id="${state.id}": read (optionally with until=<regex>), write (input/keys), wait, kill.`
+          : ""
+      const output = [head.join("\n"), "Output so far:\n" + body, foot].filter(Boolean).join("\n\n")
+      return {
+        title: input.description || input.command,
+        metadata: {
+          output: preview(Shell.plain(first.text)),
+          exit: state.status === "running" ? null : (state.exitCode ?? null),
+          truncated: shown.cut,
+          host: "localhost",
+          workdir: input.cwd,
+          background: true,
+          jobId: state.id,
+          status: state.status,
+          outputPath: state.log,
+        },
+        output,
+      }
+    })
+
     return () =>
       Effect.gen(function* () {
         const cfg = yield* config.get()
@@ -684,6 +816,10 @@ export const ShellTool = Tool.define(
                 throw new Error(
                   "Do not invoke `ssh` directly in the command. Use the `host` parameter instead (e.g. host=\"user@ip\" or an SSH config alias). The command runs in a remote bash shell fed through stdin, so local shell escaping does not apply.",
                 )
+              }
+
+              if (params.host && params.background) {
+                throw new Error("background is only supported for local commands; omit host or background.")
               }
 
               // 远端模式：跳过本地路径解析与本地目录权限，改为按主机粒度的 ssh 权限询问。
@@ -724,6 +860,20 @@ export const ShellTool = Tool.define(
                   yield* ask(ctx, scan, params)
                 }),
               )
+
+              if (params.background) {
+                return yield* background(
+                  {
+                    shell,
+                    command: params.command,
+                    cwd,
+                    env: yield* shellEnv(ctx, cwd),
+                    logDir: path.join(tmp, "shell"),
+                    directory: instanceCtx.directory,
+                  },
+                  ctx,
+                )
+              }
 
               return yield* run(
                 {

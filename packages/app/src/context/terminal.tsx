@@ -19,6 +19,8 @@ export type LocalPTY = {
   buffer?: string
   scrollY?: number
   cursor?: number
+  // 代理后台作业的 PTY：关闭标签只分离视图，不结束进程
+  agent?: boolean
 }
 
 const WORKSPACE_KEY = "__workspace__"
@@ -53,6 +55,7 @@ function pty(value: unknown): LocalPTY | undefined {
   const buffer = text(value.buffer)
   const scrollY = num(value.scrollY)
   const cursor = num(value.cursor)
+  const agent = value.agent === true
 
   return {
     id,
@@ -63,6 +66,7 @@ function pty(value: unknown): LocalPTY | undefined {
     ...(buffer !== undefined ? { buffer } : {}),
     ...(scrollY !== undefined ? { scrollY } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(agent ? { agent } : {}),
   }
 }
 
@@ -374,6 +378,21 @@ function createWorkspaceTerminalSession(
     open(id: string) {
       setStore("active", id)
     },
+    /** 把已存在的 PTY（如代理后台作业）加入终端面板并激活 */
+    adopt(input: { id: string; title: string }) {
+      const index = store.all.findIndex((x) => x.id === input.id)
+      batch(() => {
+        if (index === -1) {
+          setStore("all", store.all.length, {
+            id: input.id,
+            title: input.title,
+            titleNumber: pickNextTerminalNumber(),
+            agent: true,
+          })
+        }
+        setStore("active", input.id)
+      })
+    },
     requestFocus(id?: string) {
       requestFocus(id)
     },
@@ -400,6 +419,7 @@ function createWorkspaceTerminalSession(
     },
     async close(id: string) {
       const index = store.all.findIndex((f) => f.id === id)
+      const agent = store.all[index]?.agent === true
       if (index !== -1) {
         batch(() => {
           if (store.active === id) {
@@ -415,6 +435,7 @@ function createWorkspaceTerminalSession(
         })
       }
 
+      if (agent) return
       await sdk.client.pty.remove({ ptyID: id }).catch((error: unknown) => {
         console.error("Failed to close terminal", error)
       })
@@ -511,6 +532,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       clone: (id: string) => workspace().clone(id),
       bind: () => workspace(),
       open: (id: string) => workspace().open(id),
+      adopt: (input: { id: string; title: string }) => workspace().adopt(input),
       requestFocus: (id?: string) => workspace().requestFocus(id),
       focusRequested: (id?: string) => workspace().focusRequested(id),
       consumeFocus: (id: string) => workspace().consumeFocus(id),

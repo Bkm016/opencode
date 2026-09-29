@@ -322,7 +322,7 @@
     padding: 10px 0;
     border: 0;
     background: transparent;
-    color: var(--v2-text-text-weak);
+    color: var(--v2-text-text-muted);
     cursor: pointer;
   }
 
@@ -341,7 +341,7 @@
     font-size: 12px;
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
-    color: var(--v2-text-text-weak);
+    color: var(--v2-text-text-muted);
     white-space: nowrap;
   }
 
@@ -757,6 +757,75 @@
 [data-slot="bash-trigger-exit"][data-exit="fail"] {
   color: var(--v2-state-fg-danger);
   background: color-mix(in srgb, var(--v2-state-fg-danger) 12%, transparent);
+}
+
+[data-slot="bash-trigger-background"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  margin-right: 2px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  padding: 1.5px 8px;
+  border-radius: 4px;
+  color: var(--v2-text-text-muted);
+  background: color-mix(in srgb, var(--v2-text-text-muted) 10%, transparent);
+}
+
+[data-slot="bash-trigger-background"][data-running="true"] {
+  color: var(--v2-state-fg-success);
+  background: color-mix(in srgb, var(--v2-state-fg-success) 12%, transparent);
+}
+
+[data-slot="bash-trigger-background-dot"] {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+[data-slot="bash-trigger-background"][data-running="true"] [data-slot="bash-trigger-background-dot"] {
+  opacity: 1;
+  animation: bash-background-pulse 1.6s ease-in-out infinite;
+}
+
+[data-slot="bash-job-actions"] {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+[data-component="context-tool-row"] [data-slot="bash-trigger-background"] {
+  margin-left: 6px;
+  padding: 0 6px;
+  line-height: 17px;
+}
+
+[data-slot="bash-job-status"] {
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--v2-text-text-muted);
+}
+
+@keyframes bash-background-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="bash-trigger-background"][data-running="true"] [data-slot="bash-trigger-background-dot"] {
+    animation: none;
+  }
 }
 
 [data-component="bash-output"] {

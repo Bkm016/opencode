@@ -206,7 +206,7 @@ export function isPythonGroupTool(part: Part): part is ToolPart {
 }
 
 export function isBashGroupTool(part: Part): part is ToolPart {
-  return part.type === "tool" && part.tool === "bash"
+  return part.type === "tool" && (part.tool === "bash" || part.tool === "bash_job")
 }
 
 const HISTORY_GROUP_TOOLS = new Set(["history_grep", "history_list"])

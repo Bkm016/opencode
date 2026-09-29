@@ -74,6 +74,7 @@ import {
 } from "@/pages/session/session-panel-width"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionCanvasProvider } from "@/pages/session/session-canvas-provider"
+import { SessionShellJobsProvider } from "@/pages/session/session-shell-jobs-provider"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -305,7 +306,9 @@ function SessionProviders(props: ParentProps) {
     <TerminalProvider>
       <PromptProvider>
         <CommentsProvider>
-          <SessionCanvasProvider>{props.children}</SessionCanvasProvider>
+          <SessionCanvasProvider>
+            <SessionShellJobsProvider>{props.children}</SessionShellJobsProvider>
+          </SessionCanvasProvider>
         </CommentsProvider>
       </PromptProvider>
     </TerminalProvider>

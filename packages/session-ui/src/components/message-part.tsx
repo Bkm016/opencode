@@ -84,7 +84,7 @@ import { GenericToolGroup as BaseGenericToolGroup, ContextToolGroup, PythonToolG
 import { McpGroupItem, McpGroupSummary, mcpInfo } from "./mcp-tool"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard, type MultiEditFileItem } from "./edit-tool-card"
-import { ScriptToolCard } from "./script-tool-card"
+import { ScriptToolCard, shellJobSubtitle, shellJobTitleKey } from "./script-tool-card"
 import { ComputerUseTool, ComputerUseToolGroup } from "./computer-use-tool"
 import { BrowserTool } from "./browser-tool"
 import { CanvasTool, CanvasSummary } from "./canvas-tool"
@@ -668,6 +668,12 @@ export function getToolInfo(
         icon: "console",
         title: i18n.t("ui.tool.shell"),
         subtitle: input.host ? `${input.command} (on ${input.host})` : input.command,
+      }
+    case "bash_job":
+      return {
+        icon: "console",
+        title: i18n.t(shellJobTitleKey(input.action)),
+        subtitle: shellJobSubtitle(input, metadata),
       }
     case "python":
       return {
@@ -3598,6 +3604,55 @@ ToolRegistry.register({
         error={props.error}
       />
     )
+  },
+})
+
+function ShellJobToolRender(props: ToolProps) {
+  const i18n = useI18n()
+  const title = createMemo(() => i18n.t(shellJobTitleKey(props.input.action)))
+  const subtitle = createMemo(() => shellJobSubtitle(props.input, props.metadata))
+  const output = createMemo(() => {
+    const raw = props.input.action === "list" ? props.output : (props.metadata?.output ?? props.output)
+    const text = typeof raw === "string" ? stripAnsi(raw).trimEnd() : ""
+    return text || undefined
+  })
+  const status = createMemo(() => {
+    const meta = props.metadata ?? {}
+    if (props.input.action === "list") return undefined
+    if (meta.waitingForInput === true) return i18n.t("ui.tool.shellJob.waitingInput")
+    if (meta.status === "exited" && typeof meta.exit === "number") return `${i18n.t("ui.tool.shell.exit")} ${meta.exit}`
+    return undefined
+  })
+
+  return (
+    <BasicTool
+      {...props}
+      icon="console"
+      hideDetails={!output()}
+      defaultOpen={false}
+      trigger={{
+        title: title(),
+        subtitle: subtitle(),
+        action: status() ? <span data-slot="bash-job-status">{status()}</span> : undefined,
+      }}
+    >
+      <Show when={output()}>
+        <div data-component="bash-output">
+          <div data-slot="bash-scroll" data-scrollable tabIndex={0} role="region" aria-label={i18n.t("ui.scrollView.ariaLabel")}>
+            <pre data-slot="bash-pre" data-section="output">
+              <code>{output()}</code>
+            </pre>
+          </div>
+        </div>
+      </Show>
+    </BasicTool>
+  )
+}
+
+ToolRegistry.register({
+  name: "bash_job",
+  render(props) {
+    return <ShellJobToolRender {...props} />
   },
 })
 

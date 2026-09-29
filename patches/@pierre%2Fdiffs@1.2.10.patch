@@ -1,0 +1,16 @@
+diff --git a/dist/renderers/DiffHunksRenderer.js b/dist/renderers/DiffHunksRenderer.js
+--- a/dist/renderers/DiffHunksRenderer.js
++++ b/dist/renderers/DiffHunksRenderer.js
+@@ -222,6 +222,12 @@ var DiffHunksRenderer = class {
+ 				this.renderCache.renderRange = renderRange;
+ 			}
+ 			if (!forcePlainText && hasContent && (!this.renderCache.highlighted || forceHighlight)) this.workerManager.highlightDiffAST(this, diff);
++			// A highlighted worker result is always computed for the full diff (startingLine 0, Infinity
++			// lines). getPlainDiffAST for a windowed render range produces sparse code arrays containing
++			// only the visible window; reusing those arrays for a different render range can leave
++			// deletionLines[...]/additionLines[...] undefined for iterated lines, so a highlighted cached
++			// result must never serve a windowed render.
++			if (this.renderCache.highlighted && !isDefaultRenderRange(renderRange)) return;
+ 		} else {
+ 			this.computedLang = diff.lang ?? getFiletypeFromFileName(diff.name);
+ 			const hasThemes = this.highlighter != null && areThemesAttached(options.theme);

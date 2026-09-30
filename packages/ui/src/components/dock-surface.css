@@ -42,8 +42,9 @@
   border-bottom-right-radius: 0;
 }
 
-/* 后台任务栏：与输入框同款底色，无边框无阴影。 */
-[data-component="session-shell-jobs-dock"] {
+/* 后台任务栏、助手栏：与输入框同款底色，无边框无阴影。 */
+[data-component="session-shell-jobs-dock"],
+[data-component="session-assistant-dock"] {
   background-color: var(--surface-inset-base);
   border: 0;
 }
@@ -57,12 +58,14 @@
   display: none;
 }
 
-[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"] {
+[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"],
+[data-component="session-assistant-dock"] [data-slot="assistant-dock-dot"][data-busy] {
   animation: bash-background-pulse 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"] {
+  [data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"],
+  [data-component="session-assistant-dock"] [data-slot="assistant-dock-dot"][data-busy] {
     animation: none;
   }
 }

@@ -18,6 +18,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
+import { FileGuard } from "./file-guard"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -87,6 +88,7 @@ export const EditTool = Tool.define(
           let contentNew = ""
           yield* lock(filePath).withPermits(1)(
             Effect.gen(function* () {
+              FileGuard.assertFresh(ctx.sessionID, filePath)
               if (params.oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
                 if (existed) {
@@ -112,6 +114,7 @@ export const EditTool = Tool.define(
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
                 }
+                FileGuard.wrote(ctx.sessionID, filePath)
                 yield* events.publish(FileSystem.Event.Edited, { file: filePath })
                 yield* events.publish(Watcher.Event.Updated, {
                   file: filePath,
@@ -156,6 +159,7 @@ export const EditTool = Tool.define(
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
               }
+              FileGuard.wrote(ctx.sessionID, filePath)
               yield* events.publish(FileSystem.Event.Edited, { file: filePath })
               yield* events.publish(Watcher.Event.Updated, {
                 file: filePath,

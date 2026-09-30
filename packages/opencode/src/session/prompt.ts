@@ -57,6 +57,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionChunk } from "./chunk"
 import { usable } from "./overflow"
 import { SessionReminders } from "./reminders"
+import { SessionAssistant } from "./assistant"
 import { SessionTools } from "./tools"
 import { Goal } from "./goal"
 import { SessionGoal } from "@opencode-ai/schema/session-goal"
@@ -1140,6 +1141,71 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    const activeGoal = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const current = yield* goalSvc.get(sessionID)
+      return current && current.status === "active" ? current : undefined
+    })
+
+    const realUser = (message: SessionV1.WithParts) =>
+      message.info.role === "user" &&
+      message.parts.some((part) => part.type === "text" && !("synthetic" in part && part.synthetic))
+
+    // 助手一轮正常结束后给主会话写一条「仅通知」：noReply 不唤醒主会话、不释放其等待；
+    // 主会话忙时下一步即可见，空闲时随下一条用户消息进入上下文。尚未被消费的通知合并为一条。
+    const notifyMain = Effect.fnUntraced(function* (
+      mainID: SessionID,
+      assistantID: SessionID,
+      final: SessionV1.WithParts,
+    ) {
+      // 助手自己的压缩摘要不是给主会话的结果
+      if (final.info.role !== "assistant" || final.info.error || final.info.summary) return
+      const own = yield* sessions.messages({ sessionID: assistantID }).pipe(Effect.orDie)
+      const index = own.findLastIndex(realUser)
+      if (index === -1) return
+      const request = own[index].parts
+        .flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+        .join("\n")
+      const reply = final.parts.flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : [])).join("\n")
+      const entry = SessionAssistant.noticeEntry({
+        request,
+        reply,
+        files: SessionAssistant.editedFiles(own.slice(index + 1)),
+      })
+
+      const merged = yield* state.admit(
+        mainID,
+        Effect.gen(function* () {
+          const [last] = yield* sessions.messages({ sessionID: mainID, limit: 1 }).pipe(Effect.orDie)
+          const pending =
+            last?.info.role === "user" && last.parts.every((part) => part.type === "text" && part.synthetic)
+              ? last.parts.find(
+                  (part): part is SessionV1.TextPart =>
+                    part.type === "text" && SessionAssistant.noticeEntries(part.text) !== undefined,
+                )
+              : undefined
+          if (!pending) return false
+          const entries = [...(SessionAssistant.noticeEntries(pending.text) ?? []), entry]
+          yield* sessions.updatePart({ ...pending, text: SessionAssistant.noticeText(entries) })
+          return true
+        }),
+      )
+      if (merged) return
+      // 沿用主会话最近一条真实用户消息的 agent / model，避免通知改变主会话下一步使用的模型
+      const anchor = yield* sessions.findMessage(mainID, realUser).pipe(Effect.orDie)
+      const user = Option.isSome(anchor) && anchor.value.info.role === "user" ? anchor.value.info : undefined
+      yield* promptImpl(
+        {
+          sessionID: mainID,
+          noReply: true,
+          agent: user?.agent,
+          model: user ? { providerID: user.model.providerID, modelID: user.model.modelID } : undefined,
+          variant: user?.model.variant,
+          parts: [{ type: "text", synthetic: true, text: SessionAssistant.noticeText([entry]) }],
+        },
+        false,
+      )
+    })
+
     // Goal reminder 构建
     const buildGoalSystemPrompt = (goal: Goal.Info, overrides?: Record<string, string | undefined> | null) => {
       const template = PromptCatalog.resolve("session.goal_contract", overrides)
@@ -1494,6 +1560,23 @@ const layer = Layer.effect(
         let step = 0
         let finalizingGoalID: SessionGoal.GoalID | undefined
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        // 助手会话：每一轮现场读取主会话历史作为前缀，system 也按主会话构建以保持前缀一致
+        const mainSession = SessionAssistant.isAssistant(session)
+          ? yield* sessions.get(session.parentID!).pipe(Effect.orDie)
+          : undefined
+        // 助手沿用主会话的权限：工具集与审批行为一致，工具定义相同才能命中缓存
+        const scoped = mainSession ? { ...session, permission: mainSession.permission } : session
+        // 主会话当前的投影历史（与主会话自己发请求时一致）与是否仍在工作
+        const mainContext = Effect.fnUntraced(function* (mainID: SessionID) {
+          const cfg = yield* config.get()
+          const main = yield* MessageV2.projectHistory({
+            sessionID: mainID,
+            strategy: cfg.compaction?.strategy,
+            chunk: cfg.compaction?.chunk,
+          }).pipe(Effect.provideService(Database.Service, database))
+          const busy = (yield* status.get(mainID)).type !== "idle"
+          return { main: main.messages, busy }
+        })
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1502,7 +1585,8 @@ const layer = Layer.effect(
           const cfgForProjection = yield* config.get()
           const history = yield* MessageV2.projectHistory({
             sessionID,
-            strategy: cfgForProjection.compaction?.strategy,
+            // 助手的前缀是主会话，只能整体做模型摘要，不走 chunk
+            strategy: mainSession ? "model" : cfgForProjection.compaction?.strategy,
             chunk: cfgForProjection.compaction?.chunk,
           }).pipe(
             Effect.provideService(Database.Service, database),
@@ -1539,7 +1623,11 @@ const layer = Layer.effect(
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
             !compactionSummaryPrecedesLastUser &&
-            lastUser.id <= lastAssistant.parentID
+            (lastUser.id <= lastAssistant.parentID ||
+              // 之后只有助手的「仅通知」消息时不为它再跑一轮，避免打断主会话
+              msgs.every(
+                (m) => m.info.role !== "user" || m.info.id <= lastAssistant.parentID || SessionAssistant.isNoticeOnly(m),
+              ))
 
           if (assistantNormallyFinished) {
             // 检查是否有 pending 真实用户消息（非 synthetic）
@@ -1630,6 +1718,31 @@ const layer = Layer.effect(
             // chunk 策略下 compaction 不跑模型摘要：边界由 loop 退出时的
             // persistChunkBoundary 持久化。这里持久化边界后直接退出 loop，
             // 避免同一 compaction task 被 latest() 反复拾取造成空转。
+            if (mainSession) {
+              // 助手：把「主会话 + 助手对话」整体压成摘要，记下覆盖到的主会话位置，之后只接着读主会话的新内容
+              const shared = yield* mainContext(mainSession.id)
+              const current = yield* sessions.get(sessionID).pipe(Effect.orDie)
+              const stored = current.metadata?.[SessionAssistant.CUTOFF]
+              const previous = typeof stored === "string" ? stored : undefined
+              const cutoff = SessionAssistant.cutoffOf({ main: shared.main, busy: shared.busy, previous })
+              const result = yield* compaction.process({
+                messages: SessionAssistant.view({ main: shared.main, own: msgs, cutoff: previous }),
+                parentID: lastUser.id,
+                sessionID,
+                auto: task.auto,
+                overflow: task.overflow,
+                noTail: true,
+              })
+              if (result !== "stop" && cutoff) {
+                const latest = yield* sessions.get(sessionID).pipe(Effect.orDie)
+                yield* sessions.setMetadata({
+                  sessionID,
+                  metadata: { ...latest.metadata, [SessionAssistant.CUTOFF]: cutoff },
+                })
+              }
+              if (result === "stop") break
+              continue
+            }
             const cfg = yield* config.get()
             // overflow task 是 chunk replay 再次超限后的 model fallback，必须执行模型摘要。
             if (cfg.compaction?.strategy === "chunk" && task.overflow !== true) {
@@ -1657,7 +1770,7 @@ const layer = Layer.effect(
           if (
             lastFinished &&
             lastFinished.summary !== true &&
-            cfgForProjection.compaction?.strategy !== "chunk" &&
+            (mainSession || cfgForProjection.compaction?.strategy !== "chunk") &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
@@ -1730,7 +1843,7 @@ const layer = Layer.effect(
             if (!isFinalizing) {
               tools = yield* SessionTools.resolve({
                 agent,
-                session,
+                session: scoped,
                 model,
                 processor: handle,
                 bypassAgentCheck,
@@ -1761,6 +1874,22 @@ const layer = Layer.effect(
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
             let providerMsgs = msgs
+            if (mainSession) {
+              const shared = yield* mainContext(mainSession.id)
+              const current = yield* sessions.get(sessionID).pipe(Effect.orDie)
+              const cutoff = current.metadata?.[SessionAssistant.CUTOFF]
+              providerMsgs = SessionAssistant.view({
+                main: shared.main,
+                own: msgs,
+                cutoff: typeof cutoff === "string" ? cutoff : undefined,
+                instruction: (compacted) =>
+                  SessionAssistant.instruction({
+                    mainBusy: shared.busy,
+                    mainFiles: SessionAssistant.editedFiles(shared.main.slice(-40)),
+                    compacted,
+                  }),
+              })
+            }
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: providerMsgs })
 
             // 媒体总量上限对所有 compaction strategy 生效：单张图片的尺寸限制拦不住
@@ -1770,9 +1899,9 @@ const layer = Layer.effect(
             const [system, initialModelMsgs] = yield* Effect.all([
               providerTurnSystem({
                 agent,
-                session,
+                session: mainSession ?? session,
                 format: lastUser.format,
-                goal: goalIsActive ? capturedGoal : undefined,
+                goal: mainSession ? yield* activeGoal(mainSession.id) : goalIsActive ? capturedGoal : undefined,
               }).pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes }),
             ])
@@ -1845,7 +1974,7 @@ const layer = Layer.effect(
             const result = yield* handle.process({
               user: lastUser,
               agent,
-              permission: session.permission,
+              permission: scoped.permission,
               sessionID,
               parentSessionID: session.parentID,
               system,
@@ -1983,7 +2112,7 @@ const layer = Layer.effect(
               // 投影在下一轮重新按 24K 预算裁剪后重试；长 user text 已提前替换为
               // 有界引用，仍超限只代表 active tail 或 system/tool 本身无法容纳。
               const cfg = yield* config.get()
-              if (cfg.compaction?.strategy === "chunk") {
+              if (cfg.compaction?.strategy === "chunk" && !mainSession) {
                 const chunkRecovery = lastUserMsg?.parts.some(
                   (part) => part.type === "text" && part.metadata?.[SessionChunk.COMPACTION_RECOVERY] === true,
                 )
@@ -2042,7 +2171,9 @@ const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        const final = yield* lastAssistant(sessionID)
+        if (mainSession) yield* notifyMain(mainSession.id, sessionID, final).pipe(Effect.ignore)
+        return final
     }) as (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts>
 
     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (

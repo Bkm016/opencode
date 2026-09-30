@@ -63,6 +63,7 @@ import {
   type PromptInputSubmission,
 } from "./prompt-input/contracts"
 import { createPromptSubmit } from "./prompt-input/submit"
+import { assistantMode, setAssistantMode } from "./prompt-input/assistant"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
@@ -169,6 +170,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
   const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  // 助手模式：发送进入助手子会话；主会话忙时也照常发送，不会触发停止
+  const assisting = createMemo(() => assistantMode(props.controls.session.id))
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
@@ -199,7 +202,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       .join("")
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
-  const stopping = createMemo(() => working() && blank())
+  const stopping = createMemo(() => working() && blank() && !assisting())
   const tip = () => {
     if (stopping()) {
       return (
@@ -237,7 +240,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const suggest = createMemo(() => !hasUserPrompt())
 
   const placeholder = createMemo(() =>
-    promptPlaceholder({
+    assisting() && store.mode === "normal" ? language.t("assistant.placeholder") : promptPlaceholder({
       mode: store.mode,
       commentCount: commentCount(),
       example: suggest() ? (store.mode === "shell" ? "git status" : language.t(EXAMPLES[store.placeholder])) : "",
@@ -1134,6 +1137,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       newSessionWorktree: () => props.newSessionWorktree,
       onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
       shouldQueue: props.shouldQueue,
+      assistant: assisting,
       onQueue: props.onQueue,
       onAbort: props.onAbort,
       onSubmit: props.onSubmit,
@@ -1187,6 +1191,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
       if (store.mode === "shell") {
         setStore("mode", "normal")
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+
+      if (assisting()) {
+        setAssistantMode(props.controls.session.id!, false)
         event.preventDefault()
         event.stopPropagation()
         return
@@ -1343,7 +1354,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // 合体卡片：外壳统一承载圆角与背景，内部的 shell / tray 由 dock-surface CSS 合并为一张卡片。
     <div
       data-component="prompt-input-root"
+      data-assistant={assisting() ? "" : undefined}
       class="relative size-full flex flex-col gap-0 rounded-xl bg-surface-inset-base"
+      style={assisting() ? { "box-shadow": "0 0 0 1.5px var(--border-info-base)" } : undefined}
     >
       <PromptPopover
         popover={store.popover}
@@ -1653,6 +1666,46 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         </Button>
                       </TooltipKeybind>
                     </div>
+                    <Show when={props.controls.session.id}>
+                      {(sessionID) => (
+                        <div
+                          data-component="prompt-assistant"
+                          classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
+                        >
+                          <Tooltip
+                            placement="top"
+                            gutter={4}
+                            value={assisting() ? language.t("assistant.exit") : language.t("assistant.enter")}
+                          >
+                            <Button
+                              data-action="prompt-assistant"
+                              data-active={assisting() ? "true" : undefined}
+                              variant="ghost"
+                              size="normal"
+                              icon="speech-bubble"
+                              aria-pressed={assisting()}
+                              aria-label={language.t("assistant.title")}
+                              classList={{
+                                "text-13-regular max-w-[120px]": true,
+                                "text-text-weak": !assisting(),
+                              }}
+                              style={{
+                                ...control(),
+                                color: assisting() ? "var(--icon-info-active)" : undefined,
+                                "--icon-base": assisting() ? "var(--icon-info-active)" : undefined,
+                                "--surface-base-active": "transparent",
+                              }}
+                              onClick={() => {
+                                setAssistantMode(sessionID(), !assisting())
+                                restoreFocus()
+                              }}
+                            >
+                              <span class="truncate max-md:hidden">{language.t("assistant.title")}</span>
+                            </Button>
+                          </Tooltip>
+                        </div>
+                      )}
+                    </Show>
                   </Show>
                 </Show>
               </div>

@@ -142,6 +142,8 @@ export interface Interface {
     sessionID: SessionID
     auto: boolean
     overflow?: boolean
+    /** 全部历史都进摘要、不保留最近几轮原文（助手的合并视图里原文可能属于主会话，无法按 ID 回放） */
+    noTail?: boolean
   }) => Effect.Effect<"continue" | "stop">
   readonly replayUser: (input: {
     sessionID: SessionID
@@ -378,6 +380,7 @@ const layer = Layer.effect(
       sessionID: SessionID
       auto: boolean
       overflow?: boolean
+      noTail?: boolean
     }) {
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") {
@@ -422,7 +425,7 @@ const layer = Layer.effect(
       const previousSummary = prior.at(-1)?.summary
       const selected = yield* select({
         messages: history.filter((_, index) => !hidden.has(index)),
-        cfg,
+        cfg: input.noTail ? { ...cfg, compaction: { ...cfg.compaction, tail_turns: 0 } } : cfg,
         model,
       })
       // Allow plugins to inject context or replace compaction prompt.

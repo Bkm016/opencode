@@ -14,6 +14,7 @@ import { FileSystem } from "@opencode-ai/core/filesystem"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
+import { FileGuard } from "./file-guard"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -78,6 +79,9 @@ export const ApplyPatchTool = Tool.define(
           Effect.gen(function* () {
             const filePath = resolveInputPath(instance.directory, hunk.path)
             yield* assertExternalDirectoryEffect(ctx, filePath)
+            if (hunk.type !== "add") {
+              yield* Effect.try({ try: () => FileGuard.assertFresh(ctx.sessionID, filePath), catch: (error) => error as Error })
+            }
 
             switch (hunk.type) {
               case "add": {
@@ -262,7 +266,9 @@ export const ApplyPatchTool = Tool.define(
             break
         }
 
+        FileGuard.wrote(ctx.sessionID, change.filePath)
         if (edited) {
+          FileGuard.wrote(ctx.sessionID, edited)
           if (yield* format.file(edited)) {
             yield* Bom.syncFile(afs, edited, change.bom)
           }

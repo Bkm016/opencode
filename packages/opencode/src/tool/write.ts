@@ -15,6 +15,7 @@ import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
+import { FileGuard } from "./file-guard"
 
 export const Parameters = Schema.Struct({
   content: Schema.String.annotate({ description: "The content to write to the file" }),
@@ -41,6 +42,7 @@ export const WriteTool = Tool.define(
            const filepath = resolveInputPath(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
+          FileGuard.assertFresh(ctx.sessionID, filepath)
           const exists = yield* fs.existsSafe(filepath)
           const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "" }
           const next = Bom.split(params.content)
@@ -63,6 +65,7 @@ export const WriteTool = Tool.define(
           if (yield* format.file(filepath)) {
             yield* Bom.syncFile(fs, filepath, desiredBom)
           }
+          FileGuard.wrote(ctx.sessionID, filepath)
           yield* events.publish(FileSystem.Event.Edited, { file: filepath })
           yield* events.publish(Watcher.Event.Updated, {
             file: filepath,

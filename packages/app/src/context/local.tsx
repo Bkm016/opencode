@@ -11,6 +11,7 @@ import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } fro
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
+import { assistantMode } from "@/components/prompt-input/assistant"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
@@ -64,7 +65,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const providers = useProviders(() => sdk().directory)
     const models = useModels()
 
-    const id = createMemo(() => params.id || undefined)
+    // 助手模式下智能体/模型选择单独保存，切换不影响主会话；未单独选过时沿用主会话的选择
+    const main = createMemo(() => params.id || undefined)
+    const id = createMemo(() => {
+      const session = main()
+      if (!session) return undefined
+      return assistantMode(session) ? `${session}:assistant` : session
+    })
     const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
     const agentsVisible = () => true
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
@@ -125,7 +132,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       if (!session) return store.draft ?? store.promoting
-      return saved.session[session] ?? handoff.get(handoffKey(serverSDK().scope, sdk().directory, session))
+      const own = saved.session[session] ?? handoff.get(handoffKey(serverSDK().scope, sdk().directory, session))
+      if (own || session === main()) return own
+      const parent = main()!
+      return saved.session[parent] ?? handoff.get(handoffKey(serverSDK().scope, sdk().directory, parent))
     })
 
     createEffect(() => {

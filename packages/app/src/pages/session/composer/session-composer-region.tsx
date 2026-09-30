@@ -7,6 +7,7 @@ import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import { SessionGoalDock } from "@/pages/session/composer/session-goal-dock"
 import { SessionShellJobsDock } from "@/pages/session/composer/session-shell-jobs-dock"
+import { SessionAssistantDock } from "@/pages/session/composer/session-assistant-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 export function SessionComposerRegion(props: {
@@ -61,6 +62,7 @@ export function SessionComposerRegion(props: {
           <Show when={controller.sessionID()} keyed>
             {(sessionID) => (
               <div class="pb-2 pointer-events-auto flex flex-col gap-2">
+                <SessionAssistantDock sessionID={sessionID} />
                 <SessionShellJobsDock sessionID={sessionID} />
                 <SessionGoalDock sessionID={sessionID} />
               </div>

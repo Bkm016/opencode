@@ -10,6 +10,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { resolveInputPath } from "@/util/filesystem"
+import { FileGuard } from "./file-guard"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -338,6 +339,7 @@ export const ReadTool = Tool.define<
       }
       output += "\n</content>"
 
+      FileGuard.saw(ctx.sessionID, filepath)
       if (loaded.length > 0) {
         output += `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>`
       }

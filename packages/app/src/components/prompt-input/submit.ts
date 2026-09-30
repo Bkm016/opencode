@@ -19,6 +19,7 @@ import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
+import { ensureAssistant } from "./assistant"
 
 type PendingPrompt = {
   abort: AbortController
@@ -237,6 +238,8 @@ type PromptSubmitInput = {
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
+  /** 助手模式：发送进入当前会话的助手子会话 */
+  assistant?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
@@ -345,7 +348,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const mode = input.mode()
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
-      if (input.working()) void abort()
+      if (input.working() && !input.assistant?.()) void abort()
       return
     }
 
@@ -486,6 +489,38 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         input.queueScroll()
       })
       return true
+    }
+
+    if (!isNewSession && mode === "normal" && input.assistant?.()) {
+      const failed = (err?: unknown) => {
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: err ? errorMessage(err) : language.t("prompt.toast.promptSendFailed.description"),
+        })
+        restoreInput()
+      }
+      clearInput()
+      const helper = await ensureAssistant({
+        mainID: session.id,
+        sessions: sync().data.session,
+        client,
+        remember: (info) => seed(sessionDirectory, info),
+        title: language.t("assistant.title"),
+      }).catch((err) => {
+        failed(err)
+        return null
+      })
+      if (helper === null) return
+      if (!helper) return failed()
+      void sendFollowupDraft({
+        client,
+        sync: sync(),
+        serverSync: serverSync(),
+        draft: { ...draft, sessionID: helper.id },
+        optimisticBusy: true,
+        openProjectDirectories: input.openProjectDirectories?.(),
+      }).catch(failed)
+      return
     }
 
     const goalCommand = text === "/goal" || text.startsWith(GOAL_PREFIX)

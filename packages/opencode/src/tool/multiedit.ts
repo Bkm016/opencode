@@ -10,6 +10,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
 import { resolveInputPath } from "@/util/filesystem"
+import { FileGuard } from "./file-guard"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { replace, trimDiff } from "./edit"
 import { InputAlias } from "./input-aliases"
@@ -152,6 +153,13 @@ export const MultiEditTool = Tool.define(
 
             let state = byFile.get(filePath)
             if (!state) {
+              try {
+                FileGuard.assertFresh(ctx.sessionID, filePath)
+              } catch (error) {
+                failedFiles.add(filePath)
+                failures.push({ index, relativePath: relative, error: (error as Error).message })
+                continue
+              }
               const info = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (info?.type === "Directory") {
                 failedFiles.add(filePath)
@@ -294,6 +302,7 @@ export const MultiEditTool = Tool.define(
             if (yield* format.file(change.filePath)) {
               yield* Bom.syncFile(afs, change.filePath, change.bom)
             }
+            FileGuard.wrote(ctx.sessionID, change.filePath)
             yield* events.publish(FileSystem.Event.Edited, { file: change.filePath })
             yield* events.publish(Watcher.Event.Updated, {
               file: change.filePath,

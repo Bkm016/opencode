@@ -799,6 +799,8 @@ export const dict = {
   "goal.toast.lessonDisableFailed.title": "經驗停用失敗",
   "goal.toast.lessonDeleted.title": "經驗已刪除",
   "goal.toast.lessonDeleteFailed.title": "經驗刪除失敗",
+  "session.shellJobs.title": "背景任務",
+  "session.shellJobs.waiting": "等待輸出…",
   "goal.dock.title": "目標",
   "goal.dock.status.active": "執行中",
   "goal.dock.status.paused": "已暫停",

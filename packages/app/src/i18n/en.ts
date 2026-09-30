@@ -863,6 +863,8 @@ export const dict = {
   "goal.toast.lessonDisableFailed.title": "Failed to disable lesson",
   "goal.toast.lessonDeleted.title": "Lesson deleted",
   "goal.toast.lessonDeleteFailed.title": "Failed to delete lesson",
+  "session.shellJobs.title": "Background",
+  "session.shellJobs.waiting": "Waiting for output…",
   "goal.dock.title": "Goal",
   "goal.dock.status.active": "Active",
   "goal.dock.status.paused": "Paused",

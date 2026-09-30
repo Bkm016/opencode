@@ -41,3 +41,28 @@
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
+
+/* 后台任务栏：与输入框同款底色，无边框无阴影。 */
+[data-component="session-shell-jobs-dock"] {
+  background-color: var(--surface-inset-base);
+  border: 0;
+}
+
+[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-output"] {
+  mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+}
+
+/* 任务栏里都是运行中的任务，状态徽标多余，用行首的呼吸点代替 */
+[data-component="session-shell-jobs-dock"] [data-slot="bash-trigger-background"] {
+  display: none;
+}
+
+[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"] {
+  animation: bash-background-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"] {
+    animation: none;
+  }
+}

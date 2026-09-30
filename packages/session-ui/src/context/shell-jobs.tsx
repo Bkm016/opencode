@@ -8,6 +8,8 @@ export type ShellJobs = {
   stop: (id: string) => Promise<void>
   /** 在终端面板中打开（attach 到同一个 PTY） */
   open: (id: string, title: string) => void
+  /** 只读订阅作业的终端输出：先回放已有缓冲，再实时推送；返回取消订阅 */
+  watch?: (id: string, onData: (chunk: string) => void) => () => void
 }
 
 export const ShellJobsContext = createContext<ShellJobs>()

@@ -1,4 +1,5 @@
-import { ShellJobBadges, ShellJobControls, shellJobSubtitle, shellJobTitleKey } from "./script-tool-card"
+import { ShellJobBadges, ShellJobControls, shellJobSubtitle, shellJobTitleKey, useShellJobLive } from "./script-tool-card"
+import { useShellJobs } from "../context/shell-jobs"
 import { Show, Index, createMemo, createSignal, createEffect, onCleanup, type JSX } from "solid-js"
 import stripAnsi from "strip-ansi"
 import type { AssistantMessage, ToolPart } from "@opencode-ai/sdk/v2"
@@ -440,19 +441,21 @@ function ScriptGroupItem(props: {
     return typeof raw === "string" ? raw.replace(/^Error:\s*/, "").trim() : ""
   })
 
-  const input = (props.part.state.input ?? {}) as Record<string, unknown>
-  const meta = (("metadata" in props.part.state ? (props.part.state as any).metadata : undefined) ?? {}) as Record<string, unknown>
+  // 工具状态在 running → completed 时会整体替换，必须每次从 props 读取，否则拿不到后续的 metadata
+  const input = () => (props.part.state.input ?? {}) as Record<string, unknown>
+  const meta = () =>
+    (("metadata" in props.part.state ? (props.part.state as any).metadata : undefined) ?? {}) as Record<string, unknown>
   const remote = createMemo(() => {
-    const value = input.host ?? meta.host
+    const value = input().host ?? meta().host
     return typeof value === "string" && value ? value : undefined
   })
   const host = createMemo(() => remote() ?? "localhost")
   const workdir = createMemo(() => {
-    const value = input.workdir ?? meta.workdir
+    const value = input().workdir ?? meta().workdir
     return typeof value === "string" && value ? value : undefined
   })
   const scriptContent = createMemo(() => {
-    const raw = typeof input[props.codeKey] === "string" ? input[props.codeKey] : (meta[props.codeKey] ?? "")
+    const raw = typeof input()[props.codeKey] === "string" ? input()[props.codeKey] : (meta()[props.codeKey] ?? "")
     return String(raw).replace(/\r\n?/g, "\n").trimEnd()
   })
   const scriptPreview = createMemo(() => {
@@ -461,13 +464,22 @@ function ScriptGroupItem(props: {
     const extra = lines.length - 1
     return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
   })
+  // 后台作业展开时实时订阅终端输出；仍在运行的作业默认展开，方便直接看输出
+  const jobs = useShellJobs()
+  const live = useShellJobLive(meta, open)
+  createEffect(() => {
+    const id = live.jobId()
+    if (id && (jobs?.running(id) ?? meta().status === "running")) setOpen(true)
+  })
   const output = createMemo(() => {
-    const raw = props.part.state.status === "completed" ? (props.part.state as any).output : meta.output
+    const streamed = live.text()
+    if (streamed !== undefined) return streamed
+    const raw = props.part.state.status === "completed" ? (props.part.state as any).output : meta().output
     const text = typeof raw === "string" ? raw : ""
     return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
   })
   const exit = createMemo(() => {
-    const code = meta.exit
+    const code = meta().exit
     return typeof code === "number" ? code : undefined
   })
   const failed = createMemo(() => exit() !== undefined && exit() !== 0)
@@ -524,7 +536,7 @@ function ScriptGroupItem(props: {
           <Show when={!pending() && duration()}>
             <span data-slot="context-tool-duration">{duration()}</span>
           </Show>
-          <ShellJobControls metadata={meta} title={scriptPreview()} />
+          <ShellJobControls metadata={meta()} title={scriptPreview()} />
           <Show when={!pending() && failed()}>
             <span data-slot="bash-trigger-exit" data-exit="fail">
               {i18n.t("ui.tool.shell.exit")} {exit()}

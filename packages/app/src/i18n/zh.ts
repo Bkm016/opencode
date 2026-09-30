@@ -831,6 +831,8 @@ export const dict = {
   "goal.toast.lessonDisableFailed.title": "经验停用失败",
   "goal.toast.lessonDeleted.title": "经验已删除",
   "goal.toast.lessonDeleteFailed.title": "经验删除失败",
+  "session.shellJobs.title": "后台任务",
+  "session.shellJobs.waiting": "等待输出…",
   "goal.dock.title": "目标",
   "goal.dock.status.active": "运行中",
   "goal.dock.status.paused": "已暂停",

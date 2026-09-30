@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, Show } from "solid-js"
+import { createSignal, createMemo, createEffect, onCleanup, Show, type Accessor } from "solid-js"
 import stripAnsi from "strip-ansi"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -76,7 +76,16 @@ export function ScriptToolCard(props: ScriptToolCardProps) {
     return extra > 0 ? `${first.trimEnd()} … (${extra + 1} lines)` : first
   })
 
+  const jobs = useShellJobs()
+  const live = useShellJobLive(() => props.metadata, open)
+  createEffect(() => {
+    const id = live.jobId()
+    if (id && (jobs?.running(id) ?? props.metadata?.status === "running")) setOpen(true)
+  })
+
   const outputText = createMemo(() => {
+    const streamed = live.text()
+    if (streamed !== undefined) return streamed
     const raw = props.output ?? props.metadata?.output
     const text = typeof raw === "string" ? raw : ""
     return stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd()
@@ -234,6 +243,65 @@ export function ScriptToolCard(props: ScriptToolCardProps) {
     </div>
   </div>
   )
+}
+
+const LIVE_LIMIT = 256 * 1024
+
+/** 把终端原始输出整理成纯文本：去 ANSI、同一行内的 \r 只保留最后一帧、处理退格与其余控制字符 */
+export function terminalText(raw: string) {
+  return stripAnsi(raw.replace(/\r\n/g, "\n"))
+    .split("\n")
+    .map((line) => {
+      const frame = line.slice(line.lastIndexOf("\r") + 1)
+      let out = ""
+      for (const ch of frame) {
+        if (ch === "\b") out = out.slice(0, -1)
+        else if (ch === "\t" || ch >= " ") out += ch
+      }
+      return out
+    })
+    .join("\n")
+    .trimEnd()
+}
+
+/**
+ * 后台作业的实时输出：卡片展开时通过宿主订阅 PTY（先回放再推送），
+ * 返回整理后的文本；未展开、没有宿主或还没收到数据时返回 undefined，由调用方回退到工具结果快照。
+ */
+export function useShellJobLive(metadata: Accessor<Record<string, any> | undefined>, open: Accessor<boolean>) {
+  const jobs = useShellJobs()
+  const [text, setText] = createSignal<string>()
+  const jobId = createMemo(() => {
+    const meta = metadata()
+    return meta?.background === true && typeof meta.jobId === "string" ? meta.jobId : undefined
+  })
+  createEffect(() => {
+    const id = jobId()
+    const watch = jobs?.watch
+    // 切换到别的作业时不残留上一个作业的输出
+    setText(undefined)
+    if (!id || !watch || !open()) return
+    let raw = ""
+    let frame: number | undefined
+    const flush = () => {
+      frame = undefined
+      setText(terminalText(raw))
+    }
+    const stop = watch(id, (chunk) => {
+      raw += chunk
+      if (raw.length > LIVE_LIMIT) {
+        const cut = raw.indexOf("\n", raw.length - LIVE_LIMIT)
+        raw = raw.slice(cut === -1 ? raw.length - LIVE_LIMIT : cut + 1)
+      }
+      // 高频输出按帧合并，避免每个分片都重排整段文本
+      if (frame === undefined) frame = requestAnimationFrame(flush)
+    })
+    onCleanup(() => {
+      stop()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    })
+  })
+  return { jobId, text }
 }
 
 /** 命令分组标题上的后台作业徽标：折叠时也能看到仍在运行的后台进程（标题是按钮，不放操作按钮）。 */

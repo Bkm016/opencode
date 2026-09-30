@@ -344,6 +344,7 @@ export const dict = {
   "prompt.toast.sessionCreateFailed.title": "创建会话失败",
   "prompt.toast.shellSendFailed.title": "发送 shell 命令失败",
   "prompt.toast.commandSendFailed.title": "发送命令失败",
+  "prompt.toast.stopFailed.title": "停止失败",
   "prompt.toast.promptSendFailed.title": "发送提示失败",
   "prompt.toast.promptSendFailed.description": "无法获取会话",
 

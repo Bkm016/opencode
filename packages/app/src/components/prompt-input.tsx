@@ -33,6 +33,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
@@ -62,7 +63,7 @@ import {
   type PromptInputState,
   type PromptInputSubmission,
 } from "./prompt-input/contracts"
-import { createPromptSubmit } from "./prompt-input/submit"
+import { clearStopRequested, createPromptSubmit, stopRequested } from "./prompt-input/submit"
 import { assistantMode, setAssistantMode } from "./prompt-input/assistant"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { PromptContextItems } from "./prompt-input/context-items"
@@ -169,7 +170,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
-  const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  const busy = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  // 已点停止、服务端还没回空闲时按已停止显示；真实回到空闲后清掉标记
+  const working = createMemo(() => busy() && !stopRequested(props.controls.session.id))
+  createEffect(
+    on(busy, (value) => {
+      const id = props.controls.session.id
+      if (!value && id) clearStopRequested(id)
+    }),
+  )
   // 助手模式：发送进入助手子会话；主会话忙时也照常发送，不会触发停止
   const assisting = createMemo(() => assistantMode(props.controls.session.id))
   const imageAttachments = createMemo(() =>
@@ -240,13 +249,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const suggest = createMemo(() => !hasUserPrompt())
 
   const placeholder = createMemo(() =>
-    assisting() && store.mode === "normal" ? language.t("assistant.placeholder") : promptPlaceholder({
-      mode: store.mode,
-      commentCount: commentCount(),
-      example: suggest() ? (store.mode === "shell" ? "git status" : language.t(EXAMPLES[store.placeholder])) : "",
-      suggest: suggest(),
-      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
-    }),
+    assisting() && store.mode === "normal"
+      ? language.t("assistant.placeholder")
+      : promptPlaceholder({
+          mode: store.mode,
+          commentCount: commentCount(),
+          example: suggest() ? (store.mode === "shell" ? "git status" : language.t(EXAMPLES[store.placeholder])) : "",
+          suggest: suggest(),
+          t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+        }),
   )
 
   const historyComments = () => {
@@ -1112,38 +1123,41 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     permission.toggleAutoAcceptDirectory(sdk().directory)
   }
 
-  const { abort, handleSubmit } =
-    props.submission ??
-    createPromptSubmit({
-      prompt,
-      info,
-      imageAttachments,
-      commentCount,
-      autoAccept: () => accepting(),
-      mode: () => store.mode,
-      working,
-      editor: () => editorRef,
-      queueScroll,
-      promptLength,
-      addToHistory,
-      resetHistoryNavigation: () => {
-        resetHistoryNavigation(true)
-      },
-      setMode: (mode) => setStore("mode", mode),
-      setPopover: (popover) => {
-        if (!popover) return closePopover()
-        setStore({ popover, slashMenu: false, slashMenuQuery: "" })
-      },
-      newSessionWorktree: () => props.newSessionWorktree,
-      onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
-      shouldQueue: props.shouldQueue,
-      assistant: assisting,
-      onQueue: props.onQueue,
-      onAbort: props.onAbort,
-      onSubmit: props.onSubmit,
-      model: props.controls.model.selection,
-      openProjectDirectories: () => server.projects.list().map((project) => project.worktree),
-    })
+  const {
+    abort,
+    handleSubmit,
+    starting = () => false,
+  } = props.submission ??
+  createPromptSubmit({
+    prompt,
+    info,
+    imageAttachments,
+    commentCount,
+    autoAccept: () => accepting(),
+    mode: () => store.mode,
+    working,
+    editor: () => editorRef,
+    queueScroll,
+    promptLength,
+    addToHistory,
+    resetHistoryNavigation: () => {
+      resetHistoryNavigation(true)
+    },
+    setMode: (mode) => setStore("mode", mode),
+    setPopover: (popover) => {
+      if (!popover) return closePopover()
+      setStore({ popover, slashMenu: false, slashMenuQuery: "" })
+    },
+    newSessionWorktree: () => props.newSessionWorktree,
+    onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
+    shouldQueue: props.shouldQueue,
+    assistant: assisting,
+    onQueue: props.onQueue,
+    onAbort: props.onAbort,
+    onSubmit: props.onSubmit,
+    model: props.controls.model.selection,
+    openProjectDirectories: () => server.projects.list().map((project) => project.worktree),
+  })
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
@@ -1428,7 +1442,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               role="textbox"
               aria-multiline="true"
               aria-label={placeholder()}
-              contenteditable="true"
+              contenteditable={starting() ? "false" : "true"}
+              aria-busy={starting()}
               autocapitalize={store.mode === "normal" ? "sentences" : "off"}
               autocorrect={store.mode === "normal" ? "on" : "off"}
               spellcheck={store.mode === "normal"}
@@ -1448,6 +1463,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
+                "opacity-60 transition-opacity": starting(),
               }}
             />
             <div
@@ -1590,8 +1606,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             )}
                           </Show>
                           <span class="truncate">
-                            {props.controls.model.selection.current()?.name ??
-                              language.t("dialog.model.select.title")}
+                            {props.controls.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
                           </span>
                           <Icon name="chevron-down" size="small" class="shrink-0" />
                         </ModelSelectorPopover>
@@ -1711,25 +1726,37 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </div>
             </div>
             <div class="shrink-0 flex items-center">
-              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-                <IconButton
-                  data-action="prompt-submit"
-                  type="submit"
-                  form={formId}
-                  disabled={!working() && blank()}
-                  tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                  variant="primary"
-                  class="size-8 rounded-[10px]"
-                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                  onClick={(event) => {
-                    if (!stopping()) return
-                    if (!event.ctrlKey) return
-                    event.preventDefault()
-                    void abort({ cascade: true })
-                  }}
-                />
-              </Tooltip>
+              <Show
+                when={!starting()}
+                fallback={
+                  <div
+                    data-slot="prompt-starting"
+                    class="size-8 rounded-[10px] flex items-center justify-center bg-surface-raised-base text-icon-base"
+                  >
+                    <Spinner class="size-4" />
+                  </div>
+                }
+              >
+                <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+                  <IconButton
+                    data-action="prompt-submit"
+                    type="submit"
+                    form={formId}
+                    disabled={!working() && blank()}
+                    tabIndex={store.mode === "normal" ? undefined : -1}
+                    icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                    variant="primary"
+                    class="size-8 rounded-[10px]"
+                    aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                    onClick={(event) => {
+                      if (!stopping()) return
+                      if (!event.ctrlKey) return
+                      event.preventDefault()
+                      void abort({ cascade: true })
+                    }}
+                  />
+                </Tooltip>
+              </Show>
             </div>
           </div>
         </DockTray>

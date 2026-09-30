@@ -3,7 +3,7 @@ import { showToast } from "@/utils/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { batch, startTransition, type Accessor } from "solid-js"
+import { batch, createSignal, startTransition, type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -27,6 +27,33 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+
+// 已发出停止、服务端还没回到空闲的会话：界面先按已停止显示，避免网络慢时看起来没反应、反复点停止
+const [stops, setStops] = createSignal<Record<string, true>>({})
+const stopTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// 停止请求还在路上时发出的新消息要等它落地，否则晚到的停止会把新消息也停掉
+const stopWaits = new Map<string, Promise<unknown>>()
+
+export function stopRequested(sessionID: string | undefined) {
+  return !!sessionID && !!stops()[sessionID]
+}
+
+export function clearStopRequested(sessionID: string) {
+  clearTimeout(stopTimers.get(sessionID))
+  stopTimers.delete(sessionID)
+  if (!stops()[sessionID]) return
+  setStops(({ [sessionID]: _, ...rest }) => rest)
+}
+
+function markStopRequested(sessionID: string) {
+  setStops((prev) => ({ ...prev, [sessionID]: true }))
+  clearTimeout(stopTimers.get(sessionID))
+  // 服务端迟迟不回空闲时恢复真实状态，让用户还能再停一次
+  stopTimers.set(
+    sessionID,
+    setTimeout(() => clearStopRequested(sessionID), 15_000),
+  )
+}
 
 const GOAL_PREFIX = "/goal "
 const GOAL_DEFAULT_CONTRACT = {
@@ -104,6 +131,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
   const setBusy = () => {
+    clearStopRequested(input.draft.sessionID)
     if (!input.optimisticBusy) return
     input.serverSync.session.set("session_status", input.draft.sessionID, { type: "busy" })
   }
@@ -114,6 +142,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const wait = async () => {
+    await stopWaits.get(input.draft.sessionID)
     const ok = await input.before?.()
     if (ok === false) return false
     return true
@@ -260,6 +289,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const [search] = useSearchParams<{ draftId?: string }>()
   const tabs = useTabs()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
+  // 新会话要先等服务端建好会话才能发送：期间锁住输入，重复回车不再建出多个会话
+  const [starting, setStarting] = createSignal(false)
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
@@ -291,7 +322,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const targets = options?.cascade
       ? [sessionID, ...collectDescendantSessionIDs(sessionID, sync().data.session)]
       : [sessionID]
-    await Promise.all(targets.map((id) => client.session.abort({ sessionID: id }).catch(() => {})))
+    markStopRequested(sessionID)
+    const request = Promise.all(
+      targets.map((id) =>
+        client.session.abort({ sessionID: id }).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    )
+    stopWaits.set(sessionID, request)
+    const results = await request
+    if (stopWaits.get(sessionID) === request) stopWaits.delete(sessionID)
+    if (results[0]) return
+    clearStopRequested(sessionID)
+    showToast({ variant: "error", title: language.t("prompt.toast.stopFailed.title") })
   }
 
   const restoreCommentItems = (
@@ -334,6 +379,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
+    if (starting()) return
 
     const target = prompt.capture()
     const submission = createPromptSubmissionState({
@@ -376,74 +422,79 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let sessionDirectory = projectDirectory
     let client = sdk().client
 
-    if (isNewSession) {
-      if (worktreeSelection === "create") {
-        const createdWorktree = await client.worktree
-          .create({ directory: projectDirectory })
-          .then((x) => x.data)
-          .catch((err) => {
+    let session = input.info()
+    if (isNewSession) setStarting(true)
+    try {
+      if (isNewSession) {
+        if (worktreeSelection === "create") {
+          const createdWorktree = await client.worktree
+            .create({ directory: projectDirectory })
+            .then((x) => x.data)
+            .catch((err) => {
+              showToast({
+                title: language.t("prompt.toast.worktreeCreateFailed.title"),
+                description: errorMessage(err),
+              })
+              return undefined
+            })
+
+          if (!createdWorktree?.directory) {
             showToast({
               title: language.t("prompt.toast.worktreeCreateFailed.title"),
+              description: language.t("common.requestFailed"),
+            })
+            return
+          }
+          WorktreeState.pending(sdk().scope, createdWorktree.directory)
+          sessionDirectory = createdWorktree.directory
+        }
+
+        if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+          sessionDirectory = worktreeSelection
+        }
+
+        if (sessionDirectory !== projectDirectory) {
+          client = sdk().createClient({
+            directory: sessionDirectory,
+            throwOnError: true,
+          })
+          serverSync().child(sessionDirectory)
+        }
+
+        input.onNewSessionWorktreeReset?.()
+      }
+
+      if (!session && isNewSession) {
+        const created = await client.session
+          .create()
+          .then((x) => x.data ?? undefined)
+          .catch((err) => {
+            showToast({
+              title: language.t("prompt.toast.sessionCreateFailed.title"),
               description: errorMessage(err),
             })
             return undefined
           })
-
-        if (!createdWorktree?.directory) {
-          showToast({
-            title: language.t("prompt.toast.worktreeCreateFailed.title"),
-            description: language.t("common.requestFailed"),
+        if (created) {
+          seed(sessionDirectory, created)
+          session = created
+          await startTransition(() => {
+            if (!session) return
+            if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
+            local.session.promote(sessionDirectory, session.id, {
+              agent: currentAgent.name,
+              model: { providerID: currentModel.provider.id, modelID: currentModel.id },
+              variant: variant ?? null,
+            })
+            const draftID = search.draftId
+            if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
+            else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+            submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
           })
-          return
         }
-        WorktreeState.pending(sdk().scope, createdWorktree.directory)
-        sessionDirectory = createdWorktree.directory
       }
-
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
-        sessionDirectory = worktreeSelection
-      }
-
-      if (sessionDirectory !== projectDirectory) {
-        client = sdk().createClient({
-          directory: sessionDirectory,
-          throwOnError: true,
-        })
-        serverSync().child(sessionDirectory)
-      }
-
-      input.onNewSessionWorktreeReset?.()
-    }
-
-    let session = input.info()
-    if (!session && isNewSession) {
-      const created = await client.session
-        .create()
-        .then((x) => x.data ?? undefined)
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
-          })
-          return undefined
-        })
-      if (created) {
-        seed(sessionDirectory, created)
-        session = created
-        await startTransition(() => {
-          if (!session) return
-          if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
-          local.session.promote(sessionDirectory, session.id, {
-            agent: currentAgent.name,
-            model: { providerID: currentModel.provider.id, modelID: currentModel.id },
-            variant: variant ?? null,
-          })
-          const draftID = search.draftId
-          if (draftID) tabs.promoteDraft(draftID, { server: tabs.draft(draftID).server, sessionId: session.id })
-          else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
-          submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
-        })
-      }
+    } finally {
+      setStarting(false)
     }
     if (!session) {
       showToast({
@@ -738,5 +789,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   return {
     abort,
     handleSubmit,
+    starting,
   }
 }

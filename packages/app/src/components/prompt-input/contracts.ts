@@ -8,6 +8,8 @@ export type PromptInputState = ReturnType<typeof usePrompt>
 export type PromptInputSubmission = {
   abort: (options?: { cascade?: boolean }) => Promise<void> | void
   handleSubmit: (event: Event) => Promise<void> | void
+  /** 新会话正在创建：输入锁定、发送按钮转圈 */
+  starting?: () => boolean
 }
 
 export type PromptInputControls = {

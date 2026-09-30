@@ -328,6 +328,7 @@ export const dict = {
   "prompt.toast.sessionCreateFailed.title": "Failed to create session",
   "prompt.toast.shellSendFailed.title": "Failed to send shell command",
   "prompt.toast.commandSendFailed.title": "Failed to send command",
+  "prompt.toast.stopFailed.title": "Could not stop",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "prompt.toast.promptSendFailed.description": "Unable to retrieve session",
 

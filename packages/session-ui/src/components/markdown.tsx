@@ -31,6 +31,7 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { decorateMarkdownDiagrams, disposeMarkdownDiagrams } from "./markdown-diagram"
+import { useMarkdownFiles, type MarkdownFiles } from "../context/markdown-files"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -287,6 +288,7 @@ export function Markdown(
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
   const marked = useMarked()
   const i18n = useI18n()
+  const files = useMarkdownFiles()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
@@ -450,6 +452,7 @@ export function Markdown(
         disposeCopyButtons(node)
         node.remove()
       })
+    if (files) resolveLocalImages(container, files)
     container
       .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
@@ -561,6 +564,37 @@ function disposeCode(key: string) {
   disposeStreamingCode(key)
 }
 
+function resolveLocalImages(container: HTMLElement, files: MarkdownFiles) {
+  container.querySelectorAll<HTMLImageElement>("img[data-local-src]:not([data-local-state])").forEach((img) => {
+    const path = img.dataset.localSrc
+    if (!path) return
+    img.dataset.localState = "loading"
+    void files
+      .image(path)
+      .catch(() => undefined)
+      .then((src) => {
+        // 流式期间节点可能已被替换，只更新仍指向同一路径的图片
+        if (img.dataset.localSrc !== path) return
+        if (!src) {
+          img.dataset.localState = "missing"
+          if (!img.alt) img.alt = path
+          img.title = path
+          return
+        }
+        img.src = src
+        img.dataset.localState = "ready"
+      })
+  })
+  if (!files.preview || container.dataset.imagePreview) return
+  container.dataset.imagePreview = ""
+  container.addEventListener("click", (event) => {
+    const img = event.target instanceof HTMLImageElement ? event.target : undefined
+    if (!img?.src || img.closest("a")) return
+    event.preventDefault()
+    files.preview?.(img.src, img.alt || img.dataset.localSrc)
+  })
+}
+
 function updateBlock(
   container: HTMLDivElement,
   current: Element | undefined,
@@ -600,6 +634,18 @@ function updateBlock(
         toEl.getAttribute("data-slot") === "markdown-copy-button"
       ) {
         return false
+      }
+      // 本地图片已解析出 src，重建同一张图时沿用，避免闪烁与重复请求
+      if (
+        fromEl instanceof HTMLImageElement &&
+        toEl instanceof HTMLImageElement &&
+        fromEl.dataset.localSrc &&
+        fromEl.dataset.localSrc === toEl.dataset.localSrc
+      ) {
+        for (const name of ["src", "data-local-state"]) {
+          const value = fromEl.getAttribute(name)
+          if (value !== null) toEl.setAttribute(name, value)
+        }
       }
       if (fromEl.isEqualNode(toEl)) return false
       return true

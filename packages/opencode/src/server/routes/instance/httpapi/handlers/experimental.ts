@@ -101,6 +101,27 @@ async function dataRootBreakdown(root: string) {
     .sort((a, b) => b.bytes - a.bytes)
 }
 
+const IMAGE_MAX_BYTES = 25 * 1024 * 1024
+const IMAGE_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".svg": "image/svg+xml",
+}
+
+function decodeFilePath(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 async function directoryStats(root: string, input: { retentionDays: number; prefix?: string }) {
   const cutoff = Date.now() - input.retentionDays * 24 * 60 * 60 * 1000
   let bytes = 0
@@ -416,6 +437,30 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       }
     })
 
+    // 消息里引用的图片按路径预览：相对路径按实例目录解析，只放行图片，避免变成通用读文件接口。
+    const fileRaw = Effect.fn("ExperimentalHttpApi.fileRaw")(function* (ctx: { query: { path: string } }) {
+      const directory = yield* InstanceState.directory
+      const input = ctx.query.path.trim().replace(/^file:\/\//i, "")
+      const target = path.resolve(directory, expandBrowsePath(decodeFilePath(input)))
+      const mime = IMAGE_MIME[path.extname(target).toLowerCase()]
+      if (!mime) return yield* new HttpApiError.BadRequest({})
+      const body = yield* Effect.promise(async () => {
+        const stat = await fs.stat(target).catch(() => undefined)
+        if (!stat?.isFile() || stat.size > IMAGE_MAX_BYTES) return undefined
+        return fs.readFile(target).catch(() => undefined)
+      })
+      if (!body) return yield* notFound(`Image not found: ${input}`)
+      return HttpServerResponse.uint8Array(new Uint8Array(body), {
+        contentType: mime,
+        // SVG 直接打开时可执行脚本，沙箱化后只当图片用
+        headers: {
+          "cache-control": "private, max-age=60",
+          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+          "x-content-type-options": "nosniff",
+        },
+      })
+    })
+
     const storageBudget = Effect.fn("ExperimentalHttpApi.storage")(function* (input?: {
       retentionDays?: number
       openProjectDirectories?: readonly string[]
@@ -637,6 +682,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("sessionProviderResponse", sessionProviderResponse)
       .handle("resource", resource)
       .handle("file", file)
+      .handle("fileRaw", fileRaw)
       .handle("storage", storageGet)
       .handle("storageCompact", storageCompact)
   }),

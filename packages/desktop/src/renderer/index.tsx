@@ -429,10 +429,11 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
   function handleClick(e: MouseEvent) {
     if (e.defaultPrevented) return
     const link = (e.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null
-    if (link?.href) {
-      e.preventDefault()
-      platform.openLink(link.href)
-    }
+    // link.href 会被页面 base 解析成 oc://renderer/…；只把原始 href 中真正的网址交给系统浏览器
+    const href = link?.getAttribute("href")?.trim()
+    if (!link || !href) return
+    e.preventDefault()
+    if (/^(?:https?:|mailto:)/i.test(href)) platform.openLink(href)
   }
 
   function Inner() {

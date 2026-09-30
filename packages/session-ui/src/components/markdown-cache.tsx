@@ -20,7 +20,22 @@ const config = {
 }
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
+  // 默认 URI 白名单会删掉 file: 链接；它不会执行脚本，保留下来交给宿主按本地文件处理
+  DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+    if (data.attrName !== "href" && data.attrName !== "src") return
+    if (!/^file:\/\//i.test(data.attrValue.trim())) return
+    if (node.nodeName !== "A" && node.nodeName !== "IMG") return
+    data.forceKeepAttr = true
+  })
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
+    // 本地路径的图片交给宿主按工作区取回；保留 src 会让浏览器按页面 base（oc://renderer/）去请求
+    if (node instanceof HTMLImageElement) {
+      const src = node.getAttribute("src")?.trim()
+      if (!src || /^(?:https?:|data:|blob:)/i.test(src)) return
+      node.setAttribute("data-local-src", src)
+      node.removeAttribute("src")
+      return
+    }
     if (!(node instanceof HTMLAnchorElement)) return
     if (node.target !== "_blank") return
 

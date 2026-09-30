@@ -13,6 +13,12 @@ import { type ServerConnection, useServer } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
 import { useServerSync } from "@/context/server-sync"
 import { usePlatform } from "@/context/platform"
+import { useServerSDK } from "@/context/server-sdk"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { MarkdownFilesProvider } from "@opencode-ai/session-ui/context/markdown-files"
+import { filePathFromHref, isExecutablePath, isImagePath, resolveFilePath } from "@/utils/file-link"
+import { createLocalImages } from "@/utils/local-images"
 
 export function DirectoryDataProvider(
   props: ParentProps<{
@@ -28,6 +34,13 @@ export function DirectoryDataProvider(
   const serverSync = useServerSync()
   const platform = usePlatform()
   const server = useServer()
+  const serverSDK = useServerSDK()
+  const dialog = useDialog()
+  const language = useLanguage()
+  const images = createLocalImages({
+    server: () => serverSDK().server,
+    fetch: platform.fetch,
+  })
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
   const href = (sessionID: string, targetDirectory?: string) => {
@@ -61,6 +74,34 @@ export function DirectoryDataProvider(
     onCleanup(() => serverSync().session.unpin(sessionID))
   })
 
+  // 消息里的文件链接：图片直接预览；本机服务器用系统默认应用打开；远程或网页端复制路径
+  const openFile = async (file: string) => {
+    const path = resolveFilePath(directory(), file)
+    if (isImagePath(path)) {
+      const src = await images.get(directory(), path)
+      if (src) return dialog.show(() => <ImagePreview src={src} alt={file} />)
+    }
+    if (platform.platform === "desktop" && server.isLocal() && platform.openPath) {
+      const opened = isExecutablePath(path)
+        ? platform.revealPath?.(path).then((found) => {
+            if (!found) throw new Error(language.t("fileLink.missing", { path }))
+          })
+        : platform.openPath(path)
+      return opened?.catch((err) =>
+        showToast({ variant: "error", title: language.t("fileLink.openFailed"), description: String(err) }),
+      )
+    }
+    const copied = await navigator.clipboard?.writeText(path).then(
+      () => true,
+      () => false,
+    )
+    showToast({
+      variant: copied ? "default" : "error",
+      title: language.t(copied ? "fileLink.copied" : "fileLink.openFailed"),
+      description: path,
+    })
+  }
+
   return (
     <Show when={directory()} keyed>
       {(directory) => (
@@ -71,23 +112,29 @@ export function DirectoryDataProvider(
           onSessionHref={href}
         >
           <LocalProvider>
-            <div
-              class="contents"
-              on:click={(event) => {
-                if (event.defaultPrevented || platform.platform !== "desktop") return
-                const link =
-                  event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.external-link") : null
-                const href = link?.getAttribute("href")
-                if (!link || !href || href.startsWith("#")) return
-                if (link.protocol !== "oc:" && /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(href)) return
-                // 在目录作用域内接管文件链接，保留原始 href，避免浏览器提前归一化 ..。
-                event.preventDefault()
-                event.stopPropagation()
-                platform.openLink(href, server.isLocal() ? directory : undefined)
+            <MarkdownFilesProvider
+              value={{
+                image: (path) => images.get(directory, path),
+                preview: (src, alt) => dialog.show(() => <ImagePreview src={src} alt={alt} />),
               }}
             >
-              {props.children}
-            </div>
+              <div
+                class="contents"
+                on:click={(event) => {
+                  if (event.defaultPrevented) return
+                  const link =
+                    event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.external-link") : null
+                  // 用原始 href：link.href 已被页面 base 解析成 oc://renderer/…
+                  const file = filePathFromHref(link?.getAttribute("href") ?? "")
+                  if (!link || !file) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void openFile(file)
+                }}
+              >
+                {props.children}
+              </div>
+            </MarkdownFilesProvider>
           </LocalProvider>
         </DataProvider>
       )}

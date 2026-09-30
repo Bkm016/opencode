@@ -123,6 +123,10 @@ const DirectoryListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   path: Schema.optional(Schema.String),
 })
+const FileRawQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  path: Schema.String,
+})
 const DirectoryEntry = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
@@ -229,6 +233,7 @@ export const ExperimentalPaths = {
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
   file: "/experimental/file",
+  fileRaw: "/experimental/file/raw",
   storage: "/experimental/storage",
   storageCompact: "/experimental/storage/compact",
 } as const
@@ -436,6 +441,18 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "List directory entries",
             description:
               "List immediate entries of a directory on the OpenCode server for directory browsing. Supports ~ expansion and defaults to the user home directory.",
+          }),
+        ),
+        HttpApiEndpoint.get("fileRaw", ExperimentalPaths.fileRaw, {
+          query: FileRawQuery,
+          success: described(Schema.String, "Raw image bytes"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.file.raw",
+            summary: "Read an image file",
+            description:
+              "Return the raw bytes of an image file on the OpenCode server so clients can preview images referenced in messages. Relative paths resolve against the instance directory; only image files are served.",
           }),
         ),
         HttpApiEndpoint.get("storage", ExperimentalPaths.storage, {

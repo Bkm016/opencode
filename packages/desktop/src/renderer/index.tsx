@@ -204,8 +204,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       })
     },
 
-    openLink(url: string) {
-      window.api.openLink(url)
+    openLink(url: string, baseDirectory?: string) {
+      window.api.openLink(url, baseDirectory)
     },
     async openPath(path: string, app?: string) {
       if (os === "windows") {
@@ -427,6 +427,7 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
   const onboarding = Promise.withResolvers<void>()
 
   function handleClick(e: MouseEvent) {
+    if (e.defaultPrevented) return
     const link = (e.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null
     if (link?.href) {
       e.preventDefault()

@@ -17,8 +17,9 @@ import {
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { createMemoryHistory, MemoryRouter, type BaseRouterProps } from "@solidjs/router"
-import { createEffect, createMemo, createResource, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
+import type { UpdaterState } from "@opencode-ai/app/updater"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
@@ -161,11 +162,21 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
   const wslServersApi = os === "windows" ? window.api.wslServers : undefined
 
+  // 主进程更新器的状态镜像；订阅一次，整个应用共用
+  const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "disabled" })
+  const unsubscribeUpdater = window.api.updater.subscribe(setUpdaterState)
+  onCleanup(() => void unsubscribeUpdater.then((stop) => stop()))
+
   return {
     platform: "desktop",
     os,
     version: pkg.version,
     windowID: windowState.id,
+    updater: {
+      state: updaterState,
+      check: () => window.api.updater.check(),
+      install: () => window.api.updater.install(),
+    },
 
     async openDirectoryPickerDialog(opts) {
       return window.api.openDirectoryPicker({

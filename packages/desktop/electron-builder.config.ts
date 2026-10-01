@@ -165,7 +165,12 @@ function getConfig() {
         appId,
         productName: "OpenCode",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        // build.yml 每次推送都覆盖 latest 这个 release，latest.yml 与安装包放在一起
+        publish: {
+          provider: "generic",
+          url: "https://github.com/Bkm016/opencode/releases/download/latest",
+          channel: "latest",
+        },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

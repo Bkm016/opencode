@@ -1239,6 +1239,7 @@ export const dict = {
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
+  "settings.general.section.updates": "Updates",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for OpenCode",
@@ -1293,6 +1294,7 @@ export const dict = {
   "settings.updates.row.startup.description": "Automatically check for updates when OpenCode launches",
   "settings.updates.row.check.title": "Check for updates",
   "settings.updates.row.check.description": "Manually check for updates and install if available",
+  "settings.updates.row.check.version": "Current version: {{version}}",
   "settings.updates.action.checkNow": "Check now",
   "settings.updates.action.checking": "Checking...",
   "settings.updates.action.downloading": "Downloading...",

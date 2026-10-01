@@ -28,6 +28,7 @@ import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList } from "./settings-list"
+import { useUpdaterAction } from "./updater-action"
 
 let demoSoundState = {
   cleanup: undefined as (() => void) | undefined,
@@ -489,6 +490,32 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
+  const updater = useUpdaterAction()
+  const UpdatesSection = () => (
+    <Show when={platform.updater && platform.updater.state().status !== "disabled"}>
+      <div class="flex flex-col gap-1">
+        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
+
+        <SettingsList>
+          <SettingsRow
+            title={language.t("settings.updates.row.check.title")}
+            description={language.t("settings.updates.row.check.version", { version: platform.version ?? "" })}
+          >
+            <Button
+              data-action="settings-updates-check"
+              size="small"
+              variant="secondary"
+              disabled={!updater.action().run}
+              onClick={() => void updater.run()}
+            >
+              {language.t(updater.action().label)}
+            </Button>
+          </SettingsRow>
+        </SettingsList>
+      </div>
+    </Show>
+  )
+
   const NotificationsSection = () => (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
@@ -643,6 +670,8 @@ export const SettingsGeneral: Component = () => {
         <SoundsSection />
 
         <DisplaySection />
+
+        <UpdatesSection />
       </div>
     </div>
   )

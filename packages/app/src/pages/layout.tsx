@@ -35,6 +35,7 @@ import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useProviders } from "@/hooks/use-providers"
 import { toaster } from "@opencode-ai/ui/toast"
 import { setV2Toast, showToast, ToastRegion } from "@/utils/toast"
+import { useUpdaterNotice } from "@/components/updater-action"
 import { useServerSDK } from "@/context/server-sdk"
 import { clearWorkspaceTerminals } from "@/context/terminal"
 import { pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
@@ -131,6 +132,7 @@ export default function LegacyLayout(props: ParentProps) {
   const language = useLanguage()
   const queryOptions = useQueryOptions()
   createEffect(() => setV2Toast(false))
+  useUpdaterNotice()
   const initialDirectory = decode64(params.dir)
   const route = createMemo(() => {
     const slug = params.dir

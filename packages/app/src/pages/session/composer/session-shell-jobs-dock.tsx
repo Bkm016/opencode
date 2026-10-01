@@ -53,9 +53,13 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
     () => true,
   )
   const last = createMemo(() => lastLine(live.text()))
-  const toggleExpanded = () => setExpanded((value) => !value)
+  const toggleExpanded = () => {
+    setMounted(true)
+    setExpanded((value) => !value)
+  }
 
   let box: HTMLPreElement | undefined
+  const [mounted, setMounted] = createSignal(false)
   // 跟随到底部；用户往上翻时不打扰，切换标签后重新跟随
   let follow = true
   createEffect(() => {
@@ -128,6 +132,7 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
                 icon="chevron-down"
                 size="normal"
                 variant="ghost"
+                data-slot="dock-chevron"
                 style={{ transform: `rotate(${expanded() ? 0 : 180}deg)` }}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -137,20 +142,24 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
               />
             </div>
           </div>
-          <Show when={expanded()}>
-            <pre
-              ref={box}
-              role="tabpanel"
-              data-slot="shell-jobs-dock-output"
-              class="pl-6.5 pr-3 pb-2 max-h-32 overflow-y-auto no-scrollbar text-12-regular text-text-weak font-mono whitespace-pre-wrap break-all"
-              onScroll={(event) => {
-                const el = event.currentTarget
-                follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-              }}
-            >
-              {live.text() || language.t("session.shellJobs.waiting")}
-            </pre>
-          </Show>
+          <div data-slot="dock-reveal" data-open={expanded() ? "" : undefined} inert={!expanded()}>
+            <div>
+              <Show when={mounted()}>
+                <pre
+                  ref={box}
+                  role="tabpanel"
+                  data-slot="shell-jobs-dock-output"
+                  class="pl-6.5 pr-3 pb-2 max-h-32 overflow-y-auto overscroll-contain no-scrollbar text-12-regular text-text-weak font-mono whitespace-pre-wrap break-all"
+                  onScroll={(event) => {
+                    const el = event.currentTarget
+                    follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+                  }}
+                >
+                  {live.text() || language.t("session.shellJobs.waiting")}
+                </pre>
+              </Show>
+            </div>
+          </div>
         </DockTray>
       )}
     </Show>

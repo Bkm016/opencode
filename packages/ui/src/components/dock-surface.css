@@ -69,3 +69,34 @@
     animation: none;
   }
 }
+
+/* 助手栏、后台任务栏的展开区：grid 行高过渡，高度随内容，不用写死 max-height 动画。 */
+[data-slot="dock-reveal"] {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out;
+}
+
+[data-slot="dock-reveal"][data-open] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+[data-slot="dock-reveal"] > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-slot="dock-chevron"] {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dock-reveal"],
+  [data-slot="dock-chevron"] {
+    transition: none;
+  }
+}

@@ -1,9 +1,11 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on } from "solid-js"
 import type { Part, Session } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Markdown } from "@opencode-ai/session-ui/markdown"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -40,7 +42,10 @@ export function SessionAssistantDock(props: { sessionID: string }) {
     on(
       () => helper()?.id,
       (id) => {
-        if (id) void sync().session.sync(id).catch(() => {})
+        if (id)
+          void sync()
+            .session.sync(id)
+            .catch(() => {})
       },
     ),
   )
@@ -98,22 +103,27 @@ export function SessionAssistantDock(props: { sessionID: string }) {
   )
 
   const [expanded, setExpanded] = createSignal(false)
-  const toggleExpanded = () => setExpanded((value) => !value)
+  // 首次展开后才挂载内容（markdown 渲染有开销），之后保留，收起时也能播放动画
+  const [mounted, setMounted] = createSignal(false)
+  const toggleExpanded = () => {
+    setMounted(true)
+    setExpanded((value) => !value)
+  }
 
-  let box: HTMLDivElement | undefined
+  // 跟随到底部；用户往上翻时不打扰。markdown 异步渲染会改变高度，所以按内容尺寸变化来跟随
+  const [box, setBox] = createSignal<HTMLDivElement>()
+  const [content, setContent] = createSignal<HTMLDivElement>()
   let follow = true
-  createEffect(() => {
-    lines()
-    if (!expanded() || !box || !follow) return
-    box.scrollTop = box.scrollHeight
-  })
+  const stick = () => {
+    const el = box()
+    if (el && follow && expanded()) el.scrollTop = el.scrollHeight
+  }
+  createResizeObserver(content, stick)
   createEffect(
     on(expanded, (value) => {
       if (!value) return
       follow = true
-      requestAnimationFrame(() => {
-        if (box) box.scrollTop = box.scrollHeight
-      })
+      requestAnimationFrame(stick)
     }),
   )
 
@@ -177,6 +187,7 @@ export function SessionAssistantDock(props: { sessionID: string }) {
               icon="chevron-down"
               size="normal"
               variant="ghost"
+              data-slot="dock-chevron"
               style={{ transform: `rotate(${expanded() ? 0 : 180}deg)` }}
               onClick={(event) => {
                 event.stopPropagation()
@@ -186,33 +197,52 @@ export function SessionAssistantDock(props: { sessionID: string }) {
             />
           </div>
         </div>
-        <Show when={expanded()}>
-          <div
-            ref={box}
-            data-slot="assistant-dock-body"
-            class="pl-6.5 pr-3 pb-2 max-h-60 overflow-y-auto no-scrollbar flex flex-col gap-1.5"
-            onScroll={(event) => {
-              const el = event.currentTarget
-              follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-            }}
-          >
-            <For each={lines()}>
-              {(line) => (
-                <div
-                  data-role={line.role}
-                  class="whitespace-pre-wrap break-words"
-                  classList={{
-                    "text-13-medium text-text-strong": line.role === "user",
-                    "text-13-regular text-text-base": line.role === "assistant",
-                    "text-12-regular text-text-weak font-mono truncate": line.role === "tool",
-                  }}
-                >
-                  {line.text}
+        <div data-slot="dock-reveal" data-open={expanded() ? "" : undefined} inert={!expanded()}>
+          <div>
+            <Show when={mounted()}>
+              <div
+                ref={setBox}
+                data-slot="assistant-dock-body"
+                class="pl-6.5 pr-3 pb-2 max-h-[min(24rem,45vh)] overflow-y-auto overscroll-contain no-scrollbar"
+                onScroll={(event) => {
+                  const el = event.currentTarget
+                  follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+                }}
+              >
+                <div ref={setContent} class="flex flex-col gap-1.5">
+                  <For each={lines()}>
+                    {(line) => (
+                      <Switch>
+                        <Match when={line.role === "assistant"}>
+                          <Markdown
+                            data-role="assistant"
+                            class="shrink-0 min-w-0 text-13-regular text-text-base"
+                            text={line.text}
+                            cacheKey={line.id}
+                            streaming={busy() && line.id === latest()?.id}
+                          />
+                        </Match>
+                        <Match when={line.role === "user"}>
+                          <div
+                            data-role="user"
+                            class="shrink-0 whitespace-pre-wrap break-words text-13-medium text-text-strong"
+                          >
+                            {line.text}
+                          </div>
+                        </Match>
+                        <Match when={line.role === "tool"}>
+                          <div data-role="tool" class="shrink-0 truncate text-12-regular text-text-weak font-mono">
+                            {line.text}
+                          </div>
+                        </Match>
+                      </Switch>
+                    )}
+                  </For>
                 </div>
-              )}
-            </For>
+              </div>
+            </Show>
           </div>
-        </Show>
+        </div>
       </DockTray>
     </Show>
   )

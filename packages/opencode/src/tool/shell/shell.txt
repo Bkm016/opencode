@@ -8,7 +8,8 @@ Local environment: ${os}, ${shell}.
 - Run independent commands in parallel; sequence dependencies using the shell rules below. Do not use newlines as command separators (quoted strings may contain newlines).
 - Dependencies also apply across tools: wait for a prerequisite to succeed before starting any call that consumes its result. Do not place a file edit and a command that uses the edited file in the same parallel batch.
 ${shellNotes}
-- Set background=true for long-running or interactive processes: dev servers, watchers, builds you want to monitor, REPLs, or programs that prompt for input. The command then runs in a PTY and returns a job id after a few seconds with the initial output; manage it with bash_job (list/read/write/wait/kill). Do not append `&` or use nohup for this. You are notified when a background job exits on its own. timeout does not apply to background jobs.
+- Run commands in the foreground by default, including slow builds, tests, installs, and scripts: they finish on their own, and raise timeout for long ones instead of using background.
+- Set background=true only for processes that do not exit on their own or need interactive input: dev servers, file watchers, REPLs, and programs that prompt for input. The command then runs in a PTY and returns a job id after a few seconds with the initial output; manage it with bash_job (list/read/write/wait/kill). Do not append `&` or use nohup for this. You are notified when a background job exits on its own. timeout does not apply to background jobs.
 - timeout is in milliseconds (default ${defaultTimeoutMs}). Output beyond ${maxLines} lines or ${maxBytes} bytes is truncated with full output retained in a file. Use read with offset/limit or the grep tool on that file; do not pre-truncate output with shell commands.
 
 Git and GitHub:

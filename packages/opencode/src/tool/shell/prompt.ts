@@ -16,7 +16,7 @@ export function parameterSchema() {
     }),
     background: Schema.optional(Schema.Boolean).annotate({
       description:
-        "Run in a background PTY and return a job id immediately (for servers, watchers, REPLs, or prompts). Manage it with bash_job. Local only.",
+        "Only for processes that never exit on their own or need interactive input (dev servers, watchers, REPLs, input prompts); runs in a PTY managed with bash_job. Leave unset for builds, tests, installs, and other commands that finish. Local only.",
     }),
     host: Schema.optional(Schema.String).annotate({
       description: "SSH config alias or user@ip. Omit for local execution; remote commands use bash and require key authentication.",

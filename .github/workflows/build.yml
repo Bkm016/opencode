@@ -30,10 +30,12 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # 版本号取提交时间（UTC），各 job 一致且逐次递增，桌面端自动更新据此判断新版本
       - name: Resolve desktop version
         run: |
-          VERSION=$(bun -e "console.log((await Bun.file('./packages/desktop/package.json').json()).version)")
+          VERSION="0.0.0-dev-$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d%H%M%S)"
           echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version: $VERSION"
 
       - name: Build
         run: bun ./script/build.ts --single --baseline --skip-embed-web-ui
@@ -65,10 +67,12 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # 版本号取提交时间（UTC），各 job 一致且逐次递增，桌面端自动更新据此判断新版本
       - name: Resolve desktop version
         run: |
-          VERSION=$(bun -e "console.log((await Bun.file('./packages/desktop/package.json').json()).version)")
+          VERSION="0.0.0-dev-$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d%H%M%S)"
           echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version: $VERSION"
 
       - name: Cache Electron binaries
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -101,11 +105,15 @@ jobs:
         env:
           OPENCODE_CHANNEL: prod
 
+      # latest.yml 与 blockmap 供已安装的客户端自动更新
       - name: Upload Windows desktop exe
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: opencode-desktop-windows-x64
-          path: packages/desktop/dist/*.exe
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.exe.blockmap
+            packages/desktop/dist/latest.yml
           if-no-files-found: error
 
   desktop-macos:
@@ -130,10 +138,12 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # 版本号取提交时间（UTC），各 job 一致且逐次递增，桌面端自动更新据此判断新版本
       - name: Resolve desktop version
         run: |
-          VERSION=$(bun -e "console.log((await Bun.file('./packages/desktop/package.json').json()).version)")
+          VERSION="0.0.0-dev-$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y%m%d%H%M%S)"
           echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version: $VERSION"
 
       - name: Cache Electron binaries
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -230,5 +240,15 @@ jobs:
             ```bash
             xattr -cr OpenCode.app
             ```
-          files: release/*
+          files: release/opencode-*
           fail_on_unmatched_files: true
+          overwrite_files: true
+
+      # 安装包全部替换完再更新 latest.yml，避免客户端读到新版本信息却下载到旧安装包
+      - name: Publish update metadata
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: latest
+          files: release/latest.yml
+          fail_on_unmatched_files: true
+          overwrite_files: true

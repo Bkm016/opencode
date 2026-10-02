@@ -4,12 +4,13 @@ import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { DockTray } from "@opencode-ai/ui/dock-surface"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { showToast } from "@opencode-ai/ui/toast"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { assistantMode, findAssistant } from "@/components/prompt-input/assistant"
+import { findAssistant, setAssistantMode } from "@/components/prompt-input/assistant"
 
 type Line = { id: string; role: "user" | "assistant" | "tool"; text: string }
 
@@ -20,6 +21,9 @@ export function SessionAssistantDock(props: { sessionID: string }) {
   const language = useLanguage()
   const navigate = useNavigate()
 
+  // 助手只属于主会话：子会话（含助手会话本身）不显示助手栏
+  const child = createMemo(() => !!sync().session.get(props.sessionID)?.parentID)
+
   // 刷新页面后助手会话可能还不在会话列表里，按需向服务端补查一次
   const [fetched, setFetched] = createSignal<Session>()
   createEffect(
@@ -27,6 +31,7 @@ export function SessionAssistantDock(props: { sessionID: string }) {
       () => props.sessionID,
       (id) => {
         setFetched(undefined)
+        if (child()) return
         void sdk()
           .client.session.children({ sessionID: id })
           .then((x) => {
@@ -36,7 +41,13 @@ export function SessionAssistantDock(props: { sessionID: string }) {
       },
     ),
   )
-  const helper = createMemo(() => findAssistant(sync().data.session, props.sessionID) ?? fetched())
+  // 正在删除的助手立即隐藏，不等服务端事件
+  const [removed, setRemoved] = createSignal(new Set<string>())
+  const helper = createMemo(() => {
+    if (child()) return undefined
+    const found = findAssistant(sync().data.session, props.sessionID) ?? fetched()
+    return found && !removed().has(found.id) ? found : undefined
+  })
 
   createEffect(
     on(
@@ -92,15 +103,31 @@ export function SessionAssistantDock(props: { sessionID: string }) {
     return firstLine(line.role === "assistant" && !busy() ? line.text : lastLine(line.text))
   })
 
-  // 用过之后常驻会占地方：只在助手模式、助手忙、或有尚未看过的结果时显示
-  const [seen, setSeen] = createSignal<string>()
-  const unread = createMemo(() => {
-    const line = latest()
-    return !!line && line.role === "assistant" && seen() !== line.id
-  })
-  const visible = createMemo(
-    () => !!helper() && lines().length > 0 && (busy() || assistantMode(props.sessionID) || unread()),
-  )
+  const visible = createMemo(() => !!helper() && lines().length > 0)
+
+  // 关闭即删除助手会话（连同它的对话）；下次再用助手会新建一个
+  const remove = async () => {
+    const id = helper()?.id
+    if (!id) return
+    setRemoved((prev) => new Set(prev).add(id))
+    setExpanded(false)
+    setAssistantMode(props.sessionID, false)
+    // 服务端删除时会先停掉仍在进行的回复
+    await sdk()
+      .client.session.delete({ sessionID: id })
+      .catch((err: unknown) => {
+        setRemoved((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+        showToast({
+          variant: "error",
+          title: language.t("session.delete.failed.title"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
 
   const [expanded, setExpanded] = createSignal(false)
   // 首次展开后才挂载内容（markdown 渲染有开销），之后保留，收起时也能播放动画
@@ -170,19 +197,16 @@ export function SessionAssistantDock(props: { sessionID: string }) {
               }}
               aria-label={language.t("assistant.open")}
             />
-            <Show when={!busy() && !assistantMode(props.sessionID)}>
-              <IconButton
-                icon="close-small"
-                size="normal"
-                variant="ghost"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setSeen(latest()?.id)
-                  setExpanded(false)
-                }}
-                aria-label={language.t("common.close")}
-              />
-            </Show>
+            <IconButton
+              icon="close-small"
+              size="normal"
+              variant="ghost"
+              onClick={(event) => {
+                event.stopPropagation()
+                void remove()
+              }}
+              aria-label={language.t("common.close")}
+            />
             <IconButton
               icon="chevron-down"
               size="normal"

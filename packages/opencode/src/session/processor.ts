@@ -874,7 +874,8 @@ const layer = Layer.effect(
                   ? `Provider stream ended incompletely (${finish ?? "no-finish"})`
                   : "Provider stream ended without output",
                 // 无完成标记是失败，不猜测供应商意图或注入继续指令重新生成。
-                isRetryable: false,
+                // 零输出空流可安全重放；已输出内容仍终止，避免重复回答或工具调用。
+                isRetryable: !hasOutput,
               }),
             )
           }).pipe(

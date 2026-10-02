@@ -635,10 +635,10 @@ it.live("session.processor effect tests retry recognized structured json errors"
 )
 
 for (const scenario of [
-  { name: "accepts an empty stop without usage", response: reply().stop().item(), failed: false },
-  { name: "accepts an empty stop with zero output tokens", response: reply().usage({ input: 10, output: 0 }).stop().item(), failed: false },
-  { name: "accepts an empty stop with output tokens", response: reply().usage({ input: 10, output: 91 }).stop().item(), failed: false },
-  { name: "stops on an empty stream without a finish", response: reply().item(), failed: true },
+  { name: "accepts an empty stop without usage", response: reply().stop().item(), retry: false },
+  { name: "accepts an empty stop with zero output tokens", response: reply().usage({ input: 10, output: 0 }).stop().item(), retry: false },
+  { name: "accepts an empty stop with output tokens", response: reply().usage({ input: 10, output: 91 }).stop().item(), retry: false },
+  { name: "retries an empty stream without a finish", response: reply().item(), retry: true },
 ]) {
   it.live(`session.processor ${scenario.name}`, () =>
     provideTmpdirServer(
@@ -649,6 +649,7 @@ for (const scenario of [
           // First attempt: role + stop, no content (quiet drop / 0-token finish).
           // 同时覆盖有用量的正常空回复与连续空流，防止两者混为同一种重试。
           // 回归契约：明确 stop 是完成，缺少 finish 是失败，都不消费后续排队响应。
+          // 上述不消费约束保留给明确 stop 或已有输出；零输出无 finish 的失败可安全重试并恢复。
           yield* llm.push(scenario.response)
           yield* llm.text("recovered")
 
@@ -681,15 +682,10 @@ for (const scenario of [
 
           const parts = yield* MessageV2.parts(msg.id)
 
-          expect(value).toBe(scenario.failed ? "stop" : "continue")
-          expect(yield* llm.calls).toBe(1)
-          expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(false)
-          if (scenario.failed) {
-            expect(handle.message.error).toMatchObject({
-              name: "APIError",
-              data: { message: "Provider stream ended without output", isRetryable: false },
-            })
-          } else expect(handle.message.error).toBeUndefined()
+          expect(value).toBe("continue")
+          expect(yield* llm.calls).toBe(scenario.retry ? 2 : 1)
+          expect(parts.some((part) => part.type === "text" && part.text === "recovered")).toBe(scenario.retry)
+          expect(handle.message.error).toBeUndefined()
         }),
       { config: (url) => providerCfg(url) },
     ),

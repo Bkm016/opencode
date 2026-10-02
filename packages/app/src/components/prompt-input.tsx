@@ -180,7 +180,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
   )
   // 助手模式：发送进入助手子会话；主会话忙时也照常发送，不会触发停止
-  const assisting = createMemo(() => assistantMode(props.controls.session.id))
+  // 助手只挂在主会话上：子会话（含助手会话本身）里不再提供助手，避免助手套助手
+  const assistable = createMemo(() => !!props.controls.session.id && !info()?.parentID)
+  const assisting = createMemo(() => assistable() && assistantMode(props.controls.session.id))
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
@@ -1681,7 +1683,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         </Button>
                       </TooltipKeybind>
                     </div>
-                    <Show when={props.controls.session.id}>
+                    <Show when={assistable() && props.controls.session.id}>
                       {(sessionID) => (
                         <div
                           data-component="prompt-assistant"

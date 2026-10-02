@@ -1085,6 +1085,41 @@ describe("tool.shell permissions", () => {
   )
 })
 
+describe("tool.shell file write reminder", () => {
+  const reminder = "use the dedicated file editing/writing tools"
+  const check = (command: string, expected: boolean) =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const result = yield* run({ command })
+          expect(result.output.includes(reminder)).toBe(expected)
+        }),
+      )
+    })
+
+  if (process.platform !== "win32") {
+    it.live("reminds on redirect and heredoc writes to project files", () =>
+      Effect.gen(function* () {
+        yield* check("echo hi > a.ts", true)
+        yield* check("cat > b.md <<'EOF'\nhello\nEOF", true)
+        yield* check("echo x | tee c.txt", true)
+        yield* check("printf 'a\\n' > d.txt && sed -i 's/a/b/' d.txt", true)
+      }),
+    )
+
+    it.live("does not remind for plain commands, null sinks, logs, or temp files", () =>
+      Effect.gen(function* () {
+        yield* check("echo hi", false)
+        yield* check("echo hi 2>&1 >/dev/null", false)
+        yield* check("echo hi > build.log", false)
+        yield* check(`echo hi > ${path.join(os.tmpdir(), "opencode-shell-reminder.txt")}`, false)
+      }),
+    )
+  }
+})
+
 describe("tool.shell abort", () => {
   it.live(
     "preserves output when aborted",

@@ -224,6 +224,42 @@ function pathArgs(list: Part[], ps: boolean, cmd = false) {
   return out
 }
 
+// 往文件里写内容的输出重定向（排除 2>&1 这类描述符复制与输入重定向）
+const WRITE_REDIRECTS = new Set([">", ">>", "&>", "&>>", ">|"])
+const SINK = /^(\/dev\/|\$null$|nul$)/i
+
+/**
+ * 找出命令里通过 shell 写入的文件：输出重定向（含 heredoc 写文件）、tee、sed/perl -i、
+ * PowerShell 的 Set-Content/Add-Content/Out-File。只看字面路径，动态拼接的路径忽略。
+ */
+export function fileWrites(root: Node, ps: boolean) {
+  const out: string[] = []
+  const add = (raw: string | undefined) => {
+    const text = raw ? unquote(raw.trim()) : ""
+    if (!text || SINK.test(text) || dynamic(text, ps) || out.includes(text)) return
+    out.push(text)
+  }
+  if (ps) {
+    for (const node of root.descendantsOfType("redirected_file_name")) add(node?.text)
+  } else {
+    for (const node of root.descendantsOfType("file_redirect")) {
+      if (!node || !node.children.some((child) => child && WRITE_REDIRECTS.has(child.type))) continue
+      add(node.childForFieldName("destination")?.text)
+    }
+  }
+  for (const node of commands(root)) {
+    const list = parts(node)
+    const name = ps ? list[0]?.text.toLowerCase() : list[0]?.text
+    const args = list.slice(1).map((item) => item.text)
+    if (!ps && name === "tee") args.filter((arg) => !arg.startsWith("-")).forEach(add)
+    if (!ps && (name === "sed" || name === "perl") && args.some((arg) => /^(-i|--in-place)/.test(arg))) add(args.at(-1))
+    if (ps && (name === "set-content" || name === "add-content" || name === "out-file")) {
+      add(pathArgs(list, true)[0])
+    }
+  }
+  return out
+}
+
 function preview(text: string) {
   if (text.length <= MAX_METADATA_LENGTH) return text
   return "...\n\n" + text.slice(-MAX_METADATA_LENGTH)
@@ -500,6 +536,8 @@ export const ShellTool = Tool.define(
         env: NodeJS.ProcessEnv
         timeout: number
         host?: string
+        /** 本地命令里通过 shell 写入的文件，用于提醒改用文件工具 */
+        writes?: string[]
       },
       ctx: Tool.Context,
     ) {
@@ -655,6 +693,11 @@ export const ShellTool = Tool.define(
       }
       if (aborted) meta.push("User aborted the command")
       if (released) meta.push("Command interrupted by a new user message")
+      if (input.writes?.length) {
+        meta.push(
+          `This command wrote to ${input.writes.join(", ")} through the shell. To create or change files, use the dedicated file editing/writing tools instead of redirection, heredocs, tee or sed -i: they show the user a diff and keep file tracking accurate. Redirecting logs or scratch output to temporary files is fine.`,
+        )
+      }
       const raw = Shell.plain(list.map((item) => item.text).join(""))
       const end = tail(raw, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true
@@ -850,6 +893,7 @@ export const ShellTool = Tool.define(
                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
                 : instanceCtx.directory
               const ps = Shell.ps(shell)
+              const writes: string[] = []
               yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
@@ -858,6 +902,14 @@ export const ShellTool = Tool.define(
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan, params)
+                  // 临时目录与日志文件不算：那是正常的输出落盘
+                  for (const file of fileWrites(tree.rootNode, ps)) {
+                    if (file.endsWith(".log")) continue
+                    const resolved = yield* resolvePath(home(file), cwd, shell)
+                    if (FSUtil.contains(tmp, resolved)) continue
+                    if (!containsPath(resolved, instanceCtx) && FSUtil.contains(os.tmpdir(), resolved)) continue
+                    writes.push(file)
+                  }
                 }),
               )
 
@@ -882,6 +934,7 @@ export const ShellTool = Tool.define(
                   cwd,
                   env: yield* shellEnv(ctx, cwd),
                   timeout,
+                  writes,
                 },
                 ctx,
               )

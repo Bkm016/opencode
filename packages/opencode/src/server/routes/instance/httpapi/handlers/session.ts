@@ -187,6 +187,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      // 先停掉该会话及其子会话仍在进行的回复，否则删除后流式输出还会往已删除的会话写入
+      const stop = (id: SessionID): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          for (const child of yield* session.children(id)) yield* stop(child.id)
+          yield* promptSvc.cancel(id)
+        })
+      yield* stop(ctx.params.sessionID)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
       return true
     })

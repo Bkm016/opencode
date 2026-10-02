@@ -18,7 +18,7 @@ import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
-import { Cause, Effect, Option, Schema, Scope } from "effect"
+import { Cause, Effect, Fiber, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -71,6 +71,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const database = yield* Database.Service
     const fs = yield* FSUtil.Service
     const scope = yield* Scope.Scope
+    // prompt_async 后台还没跑起来的请求：此时停止要先打断它们，否则停止落空、回复照样开始
+    const starting = new Map<SessionID, Set<Fiber.Fiber<unknown, unknown>>>()
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       const directory = ctx.query.directory ? yield* InstanceState.directory : undefined
@@ -265,6 +267,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+      const fibers = starting.get(ctx.params.sessionID)
+      if (fibers) yield* Fiber.interruptAll([...fibers])
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })
@@ -378,9 +382,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+      const sessionID = ctx.params.sessionID
+      const fiber = yield* promptSvc.prompt({ ...ctx.payload, sessionID }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
+            if (Cause.hasInterruptsOnly(cause)) return
             yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
             yield* events.publish(Session.Event.Error, {
               sessionID: ctx.params.sessionID,
@@ -390,6 +396,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         ),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      const fibers = starting.get(sessionID) ?? new Set()
+      fibers.add(fiber)
+      starting.set(sessionID, fibers)
+      fiber.addObserver(() => {
+        fibers.delete(fiber)
+        if (fibers.size === 0 && starting.get(sessionID) === fibers) starting.delete(sessionID)
+      })
       return HttpApiSchema.NoContent.make()
     })
 

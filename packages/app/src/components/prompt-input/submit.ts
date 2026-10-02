@@ -33,6 +33,20 @@ const [stops, setStops] = createSignal<Record<string, true>>({})
 const stopTimers = new Map<string, ReturnType<typeof setTimeout>>()
 // 停止请求还在路上时发出的新消息要等它落地，否则晚到的停止会把新消息也停掉
 const stopWaits = new Map<string, Promise<unknown>>()
+// 正在发往服务端的消息：停止要等它到达后再发，否则服务端还没开始这条回复，停止会落空
+const sends = new Map<string, Promise<unknown>>()
+
+function trackSend<T>(sessionID: string, request: Promise<T>) {
+  const settled = request.then(
+    () => undefined,
+    () => undefined,
+  )
+  sends.set(sessionID, settled)
+  void settled.then(() => {
+    if (sends.get(sessionID) === settled) sends.delete(sessionID)
+  })
+  return request
+}
 
 export function stopRequested(sessionID: string | undefined) {
   return !!sessionID && !!stops()[sessionID]
@@ -45,13 +59,13 @@ export function clearStopRequested(sessionID: string) {
   setStops(({ [sessionID]: _, ...rest }) => rest)
 }
 
-function markStopRequested(sessionID: string) {
+function markStopRequested(sessionID: string, ms = 3_000) {
   setStops((prev) => ({ ...prev, [sessionID]: true }))
   clearTimeout(stopTimers.get(sessionID))
   // 服务端迟迟不回空闲时恢复真实状态，让用户还能再停一次
   stopTimers.set(
     sessionID,
-    setTimeout(() => clearStopRequested(sessionID), 15_000),
+    setTimeout(() => clearStopRequested(sessionID), ms),
   )
 }
 
@@ -158,7 +172,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         return false
       }
 
-      await input.client.session.command({
+      await trackSend(input.draft.sessionID, input.client.session.command({
         sessionID: input.draft.sessionID,
         command: cmd,
         arguments: tail.join(" "),
@@ -173,7 +187,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           filename: attachment.filename,
         })),
         openProjectDirectories: input.openProjectDirectories,
-      })
+      }))
       return true
     } catch (err) {
       setIdle()
@@ -230,7 +244,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    await input.client.session.promptAsync({
+    await trackSend(input.draft.sessionID, input.client.session.promptAsync({
       sessionID: input.draft.sessionID,
       agent: input.draft.agent,
       model: input.draft.model,
@@ -238,7 +252,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       parts: requestParts,
       variant: input.draft.variant,
       openProjectDirectories: input.openProjectDirectories,
-    })
+    }))
     return true
   } catch (err) {
     batch(() => {
@@ -323,18 +337,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ? [sessionID, ...collectDescendantSessionIDs(sessionID, sync().data.session)]
       : [sessionID]
     markStopRequested(sessionID)
-    const request = Promise.all(
-      targets.map((id) =>
-        client.session.abort({ sessionID: id }).then(
-          () => true,
-          () => false,
+    const inflight = sends.get(sessionID)
+    const request = (inflight ?? Promise.resolve()).then(() =>
+      Promise.all(
+        targets.map((id) =>
+          client.session.abort({ sessionID: id }).then(
+            () => true,
+            () => false,
+          ),
         ),
       ),
     )
     stopWaits.set(sessionID, request)
     const results = await request
     if (stopWaits.get(sessionID) === request) stopWaits.delete(sessionID)
-    if (results[0]) return
+    if (results[0]) {
+      // 停止生效后服务端很快回到空闲；还在忙说明没停住，尽快把停止按钮还给用户
+      markStopRequested(sessionID, 1_000)
+      return
+    }
     clearStopRequested(sessionID)
     showToast({ variant: "error", title: language.t("prompt.toast.stopFailed.title") })
   }

@@ -12,6 +12,7 @@ import {
   Index,
   type JSX,
   type ComponentProps,
+  untrack,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
@@ -349,6 +350,71 @@ function createPacedValue(getValue: () => string, live?: () => boolean) {
     clear()
   })
 
+  return value
+}
+
+const STREAM_RENDER_MIN_MS = 300
+const STREAM_RENDER_MAX_MS = 2_000
+
+/**
+ * 模型流式写文件时每批参数都会让文件卡片整块重绘（整文件高亮、布局），文件一大主线程就被占满、滚动卡死。
+ * 流式期间按上次重绘到下一帧画完的耗时拉开间隔，保证大部分时间留给滚动等交互；结束时立即给最终值。
+ */
+function createStreamThrottle<T>(source: () => T, streaming: () => boolean) {
+  const [value, setValue] = createSignal<T>(untrack(source), { equals: false })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let frame = 0
+  let next = 0
+  let dirty = false
+
+  const stop = () => {
+    clearTimeout(timer)
+    cancelAnimationFrame(frame)
+    timer = undefined
+    frame = 0
+  }
+
+  const flush = () => {
+    const start = performance.now()
+    setValue(() => untrack(source))
+    // 等下一帧的样式、布局画完再算耗时，这部分往往比脚本本身还重
+    frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => {
+        timer = undefined
+        frame = 0
+        const cost = performance.now() - start
+        next = performance.now() + Math.min(STREAM_RENDER_MAX_MS, Math.max(STREAM_RENDER_MIN_MS, cost * 5))
+        if (dirty) schedule()
+      }, 0)
+    })
+  }
+
+  const schedule = () => {
+    dirty = false
+    timer = setTimeout(
+      () => {
+        timer = undefined
+        flush()
+      },
+      Math.max(0, next - performance.now()),
+    )
+  }
+
+  createEffect(() => {
+    source()
+    if (!streaming()) {
+      stop()
+      dirty = false
+      next = 0
+      setValue(() => untrack(source))
+      return
+    }
+    dirty = true
+    if (timer || frame) return
+    schedule()
+  })
+
+  onCleanup(stop)
   return value
 }
 
@@ -716,6 +782,7 @@ export function getToolInfo(
           : undefined,
       }
     case "todowrite":
+    case "todoread":
       return {
         icon: "checklist",
         title: i18n.t("ui.tool.todos"),
@@ -787,8 +854,6 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const HIDDEN_TOOLS = new Set(["todoread", "todowrite"])
-
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
   return fallback
@@ -820,7 +885,6 @@ function index<T extends { id: string }>(items: readonly T[]) {
 
 export function renderable(part: PartType, showReasoningSummaries = true) {
   if (part.type === "tool") {
-    if (HIDDEN_TOOLS.has(part.tool)) return false
     if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
     return true
   }
@@ -1545,7 +1609,6 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
   const part = () => props.part as ToolPart
-  if (HIDDEN_TOOLS.has(part().tool)) return null
 
   const hideQuestion = createMemo(
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
@@ -3723,6 +3786,8 @@ ToolRegistry.register({
       }
     })
 
+    const shownProps = createStreamThrottle(fileCompProps, pending)
+
     return (
       <div data-component="edit-tool">
         <EditToolCard
@@ -3740,7 +3805,7 @@ ToolRegistry.register({
               virtualize={props.virtualizeDiff}
               streaming={pending()}
               onRendered={props.onContentRendered}
-              {...fileCompProps()}
+              {...shownProps()}
             />
           </Show>
         </EditToolCard>
@@ -3758,6 +3823,7 @@ ToolRegistry.register({
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
     const path = createMemo(() => props.input.filePath || "")
     const pending = () => props.status === "pending" || props.status === "running"
+    const content = createStreamThrottle(() => props.input.content as string | undefined, pending)
     return (
       <div data-component="write-tool">
         <EditToolCard
@@ -3767,15 +3833,15 @@ ToolRegistry.register({
           defaultOpen={pending() || props.defaultOpen}
           onViewFile={props.onViewFile}
         >
-          <Show when={props.input.content && path()}>
+          <Show when={content() && path()}>
             <Dynamic
               component={fileComponent}
               mode="text"
               streaming={pending()}
               file={{
                 name: props.input.filePath,
-                contents: props.input.content,
-                cacheKey: checksum(props.input.content),
+                contents: content() ?? "",
+                cacheKey: checksum(content() ?? ""),
               }}
               overflow="scroll"
               onRendered={props.onContentRendered}
@@ -3792,12 +3858,13 @@ function MultiFileEditRender(props: ToolProps & { titleKey: string }) {
   const i18n = useI18n()
   const fileComponent = useFileComponent()
   const pending = createMemo(() => props.status === "pending" || props.status === "running")
-  const files = createMemo<ReturnType<typeof patchFiles>>((previous) => {
+  const latest = createMemo<ReturnType<typeof patchFiles>>((previous) => {
     const actual = patchFiles(props.metadata.files)
     if (actual.length || !pending()) return actual
     const preview = pendingPatchFiles(props.tool ?? "", props.input)
     return preview.length ? preview : (previous ?? [])
   })
+  const files = createStreamThrottle(latest, pending)
   const single = createMemo(() => {
     const list = files()
     if (list.length !== 1) return
@@ -3897,56 +3964,57 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
-  name: "todowrite",
-  render(props) {
-    const i18n = useI18n()
-    const todos = createMemo(() => {
-      const meta = props.metadata?.todos
-      if (Array.isArray(meta)) return meta
+function TodoRender(props: ToolProps) {
+  const i18n = useI18n()
+  const todos = createMemo(() => {
+    const meta = props.metadata?.todos
+    if (Array.isArray(meta)) return meta
 
-      const input = props.input.todos
-      if (Array.isArray(input)) return input
+    const input = props.input.todos
+    if (Array.isArray(input)) return input
 
-      return []
-    })
+    return []
+  })
 
-    const subtitle = createMemo(() => {
-      const list = todos()
-      if (list.length === 0) return ""
-      return `${list.filter((t: Todo) => t.status === "completed").length}/${list.length}`
-    })
+  const subtitle = createMemo(() => {
+    const list = todos()
+    if (list.length === 0) return ""
+    return `${list.filter((t: Todo) => t.status === "completed").length}/${list.length}`
+  })
 
-    return (
-      <BasicTool
-        {...props}
-        defaultOpen
-        icon="checklist"
-        trigger={{
-          title: i18n.t("ui.tool.todos"),
-          subtitle: subtitle(),
-        }}
-      >
-        <Show when={todos().length}>
-          <div data-component="todos">
-            <For each={todos()}>
-              {(todo: Todo) => (
-                <Checkbox readOnly checked={todo.status === "completed"}>
-                  <span
-                    data-slot="message-part-todo-content"
-                    data-completed={todo.status === "completed" ? "completed" : undefined}
-                  >
-                    {todo.content}
-                  </span>
-                </Checkbox>
-              )}
-            </For>
-          </div>
-        </Show>
-      </BasicTool>
-    )
-  },
-})
+  return (
+    <BasicTool
+      {...props}
+      defaultOpen
+      icon="checklist"
+      trigger={{
+        title: i18n.t("ui.tool.todos"),
+        subtitle: subtitle(),
+      }}
+    >
+      <Show when={todos().length}>
+        <div data-component="todos">
+          <For each={todos()}>
+            {(todo: Todo) => (
+              <Checkbox readOnly checked={todo.status === "completed"}>
+                <span
+                  data-slot="message-part-todo-content"
+                  data-completed={todo.status === "completed" ? "completed" : undefined}
+                >
+                  {todo.content}
+                </span>
+              </Checkbox>
+            )}
+          </For>
+        </div>
+      </Show>
+    </BasicTool>
+  )
+}
+
+// todoread 的结果里也带完整清单，和 todowrite 用同一张卡片
+ToolRegistry.register({ name: "todowrite", render: TodoRender })
+ToolRegistry.register({ name: "todoread", render: TodoRender })
 
 ToolRegistry.register({
   name: "question",

@@ -24,6 +24,7 @@ import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
 import { SkillCommand } from "./cli/cmd/skill"
+import { UpdateCommand } from "./cli/cmd/update"
 
 const args = hideBin(process.argv)
 
@@ -100,6 +101,7 @@ const cli = yargs(args)
   .command(SessionCommand)
   .command(PluginCommand)
   .command(DbCommand)
+  .command(UpdateCommand)
   .demandCommand(1)
   .fail((msg, err) => {
     if (

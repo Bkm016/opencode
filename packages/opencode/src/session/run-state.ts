@@ -38,7 +38,11 @@ export interface Interface {
   /** 原子注册一次 wait；callID 用于消费匹配的 sticky。 */
   readonly registerWait: (sessionID: SessionID, callID?: string) => Effect.Effect<WaitRegistration>
   readonly unregisterWait: (sessionID: SessionID, token: symbol) => Effect.Effect<void>
-  readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  /**
+   * 停掉会话的 Runner。children 默认 promote：子任务转后台继续跑（压缩等内部中断用）；
+   * 用户主动停止传 cancel：子任务一并取消，不会跑完后再把结果注入回来让会话重新开跑。
+   */
+  readonly cancel: (sessionID: SessionID, options?: { children?: "promote" | "cancel" }) => Effect.Effect<void>
   readonly ensureRunning: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<SessionV1.WithParts>,
@@ -228,9 +232,14 @@ const layer = Layer.effect(
       yield* releaseWaits(sessionID, runningCallIDs)
     })
 
-    const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      // 仅提升子任务并停 Runner；不发布「新用户消息」式 wait release（避免 released 语义误用）。
-      yield* promoteChildJobs(background, sessionID)
+    const cancel = Effect.fn("SessionRunState.cancel")(function* (
+      sessionID: SessionID,
+      options?: { children?: "promote" | "cancel" },
+    ) {
+      // 处理子任务后停 Runner；不发布「新用户消息」式 wait release（避免 released 语义误用）。
+      // 子任务要在停 Runner 之前处理：Runner 中断时 task 工具会把还在等的子任务转后台
+      if (options?.children === "cancel") yield* cancelChildJobs(background, sessionID)
+      else yield* promoteChildJobs(background, sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing) {
@@ -318,6 +327,24 @@ const promoteChildJobs = Effect.fn("SessionRunState.promoteChildJobs")(function*
         (job.metadata?.sessionId === sessionID || job.metadata?.parentSessionId === sessionID),
     ),
     (job) => background.promote(job.id),
+    { concurrency: "unbounded", discard: true },
+  )
+})
+
+// 取消子任务会关掉它的作用域，task 工具随之停掉子会话（子会话再按同样方式取消它自己的子任务）；
+// 直接停子会话时它自己那个任务也一起取消，父会话拿到「已取消」而不是等一个停不下来的任务
+const cancelChildJobs = Effect.fn("SessionRunState.cancelChildJobs")(function* (
+  background: BackgroundJob.Interface,
+  sessionID: SessionID,
+) {
+  const jobs = yield* background.list()
+  yield* Effect.forEach(
+    jobs.filter(
+      (job) =>
+        job.status === "running" &&
+        (job.metadata?.sessionId === sessionID || job.metadata?.parentSessionId === sessionID),
+    ),
+    (job) => background.cancel(job.id),
     { concurrency: "unbounded", discard: true },
   )
 })

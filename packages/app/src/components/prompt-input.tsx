@@ -63,7 +63,7 @@ import {
   type PromptInputState,
   type PromptInputSubmission,
 } from "./prompt-input/contracts"
-import { clearStopRequested, createPromptSubmit, stopRequested } from "./prompt-input/submit"
+import { busySubagents, clearStopRequested, createPromptSubmit, stopRequested } from "./prompt-input/submit"
 import { assistantMode, setAssistantMode } from "./prompt-input/assistant"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { PromptContextItems } from "./prompt-input/context-items"
@@ -170,7 +170,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
-  const busy = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  // 主会话空闲、子代理还在输出时也算忙：停止按钮要能把子代理停掉
+  const busy = createMemo(() => {
+    const id = props.controls.session.id
+    if (!id) return false
+    return sync().data.session_working(id) || busySubagents(id, sync().data).length > 0
+  })
   // 已点停止、服务端还没回空闲时按已停止显示；真实回到空闲后清掉标记
   const working = createMemo(() => busy() && !stopRequested(props.controls.session.id))
   createEffect(

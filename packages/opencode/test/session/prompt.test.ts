@@ -1758,6 +1758,58 @@ it.instance(
 )
 
 it.instance(
+  "cancel stops a waiting task instead of moving it to the background",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const background = yield* BackgroundJob.Service
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.tool("task", {
+        description: "inspect bug",
+        prompt: "look into the cache key path",
+        subagent_type: "general",
+        wait: true,
+      })
+      yield* llm.hang
+
+      const first = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "start the investigation" }],
+        })
+        .pipe(Effect.forkChild)
+
+      const child = yield* pollWithTimeout(
+        background.list().pipe(
+          Effect.map((jobs) =>
+            jobs.find((job) => job.status === "running" && job.metadata?.parentSessionId === chat.id),
+          ),
+        ),
+        "timed out waiting for task(wait:true) child job",
+      )
+      yield* llm.wait(2)
+
+      yield* prompt.cancel(chat.id)
+      yield* awaitWithTimeout(Fiber.await(first), "cancelled prompt did not finish")
+
+      const job = yield* background.get(child.id)
+      expect(job?.status).toBe("cancelled")
+      expect(job?.metadata?.background).not.toBe(true)
+      const status = yield* SessionStatus.Service.use((svc) => svc.get(SessionID.make(child.id)))
+      expect(status.type).toBe("idle")
+    }),
+  10_000,
+)
+
+it.instance(
   "new prompt releases a waiting task without interrupting its assistant",
   () =>
     Effect.gen(function* () {

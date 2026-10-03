@@ -4,6 +4,7 @@ import type { Prompt, PromptStore } from "@/context/prompt"
 import type { ModelSelection } from "@/context/local"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
+let busySubagents: typeof import("./submit").busySubagents
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
@@ -258,6 +259,7 @@ beforeAll(async () => {
 
   const mod = await import("./submit")
   createPromptSubmit = mod.createPromptSubmit
+  busySubagents = mod.busySubagents
 })
 
 beforeEach(() => {
@@ -558,5 +560,22 @@ describe("prompt submit abort", () => {
       "session-child",
       "session-grandchild",
     ])
+  })
+})
+
+describe("busySubagents", () => {
+  test("collects working descendants and skips the assistant branch", () => {
+    const sessions = [
+      { id: "root" },
+      { id: "task", parentID: "root" },
+      { id: "nested", parentID: "task" },
+      { id: "idle", parentID: "root" },
+      { id: "assistant", parentID: "root", metadata: { assistant: true } },
+      { id: "assistant-task", parentID: "assistant" },
+      { id: "other" },
+    ] as never[]
+    const working = new Set(["root", "task", "nested", "assistant", "assistant-task", "other"])
+    const result = busySubagents("root", { session: sessions, session_working: (id) => working.has(id) })
+    expect(result.sort()).toEqual(["nested", "task"])
   })
 })

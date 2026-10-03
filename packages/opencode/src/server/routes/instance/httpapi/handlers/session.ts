@@ -267,8 +267,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+      // 先停正在跑的回复，不能等打断请求 fiber 完成：那要等它的收尾，期间模型会继续输出
+      yield* promptSvc.cancel(ctx.params.sessionID)
       const fibers = starting.get(ctx.params.sessionID)
-      if (fibers) yield* Fiber.interruptAll([...fibers])
+      if (!fibers) return true
+      // 再打断还没跑起来的请求，打断完再停一次，补上这期间刚开始的回复
+      yield* Fiber.interruptAll([...fibers])
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })

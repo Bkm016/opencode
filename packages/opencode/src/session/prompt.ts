@@ -171,7 +171,8 @@ const layer = Layer.effect(
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
       // cancel 先 pause active Goal，防止安全边界自动复活
       yield* goalSvc.pause(sessionID).pipe(Effect.ignore)
-      yield* state.cancel(sessionID)
+      // 用户停止要连子任务一起停，否则子任务跑完把结果注入回来，会话又自己开跑
+      yield* state.cancel(sessionID, { children: "cancel" })
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {

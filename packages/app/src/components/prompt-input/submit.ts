@@ -19,7 +19,7 @@ import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
-import { ensureAssistant } from "./assistant"
+import { ensureAssistant, isAssistantSession } from "./assistant"
 
 type PendingPrompt = {
   abort: AbortController
@@ -33,14 +33,19 @@ const [stops, setStops] = createSignal<Record<string, true>>({})
 const stopTimers = new Map<string, ReturnType<typeof setTimeout>>()
 // 停止请求还在路上时发出的新消息要等它落地，否则晚到的停止会把新消息也停掉
 const stopWaits = new Map<string, Promise<unknown>>()
-// 正在发往服务端的消息：停止要等它到达后再发，否则服务端还没开始这条回复，停止会落空
+// 正在发往服务端的消息：停止时等它到达后再补停一次，否则服务端随后才开始的回复会漏停
+// 最多等这么久：斜杠命令 / 技能的请求要等整轮回复结束才返回
 const sends = new Map<string, Promise<unknown>>()
+const SEND_WAIT_MS = 1_500
 
 function trackSend<T>(sessionID: string, request: Promise<T>) {
-  const settled = request.then(
-    () => undefined,
-    () => undefined,
-  )
+  const settled = Promise.race([
+    request.then(
+      () => undefined,
+      () => undefined,
+    ),
+    new Promise<undefined>((resolve) => setTimeout(resolve, SEND_WAIT_MS)),
+  ])
   sends.set(sessionID, settled)
   void settled.then(() => {
     if (sends.get(sessionID) === settled) sends.delete(sessionID)
@@ -116,6 +121,15 @@ const collectDescendantSessionIDs = (rootID: string, sessions: Session[]) => {
   return result
 }
 
+/**
+ * 还在跑的子代理会话（不含助手及其下级）。主会话本身空闲时子代理也可能还在输出，
+ * 停止要把它们一起停掉，否则子代理跑完会把结果注入回主会话，让主会话又自己开跑。
+ */
+export function busySubagents(rootID: string, data: { session: Session[]; session_working?: (id: string) => boolean }) {
+  const sessions = data.session.filter((session) => !isAssistantSession(session))
+  return collectDescendantSessionIDs(rootID, sessions).filter((id) => data.session_working?.(id))
+}
+
 export type FollowupDraft = {
   sessionID: string
   sessionDirectory: string
@@ -172,22 +186,25 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         return false
       }
 
-      await trackSend(input.draft.sessionID, input.client.session.command({
-        sessionID: input.draft.sessionID,
-        command: cmd,
-        arguments: tail.join(" "),
-        agent: input.draft.agent,
-        model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
-        variant: input.draft.variant,
-        parts: images.map((attachment) => ({
-          id: Identifier.ascending("part"),
-          type: "file" as const,
-          mime: attachment.mime,
-          url: attachment.dataUrl,
-          filename: attachment.filename,
-        })),
-        openProjectDirectories: input.openProjectDirectories,
-      }))
+      await trackSend(
+        input.draft.sessionID,
+        input.client.session.command({
+          sessionID: input.draft.sessionID,
+          command: cmd,
+          arguments: tail.join(" "),
+          agent: input.draft.agent,
+          model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
+          variant: input.draft.variant,
+          parts: images.map((attachment) => ({
+            id: Identifier.ascending("part"),
+            type: "file" as const,
+            mime: attachment.mime,
+            url: attachment.dataUrl,
+            filename: attachment.filename,
+          })),
+          openProjectDirectories: input.openProjectDirectories,
+        }),
+      )
       return true
     } catch (err) {
       setIdle()
@@ -244,15 +261,18 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    await trackSend(input.draft.sessionID, input.client.session.promptAsync({
-      sessionID: input.draft.sessionID,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      messageID,
-      parts: requestParts,
-      variant: input.draft.variant,
-      openProjectDirectories: input.openProjectDirectories,
-    }))
+    await trackSend(
+      input.draft.sessionID,
+      input.client.session.promptAsync({
+        sessionID: input.draft.sessionID,
+        agent: input.draft.agent,
+        model: input.draft.model,
+        messageID,
+        parts: requestParts,
+        variant: input.draft.variant,
+        openProjectDirectories: input.openProjectDirectories,
+      }),
+    )
     return true
   } catch (err) {
     batch(() => {
@@ -335,10 +355,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const client = sdk().client
     const targets = options?.cascade
       ? [sessionID, ...collectDescendantSessionIDs(sessionID, sync().data.session)]
-      : [sessionID]
+      : [sessionID, ...busySubagents(sessionID, sync().data)]
     markStopRequested(sessionID)
-    const inflight = sends.get(sessionID)
-    const request = (inflight ?? Promise.resolve()).then(() =>
+    const stop = () =>
       Promise.all(
         targets.map((id) =>
           client.session.abort({ sessionID: id }).then(
@@ -346,8 +365,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             () => false,
           ),
         ),
-      ),
-    )
+      )
+    // 停止立刻发出，不能等在途的发送：那会让正在输出的回复多跑一段；
+    // 发送还在路上时，等它落地再补停一次，免得服务端随后才开始的回复漏停
+    const inflight = sends.get(sessionID)
+    const first = stop()
+    const request = inflight
+      ? Promise.all([first, inflight.then(stop)]).then(([a, b]) => a.map((ok, i) => ok || b[i]))
+      : first
     stopWaits.set(sessionID, request)
     const results = await request
     if (stopWaits.get(sessionID) === request) stopWaits.delete(sessionID)

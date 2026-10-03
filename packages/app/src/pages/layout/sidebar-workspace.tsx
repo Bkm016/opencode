@@ -19,7 +19,7 @@ import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { SessionItem, SessionSkeleton } from "./sidebar-items"
-import { isSessionPinned, pinnedSessionIds } from "@/utils/session-pin"
+import { isSessionPinned } from "@/utils/session-pin"
 import { sessionGroupOpen, setSessionGroupOpen } from "@/utils/session-groups"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
@@ -271,7 +271,7 @@ export const WorkspaceSessionList = (props: {
   const groups = createMemo(() => {
     const groups: SessionGroup[] = []
     // 置顶会话集中在最前、默认展开可折叠，下方以分隔线与时间分区隔开，行尾带图钉标记。
-    const pinned = props.sessions().filter((session) => isSessionPinned(session.directory, session.id))
+    const pinned = props.sessions().filter((session) => isSessionPinned(session))
     if (pinned.length > 0) {
       groups.push({
         key: "pinned",
@@ -287,7 +287,7 @@ export const WorkspaceSessionList = (props: {
     const oneDay = 24 * 60 * 60 * 1000
     props
       .sessions()
-      .filter((session) => !isSessionPinned(session.directory, session.id))
+      .filter((session) => !isSessionPinned(session))
       .forEach((session) => {
         const date = new Date(session.time.updated ?? session.time.created)
         const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
@@ -466,9 +466,7 @@ export const SortableWorkspace = (props: {
     pendingRename: false,
   })
   const slug = createMemo(() => base64Encode(props.directory))
-  const sessions = createMemo(() =>
-    sortedRootSessions(workspaceStore, props.sortNow(), pinnedSessionIds(props.directory)),
-  )
+  const sessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
   const local = createMemo(() => props.directory === props.project.worktree)
   const active = createMemo(() => pathKey(props.ctx.currentDir()) === pathKey(props.directory))
   const workspaceValue = createMemo(() => {

@@ -45,6 +45,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
       created: DateTime.makeUnsafe(row.time_created),
       updated: DateTime.makeUnsafe(row.time_updated),
       archived: row.time_archived ? DateTime.makeUnsafe(row.time_archived) : undefined,
+      pinned: row.time_pinned ? DateTime.makeUnsafe(row.time_pinned) : undefined,
     },
   })
 }

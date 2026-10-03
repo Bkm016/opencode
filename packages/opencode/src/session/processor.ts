@@ -382,7 +382,7 @@ const layer = Layer.effect(
         if (isRecord(value.result.value) && typeof value.result.value.output === "string") {
           // 工具返回的 attachments 是 Omit<..., "id"|"sessionID"|"messageID">，这里补全为 FilePart
           const attachments = Array.isArray(value.result.value.attachments)
-            ? value.result.value.attachments
+            ? (value.result.value.attachments as unknown[])
                 .filter(
                   (a): a is Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID"> =>
                     isRecord(a) && a.type === "file" && typeof a.mime === "string" && typeof a.url === "string",

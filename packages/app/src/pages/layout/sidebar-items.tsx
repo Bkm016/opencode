@@ -10,10 +10,14 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
-import { isSessionPinned, toggleSessionPin } from "@/utils/session-pin"
+import { isSessionPinned, setSessionPinned } from "@/utils/session-pin"
+import { useServerSDK } from "@/context/server-sdk"
+import { showToast } from "@/utils/toast"
+import { Binary } from "@opencode-ai/core/util/binary"
+import { reconcile } from "solid-js/store"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import { sidebarChildSessions } from "./helpers"
+import { errorMessage, sidebarChildSessions } from "./helpers"
 
 export type SessionItemProps = {
   session: Session
@@ -144,7 +148,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const language = useLanguage()
   const permission = usePermission()
   const serverSync = useServerSync()
-  const [sessionStore] = serverSync().child(props.session.directory)
+  const serverSDK = useServerSDK()
+  const [sessionStore, setSessionStore] = serverSync().child(props.session.directory)
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(
       sessionStore.session,
@@ -191,7 +196,22 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     }
   }
 
-  const pinned = createMemo(() => !props.level && isSessionPinned(props.session.directory, props.session.id))
+  const pinned = createMemo(() => !props.level && isSessionPinned(props.session))
+  const togglePin = () =>
+    setSessionPinned({
+      session: props.session,
+      pinned: !pinned(),
+      update: (value) => serverSDK().client.session.update(value),
+      apply: (info) => {
+        const match = Binary.search(sessionStore.session, info.id, (s) => s.id)
+        if (match.found) setSessionStore("session", match.index, reconcile(info))
+      },
+    }).catch((error) =>
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: errorMessage(error, language.t("common.requestFailed")),
+      }),
+    )
   const item = (
     <SessionRow
       session={props.session}
@@ -272,7 +292,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
           <ContextMenu.Portal>
             <ContextMenu.Content>
               <ContextMenu.Item
-                onSelect={() => toggleSessionPin(props.session.directory, props.session.id)}
+                onSelect={() => void togglePin()}
               >
                 <ContextMenu.ItemLabel>
                   {pinned() ? language.t("common.unpin") : language.t("common.pin")}

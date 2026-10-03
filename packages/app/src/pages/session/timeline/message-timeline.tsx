@@ -51,7 +51,6 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
-import { removeSessionPin } from "@/utils/session-pin"
 import { showToast } from "@/utils/toast"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { normalize } from "@opencode-ai/session-ui/session-diff"
@@ -973,7 +972,6 @@ export function MessageTimeline(props: {
     await sdk()
       .client.session.update({ sessionID, time: { archived: Date.now() } })
       .then(() => {
-        removeSessionPin(session.directory, sessionID)
         sync().set(
           produce((draft) => {
             const index = draft.session.findIndex((s) => s.id === sessionID)

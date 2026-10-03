@@ -112,6 +112,7 @@ export function fromRow(row: SessionRow): Info {
       updated: row.time_updated,
       compacting: row.time_compacting ?? undefined,
       archived: row.time_archived ?? undefined,
+      pinned: row.time_pinned ?? undefined,
     },
   }
 }
@@ -155,6 +156,7 @@ export function toRow(info: Info) {
     time_compacting: info.time.compacting,
     // null clears the column; drizzle skips undefined fields.
     time_archived: info.time.archived ?? null,
+    time_pinned: info.time.pinned ?? null,
   }
 }
 
@@ -204,6 +206,8 @@ const Time = Schema.Struct({
   updated: NonNegativeInt,
   compacting: optional(NonNegativeInt),
   archived: optional(ArchivedTimestamp),
+  // 置顶排序键：越大越靠前
+  pinned: optional(Schema.Finite),
 })
 
 const Revert = Schema.Struct({
@@ -429,6 +433,7 @@ export interface Interface {
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
+  readonly setPinned: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly setAgentModel: (input: {
     sessionID: SessionID
@@ -775,7 +780,30 @@ const layer: Layer.Layer<
         }).pipe(Effect.orDie)
         return
       }
-      yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
+      // 归档顺带取消置顶
+      const current = yield* get(input.sessionID).pipe(Effect.orDie)
+      const { pinned: _pinned, ...time } = current.time
+      yield* events
+        .publish(SessionV1.Event.Updated, {
+          sessionID: input.sessionID,
+          info: { ...current, time: { ...time, archived: input.time } },
+        })
+        .pipe(Effect.orDie)
+    })
+
+    const setPinned = Effect.fn("Session.setPinned")(function* (input: { sessionID: SessionID; time?: number }) {
+      if (input.time === undefined) {
+        const current = yield* get(input.sessionID).pipe(Effect.orDie)
+        const { pinned: _pinned, ...time } = current.time
+        yield* events
+          .publish(SessionV1.Event.Updated, {
+            sessionID: input.sessionID,
+            info: { ...current, time },
+          })
+          .pipe(Effect.orDie)
+        return
+      }
+      yield* patch(input.sessionID, { time: { pinned: input.time } }).pipe(Effect.orDie)
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
@@ -932,6 +960,7 @@ const layer: Layer.Layer<
       get,
       setTitle,
       setArchived,
+      setPinned,
       setMetadata,
       setAgentModel,
       setPermission,

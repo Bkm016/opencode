@@ -223,6 +223,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           time: ctx.payload.time.archived ?? undefined,
         })
       }
+      if (ctx.payload.time?.pinned !== undefined) {
+        yield* session.setPinned({
+          sessionID: ctx.params.sessionID,
+          time: ctx.payload.time.pinned ?? undefined,
+        })
+      }
       return yield* requireSession(ctx.params.sessionID)
     })
 

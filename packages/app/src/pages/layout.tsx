@@ -62,8 +62,8 @@ import { useDirectoryPicker } from "@/components/directory-picker"
 import { ServerConnection, useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
-import { pinnedSessionIds, removeSessionPin } from "@/utils/session-pin"
 import { sessionTitle } from "@/utils/session-title"
+import { migrateLegacySessionPins } from "@/utils/session-pin"
 import {
   displayName,
   effectiveWorkspaceOrder,
@@ -215,6 +215,10 @@ export default function LegacyLayout(props: ParentProps) {
     makeEventListener(window, "pointerup", stop)
     makeEventListener(window, "pointercancel", stop)
     makeEventListener(window, "blur", stop)
+  })
+
+  onMount(() => {
+    void migrateLegacySessionPins((value) => serverSDK().client.session.update(value))
   })
 
   createEffect(() => {
@@ -509,7 +513,7 @@ export default function LegacyLayout(props: ParentProps) {
   const chatSessions = createMemo(() => {
     const entry = chatStore()
     if (!entry) return []
-    return sortedRootSessions(entry[0], sortNow(), pinnedSessionIds(chatDirectory()))
+    return sortedRootSessions(entry[0], sortNow())
   })
 
   const chatFetching = useIsFetching(() => queryOptions().sessions(pathKey(chatDirectory())))
@@ -715,7 +719,7 @@ export default function LegacyLayout(props: ParentProps) {
     const result: Session[] = []
     for (const dir of dirs) {
       const [dirStore] = serverSync().child(dir, { bootstrap: true })
-      const dirSessions = sortedRootSessions(dirStore, now, pinnedSessionIds(dir))
+      const dirSessions = sortedRootSessions(dirStore, now)
       result.push(...dirSessions)
     }
     return result
@@ -973,7 +977,6 @@ export default function LegacyLayout(props: ParentProps) {
       sessionID: session.id,
       time: { archived: Date.now() },
     })
-    removeSessionPin(session.directory, session.id)
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, session.id, (s) => s.id)

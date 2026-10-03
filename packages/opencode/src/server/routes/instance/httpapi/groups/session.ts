@@ -55,6 +55,8 @@ export const UpdatePayload = Schema.Struct({
     Schema.Struct({
       // null clears the archive timestamp (unarchive).
       archived: Schema.optional(Schema.NullOr(Session.ArchivedTimestamp)),
+      // null 取消置顶；数值为置顶排序键，越大越靠前
+      pinned: Schema.optional(Schema.NullOr(Schema.Finite)),
     }),
   ),
 })

@@ -211,6 +211,7 @@ export type Session = {
     updated: number
     compacting?: number
     archived?: number
+    pinned?: number
   }
   permission?: PermissionRuleset
   revert?: {
@@ -2319,6 +2320,7 @@ export type GlobalSession = {
     updated: number
     compacting?: number
     archived?: number
+    pinned?: number
   }
   permission?: PermissionRuleset
   revert?: {
@@ -4151,6 +4153,7 @@ export type SessionV2Info = {
     created: number
     updated: number
     archived?: number
+    pinned?: number
   }
   title: string
   location: LocationRef
@@ -8391,6 +8394,39 @@ export type ExperimentalFileListResponses = {
 
 export type ExperimentalFileListResponse = ExperimentalFileListResponses[keyof ExperimentalFileListResponses]
 
+export type ExperimentalFileRawData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/experimental/file/raw"
+}
+
+export type ExperimentalFileRawErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ExperimentalFileRawError = ExperimentalFileRawErrors[keyof ExperimentalFileRawErrors]
+
+export type ExperimentalFileRawResponses = {
+  /**
+   * Raw image bytes
+   */
+  200: string
+}
+
+export type ExperimentalFileRawResponse = ExperimentalFileRawResponses[keyof ExperimentalFileRawResponses]
+
 export type ExperimentalStorageGetData = {
   body?: never
   path?: never
@@ -9916,6 +9952,7 @@ export type SessionUpdateData = {
     permission?: PermissionRuleset
     time?: {
       archived?: number
+      pinned?: number
     }
   }
   path: {

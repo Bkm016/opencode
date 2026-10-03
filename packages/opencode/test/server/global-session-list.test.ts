@@ -73,6 +73,27 @@ describe("session.listGlobal", () => {
   )
 
   it.instance(
+    "persists pins and clears them on archive",
+    () =>
+      Effect.gen(function* () {
+        const pinned = yield* withSession({ title: "pinned-session" })
+
+        yield* SessionNs.Service.use((session) => session.setPinned({ sessionID: pinned.id, time: 42 }))
+        expect((yield* SessionNs.Service.use((session) => session.get(pinned.id))).time.pinned).toBe(42)
+
+        yield* SessionNs.Service.use((session) => session.setPinned({ sessionID: pinned.id }))
+        expect((yield* SessionNs.Service.use((session) => session.get(pinned.id))).time.pinned).toBeUndefined()
+
+        yield* SessionNs.Service.use((session) => session.setPinned({ sessionID: pinned.id, time: 43 }))
+        yield* SessionNs.Service.use((session) => session.setArchived({ sessionID: pinned.id, time: Date.now() }))
+        const archived = yield* SessionNs.Service.use((session) => session.get(pinned.id))
+        expect(archived.time.archived).toBeDefined()
+        expect(archived.time.pinned).toBeUndefined()
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "supports cursor pagination",
     () =>
       Effect.gen(function* () {

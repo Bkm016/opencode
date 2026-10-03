@@ -1,14 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import {
-  movePinnedSession,
-  pinListOf,
-  pinnedSessionIds,
-  pinSession,
-  removeSessionPin,
-  withPinnedSession,
-  withoutPinnedSession,
-  type SessionPinMap,
-} from "./session-pin"
+import { afterEach, describe, expect, test } from "bun:test"
+import { isSessionPinned, migrateLegacySessionPins, setSessionPinned, type SessionPinUpdate } from "./session-pin"
 import { sortedRootSessions } from "@/pages/layout/helpers"
 import { type Session } from "@opencode-ai/sdk/v2/client"
 
@@ -23,77 +14,97 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
     ...input,
   }) as Session
 
-describe("session pin map", () => {
-  test("pins prepend and re-pin moves to front", () => {
-    let map: SessionPinMap = {}
-    map = withPinnedSession(map, "/workspace", "a")
-    map = withPinnedSession(map, "/workspace", "b")
-    expect(pinListOf(map, "/workspace")).toEqual(["b", "a"])
-    map = withPinnedSession(map, "/workspace", "a")
-    expect(pinListOf(map, "/workspace")).toEqual(["a", "b"])
-  })
-
-  test("unpins and drops empty directory key", () => {
-    let map: SessionPinMap = withPinnedSession({}, "/workspace", "a")
-    map = withPinnedSession(map, "/workspace", "b")
-    map = withoutPinnedSession(map, "/workspace", "a")
-    expect(pinListOf(map, "/workspace")).toEqual(["b"])
-    map = withoutPinnedSession(map, "/workspace", "b")
-    expect(pinListOf(map, "/workspace")).toEqual([])
-    expect(map["/workspace"]).toBeUndefined()
-  })
-
-  test("scopes pins by pathKey directory", () => {
-    let map: SessionPinMap = withPinnedSession({}, "C:\\tmp\\app", "x")
-    expect(pinListOf(map, "C:/tmp/app")).toEqual(["x"])
-    expect(pinListOf(map, "/other")).toEqual([])
-  })
-
-  test("moves pinned sessions to the dropped position", () => {
-    const directory = "/workspace-move-test"
-    pinSession(directory, "a")
-    pinSession(directory, "b")
-    pinSession(directory, "c")
-
-    movePinnedSession(directory, "c", "a")
-    expect(pinnedSessionIds(directory)).toEqual(["b", "a", "c"])
-
-    movePinnedSession(directory, "a", "b")
-    expect(pinnedSessionIds(directory)).toEqual(["a", "b", "c"])
-
-    removeSessionPin(directory, "a")
-    removeSessionPin(directory, "b")
-    removeSessionPin(directory, "c")
-  })
-})
-
 describe("sortedRootSessions with pins", () => {
-  test("pinned block precedes recent order and keeps pin order", () => {
+  test("pinned block precedes recent order, most recently pinned first", () => {
     const now = 1_000_000
     const store = {
       path: { directory: "/workspace" },
       session: [
-        session({ id: "old", directory: "/workspace", time: { created: 1, updated: 100 } }),
-        session({ id: "mid", directory: "/workspace", time: { created: 2, updated: 200 } }),
+        session({ id: "old", directory: "/workspace", time: { created: 1, updated: 100, pinned: 20 } }),
+        session({ id: "mid", directory: "/workspace", time: { created: 2, updated: 200, pinned: 10 } }),
         session({ id: "new", directory: "/workspace", time: { created: 3, updated: 300 } }),
       ],
     }
-    expect(sortedRootSessions(store, now).map((item) => item.id)).toEqual(["new", "mid", "old"])
-    expect(sortedRootSessions(store, now, ["old", "mid"]).map((item) => item.id)).toEqual([
-      "old",
-      "mid",
-      "new",
-    ])
+    expect(sortedRootSessions(store, now).map((item) => item.id)).toEqual(["old", "mid", "new"])
   })
 
-  test("ignores pin ids that are not visible roots", () => {
+  test("ignores pinned sessions that are not visible roots", () => {
     const store = {
       path: { directory: "/workspace" },
       session: [
         session({ id: "root", directory: "/workspace", time: { created: 1, updated: 10 } }),
-        session({ id: "child", directory: "/workspace", parentID: "root", time: { created: 2, updated: 20 } }),
+        session({
+          id: "child",
+          directory: "/workspace",
+          parentID: "root",
+          time: { created: 2, updated: 20, pinned: 5 },
+        }),
       ],
     }
-    expect(sortedRootSessions(store, 100, ["child", "missing", "root"]).map((item) => item.id)).toEqual(["root"])
+    expect(sortedRootSessions(store, 100).map((item) => item.id)).toEqual(["root"])
+  })
+})
+
+describe("setSessionPinned", () => {
+  test("shows the pin optimistically and sends null to unpin", async () => {
+    const item = session({ id: "a", directory: "/workspace" })
+    const sent: SessionPinUpdate[] = []
+    let resolve!: () => void
+    const done = setSessionPinned({
+      session: item,
+      pinned: true,
+      update: (value) => {
+        sent.push(value)
+        return new Promise((r) => (resolve = () => r({})))
+      },
+      apply: () => {},
+    })
+    expect(isSessionPinned(item)).toBe(true)
+    resolve()
+    await done
+    expect(isSessionPinned(item)).toBe(false)
+    expect(typeof sent[0]?.time.pinned).toBe("number")
+
+    const pinned = session({ id: "b", directory: "/workspace", time: { created: 0, updated: 0, pinned: 1 } })
+    await setSessionPinned({
+      session: pinned,
+      pinned: false,
+      update: async (value) => {
+        sent.push(value)
+        return {}
+      },
+      apply: () => {},
+    })
+    expect(sent[1]?.time.pinned).toBeNull()
+  })
+
+  test("rolls back the optimistic pin when the request fails", async () => {
+    const item = session({ id: "c", directory: "/workspace" })
+    await expect(
+      setSessionPinned({
+        session: item,
+        pinned: true,
+        update: () => Promise.reject(new Error("boom")),
+        apply: () => {},
+      }),
+    ).rejects.toThrow("boom")
+    expect(isSessionPinned(item)).toBe(false)
+  })
+})
+
+describe("migrateLegacySessionPins", () => {
+  const key = "opencode.session.pinned.v1"
+  afterEach(() => localStorage.removeItem(key))
+
+  test("uploads local pins in their order and clears local storage", async () => {
+    localStorage.setItem(key, JSON.stringify({ "/workspace": ["first", "second"], "/other": ["x"] }))
+    const sent: SessionPinUpdate[] = []
+    await migrateLegacySessionPins(async (value) => {
+      sent.push(value)
+      if (value.sessionID === "x") throw new Error("missing")
+    })
+    expect(sent.map((item) => item.sessionID)).toEqual(["first", "second", "x"])
+    expect(sent[0]!.time.pinned).toBeGreaterThan(sent[1]!.time.pinned)
+    expect(localStorage.getItem(key)).toBeNull()
   })
 })

@@ -3,6 +3,7 @@ import { type Session } from "@opencode-ai/sdk/v2/client"
 import { pathKey } from "@/utils/path-key"
 import type { ServerConnection } from "@/context/server"
 import type { HomeProjectSelection } from "@/context/layout"
+import { withPinnedFirst } from "@/utils/session-pin"
 
 type SessionStore = {
   session?: Session[]
@@ -30,18 +31,8 @@ export const roots = (store: SessionStore) =>
   (store.session ?? []).filter((session) => isRootVisibleSession(session, store.path.directory))
 
 /** Root sessions: pinned block (pin order) first, then recent sort for the rest. */
-export const sortedRootSessions = (store: SessionStore, now: number, pinnedIds: string[] = []) => {
-  const list = roots(store).sort(sortSessions(now))
-  if (pinnedIds.length === 0) return list
-
-  const pinSet = new Set(pinnedIds)
-  const order = new Map(pinnedIds.map((id, index) => [id, index]))
-  const pinned = list
-    .filter((session) => pinSet.has(session.id))
-    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
-  const rest = list.filter((session) => !pinSet.has(session.id))
-  return [...pinned, ...rest]
-}
+export const sortedRootSessions = (store: SessionStore, now: number) =>
+  withPinnedFirst(roots(store).sort(sortSessions(now)))
 
 export const latestRootSession = (stores: SessionStore[], now: number) =>
   stores.flatMap(roots).sort(sortSessions(now))[0]

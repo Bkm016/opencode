@@ -9,7 +9,6 @@ import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
 import { sessionTitle } from "@/utils/session-title"
 import { sortedRootSessions, displayName } from "@/pages/layout/helpers"
-import { pinnedSessionIds } from "@/utils/session-pin"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 
 export function DialogSessionSearch() {
@@ -25,7 +24,7 @@ export function DialogSessionSearch() {
     const result: Array<{ session: Session; project: string }> = []
     for (const project of layout.projects.list()) {
       const [store] = serverSync().child(project.worktree, { bootstrap: false })
-      const sessions = sortedRootSessions(store, now, pinnedSessionIds(project.worktree))
+      const sessions = sortedRootSessions(store, now)
       for (const session of sessions) {
         result.push({ session, project: displayName(project) })
       }

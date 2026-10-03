@@ -36,6 +36,7 @@ export const Info = Schema.Struct({
     created: DateTimeUtcFromMillis,
     updated: DateTimeUtcFromMillis,
     archived: DateTimeUtcFromMillis.pipe(optional),
+    pinned: DateTimeUtcFromMillis.pipe(optional),
   }),
   title: Schema.String,
   location: Location.Ref,

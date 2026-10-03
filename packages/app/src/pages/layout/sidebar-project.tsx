@@ -23,7 +23,6 @@ import { useIsFetching } from "@tanstack/solid-query"
 import { createMediaQuery } from "@solid-primitives/media"
 import { type LocalProject } from "@/context/layout"
 import { pathKey } from "@/utils/path-key"
-import { pinnedSessionIds } from "@/utils/session-pin"
 import { sessionTitle } from "@/utils/session-title"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import {
@@ -103,9 +102,7 @@ export const TiledProjectSection = (props: {
     const [store] = serverSync().child(worktree(), { bootstrap: true })
     return { store }
   })
-  const localSessions = createMemo(() =>
-    sortedRootSessions(localChild().store, props.sortNow(), pinnedSessionIds(worktree())),
-  )
+  const localSessions = createMemo(() => sortedRootSessions(localChild().store, props.sortNow()))
   // 项目下任一 session 正在工作时显示指示点；仅统计已 bootstrap 的 local worktree，
   // workspace 子目录的状态由各自行的 busy spinner 负责。
   // 项目下（含 workspace 目录）正在工作的 session 数。session_status 存在全局 session store，

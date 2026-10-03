@@ -1,6 +1,5 @@
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import type { ServerConnection } from "@/context/server"
-import { removeSessionPin } from "@/utils/session-pin"
 
 type HomeSession = {
   id: string
@@ -27,7 +26,6 @@ export async function archiveHomeSession(input: {
       time: { archived: Date.now() },
     })
     .then(() => {
-      removeSessionPin(input.session.directory, input.session.id)
       input.remove()
       notifySessionTabsRemoved({
         server: input.server,

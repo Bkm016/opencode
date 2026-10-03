@@ -580,6 +580,7 @@ export const SessionInfo = Schema.Struct({
     updated: NonNegativeInt,
     compacting: optional(NonNegativeInt),
     archived: optional(Schema.Finite),
+    pinned: optional(Schema.Finite),
   }),
   permission: optional(PermissionV1.Ruleset),
   revert: optional(SessionRevert),

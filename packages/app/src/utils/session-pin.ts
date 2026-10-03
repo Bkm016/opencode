@@ -1,131 +1,92 @@
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import { createStore, produce } from "solid-js/store"
-import { pathKey } from "@/utils/path-key"
-
-const STORAGE_KEY = "opencode.session.pinned.v1"
-
-export type SessionPinMap = Record<string, string[]>
-
-function load(): SessionPinMap {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
-    const result: SessionPinMap = {}
-    for (const [key, value] of Object.entries(parsed)) {
-      if (!Array.isArray(value)) continue
-      result[key] = value.filter((id): id is string => typeof id === "string")
-    }
-    return result
-  } catch {
-    return {}
-  }
-}
-
-function save(map: SessionPinMap) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
-}
-
-const [store, setStore] = createStore<SessionPinMap>(load())
-
-function snapshot(): SessionPinMap {
-  const result: SessionPinMap = {}
-  for (const key of Object.keys(store)) {
-    const list = store[key]
-    if (!list?.length) continue
-    result[key] = [...list]
-  }
-  return result
-}
-
-function persist() {
-  save(snapshot())
-}
 
 /**
- * Pinned session IDs for a workspace directory (most recently pinned first).
- * Drag sorting can override the initial most-recent-first order.
+ * 置顶存在服务端会话的 time.pinned 上（排序键，越大越靠前），换客户端不丢。
+ * 这里只保留请求还没落地时的乐观值，落地后以会话数据为准。
  */
-export function pinnedSessionIds(directory: string): string[] {
-  return store[pathKey(directory)] ?? []
+const [pending, setPending] = createStore<Record<string, number | null>>({})
+
+type PinnedSession = Pick<Session, "id" | "time">
+
+export function sessionPinKey(session: PinnedSession): number | undefined {
+  const value = pending[session.id]
+  if (value !== undefined) return value ?? undefined
+  return session.time.pinned ?? undefined
 }
 
-export function isSessionPinned(directory: string, sessionID: string): boolean {
-  return pinnedSessionIds(directory).includes(sessionID)
+export function isSessionPinned(session: PinnedSession): boolean {
+  return sessionPinKey(session) !== undefined
 }
 
-/** Prepend session to pin list; re-pin moves it to front. */
-export function pinSession(directory: string, sessionID: string) {
-  const key = pathKey(directory)
-  const list = store[key] ?? []
-  setStore(key, [sessionID, ...list.filter((id) => id !== sessionID)])
-  persist()
+/** Pinned sessions first (most recently pinned first), then the rest in their original order. */
+export function withPinnedFirst<T extends PinnedSession>(sessions: T[]): T[] {
+  const pinned = sessions.filter(isSessionPinned)
+  if (pinned.length === 0) return sessions
+  pinned.sort((a, b) => sessionPinKey(b)! - sessionPinKey(a)!)
+  return [...pinned, ...sessions.filter((session) => !isSessionPinned(session))]
 }
 
-export function unpinSession(directory: string, sessionID: string) {
-  const key = pathKey(directory)
-  const list = store[key] ?? []
-  if (!list.includes(sessionID)) return
-  const next = list.filter((id) => id !== sessionID)
-  if (next.length === 0) {
-    setStore(produce((draft) => {
-      delete draft[key]
-    }))
-    persist()
+export type SessionPinUpdate = {
+  directory: string
+  sessionID: string
+  time: { pinned: number }
+}
+
+// 生成的 SDK 类型里没有 null，但服务端接受 null 作取消置顶
+const UNPIN = null as unknown as number
+
+export async function setSessionPinned(input: {
+  session: Pick<Session, "id" | "directory" | "time">
+  pinned: boolean
+  update: (value: SessionPinUpdate) => Promise<{ data?: Session }>
+  apply: (info: Session) => void
+}) {
+  const value = input.pinned ? Date.now() : null
+  setPending(input.session.id, value)
+  try {
+    const result = await input.update({
+      directory: input.session.directory,
+      sessionID: input.session.id,
+      time: { pinned: value ?? UNPIN },
+    })
+    if (result.data) input.apply(result.data)
+  } finally {
+    setPending(
+      produce((draft) => {
+        delete draft[input.session.id]
+      }),
+    )
+  }
+}
+
+const LEGACY_STORAGE_KEY = "opencode.session.pinned.v1"
+
+/** 以前置顶存在本地，读出来逐个写到服务端（保持原顺序），写完清掉本地。 */
+export async function migrateLegacySessionPins(update: (value: SessionPinUpdate) => Promise<unknown>) {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(LEGACY_STORAGE_KEY)
+  } catch {
     return
   }
-  setStore(key, next)
-  persist()
-}
-
-export function toggleSessionPin(directory: string, sessionID: string) {
-  if (isSessionPinned(directory, sessionID)) {
-    unpinSession(directory, sessionID)
-    return
-  }
-  pinSession(directory, sessionID)
-}
-
-export function movePinnedSession(directory: string, sessionID: string, targetID: string) {
-  const key = pathKey(directory)
-  const list = store[key] ?? []
-  const fromIndex = list.indexOf(sessionID)
-  const toIndex = list.indexOf(targetID)
-  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return
-
-  const next = [...list]
-  const [session] = next.splice(fromIndex, 1)
-  if (!session) return
-  next.splice(toIndex, 0, session)
-  setStore(key, next)
-  persist()
-}
-
-/** Drop a pin id (e.g. after archive). No-op when not pinned. */
-export function removeSessionPin(directory: string, sessionID: string) {
-  unpinSession(directory, sessionID)
-}
-
-/** Pure helpers for tests — operate on a plain map without touching storage. */
-export function pinListOf(map: SessionPinMap, directory: string): string[] {
-  return map[pathKey(directory)] ?? []
-}
-
-export function withPinnedSession(map: SessionPinMap, directory: string, sessionID: string): SessionPinMap {
-  const key = pathKey(directory)
-  const list = map[key] ?? []
-  return { ...map, [key]: [sessionID, ...list.filter((id) => id !== sessionID)] }
-}
-
-export function withoutPinnedSession(map: SessionPinMap, directory: string, sessionID: string): SessionPinMap {
-  const key = pathKey(directory)
-  const list = map[key] ?? []
-  if (!list.includes(sessionID)) return map
-  const next = list.filter((id) => id !== sessionID)
-  if (next.length === 0) {
-    const result = { ...map }
-    delete result[key]
-    return result
-  }
-  return { ...map, [key]: next }
+  if (!raw) return
+  const entries: SessionPinUpdate[] = []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const now = Date.now()
+      for (const [directory, ids] of Object.entries(parsed)) {
+        if (!Array.isArray(ids)) continue
+        ids
+          .filter((id): id is string => typeof id === "string")
+          .forEach((sessionID, index) => entries.push({ directory, sessionID, time: { pinned: now - index } }))
+      }
+    }
+  } catch {}
+  // 会话可能已删或属于别的服务，失败的直接丢掉
+  await Promise.allSettled(entries.map((entry) => update(entry)))
+  try {
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {}
 }

@@ -49,6 +49,8 @@ import type {
   ExperimentalControlPlaneMoveSessionResponses,
   ExperimentalFileListErrors,
   ExperimentalFileListResponses,
+  ExperimentalFileRawErrors,
+  ExperimentalFileRawResponses,
   ExperimentalProjectCopyGenerateNameErrors,
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
@@ -1118,6 +1120,38 @@ export class File extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/file",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read an image file
+   *
+   * Return the raw bytes of an image file on the OpenCode server so clients can preview images referenced in messages. Relative paths resolve against the instance directory; only image files are served.
+   */
+  public raw<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ExperimentalFileRawResponses, ExperimentalFileRawErrors, ThrowOnError>({
+      url: "/experimental/file/raw",
       ...options,
       ...params,
     })
@@ -3616,6 +3650,7 @@ export class Session2 extends HeyApiClient {
       permission?: PermissionRuleset
       time?: {
         archived?: number
+        pinned?: number
       }
     },
     options?: Options<never, ThrowOnError>,

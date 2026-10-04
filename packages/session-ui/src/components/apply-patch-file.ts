@@ -1,6 +1,7 @@
 import { normalize, type ViewDiff } from "./session-diff"
 import { Patch } from "@opencode-ai/core/patch"
-import { diffLines } from "diff"
+import { processFile } from "@pierre/diffs"
+import { createTwoFilesPatch, diffLines } from "diff"
 
 type Kind = "add" | "update" | "delete" | "move"
 
@@ -122,7 +123,22 @@ export function pendingPatchFiles(tool: string, input: Record<string, unknown>) 
     })
     if (!projected) return []
     // 更新类参数只有变更片段，不冒充完整文件；完成后由服务端的真实 Diff 接管。
-    if (file.type !== "add") projected.view.fileDiff = { ...projected.view.fileDiff, isPartial: true }
+    if (file.type !== "add") {
+      // 保留全部已收上下文并按片段解析，避免仅切换 isPartial 后高亮数组与全量行索引错位。
+      const partial = processFile(
+        createTwoFilesPatch(
+          projected.relativePath,
+          projected.relativePath,
+          file.before ?? "",
+          file.after ?? "",
+          undefined,
+          undefined,
+          { context: Infinity },
+        ),
+      )
+      if (!partial) return []
+      projected.view.fileDiff = { ...partial, type: projected.view.fileDiff.type }
+    }
     return [projected]
   })
 }

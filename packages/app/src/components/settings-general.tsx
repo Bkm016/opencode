@@ -9,6 +9,7 @@ import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
+import { type AcceptLevel, canControlComputer } from "@/context/permission-auto-respond"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
@@ -90,30 +91,22 @@ export const SettingsGeneral: Component = () => {
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const dir = createMemo(() => decode64(params.dir))
-  const accepting = createMemo(() => {
+  const acceptLevel = createMemo((): AcceptLevel => {
     const value = dir()
-    if (!value) return false
-    if (!params.id) return permission.isAutoAcceptingDirectory(value)
-    return permission.isAutoAccepting(params.id, value)
+    if (!value) return "off"
+    if (!params.id) return permission.autoAcceptDirectoryLevel(value)
+    return permission.autoAcceptLevel(params.id, value)
   })
+  const accepting = () => acceptLevel() !== "off"
 
-  const toggleAccept = (checked: boolean) => {
+  const setAcceptLevel = (level: AcceptLevel) => {
     const value = dir()
-    if (!value) return
-
-    if (!params.id) {
-      if (permission.isAutoAcceptingDirectory(value) === checked) return
-      permission.toggleAutoAcceptDirectory(value)
-      return
-    }
-
-    if (checked) {
-      permission.enableAutoAccept(params.id, value)
-      return
-    }
-
-    permission.disableAutoAccept(params.id, value)
+    if (!value || acceptLevel() === level) return
+    if (!params.id) return permission.setAutoAcceptDirectoryLevel(value, level)
+    permission.setAutoAcceptLevel(params.id, value, level)
   }
+
+  const toggleAccept = (checked: boolean) => setAcceptLevel(checked ? "on" : "off")
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
@@ -280,6 +273,21 @@ export const SettingsGeneral: Component = () => {
             <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
           </div>
         </SettingsRow>
+
+        <Show when={canControlComputer(dir() ?? "")}>
+          <SettingsRow
+            title={language.t("command.permissions.autoaccept.computer")}
+            description={language.t("toast.permissions.autoaccept.computer.description")}
+          >
+            <div data-action="settings-auto-accept-computer">
+              <Switch
+                checked={acceptLevel() === "computer"}
+                disabled={!accepting()}
+                onChange={(checked) => setAcceptLevel(checked ? "computer" : "on")}
+              />
+            </div>
+          </SettingsRow>
+        </Show>
 
         <SettingsRow
           title={language.t("settings.general.row.shell.title")}

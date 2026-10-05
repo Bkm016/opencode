@@ -120,6 +120,7 @@ export const ComputerUseTool = Tool.define(
     } satisfies JSONSchema7
     return {
       description: `Control applications on the OpenCode server's local Windows desktop using the installed Codex runtime, not a remote client's desktop.
+Use only when the user explicitly asks to operate or inspect a desktop application. Never use it to check your own work: use the browser tool for web pages and the shell for programs and tests.
 Before first use, load the computer-use skill through the skill tool for the workflow and recovery rules. If unavailable or denied, stop rather than bypassing it.
 Requires permission. Physical Escape stops computer use for the entire current user turn.`,
       parameters: Parameters,

@@ -1,6 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -39,6 +39,12 @@ description: ${description}
 }
 
 describe("SkillV2", () => {
+  test("hides only the computer-use skill when computer_use is unusable", () => {
+    expect(SkillV2.usable("computer-use", false)).toBe(false)
+    expect(SkillV2.usable("computer-use", true)).toBe(true)
+    expect(SkillV2.usable("deploy", false)).toBe(true)
+  })
+
   it.live("registers sources and resolves later source precedence", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

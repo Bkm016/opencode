@@ -9,6 +9,7 @@ import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLocal, type ModelSelection } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import type { AcceptValue } from "@/context/permission-auto-respond"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
 import { useSDK, type DirectorySDK } from "@/context/sdk"
 import { useSync, type DirectorySync } from "@/context/sync"
@@ -288,7 +289,7 @@ type PromptSubmitInput = {
   info: Accessor<{ id: string } | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
-  autoAccept: Accessor<boolean>
+  autoAccept: Accessor<AcceptValue>
   mode: Accessor<"normal" | "shell">
   working: Accessor<boolean>
   editor: () => HTMLDivElement | undefined
@@ -526,7 +527,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           session = created
           await startTransition(() => {
             if (!session) return
-            if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
+            if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory, shouldAutoAccept)
             local.session.promote(sessionDirectory, session.id, {
               agent: currentAgent.name,
               model: { providerID: currentModel.provider.id, modelID: currentModel.id },

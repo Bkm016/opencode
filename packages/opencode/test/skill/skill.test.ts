@@ -80,6 +80,17 @@ describe("skill", () => {
     ),
   )
 
+  it.live("only lists the computer-use skill where computer_use can run", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const skill = yield* Skill.Service
+        expect(yield* skill.get("computer-use")).toBeDefined()
+        const listed = (yield* skill.available()).some((item) => item.name === "computer-use")
+        expect(listed).toBe(process.platform === "win32")
+      }),
+    ),
+  )
+
   it.effect("formats verbose locations as XML-safe filesystem paths", () =>
     Effect.sync(() => {
       const output = Skill.fmt(

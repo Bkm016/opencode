@@ -40,6 +40,7 @@ import { ModelSelectorPopover } from "@/components/dialog-select-model"
 
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
+import { acceptValue, nextAcceptLevel } from "@/context/permission-auto-respond"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -1115,11 +1116,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const variants = createMemo(() => ["default", ...props.controls.model.selection.variant.list()])
   // Check provider variants directly: `variants` also includes the UI-only default option.
   const showVariantControl = createMemo(() => props.controls.model.selection.variant.list().length > 0)
-  const accepting = createMemo(() => {
+  const acceptLevel = createMemo(() => {
     const id = props.controls.session.id
-    if (!id) return permission.isAutoAcceptingDirectory(sdk().directory)
-    return permission.isAutoAccepting(id, sdk().directory)
+    if (!id) return permission.autoAcceptDirectoryLevel(sdk().directory)
+    return permission.autoAcceptLevel(id, sdk().directory)
   })
+  const accepting = () => acceptLevel() !== "off"
+  const acceptColor = () => (acceptLevel() === "computer" ? "#e5484d" : "#ea613f")
+  const acceptTitle = () => {
+    const next = nextAcceptLevel(acceptLevel(), sdk().directory)
+    if (next === "on") return language.t("command.permissions.autoaccept.enable")
+    if (next === "computer") return language.t("command.permissions.autoaccept.computer")
+    return language.t("command.permissions.autoaccept.disable")
+  }
 
   const toggleBypassPermission = () => {
     const sessionID = props.controls.session.id
@@ -1140,7 +1149,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     info,
     imageAttachments,
     commentCount,
-    autoAccept: () => accepting(),
+    autoAccept: () => acceptValue(acceptLevel()),
     mode: () => store.mode,
     working,
     editor: () => editorRef,
@@ -1656,19 +1665,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <TooltipKeybind
                         placement="top"
                         gutter={4}
-                        title={
-                          accepting()
-                            ? language.t("command.permissions.autoaccept.disable")
-                            : language.t("command.permissions.autoaccept.enable")
-                        }
+                        title={acceptTitle()}
                         keybind={command.keybind("permissions.autoaccept")}
                       >
                         <Button
                           data-action="prompt-bypass-permission"
                           data-active={accepting() ? "true" : undefined}
+                          data-level={acceptLevel()}
                           variant="ghost"
                           size="normal"
-                          icon="shield"
+                          icon={acceptLevel() === "computer" ? "window-cursor" : "shield"}
                           aria-pressed={accepting()}
                           aria-label={language.t("prompt.action.bypassPermission")}
                           classList={{
@@ -1678,8 +1684,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           // Bypass communicates state through color alone, so pressed/active backgrounds stay transparent.
                           style={{
                             ...control(),
-                            color: accepting() ? "#ea613f" : undefined,
-                            "--icon-base": accepting() ? "#ea613f" : undefined,
+                            color: accepting() ? acceptColor() : undefined,
+                            "--icon-base": accepting() ? acceptColor() : undefined,
                             "--surface-base-active": "transparent",
                           }}
                           onClick={toggleBypassPermission}

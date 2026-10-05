@@ -4,7 +4,8 @@ Use the `computer_use` tool for authorized interaction with the local Windows de
 
 ## Choose the right tool
 
-- Prefer a task-specific API, connector, file tool, or CLI when UI interaction is not needed. Use Computer Use when the user requests desktop interaction or the task depends on visible application state.
+- Use Computer Use only when the user explicitly asks for desktop interaction, or the requested result exists only in a desktop application's UI. Otherwise prefer a task-specific API, connector, file tool, or CLI.
+- Do not use Computer Use to verify your own changes. Use the browser tool for web pages and the shell for programs, builds, and tests.
 - Check that `computer_use` is available. Loading this skill does not grant tool access or install its runtime. If it is absent or denied, explain the limitation; do not reconstruct it using shell commands or direct calls to Codex binaries.
 - Use structured `computer_use` arguments, not JavaScript. This interface does not expose `cua_repl`, `node_repl`, Playwright locators, or the Codex Chrome extension API.
 - For screenshot-based work, the selected model must actually receive and understand the image attachments. If it cannot, use observed accessibility elements or explain the limitation; never guess coordinates from unseen images.

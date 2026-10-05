@@ -7,6 +7,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Global } from "@opencode-ai/core/global"
 import { SkillPlugin } from "@opencode-ai/core/plugin/skill"
+import { SkillV2 } from "@opencode-ai/core/skill"
 import { Permission } from "@/permission"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Config } from "@/config/config"
@@ -350,7 +351,12 @@ const layer = Layer.effect(
 
     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
       const s = yield* InstanceState.get(state)
-      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
+      const computerUse =
+        process.platform === "win32" &&
+        (!agent || Permission.evaluate("computer_use", "*", agent.permission).action !== "deny")
+      const list = Object.values(s.skills)
+        .filter((skill) => SkillV2.usable(skill.name, computerUse))
+        .toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })

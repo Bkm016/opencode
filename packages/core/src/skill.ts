@@ -27,8 +27,20 @@ export type Source = typeof Source.Type
 export const Info = Skill.Info
 export type Info = Skill.Info
 
-export const available = (skills: ReadonlyArray<Info>, agent: AgentV2.Info) =>
-  skills.filter((skill) => PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny")
+// 内置 computer-use 技能只服务于 computer_use 工具；工具用不了时列出它只会诱导模型去操控电脑
+export const COMPUTER_USE = "computer-use"
+
+export const usable = (name: string, computerUse: boolean) => name !== COMPUTER_USE || computerUse
+
+export const available = (skills: ReadonlyArray<Info>, agent: AgentV2.Info) => {
+  const computerUse =
+    process.platform === "win32" && PermissionV2.evaluate("computer_use", "*", agent.permissions).effect !== "deny"
+  return skills.filter(
+    (skill) =>
+      usable(skill.name, computerUse) &&
+      PermissionV2.evaluate("skill", skill.name, agent.permissions).effect !== "deny",
+  )
+}
 
 const Frontmatter = Schema.Struct({
   name: Schema.String.pipe(Schema.optional),

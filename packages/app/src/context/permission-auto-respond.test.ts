@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
+import {
+  autoRespondsPermission,
+  canControlComputer,
+  isDirectoryAutoAccepting,
+  nextAcceptLevel,
+  sessionAutoAccept,
+} from "./permission-auto-respond"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -138,5 +144,36 @@ describe("isDirectoryAutoAccepting", () => {
     const autoAccept = { [`${base64Encode("C:\\repo\\project")}/*`]: true }
 
     expect(isDirectoryAutoAccepting(autoAccept, "C:/repo/project")).toBe(true)
+  })
+})
+
+describe("auto-accept levels", () => {
+  const directory = "/tmp/project"
+  const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+  const ask = (sessionID: string, name: string) => ({ sessionID, permission: name })
+
+  test("the regular level does not approve computer control", () => {
+    const autoAccept = { [`${base64Encode(directory)}/root`]: true }
+
+    expect(autoRespondsPermission(autoAccept, sessions, ask("child", "bash"), directory)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, ask("child", "computer_use"), directory)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
+  })
+
+  test("the computer level approves everything", () => {
+    const autoAccept = { [`${base64Encode(directory)}/*`]: "computer" as const }
+
+    expect(autoRespondsPermission(autoAccept, sessions, ask("child", "bash"), directory)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, ask("child", "computer_use"), directory)).toBe(true)
+    expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(true)
+  })
+
+  test("only Windows directories cycle through the computer level", () => {
+    expect(nextAcceptLevel("off", "/tmp/project")).toBe("on")
+    expect(nextAcceptLevel("on", "/tmp/project")).toBe("off")
+    expect(nextAcceptLevel("on", "C:\\repo")).toBe("computer")
+    expect(nextAcceptLevel("computer", "C:\\repo")).toBe("off")
+    expect(canControlComputer("D:/repo")).toBe(true)
+    expect(canControlComputer("\\\\server\\share")).toBe(true)
   })
 })

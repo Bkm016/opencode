@@ -25,7 +25,7 @@ export const ImagegenSkill = {
 export const ComputerUseSkill = {
   name: "computer-use",
   description:
-    "Use when the user asks to inspect or interact with Windows desktop applications through the computer_use tool, including window screenshots, accessibility controls, clicking, typing, scrolling, or dragging. Also use when computer_use reports stale state, minimized windows, approval failures, or interrupted actions.",
+    "Use only when the user explicitly asks to inspect or operate Windows desktop applications through the computer_use tool, including window screenshots, accessibility controls, clicking, typing, scrolling, or dragging. Also use when computer_use reports stale state, minimized windows, approval failures, or interrupted actions. Do not use it to check your own work: use the browser tool for web pages and the shell for programs and tests.",
   content: computerUseContent,
 }
 

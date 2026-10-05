@@ -12,10 +12,18 @@ import { ServerConnection, useServer } from "./server"
 import { type DraftTab, useTabs } from "./tabs"
 import type { ServerScope } from "@/utils/server-scope"
 import {
+  type AcceptLevel,
+  type AcceptValue,
   acceptKey,
+  acceptLevel,
+  acceptValue,
+  autoAcceptValue,
+  covers,
   directoryAcceptKey,
+  directoryAutoAccept,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
+  nextAcceptLevel,
   sessionAutoAccept,
 } from "./permission-auto-respond"
 
@@ -157,14 +165,26 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       isAutoAcceptingDirectory(directory: string) {
         return selected().isAutoAcceptingDirectory(directory)
       },
+      autoAcceptLevel(sessionID: string, directory: string) {
+        return selected().autoAcceptLevel(sessionID, directory)
+      },
+      autoAcceptDirectoryLevel(directory: string) {
+        return selected().autoAcceptDirectoryLevel(directory)
+      },
+      setAutoAcceptLevel(sessionID: string, directory: string, level: AcceptLevel) {
+        selected().setAutoAcceptLevel(sessionID, directory, level)
+      },
+      setAutoAcceptDirectoryLevel(directory: string, level: AcceptLevel) {
+        selected().setAutoAcceptDirectoryLevel(directory, level)
+      },
       toggleAutoAccept(sessionID: string, directory: string) {
         selected().toggleAutoAccept(sessionID, directory)
       },
       toggleAutoAcceptDirectory(directory: string) {
         selected().toggleAutoAcceptDirectory(directory)
       },
-      enableAutoAccept(sessionID: string, directory: string) {
-        selected().enableAutoAccept(sessionID, directory)
+      enableAutoAccept(sessionID: string, directory: string, value?: AcceptValue) {
+        selected().enableAutoAccept(sessionID, directory, value)
       },
       disableAutoAccept(sessionID: string, directory?: string) {
         selected().disableAutoAccept(sessionID, directory)
@@ -200,7 +220,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       },
     },
     createStore({
-      autoAccept: {} as Record<string, boolean>,
+      autoAccept: {} as Record<string, AcceptValue>,
     }),
   )
 
@@ -282,7 +302,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
     const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
-    if (override !== undefined) return override
+    if (override !== undefined) return covers(override, permission.permission)
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
     if (meta.disposed || !lineage) return false
@@ -328,12 +348,12 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     unsubscribe()
   })
 
-  function enableDirectory(directory: string) {
+  function enableDirectory(directory: string, value: AcceptValue = true) {
     if (meta.disposed) return
     const key = directoryAcceptKey(directory)
     setStore(
       produce((draft) => {
-        draft.autoAccept[key] = true
+        draft.autoAccept[key] = value
       }),
     )
 
@@ -360,13 +380,13 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     )
   }
 
-  function enable(sessionID: string, directory: string) {
+  function enable(sessionID: string, directory: string, value: AcceptValue = true) {
     if (meta.disposed) return
     const key = acceptKey(sessionID, directory)
     const version = bumpEnableVersion(sessionID, directory)
     setStore(
       produce((draft) => {
-        draft.autoAccept[key] = true
+        draft.autoAccept[key] = value
         delete draft.autoAccept[sessionID]
       }),
     )
@@ -417,27 +437,39 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (meta.disposed) return false
       return isAutoAcceptingDirectory(directory)
     },
-    toggleAutoAccept(sessionID: string, directory: string) {
+    autoAcceptLevel(sessionID: string, directory: string): AcceptLevel {
+      if (meta.disposed) return "off"
+      return acceptLevel(autoAcceptValue(store.autoAccept, sessions(directory), { sessionID }, directory))
+    },
+    autoAcceptDirectoryLevel(directory: string): AcceptLevel {
+      if (meta.disposed) return "off"
+      return acceptLevel(directoryAutoAccept(store.autoAccept, directory))
+    },
+    setAutoAcceptLevel(sessionID: string, directory: string, level: AcceptLevel) {
       if (meta.disposed) return
-      if (isAutoAccepting(sessionID, directory)) {
-        disable(sessionID, directory)
-        return
-      }
-
-      enable(sessionID, directory)
+      if (level === "off") return disable(sessionID, directory)
+      enable(sessionID, directory, acceptValue(level))
+    },
+    setAutoAcceptDirectoryLevel(directory: string, level: AcceptLevel) {
+      if (meta.disposed) return
+      if (level === "off") return disableDirectory(directory)
+      enableDirectory(directory, acceptValue(level))
+    },
+    // 关 → 自动接受 → 连控制电脑也接受（仅 Windows）→ 关
+    toggleAutoAccept(sessionID: string, directory: string) {
+      api.setAutoAcceptLevel(
+        sessionID,
+        directory,
+        nextAcceptLevel(api.autoAcceptLevel(sessionID, directory), directory),
+      )
     },
     toggleAutoAcceptDirectory(directory: string) {
-      if (meta.disposed) return
-      if (isAutoAcceptingDirectory(directory)) {
-        disableDirectory(directory)
-        return
-      }
-      enableDirectory(directory)
+      api.setAutoAcceptDirectoryLevel(directory, nextAcceptLevel(api.autoAcceptDirectoryLevel(directory), directory))
     },
-    enableAutoAccept(sessionID: string, directory: string) {
+    enableAutoAccept(sessionID: string, directory: string, value: AcceptValue = true) {
       if (meta.disposed) return
       if (isAutoAccepting(sessionID, directory)) return
-      enable(sessionID, directory)
+      enable(sessionID, directory, value)
     },
     disableAutoAccept(sessionID: string, directory?: string) {
       if (meta.disposed) return

@@ -4,6 +4,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import { nextAcceptLevel } from "@/context/permission-auto-respond"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -89,10 +90,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const mcpCommand = withCategory(language.t("command.category.mcp"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
-  const isAutoAcceptActive = () => {
+  const autoAcceptLevel = () => {
     const sessionID = params.id
-    if (sessionID) return permission.isAutoAccepting(sessionID, sdk().directory)
-    return permission.isAutoAcceptingDirectory(sdk().directory)
+    if (sessionID) return permission.autoAcceptLevel(sessionID, sdk().directory)
+    return permission.autoAcceptDirectoryLevel(sdk().directory)
   }
   const write = async (value: string) => {
     const body = typeof document === "undefined" ? undefined : document.body
@@ -208,16 +209,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (sessionID) permission.toggleAutoAccept(sessionID, sdk().directory)
     else permission.toggleAutoAcceptDirectory(sdk().directory)
 
-    const active = sessionID
-      ? permission.isAutoAccepting(sessionID, sdk().directory)
-      : permission.isAutoAcceptingDirectory(sdk().directory)
+    const level = autoAcceptLevel()
     showToast({
-      title: active
-        ? language.t("toast.permissions.autoaccept.on.title")
-        : language.t("toast.permissions.autoaccept.off.title"),
-      description: active
-        ? language.t("toast.permissions.autoaccept.on.description")
-        : language.t("toast.permissions.autoaccept.off.description"),
+      title: language.t(`toast.permissions.autoaccept.${level}.title`),
+      description: language.t(`toast.permissions.autoaccept.${level}.description`),
     })
   }
 
@@ -583,9 +578,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const permissionsCmds = () => [
     permissionsCommand({
       id: "permissions.autoaccept",
-      title: isAutoAcceptActive()
-        ? language.t("command.permissions.autoaccept.disable")
-        : language.t("command.permissions.autoaccept.enable"),
+      title: (() => {
+        const next = nextAcceptLevel(autoAcceptLevel(), sdk().directory)
+        if (next === "on") return language.t("command.permissions.autoaccept.enable")
+        if (next === "computer") return language.t("command.permissions.autoaccept.computer")
+        return language.t("command.permissions.autoaccept.disable")
+      })(),
       keybind: "mod+shift+a",
       disabled: false,
       onSelect: toggleAutoAccept,

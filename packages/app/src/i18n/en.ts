@@ -86,6 +86,7 @@ export const dict = {
   "command.prompt.mode.normal": "Prompt",
   "command.permissions.autoaccept.enable": "Auto-accept permissions",
   "command.permissions.autoaccept.disable": "Stop auto-accepting permissions",
+  "command.permissions.autoaccept.computer": "Also allow computer control",
   "command.workspace.toggle": "Toggle workspaces",
   "command.workspace.toggle.description": "Enable or disable multiple workspaces in the sidebar",
   "command.session.undo": "Undo",
@@ -670,9 +671,11 @@ export const dict = {
   "toast.workspace.disabled.description": "Only the main worktree is shown in the sidebar",
 
   "toast.permissions.autoaccept.on.title": "Auto-accepting permissions",
-  "toast.permissions.autoaccept.on.description": "Permission requests will be automatically approved",
+  "toast.permissions.autoaccept.on.description": "Permission requests will be automatically approved, except controlling the computer",
   "toast.permissions.autoaccept.off.title": "Stopped auto-accepting permissions",
   "toast.permissions.autoaccept.off.description": "Permission requests will require approval",
+  "toast.permissions.autoaccept.computer.title": "Auto-accepting permissions, including computer control",
+  "toast.permissions.autoaccept.computer.description": "All permission requests, including controlling this computer, will be automatically approved",
 
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",

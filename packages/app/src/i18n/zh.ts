@@ -109,6 +109,7 @@ export const dict = {
 
   "command.permissions.autoaccept.enable": "自动接受权限",
   "command.permissions.autoaccept.disable": "停止自动接受权限",
+  "command.permissions.autoaccept.computer": "同时允许控制电脑",
 
   "command.workspace.toggle": "切换工作树",
   "command.workspace.toggle.description": "在侧边栏启用或禁用多个工作树",
@@ -668,9 +669,11 @@ export const dict = {
   "toast.workspace.disabled.title": "工作树已禁用",
   "toast.workspace.disabled.description": "侧边栏只显示主工作树",
   "toast.permissions.autoaccept.on.title": "正在自动接受权限",
-  "toast.permissions.autoaccept.on.description": "权限请求将被自动批准",
+  "toast.permissions.autoaccept.on.description": "权限请求将被自动批准（控制电脑除外）",
   "toast.permissions.autoaccept.off.title": "已停止自动接受权限",
   "toast.permissions.autoaccept.off.description": "权限请求将需要批准",
+  "toast.permissions.autoaccept.computer.title": "正在自动接受权限（含控制电脑）",
+  "toast.permissions.autoaccept.computer.description": "所有权限请求都将被自动批准，包括控制这台电脑",
   "toast.model.none.title": "未选择模型",
   "toast.model.none.description": "请先连接提供商以总结此会话",
   "toast.context.noLineSelection.title": "未选择行",

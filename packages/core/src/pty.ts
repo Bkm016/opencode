@@ -10,8 +10,52 @@ import { Location } from "./location"
 import { PtyID } from "./pty/schema"
 import { Shell } from "./shell"
 import { lazy } from "./util/lazy"
+import { spawnSync } from "child_process"
 
 const BUFFER_LIMIT = 1024 * 1024 * 2
+const KILL_GRACE_MS = 1_500
+
+function descendants(root: number) {
+  const result = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" })
+  if (result.status !== 0 || !result.stdout) return []
+  const children = new Map<number, number[]>()
+  for (const line of result.stdout.split("\n")) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+    if (!pid || ppid === undefined || Number.isNaN(ppid)) continue
+    children.set(ppid, [...(children.get(ppid) ?? []), pid])
+  }
+  const found: number[] = []
+  const queue = [root]
+  while (queue.length) {
+    for (const pid of children.get(queue.shift()!) ?? []) {
+      found.push(pid)
+      queue.push(pid)
+    }
+  }
+  return found
+}
+
+function signal(pid: number, name: NodeJS.Signals) {
+  try {
+    process.kill(pid, name)
+  } catch {}
+}
+
+// 只发挂断信号停不住忽略 SIGHUP 的进程（开发服务器、nohup 等），也管不到派生出去的子进程：
+// 对整个进程组和整棵进程树发 TERM，过一会儿还活着的再 KILL
+function terminate(proc: Proc) {
+  try {
+    proc.kill()
+  } catch {}
+  if (process.platform === "win32" || !proc.pid) return
+  const pids = [proc.pid, ...descendants(proc.pid)]
+  signal(-proc.pid, "SIGTERM")
+  for (const pid of pids) signal(pid, "SIGTERM")
+  setTimeout(() => {
+    signal(-proc.pid, "SIGKILL")
+    for (const pid of pids) signal(pid, "SIGKILL")
+  }, KILL_GRACE_MS).unref()
+}
 // Exited sessions stay observable (status, exit code, retained output) until removed explicitly.
 // Cap retention so abandoned terminals do not accumulate unbounded buffers.
 const EXITED_LIMIT = 25
@@ -117,9 +161,7 @@ const layer = Layer.effect(
       for (const listener of session.listeners) listener.dispose()
       session.listeners.length = 0
       if (session.info.status === "running") {
-        try {
-          session.process.kill()
-        } catch {}
+        terminate(session.process)
       }
       notifyEnd(session, {})
     }

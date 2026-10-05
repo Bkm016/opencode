@@ -128,6 +128,54 @@ describe("pty", () => {
     }),
   )
 
+  ptyTest("remove kills processes that ignore SIGHUP and their children", () =>
+    Effect.gen(function* () {
+      const pty = yield* Pty.Service
+      const marker = `/tmp/pty-kill-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      // 外层忽略挂断，后台再挂一个同样忽略挂断的子进程，把 pid 写到文件里
+      const info = yield* createPty("/usr/bin/env", [
+        "sh",
+        "-c",
+        `trap '' HUP; sh -c "trap '' HUP; echo \\$\\$ > ${marker}; while :; do sleep 1; done" & while :; do sleep 1; done`,
+      ])
+      const child = yield* Effect.promise(async () => {
+        for (let i = 0; i < 50; i++) {
+          const text = await Bun.file(marker)
+            .text()
+            .catch(() => "")
+          if (text.trim()) return Number(text.trim())
+          await Bun.sleep(100)
+        }
+        return 0
+      })
+      expect(child).toBeGreaterThan(0)
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0)
+          return true
+        } catch {
+          return false
+        }
+      }
+      expect(alive(child)).toBe(true)
+
+      yield* pty.remove(info.id)
+      const gone = yield* Effect.promise(async () => {
+        for (let i = 0; i < 40; i++) {
+          if (!alive(child) && !alive(info.pid)) return true
+          await Bun.sleep(100)
+        }
+        return false
+      })
+      yield* Effect.promise(() =>
+        Bun.file(marker)
+          .delete()
+          .catch(() => {}),
+      )
+      expect(gone).toBe(true)
+    }),
+  )
+
   ptyTest("replays buffered output and streams live output to attachments", () =>
     Effect.gen(function* () {
       const pty = yield* Pty.Service

@@ -83,6 +83,8 @@ export function SessionComposerRegion(props: {
                   todos={controller.state.todos()}
                   collapsed={controller.todo.collapsed()}
                   onToggle={controller.todo.onToggle}
+                  onDismiss={controller.state.dismissTodos}
+                  dismissLabel={language.t("common.close")}
                   collapseLabel={language.t("session.todo.collapse")}
                   expandLabel={language.t("session.todo.expand")}
                   dockProgress={controller.dockProgress()}

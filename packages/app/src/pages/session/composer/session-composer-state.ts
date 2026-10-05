@@ -25,6 +25,10 @@ export const todoDockAtBoundary = (state: ReturnType<typeof todoState>) => state
 
 const idle = { type: "idle" as const }
 
+// 用户手动关掉的待办清单（按会话记清单条目）；模型换了新清单才重新出现
+const todoKey = (todos: Todo[]) => todos.map((todo) => todo.content).join("\n")
+const [dismissedTodos, setDismissedTodos] = createStore<Record<string, string>>({})
+
 export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
   const params = useParams()
   const sdk = useSDK()
@@ -55,6 +59,18 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return serverSync().session.data.todo[id] ?? []
   })
 
+  const dismissed = createMemo(() => {
+    const id = params.id
+    if (!id || dismissedTodos[id] === undefined) return false
+    return dismissedTodos[id] === todoKey(todos())
+  })
+  const shown = () => (dismissed() ? 0 : todos().length)
+  const dismiss = () => {
+    const id = params.id
+    if (!id || todos().length === 0) return
+    setDismissedTodos(id, todoKey(todos()))
+  }
+
   const done = createMemo(
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
@@ -64,7 +80,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   const [store, setStore] = createStore({
     sessionID: params.id,
     responding: undefined as string | undefined,
-    dock: todos().length > 0 && !done() && live(),
+    dock: shown() > 0 && !done() && live(),
     closing: false,
     opening: false,
   })
@@ -119,7 +135,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
   createEffect(
     on(
-      () => [params.id, todos().length, done(), live()] as const,
+      () => [params.id, shown(), done(), live()] as const,
       ([id, count, complete, active], previous) => {
         if (raf) cancelAnimationFrame(raf)
         raf = undefined
@@ -192,10 +208,11 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     permissionResponding,
     decide,
     todos,
+    dismissTodos: dismiss,
     dock: () =>
       store.sessionID === params.id
         ? store.dock
-        : todoDockAtBoundary(todoState({ count: todos().length, done: done(), live: live() })),
+        : todoDockAtBoundary(todoState({ count: shown(), done: done(), live: live() })),
     closing: () => store.sessionID === params.id && store.closing,
     opening: () => store.sessionID === params.id && store.opening,
   }

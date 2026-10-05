@@ -7,7 +7,7 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Index, createEffect, createMemo } from "solid-js"
+import { Index, Show, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 
@@ -43,6 +43,8 @@ export function SessionTodoDock(props: {
   todos: Todo[]
   collapsed: boolean
   onToggle: () => void
+  onDismiss?: () => void
+  dismissLabel?: string
   collapseLabel: string
   expandLabel: string
   dockProgress: number
@@ -159,7 +161,7 @@ export function SessionTodoDock(props: {
               truncate
             />
           </div>
-          <div class="ml-auto">
+          <div class="ml-auto flex items-center">
             <IconButton
               data-action="session-todo-toggle-button"
               data-collapsed={props.collapsed ? "true" : "false"}
@@ -177,6 +179,23 @@ export function SessionTodoDock(props: {
               }}
               aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
             />
+            <Show when={props.onDismiss}>
+              <IconButton
+                data-action="session-todo-dismiss"
+                icon="close-small"
+                size="normal"
+                variant="ghost"
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onDismiss?.()
+                }}
+                aria-label={props.dismissLabel}
+              />
+            </Show>
           </div>
         </div>
 

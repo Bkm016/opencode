@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { Discovery } from "../../src/skill/discovery"
 import { Global } from "@opencode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
-import { rm } from "fs/promises"
+import { rm, stat } from "fs/promises"
 import path from "path"
 import { testEffect } from "../lib/effect"
 
@@ -37,6 +37,10 @@ beforeAll(async () => {
         return new Response(mutableContent)
       }
       if (url.pathname === "/mutable/mutable/old.md") return new Response("old reference")
+      if (url.pathname === "/tool/index.json") {
+        return Response.json({ skills: [{ name: "tool", files: ["SKILL.md", "bin/run", "notes.md"] }] })
+      }
+      if (url.pathname.startsWith("/tool/tool/")) return new Response("#!/bin/sh\necho ok\n")
 
       // route /.well-known/skills/* to the fixture directory
       if (url.pathname.startsWith("/.well-known/skills/")) {
@@ -183,4 +187,16 @@ describe("Discovery.pull", () => {
       expect(mutableDownloadCount).toBe(3)
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.live("marks downloaded bin/ files executable", () =>
+      Effect.gen(function* () {
+        const discovery = yield* Discovery.Service
+        const [dir] = yield* discovery.pull(`http://localhost:${server.port}/tool/`)
+        const mode = (file: string) => Effect.promise(() => stat(path.join(dir, file)).then((info) => info.mode))
+        expect((yield* mode("bin/run")) & 0o111).not.toBe(0)
+        expect((yield* mode("notes.md")) & 0o111).toBe(0)
+      }),
+    )
+  }
 })

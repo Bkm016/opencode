@@ -5,6 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
+import fs from "fs/promises"
 import { Config } from "@/config/config"
 import { Shell } from "@opencode-ai/core/shell"
 import { ShellTool } from "../../src/tool/shell"
@@ -12,6 +13,7 @@ import { Filesystem } from "@/util/filesystem"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { Agent } from "../../src/agent/agent"
+import { Skill } from "../../src/skill"
 import { Truncate } from "@/tool/truncate"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -32,6 +34,7 @@ const shellLayer = Layer.mergeAll(
       Truncate.node,
       Config.node,
       Agent.node,
+      Skill.node,
       RuntimeFlags.node,
       SessionRunState.node,
     ]),
@@ -202,6 +205,32 @@ describe("tool.shell", () => {
       }),
     ),
   )
+
+  if (process.platform !== "win32") {
+    it.live("runs commands from a skill's bin directory by name", () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped({ git: true })
+        const skill = path.join(dir, ".opencode", "skill", "demo")
+        yield* Effect.promise(async () => {
+          await Bun.write(path.join(skill, "SKILL.md"), "---\nname: demo\ndescription: Demo.\n---\n\n# Demo\n")
+          await Bun.write(path.join(skill, "bin", "skill-hello"), '#!/bin/sh\necho "hello from $(basename "$0")"\n')
+          await Bun.write(path.join(skill, "bin", "ls"), "#!/bin/sh\necho shadowed\n")
+          await fs.chmod(path.join(skill, "bin", "skill-hello"), 0o755)
+          await fs.chmod(path.join(skill, "bin", "ls"), 0o755)
+        })
+        yield* runIn(
+          dir,
+          Effect.gen(function* () {
+            const result = yield* run({ command: "skill-hello && ls -d /" })
+            expect(result.metadata.exit).toBe(0)
+            expect(result.metadata.output).toContain("hello from skill-hello")
+            // 系统命令优先，技能里的同名命令不会顶替它
+            expect(result.metadata.output).not.toContain("shadowed")
+          }),
+        )
+      }),
+    )
+  }
 
   it.live("new user prompt interrupts a running command", () =>
     runIn(

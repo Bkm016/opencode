@@ -49,6 +49,7 @@ Use this skill.
         ),
       )
       yield* Effect.promise(() => Bun.write(path.join(skill, "scripts", "demo.txt"), "demo"))
+      yield* Effect.promise(() => Bun.write(path.join(skill, "bin", "tool-run"), "#!/bin/sh\n"))
 
       const home = process.env.OPENCODE_TEST_HOME
       process.env.OPENCODE_TEST_HOME = dir
@@ -90,6 +91,8 @@ Use this skill.
       expect(result.output).toContain(`<skill_content name="tool-skill">`)
       expect(result.output).toContain(`Base directory for this skill: ${skill}`)
       expect(result.output).toContain(`<file>${file}</file>`)
+      expect(result.output).toContain("are on PATH in the shell; run them by name")
+      expect(result.output).toContain("tool-run")
     }),
   )
 

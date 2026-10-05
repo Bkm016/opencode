@@ -54,12 +54,20 @@ const Issue = Schema.StructWithRest(
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
 
-function isSkillFrontmatter(data: unknown): data is { name: string; description?: string } {
+function isSkillFrontmatter(data: unknown): data is { name: string; description?: string; bin?: unknown } {
   return (
     isRecord(data) &&
     typeof data.name === "string" &&
     (data.description === undefined || typeof data.description === "string")
   )
+}
+
+/** 技能自带命令所在目录：默认 bin/，frontmatter 的 bin 可改名，但不能指到技能目录外面。 */
+function binDir(location: string, value: unknown) {
+  const root = path.dirname(location)
+  const dir = path.resolve(root, typeof value === "string" && value.trim() ? value.trim() : "bin")
+  if (dir === root || !FSUtil.contains(root, dir)) return undefined
+  return dir
 }
 
 export class InvalidError extends Schema.TaggedErrorClass<InvalidError>()("SkillInvalidError", {
@@ -86,6 +94,8 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Ski
 type State = {
   skills: Record<string, Info>
   dirs: Set<string>
+  /** 技能名 → 自带命令目录（只记存在的） */
+  bins: Record<string, string>
 }
 
 type DiscoveryState = {
@@ -104,9 +114,18 @@ export interface Interface {
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  /** 该技能自带命令目录（没有则 undefined） */
+  readonly bin: (name: string) => Effect.Effect<string | undefined>
+  /** 要追加到 PATH 的命令目录，优先级高的在前（项目级先于全局） */
+  readonly binDirs: (agent?: Agent.Info) => Effect.Effect<string[]>
 }
 
-const add = Effect.fnUntraced(function* (state: State, match: string, events: EventV2Bridge.Service["Service"]) {
+const add = Effect.fnUntraced(function* (
+  state: State,
+  match: string,
+  events: EventV2Bridge.Service["Service"],
+  fsys: FSUtil.Interface,
+) {
   const md = yield* Effect.tryPromise({
     try: () => ConfigMarkdown.parse(match),
     catch: (err) => err,
@@ -141,6 +160,9 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
     location: match,
     content: md.content,
   }
+  const bin = binDir(match, md.data.bin)
+  if (bin && (yield* fsys.isDir(bin))) state.bins[md.data.name] = bin
+  else delete state.bins[md.data.name]
 })
 
 const scan = Effect.fnUntraced(function* (
@@ -240,8 +262,9 @@ const loadSkills = Effect.fnUntraced(function* (
   state: State,
   discovered: DiscoveryState,
   events: EventV2Bridge.Service["Service"],
+  fsys: FSUtil.Interface,
 ) {
-  yield* Effect.forEach(discovered.matches, (match) => add(state, match, events), {
+  yield* Effect.forEach(discovered.matches, (match) => add(state, match, events, fsys), {
     concurrency: "unbounded",
     discard: true,
   })
@@ -276,7 +299,7 @@ const layer = Layer.effect(
     )
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
-        const s: State = { skills: {}, dirs: new Set() }
+        const s: State = { skills: {}, dirs: new Set(), bins: {} }
         // Register the built-in skill BEFORE disk discovery so a user-disk
         // skill with the same name can override it.
         s.skills[CUSTOMIZE_OPENCODE_SKILL_NAME] = {
@@ -299,7 +322,7 @@ const layer = Layer.effect(
           ...SkillPlugin.ComputerUseSkill,
           location: "<built-in>",
         }
-        yield* loadSkills(s, yield* InstanceState.get(discovered), events)
+        yield* loadSkills(s, yield* InstanceState.get(discovered), events, fsys)
         return s
       }),
     )
@@ -332,9 +355,52 @@ const layer = Layer.effect(
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    return Service.of({ get, require, all, dirs, available })
+    const bin = Effect.fn("Skill.bin")(function* (name: string) {
+      return (yield* InstanceState.get(state)).bins[name]
+    })
+
+    const binDirs = Effect.fn("Skill.binDirs")(function* (agent?: Agent.Info) {
+      const s = yield* InstanceState.get(state)
+      const order = (yield* InstanceState.get(discovered)).matches
+      // 发现顺序是全局 → 项目 → 配置，越靠后越具体；PATH 前面的同名命令生效，所以倒过来
+      return (yield* available(agent))
+        .filter((skill) => s.bins[skill.name])
+        .toSorted((a, b) => order.indexOf(b.location) - order.indexOf(a.location))
+        .map((skill) => s.bins[skill.name])
+    })
+
+    return Service.of({ get, require, all, dirs, available, bin, binDirs })
   }),
 )
+
+/**
+ * 把技能命令目录追加到 PATH 末尾：系统里已有的同名命令（git、python 等）始终优先，技能不能顶替。
+ * env 里没有 PATH 时以当前进程的 PATH 为基础。返回只含 PATH 的补丁，没有目录时返回空对象。
+ */
+export function pathEnv(env: Record<string, string | undefined>, dirs: string[]): Record<string, string> {
+  if (dirs.length === 0) return {}
+  const find = (source: Record<string, string | undefined>) =>
+    process.platform === "win32"
+      ? Object.keys(source).find((key) => key.toLowerCase() === "path" && source[key] !== undefined)
+      : source.PATH !== undefined
+        ? "PATH"
+        : undefined
+  const own = find(env)
+  const inherited = own ? undefined : find(process.env)
+  const key = own ?? inherited ?? (process.platform === "win32" ? "Path" : "PATH")
+  const base = (own ? env[own] : inherited ? process.env[inherited] : undefined) ?? ""
+  const parts = base.split(path.delimiter).filter(Boolean)
+  return { [key]: [...parts, ...dirs.filter((dir) => !parts.includes(dir))].join(path.delimiter) }
+}
+
+/** 列出命令目录里的命令名（隐藏文件和子目录不算）。 */
+export const commands = Effect.fnUntraced(function* (fsys: FSUtil.Interface, dir: string) {
+  const entries = yield* fsys.readDirectoryEntries(dir).pipe(Effect.catch(() => Effect.succeed([])))
+  return entries
+    .filter((entry) => entry.type !== "directory" && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .toSorted()
+})
 
 export function fmt(list: Info[], opts: { verbose: boolean }) {
   const described = list.filter((skill) => skill.description !== undefined)

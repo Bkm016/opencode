@@ -77,6 +77,8 @@ const it = testEffect(
           all: () => Effect.succeed(skills),
           dirs: () => Effect.succeed([]),
           available: () => Effect.succeed(skills),
+          bin: () => Effect.succeed(undefined),
+          binDirs: () => Effect.succeed([]),
         }),
       ),
     ],

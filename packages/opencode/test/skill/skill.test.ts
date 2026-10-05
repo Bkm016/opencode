@@ -598,4 +598,67 @@ description: A skill in the .opencode/skills directory.
       { git: true },
     ),
   )
+  it.live("collects skill bin directories for PATH, most specific first", () =>
+    Effect.gen(function* () {
+      const project = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir({ git: true })),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const write = (dir: string, name: string, extra = "") =>
+        Bun.write(path.join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${name}.\n${extra}---\n\n# ${name}\n`)
+      const externalDir = path.join(project.path, ".claude", "skills", "external-tool")
+      const projectDir = path.join(project.path, ".opencode", "skill", "proj-tool")
+      const customDir = path.join(project.path, ".opencode", "skill", "custom-bin")
+      const escapeDir = path.join(project.path, ".opencode", "skill", "escape")
+      const plainDir = path.join(project.path, ".opencode", "skill", "plain")
+      yield* Effect.promise(async () => {
+        await write(externalDir, "external-tool")
+        await fs.mkdir(path.join(externalDir, "bin"), { recursive: true })
+        await write(projectDir, "proj-tool")
+        await Bun.write(path.join(projectDir, "bin", "hello"), "#!/bin/sh\necho hi\n")
+        await Bun.write(path.join(projectDir, "bin", ".hidden"), "")
+        await write(customDir, "custom-bin", "bin: tools\n")
+        await fs.mkdir(path.join(customDir, "tools"), { recursive: true })
+        await write(escapeDir, "escape", "bin: ../..\n")
+        await write(plainDir, "plain")
+      })
+
+      yield* withHome(
+        project.path,
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          const dirs = yield* skill.binDirs()
+          expect(dirs).toHaveLength(3)
+          expect(dirs.slice(0, 2).toSorted()).toEqual(
+            [path.join(projectDir, "bin"), path.join(customDir, "tools")].toSorted(),
+          )
+          // .claude/skills 比 .opencode/skill 先发现、优先级低，排在后面；同名命令以靠前的为准
+          expect(dirs[2]).toBe(path.join(externalDir, "bin"))
+          expect(yield* skill.bin("escape")).toBeUndefined()
+          expect(yield* skill.bin("plain")).toBeUndefined()
+          const fsys = yield* FSUtil.Service.pipe(Effect.provide(LayerNode.compile(FSUtil.node)))
+          expect(yield* Skill.commands(fsys, path.join(projectDir, "bin"))).toEqual(["hello"])
+
+          const denied = { permission: [{ permission: "skill", pattern: "proj-tool", action: "deny" }] } as never
+          expect(yield* skill.binDirs(denied)).not.toContain(path.join(projectDir, "bin"))
+        }).pipe(provideInstance(project.path)),
+      )
+    }),
+  )
+})
+
+describe("skill pathEnv", () => {
+  it.effect("appends skill bins after the existing PATH and skips duplicates", () =>
+    Effect.sync(() => {
+      const sep = path.delimiter
+      const key = process.platform === "win32" ? "Path" : "PATH"
+      expect(Skill.pathEnv({ [key]: ["/usr/bin", "/a/bin"].join(sep) }, ["/a/bin", "/b/bin"])).toEqual({
+        [key]: ["/usr/bin", "/a/bin", "/b/bin"].join(sep),
+      })
+      expect(Skill.pathEnv({ [key]: "/usr/bin" }, [])).toEqual({})
+      // env 里没有 PATH 时以进程的 PATH 为基础
+      const inherited = Skill.pathEnv({}, ["/b/bin"])
+      expect(Object.values(inherited)[0]?.endsWith(`${sep}/b/bin`)).toBe(true)
+    }),
+  )
 })

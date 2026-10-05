@@ -17,6 +17,7 @@ import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
+import { Skill } from "../skill"
 import { PromptCatalog } from "./prompt-catalog"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
@@ -134,6 +135,7 @@ const layer = Layer.effect(
     const processor = yield* SessionProcessor.Service
     const compaction = yield* SessionCompaction.Service
     const plugin = yield* Plugin.Service
+    const skills = yield* Skill.Service
     const commands = yield* Command.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
@@ -584,10 +586,11 @@ const layer = Layer.effect(
                 { cwd, sessionID: input.sessionID, callID: part.callID },
                 { env: {} },
               )
+              const skillPath = Skill.pathEnv(shellEnv.env, yield* skills.binDirs(yield* agents.get(input.agent)))
               const cmd = ChildProcess.make(launch.command, launch.args, {
                 cwd,
                 extendEnv: true,
-                env: { ...shellEnv.env, TERM: "dumb" },
+                env: { ...shellEnv.env, ...skillPath, TERM: "dumb" },
                 stdin: "ignore",
                 forceKillAfter: "3 seconds",
               })
@@ -2518,6 +2521,7 @@ export const node = LayerNode.make({
     SessionProcessor.node,
     SessionCompaction.node,
     Plugin.node,
+    Skill.node,
     Command.node,
     Config.node,
     Permission.node,

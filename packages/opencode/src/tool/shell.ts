@@ -20,6 +20,8 @@ import { ShellID } from "./shell/id"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
+import { Agent } from "@/agent/agent"
+import { Skill } from "@/skill"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
@@ -435,6 +437,8 @@ export const ShellTool = Tool.define(
     const fs = yield* FSUtil.Service
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
+    const agents = yield* Agent.Service
+    const skills = yield* Skill.Service
     const flags = yield* RuntimeFlags.Service
     const runState = yield* SessionRunState.Service
     // 可选依赖：测试等精简环境没有 location 服务时后台模式不可用，前台执行不受影响
@@ -514,7 +518,7 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
-      return {
+      const env = {
         ...process.env,
         ...(process.platform === "win32"
           ? {
@@ -526,6 +530,9 @@ export const ShellTool = Tool.define(
           : {}),
         ...extra.env,
       }
+      // 技能 bin/ 里的命令可以直接按名字执行
+      const dirs = yield* skills.binDirs(yield* agents.get(ctx.agent))
+      return { ...env, ...Skill.pathEnv(env, dirs) }
     })
 
     const run = Effect.fn("ShellTool.run")(function* (

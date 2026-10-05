@@ -34,13 +34,19 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | HttpClient
     const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
     const cache = path.join(Global.Path.cache, "skills")
 
-    const download = Effect.fn("Discovery.download")(function* (url: string, dest: string) {
-      if (yield* fs.exists(dest).pipe(Effect.orDie)) return true
+    // HTTP 下载不带文件权限：bin/ 下的命令要直接执行，补上可执行位
+    const mode = (file: string) => (process.platform !== "win32" && file.split("/")[0] === "bin" ? 0o755 : undefined)
+
+    const download = Effect.fn("Discovery.download")(function* (url: string, dest: string, mode?: number) {
+      if (yield* fs.exists(dest).pipe(Effect.orDie)) {
+        if (mode) yield* fs.chmod(dest, mode).pipe(Effect.ignore)
+        return true
+      }
 
       return yield* HttpClientRequest.get(url).pipe(
         http.execute,
         Effect.flatMap((res) => res.arrayBuffer),
-        Effect.flatMap((body) => fs.writeWithDirs(dest, new Uint8Array(body))),
+        Effect.flatMap((body) => fs.writeWithDirs(dest, new Uint8Array(body), mode)),
         Effect.as(true),
         Effect.catch((err) => Effect.logError("failed to download", { url: url, error: err }).pipe(Effect.as(false))),
       )
@@ -87,7 +93,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | HttpClient
             if (version === undefined || current === version) {
               yield* Effect.forEach(
                 skill.files,
-                (file) => download(new URL(file, `${host}/${skill.name}/`).href, path.join(root, file)),
+                (file) => download(new URL(file, `${host}/${skill.name}/`).href, path.join(root, file), mode(file)),
                 { concurrency: fileConcurrency, discard: true },
               )
             } else {
@@ -97,7 +103,8 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | HttpClient
               yield* Effect.gen(function* () {
                 const downloaded = yield* Effect.forEach(
                   skill.files,
-                  (file) => download(new URL(file, `${host}/${skill.name}/`).href, path.join(staging, file)),
+                  (file) =>
+                    download(new URL(file, `${host}/${skill.name}/`).href, path.join(staging, file), mode(file)),
                   { concurrency: fileConcurrency },
                 )
                 if (!downloaded.every(Boolean)) return

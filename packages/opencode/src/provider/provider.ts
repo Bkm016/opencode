@@ -1557,6 +1557,7 @@ const layer = Layer.effect(
         }
       }),
     )
+    yield* InstanceState.reloadOnConfig(state)
 
     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
 

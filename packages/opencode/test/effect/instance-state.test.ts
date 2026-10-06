@@ -4,6 +4,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { $ } from "bun"
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import { InstanceState } from "@/effect/instance-state"
+import { reloadInstanceConfig } from "@/effect/instance-registry"
 import {
   disposeAllInstancesEffect,
   provideInstanceEffect,
@@ -76,6 +77,27 @@ it.live("InstanceState invalidates on reload", () =>
 
     expect(a).not.toBe(b)
     expect(seen).toEqual(["1"])
+  }),
+)
+
+it.live("InstanceState config reload only rebuilds opted-in states", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped()
+    let n = 0
+    const reloaded = yield* InstanceState.make(() => Effect.sync(() => ({ n: ++n })))
+    yield* InstanceState.reloadOnConfig(reloaded)
+    const kept = yield* InstanceState.make(() => Effect.sync(() => ({ n: ++n })))
+    const filtered = yield* InstanceState.make(() => Effect.sync(() => ({ n: ++n, reload: false })))
+    yield* InstanceState.reloadOnConfig(filtered, (value) => value.reload)
+
+    const a = yield* access(reloaded, dir)
+    const b = yield* access(kept, dir)
+    const c = yield* access(filtered, dir)
+    yield* Effect.promise(() => reloadInstanceConfig())
+
+    expect(yield* access(reloaded, dir)).not.toBe(a)
+    expect(yield* access(kept, dir)).toBe(b)
+    expect(yield* access(filtered, dir)).toBe(c)
   }),
 )
 

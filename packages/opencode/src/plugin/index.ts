@@ -290,6 +290,8 @@ const layer = Layer.effect(
         return { hooks }
       }),
     )
+    // 插件的 config() 钩子只在加载时跑一次，改了它可能改写的配置就得重新加载插件
+    yield* InstanceState.reloadOnConfig(state, (s) => s.hooks.some((hook) => typeof hook.config === "function"))
 
     const trigger = Effect.fn("Plugin.trigger")(function* <
       Name extends TriggerName,

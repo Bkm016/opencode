@@ -1,4 +1,6 @@
 const disposers = new Set<(directory: string) => Promise<void>>()
+// 只依赖配置的缓存（模型、智能体等）：改设置时单独刷新，不销毁实例，正在跑的会话不受影响
+const configReloaders = new Set<() => Promise<void>>()
 
 // 配置热重载必须等运行租约全部释放；显式 dispose 不经过此门，仍可立即终止进程资源。
 type ActivityGate = {
@@ -118,4 +120,15 @@ export function registerDisposer(disposer: (directory: string) => Promise<void>)
 
 export async function disposeInstance(directory: string) {
   await Promise.allSettled([...disposers].map((disposer) => disposer(directory)))
+}
+
+export function registerConfigReloader(reloader: () => Promise<void>) {
+  configReloaders.add(reloader)
+  return () => {
+    configReloaders.delete(reloader)
+  }
+}
+
+export async function reloadInstanceConfig() {
+  await Promise.allSettled([...configReloaders].map((reloader) => reloader()))
 }

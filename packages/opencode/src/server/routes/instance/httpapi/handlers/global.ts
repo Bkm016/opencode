@@ -3,7 +3,7 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
-import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { disposeAllInstancesAndEmitGlobalDisposed, emitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -86,6 +86,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
       if (result.restartRequired) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
+      // 没重启实例时也通知前端重新拉取智能体、模型列表
+      else if (result.changed) bridge.fork(emitGlobalDisposed)
       return result.info
     })
 

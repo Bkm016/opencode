@@ -370,6 +370,7 @@ const layer = Layer.effect(
         } satisfies State
       }),
     )
+    yield* InstanceState.reloadOnConfig(state)
 
     return Service.of({
       get: Effect.fn("Agent.get")(function* (agent: string) {

@@ -1,7 +1,7 @@
 import { Effect, ScopedCache, Scope } from "effect"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"
-import { registerDisposer } from "./instance-registry"
+import { registerConfigReloader, registerDisposer } from "./instance-registry"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 
 const TypeId = "~opencode/InstanceState"
@@ -42,6 +42,25 @@ export const make = <A, E = never, R = never>(
       [TypeId]: TypeId,
       cache,
     }
+  })
+
+/** 全局配置里模型、智能体等变化时丢掉缓存重建；filter 返回 false 的条目保留 */
+export const reloadOnConfig = <A, E, R>(self: InstanceState<A, E, R>, filter?: (value: A) => boolean) =>
+  Effect.gen(function* () {
+    const off = registerConfigReloader(() =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          for (const key of yield* ScopedCache.keys(self.cache)) {
+            if (filter) {
+              const value = yield* ScopedCache.getSuccess(self.cache, key)
+              if (value._tag === "None" || !filter(value.value)) continue
+            }
+            yield* ScopedCache.invalidate(self.cache, key)
+          }
+        }),
+      ),
+    )
+    yield* Effect.addFinalizer(() => Effect.sync(off))
   })
 
 export const get = <A, E, R>(self: InstanceState<A, E, R>) =>

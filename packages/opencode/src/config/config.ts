@@ -19,7 +19,8 @@ import { isRecord } from "@/util/record"
 import type { ConsoleState } from "@opencode-ai/core/v1/config/console-state"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema, ScopedCache } from "effect"
+import { reloadInstanceConfig } from "@/effect/instance-registry"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
@@ -174,6 +175,39 @@ function writableGlobal(info: Info) {
   // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
   if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
   return next
+}
+
+// 每轮对话前从 Config / Provider / Agent 现读的配置；只改这些时刷新缓存，不重启实例
+const RELOADABLE_KEYS = new Set<string>([
+  "provider",
+  "agent",
+  "model",
+  "small_model",
+  "disabled_providers",
+  "enabled_providers",
+  "prompts",
+  "permission",
+])
+
+/** 前后两份全局配置的差异是否都能靠刷新缓存生效（压缩只允许改 strategy） */
+export function reloadable(previous: Info, next: Info) {
+  const before = writable(previous) as Record<string, unknown>
+  const after = writable(next) as Record<string, unknown>
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (isDeepStrictEqual(before[key], after[key])) continue
+    if (RELOADABLE_KEYS.has(key)) continue
+    if (key === "compaction") {
+      const { strategy: _a, ...restBefore } = previous.compaction ?? {}
+      const { strategy: _b, ...restAfter } = next.compaction ?? {}
+      if (isDeepStrictEqual(compact(restBefore), compact(restAfter))) continue
+    }
+    return false
+  }
+  return true
+}
+
+function compact(input: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined))
 }
 
 const layer = Layer.effect(
@@ -648,6 +682,7 @@ const layer = Layer.effect(
         return yield* loadInstanceState(ctx).pipe(Effect.orDie)
       }),
     )
+    yield* InstanceState.reloadOnConfig(state)
 
     const get = Effect.fn("Config.get")(function* () {
       return yield* InstanceState.use(state, (s) => s.config)
@@ -747,25 +782,11 @@ const layer = Layer.effect(
       if (!changed) return { info: next, changed, restartRequired: false }
 
       yield* invalidate()
-      const withoutCompactionStrategy = (info: Info) => {
-        const normalized = structuredClone(writable(info))
-        if (!normalized.compaction) return normalized
-        delete normalized.compaction.strategy
-        if (Object.values(normalized.compaction).every((value) => value === undefined)) delete normalized.compaction
-        return normalized
-      }
-      const strategyChanged = previous.compaction?.strategy !== next.compaction?.strategy
-      const strategyOnly =
-        strategyChanged && isDeepStrictEqual(withoutCompactionStrategy(previous), withoutCompactionStrategy(next))
-      if (!strategyOnly) return { info: next, changed, restartRequired: true }
+      if (!reloadable(previous, next)) return { info: next, changed, restartRequired: true }
 
-      // 压缩策略在每次 provider turn 前读取；仅刷新 Config 缓存即可生效，
-      // 不得销毁 Instance，否则会连带中断所有正在运行的 Session Runner。
-      const keys = yield* ScopedCache.keys(state.cache)
-      yield* Effect.forEach(keys, (key) => ScopedCache.invalidate(state.cache, key), {
-        concurrency: "unbounded",
-        discard: true,
-      })
+      // 只动了模型、智能体这类每轮现读的配置：刷新相关缓存即可，不销毁 Instance，
+      // 否则会连带中断所有正在运行的 Session Runner。
+      yield* Effect.promise(() => reloadInstanceConfig())
       return { info: next, changed, restartRequired: false }
     })
 

@@ -498,6 +498,32 @@ it.effect("restarts instances when other global config changes", () =>
   ),
 )
 
+it.effect("does not restart instances when only model or agent config changes", () =>
+  withGlobalConfig({ config: { agent: { enhance: { model: "test/a" } }, small_model: "test/a" } }, () =>
+    Effect.gen(function* () {
+      const result = yield* Config.use.updateGlobal({
+        agent: { enhance: { model: "test/b" }, assistant: { model: "test/c" } },
+        small_model: "test/b",
+        provider: { test: { name: "Test", models: { b: { name: "B" } } } },
+      })
+
+      expect(result.changed).toBe(true)
+      expect(result.restartRequired).toBe(false)
+    }),
+  ),
+)
+
+it.effect("restarts instances when a non-reloadable key changes alongside models", () =>
+  withGlobalConfig({ config: { small_model: "test/a" } }, () =>
+    Effect.gen(function* () {
+      const result = yield* Config.use.updateGlobal({ small_model: "test/b", shell: "/bin/zsh" })
+
+      expect(result.changed).toBe(true)
+      expect(result.restartRequired).toBe(true)
+    }),
+  ),
+)
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

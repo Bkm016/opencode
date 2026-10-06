@@ -9222,6 +9222,42 @@ export type ExperimentalProjectCopyGenerateNameResponses = {
 export type ExperimentalProjectCopyGenerateNameResponse =
   ExperimentalProjectCopyGenerateNameResponses[keyof ExperimentalProjectCopyGenerateNameResponses]
 
+export type ExperimentalPromptEnhanceData = {
+  body?: {
+    text: string
+    sessionID?: string
+    model?: {
+      providerID: string
+      modelID: string
+    }
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/prompt/enhance"
+}
+
+export type ExperimentalPromptEnhanceErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalPromptEnhanceError = ExperimentalPromptEnhanceErrors[keyof ExperimentalPromptEnhanceErrors]
+
+export type ExperimentalPromptEnhanceResponses = {
+  /**
+   * Rewritten prompt, streamed as plain text
+   */
+  200: string
+}
+
+export type ExperimentalPromptEnhanceResponse =
+  ExperimentalPromptEnhanceResponses[keyof ExperimentalPromptEnhanceResponses]
+
 export type PtyShellsData = {
   body?: never
   path?: never

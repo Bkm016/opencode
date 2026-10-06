@@ -320,6 +320,10 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
   "prompt.action.bypassPermission": "Bypass",
+  "prompt.enhance.title": "Enhance prompt",
+  "prompt.enhance.stop": "Stop enhancing",
+  "prompt.enhance.undo": "Undo enhancement",
+  "prompt.enhance.failed": "Could not enhance the prompt",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",

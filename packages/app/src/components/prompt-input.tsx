@@ -41,6 +41,7 @@ import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { acceptValue, nextAcceptLevel } from "@/context/permission-auto-respond"
+import { createPromptEnhance } from "./prompt-input/enhance"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -380,6 +381,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const shellModeKey = "mod+shift+x"
   const normalModeKey = "mod+shift+e"
 
+  const enhance = createPromptEnhance({
+    sdk,
+    current: () => prompt.current(),
+    set: (next) => prompt.set(next, promptLength(next)),
+    sessionID: () => props.controls.session.id,
+    model: () => {
+      const model = props.controls.model.selection.current()
+      return model ? { providerID: model.provider.id, modelID: model.id } : undefined
+    },
+    onError: () => showToast({ title: language.t("prompt.enhance.failed") }),
+  })
+  const enhanceBlank = createMemo(
+    () =>
+      prompt
+        .current()
+        .map((part) => ("content" in part ? part.content : ""))
+        .join("")
+        .trim().length === 0,
+  )
+  const runEnhance = () => {
+    if (store.mode !== "normal") return
+    if (enhance.running()) return enhance.stop()
+    void enhance.run().then(() => requestAnimationFrame(() => editorRef?.focus()))
+  }
+
   command.register("prompt-input", () => [
     {
       id: "file.attach",
@@ -388,6 +414,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       keybind: "mod+u",
       disabled: store.mode !== "normal",
       onSelect: pick,
+    },
+    {
+      id: "prompt.enhance",
+      title: language.t("prompt.enhance.title"),
+      category: language.t("command.category.session"),
+      keybind: "mod+i",
+      disabled: store.mode !== "normal" || (enhanceBlank() && !enhance.running()),
+      onSelect: runEnhance,
     },
     {
       id: "prompt.mode.shell",
@@ -1176,6 +1210,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "z" &&
+      enhance.canUndo()
+    ) {
+      event.preventDefault()
+      enhance.undo()
+      return
+    }
+
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
       if (store.mode !== "normal") return
@@ -1343,6 +1389,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ) {
         return
       }
+      if (enhance.running()) return
       void handleSubmit(event)
     }
   }
@@ -1413,7 +1460,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       />
       <DockShellForm
         id={formId}
-        onSubmit={handleSubmit}
+        onSubmit={(event) => {
+          if (enhance.running()) return event.preventDefault()
+          return handleSubmit(event)
+        }}
         classList={{
           "group/prompt-input": true,
           "outline outline-2 outline-dashed outline-icon-info-active": store.draggingType !== null,
@@ -1458,8 +1508,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               role="textbox"
               aria-multiline="true"
               aria-label={placeholder()}
-              contenteditable={starting() ? "false" : "true"}
-              aria-busy={starting()}
+              contenteditable={starting() || enhance.running() ? "false" : "true"}
+              aria-busy={starting() || enhance.running()}
               autocapitalize={store.mode === "normal" ? "sentences" : "off"}
               autocorrect={store.mode === "normal" ? "on" : "off"}
               spellcheck={store.mode === "normal"}
@@ -1738,7 +1788,43 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Show>
               </div>
             </div>
-            <div class="shrink-0 flex items-center">
+            <div class="shrink-0 flex items-center gap-1">
+              <Show when={store.mode === "normal" && enhance.canUndo()}>
+                <Tooltip placement="top" value={language.t("prompt.enhance.undo")}>
+                  <IconButton
+                    data-action="prompt-enhance-undo"
+                    type="button"
+                    icon="reset"
+                    variant="ghost"
+                    class="size-8 rounded-[10px]"
+                    aria-label={language.t("prompt.enhance.undo")}
+                    onClick={() => {
+                      enhance.undo()
+                      requestAnimationFrame(() => editorRef?.focus())
+                    }}
+                  />
+                </Tooltip>
+              </Show>
+              <Show when={store.mode === "normal" && !starting()}>
+                <TooltipKeybind
+                  placement="top"
+                  title={enhance.running() ? language.t("prompt.enhance.stop") : language.t("prompt.enhance.title")}
+                  keybind={command.keybind("prompt.enhance")}
+                >
+                  <IconButton
+                    data-action="prompt-enhance"
+                    data-active={enhance.running() ? "true" : undefined}
+                    type="button"
+                    icon={enhance.running() ? "stop" : "sparkle"}
+                    variant="ghost"
+                    class="size-8 rounded-[10px]"
+                    classList={{ "animate-pulse": enhance.running() }}
+                    disabled={enhanceBlank() && !enhance.running()}
+                    aria-label={language.t("prompt.enhance.title")}
+                    onClick={runEnhance}
+                  />
+                </TooltipKeybind>
+              </Show>
               <Show
                 when={!starting()}
                 fallback={

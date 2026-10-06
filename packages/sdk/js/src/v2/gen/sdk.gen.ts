@@ -53,6 +53,8 @@ import type {
   ExperimentalFileRawResponses,
   ExperimentalProjectCopyGenerateNameErrors,
   ExperimentalProjectCopyGenerateNameResponses,
+  ExperimentalPromptEnhanceErrors,
+  ExperimentalPromptEnhanceResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
@@ -1282,6 +1284,56 @@ export class ProjectCopy extends HeyApiClient {
   }
 }
 
+export class Prompt extends HeyApiClient {
+  /**
+   * Enhance prompt
+   *
+   * Rewrite a draft prompt so it is clearer, using the session's recent conversation to resolve references. Streams plain text.
+   */
+  public enhance<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      text?: string
+      sessionID?: string
+      model?: {
+        providerID: string
+        modelID: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "text" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "model" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalPromptEnhanceResponses,
+      ExperimentalPromptEnhanceErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/prompt/enhance",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Adapter extends HeyApiClient {
   /**
    * List workspace adapters
@@ -1594,6 +1646,11 @@ export class Experimental extends HeyApiClient {
   private _projectCopy?: ProjectCopy
   get projectCopy(): ProjectCopy {
     return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
+  }
+
+  private _prompt?: Prompt
+  get prompt(): Prompt {
+    return (this._prompt ??= new Prompt({ client: this.client }))
   }
 
   private _workspace?: Workspace

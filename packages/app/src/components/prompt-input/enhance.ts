@@ -59,6 +59,17 @@ export function rebuildPrompt(text: string, original: Prompt): Prompt {
   return [...parts, ...images]
 }
 
+type Enhance = {
+  running: boolean
+  // 优化前的原文；改写结果还没被改动时可以撤销
+  original?: Prompt
+  result: string
+}
+
+// 模型反问时输入框会被提问弹窗替换掉（组件卸载），状态放在模块里按会话保存，回来后还能接着显示和撤销
+const [sessions, setSessions] = createStore<Record<string, Enhance>>({})
+const controllers = new Map<string, AbortController>()
+
 export function createPromptEnhance(input: {
   sdk: () => DirectorySDK
   current: () => Prompt
@@ -67,22 +78,21 @@ export function createPromptEnhance(input: {
   model: () => { providerID: string; modelID: string } | undefined
   onError: () => void
 }) {
-  const [state, setState] = createStore({
-    running: false,
-    // 优化前的原文；改写结果还没被改动时可以撤销
-    original: undefined as Prompt | undefined,
-    result: "",
-  })
-  let controller: AbortController | undefined
+  const key = () => input.sessionID() ?? ""
+  const state = (): Enhance => sessions[key()] ?? { running: false, result: "" }
+  const update = (id: string, next: Partial<Enhance>) =>
+    setSessions(id, (prev) => ({ ...(prev ?? { running: false, result: "" }), ...next }))
 
   const run = async () => {
-    if (state.running) return
+    const id = key()
+    if (state().running) return
     const original = input.current()
     const text = promptText(original).trim()
     if (!text) return
-    controller = new AbortController()
+    const controller = new AbortController()
+    controllers.set(id, controller)
     const signal = controller.signal
-    setState({ running: true, original, result: "" })
+    update(id, { running: true, original, result: "" })
     let output = ""
     try {
       const response = await input
@@ -104,36 +114,36 @@ export function createPromptEnhance(input: {
       output = output.trim()
       if (!output) throw new Error("empty result")
       input.set(rebuildPrompt(output, original))
-      setState({ running: false, result: output })
+      update(id, { running: false, result: output })
     } catch {
-      setState({ running: false, result: "" })
+      update(id, { running: false, result: "" })
       // 停止时保留已生成的部分；出错或什么都没生成就还原
       if (signal.aborted && output.trim()) {
-        setState("result", promptText(input.current()))
+        update(id, { result: promptText(input.current()) })
         return
       }
       input.set(original)
-      setState("original", undefined)
+      update(id, { original: undefined })
       if (!signal.aborted) input.onError()
     } finally {
-      controller = undefined
+      if (controllers.get(id) === controller) controllers.delete(id)
     }
   }
 
-  const stop = () => controller?.abort()
+  const stop = () => controllers.get(key())?.abort()
 
   /** 改写结果没被动过时才能撤销 */
-  const canUndo = () => !state.running && !!state.original && promptText(input.current()) === state.result
+  const canUndo = () => !state().running && !!state().original && promptText(input.current()) === state().result
 
   const undo = () => {
     if (!canUndo()) return false
-    input.set(state.original!)
-    setState({ original: undefined, result: "" })
+    input.set(state().original!)
+    update(key(), { original: undefined, result: "" })
     return true
   }
 
   return {
-    running: () => state.running,
+    running: () => state().running,
     canUndo,
     run,
     stop,

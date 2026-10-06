@@ -1257,6 +1257,10 @@ export const dict = {
     "How older conversation history is compacted when context fills up",
   "settings.general.row.compactionStrategy.model": "Model summary",
   "settings.general.row.compactionStrategy.chunk": "Chunk folding",
+  "settings.general.row.enhanceModel.title": "Prompt enhance model",
+  "settings.general.row.enhanceModel.description":
+    "Model used by the ✨ button in the prompt input. Auto uses small_model, then the model selected in the prompt input.",
+  "settings.general.row.enhanceModel.auto": "Auto",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.appearance.title": "Appearance",

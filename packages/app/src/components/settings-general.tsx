@@ -150,6 +150,25 @@ export const SettingsGeneral: Component = () => {
   )
   const currentCompactionStrategy = createMemo(() => serverSync().data.config.compaction?.strategy ?? "model")
 
+  // 提示词优化模型写到隐藏智能体 enhance 上；不选时服务端用 small_model，再退回输入框当前模型
+  const enhanceModelOptions = createMemo(() => [
+    { id: "auto", value: "", label: language.t("settings.general.row.enhanceModel.auto") },
+    ...Object.entries(serverSync().data.config.provider ?? {}).flatMap(([providerID, provider]) =>
+      Object.entries(provider.models ?? {}).map(([modelID, model]) => ({
+        id: `${providerID}/${modelID}`,
+        value: `${providerID}/${modelID}`,
+        label: `${model.name ?? modelID} · ${provider.name ?? providerID}`,
+      })),
+    ),
+  ])
+  const currentEnhanceModel = createMemo(() => serverSync().data.config.agent?.["enhance"]?.model ?? "")
+  const setEnhanceModel = (value: string) => {
+    const agents = { ...serverSync().data.config.agent }
+    const { model: _, ...rest } = agents["enhance"] ?? {}
+    agents["enhance"] = value ? { ...rest, model: value } : rest
+    serverSync().updateConfig({ agent: agents } as never)
+  }
+
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
     const list = shells.latest
     const current = serverSync().data.config.shell
@@ -336,6 +355,34 @@ export const SettingsGeneral: Component = () => {
             size="small"
             triggerVariant="settings"
             triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.enhanceModel.title")}
+          description={language.t("settings.general.row.enhanceModel.description")}
+        >
+          <Select
+            data-action="settings-enhance-model"
+            options={enhanceModelOptions()}
+            current={
+              enhanceModelOptions().find((o) => o.value === currentEnhanceModel()) ?? {
+                id: currentEnhanceModel(),
+                value: currentEnhanceModel(),
+                label: currentEnhanceModel(),
+              }
+            }
+            value={(o) => o.id}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentEnhanceModel()) return
+              setEnhanceModel(option.value)
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px", "max-width": "240px" }}
           />
         </SettingsRow>
 

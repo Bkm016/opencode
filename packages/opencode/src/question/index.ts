@@ -105,9 +105,12 @@ const layer = Layer.effect(
 
       return yield* Effect.ensuring(
         Deferred.await(deferred),
-        Effect.sync(() => {
+        // 被中断（例如请求方取消）时还挂着的提问要通知前端收起弹窗
+        Effect.suspend(() =>
           pending.delete(id)
-        }),
+            ? events.publish(Event.Rejected, { sessionID: input.sessionID, requestID: id })
+            : Effect.void,
+        ),
       )
     })
 

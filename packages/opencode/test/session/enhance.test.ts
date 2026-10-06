@@ -43,4 +43,51 @@ describe("SessionEnhance.request", () => {
     expect(SessionEnhance.request("修一下", "")).toBe("Draft message to rewrite:\n<draft>\n修一下\n</draft>")
     expect(SessionEnhance.request("修一下", "User:\nhi")).toContain("<conversation>\nUser:\nhi\n</conversation>")
   })
+
+  test("appends answers to clarifying questions", () => {
+    const result = SessionEnhance.request("修一下", "", {
+      answers: [
+        { question: "哪个按钮？", answer: "幽灵按钮" },
+        { question: "要兼容暗色吗？", answer: " " },
+      ],
+    })
+    expect(result).toEndWith(
+      "<answers>\nQ: 哪个按钮？\nA: 幽灵按钮\nQ: 要兼容暗色吗？\nA: (no answer, leave it open)\n</answers>",
+    )
+    expect(result).toContain("do not ask again")
+  })
+
+  test("tells the model not to ask without a session", () => {
+    expect(SessionEnhance.request("修一下", "", { ask: false })).toEndWith("Rewrite now; do not ask.")
+  })
+})
+
+describe("SessionEnhance.parseQuestions", () => {
+  test("reads questions and their options", () => {
+    const output = "<questions>\nQ: 指的是哪个状态？\n- hover\n- focus\nQ: 暗色主题也要改吗？\n</questions>"
+    expect(SessionEnhance.parseQuestions(output)).toEqual([
+      { question: "指的是哪个状态？", options: ["hover", "focus"] },
+      { question: "暗色主题也要改吗？", options: [] },
+    ])
+  })
+
+  test("accepts numbered questions and a missing closing tag", () => {
+    expect(SessionEnhance.parseQuestions("<questions>\n1. Which file?\n* a.ts\n2) Keep the API?")).toEqual([
+      { question: "Which file?", options: ["a.ts"] },
+      { question: "Keep the API?", options: [] },
+    ])
+  })
+
+  test("caps questions and options", () => {
+    const options = Array.from({ length: 6 }, (_, index) => `- ${index}`).join("\n")
+    const body = Array.from({ length: 5 }, (_, index) => `Q: q${index}\n${options}`).join("\n")
+    const result = SessionEnhance.parseQuestions(`<questions>\n${body}\n</questions>`)!
+    expect(result).toHaveLength(3)
+    expect(result[0].options).toEqual(["0", "1", "2", "3"])
+  })
+
+  test("ignores normal rewrites and empty blocks", () => {
+    expect(SessionEnhance.parseQuestions("检查 @src/Button.tsx")).toBeUndefined()
+    expect(SessionEnhance.parseQuestions("<questions>\n</questions>")).toBeUndefined()
+  })
 })

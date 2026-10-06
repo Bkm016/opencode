@@ -9,6 +9,7 @@ export const EnhancePayload = Schema.Struct({
   text: Schema.String,
   sessionID: Schema.optional(Schema.String),
   model: Schema.optional(Schema.Struct({ providerID: Schema.String, modelID: Schema.String })),
+  answers: Schema.optional(Schema.Array(Schema.Struct({ question: Schema.String, answer: Schema.String }))),
 })
 
 export const PromptEnhanceApi = HttpApi.make("promptEnhance").add(
@@ -17,7 +18,7 @@ export const PromptEnhanceApi = HttpApi.make("promptEnhance").add(
       HttpApiEndpoint.post("enhance", "/experimental/prompt/enhance", {
         query: WorkspaceRoutingQuery,
         payload: EnhancePayload,
-        success: described(Schema.String, "Rewritten prompt, streamed as plain text"),
+        success: described(Schema.String, "Rewritten prompt, or clarifying questions in a <questions> block, streamed as plain text"),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "experimental.prompt.enhance",

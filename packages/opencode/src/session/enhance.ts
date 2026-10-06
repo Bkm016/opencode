@@ -10,20 +10,6 @@ export const RECENT = 12
 const MESSAGE_LIMIT = 1500
 const TRANSCRIPT_LIMIT = 12_000
 
-export const SYSTEM = `You rewrite a developer's draft message to a coding agent so the agent understands it on the first try.
-
-Rules:
-- Keep the author's intent, language, and tone. If the draft is in Chinese, answer in Chinese.
-- Make it concrete: replace vague references ("that", "it", "the thing from before") with the specific files, functions, errors, or UI elements they refer to in the conversation.
-- Carry over constraints the author already stated in the conversation when they apply to this request.
-- If useful, state the goal and how to tell it is done. Keep it short; at most about twice the draft's length.
-- Do not add requirements, steps, or preferences the author did not express. Do not guess at missing details.
-- Keep @mentions, file paths, code, and placeholders like [Image 1] or [Pasted ~3 lines] exactly as written.
-- Do not answer the request, write code, or explain what you changed.
-- If the draft is already clear, return it almost unchanged.
-
-Output only the rewritten message.`
-
 function clip(text: string, limit: number) {
   const value = text.trim()
   if (value.length <= limit) return value
@@ -62,11 +48,52 @@ export function transcript(messages: SessionV1.WithParts[]) {
   return kept.join("\n\n")
 }
 
-export function request(draft: string, history: string) {
+export type Answer = { question: string; answer: string }
+
+export const QUESTIONS_TAG = "<questions>"
+
+/** 模型需要先问清楚时会输出 <questions> 块：Q: 开头是问题，- 开头是候选回答 */
+export function parseQuestions(output: string) {
+  const text = output.trim()
+  if (!text.startsWith(QUESTIONS_TAG)) return
+  const body = text.slice(QUESTIONS_TAG.length).replace(/<\/questions>[\s\S]*$/, "")
+  const list: { question: string; options: string[] }[] = []
+  for (const raw of body.split("\n")) {
+    const line = raw.trim()
+    if (!line) continue
+    const question = line.match(/^(?:Q\d*\s*[:：.]|\d+\s*[.)、])\s*(.+)$/i)
+    if (question) {
+      list.push({ question: question[1].trim(), options: [] })
+      continue
+    }
+    const option = line.match(/^[-*•]\s*(.+)$/)
+    if (option) {
+      list.at(-1)?.options.push(option[1].trim())
+      continue
+    }
+    if (/[?？]$/.test(line)) list.push({ question: line, options: [] })
+  }
+  const result = list.slice(0, 3).map((item) => ({ ...item, options: item.options.slice(0, 4) }))
+  return result.length ? result : undefined
+}
+
+export function request(
+  draft: string,
+  history: string,
+  input: { answers?: readonly Answer[]; ask?: boolean } = {},
+) {
   const context = history
     ? `Recent conversation, for resolving references only:\n<conversation>\n${history}\n</conversation>\n\n`
     : ""
-  return `${context}Draft message to rewrite:\n<draft>\n${draft}\n</draft>`
+  const answers = input.answers ?? []
+  const replies = answers.length
+    ? `\n\nThe author answered your clarifying questions. Rewrite now; do not ask again.\n<answers>\n${answers
+        .map((item) => `Q: ${item.question}\nA: ${item.answer.trim() || "(no answer, leave it open)"}`)
+        .join("\n")}\n</answers>`
+    : input.ask === false
+      ? "\n\nClarifying questions are not available here. Rewrite now; do not ask."
+      : ""
+  return `${context}Draft message to rewrite:\n<draft>\n${draft}\n</draft>${replies}`
 }
 
 export * as SessionEnhance from "./enhance"

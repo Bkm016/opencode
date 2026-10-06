@@ -439,6 +439,43 @@ it.effect("replaces global MCP config in jsonc", () =>
   ),
 )
 
+it.effect("replaces submitted global agent entries in json", () =>
+  withGlobalConfig(
+    { config: { agent: { enhance: { model: "test/a", temperature: 0.2 }, keep: { model: "test/b" } } } },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ agent: { enhance: { temperature: 0.2 } } })
+
+        const writtenConfig = (yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))) as {
+          agent: Record<string, { model?: string; temperature?: number }>
+        }
+        expect(writtenConfig.agent.enhance.model).toBeUndefined()
+        expect(writtenConfig.agent.enhance.temperature).toBe(0.2)
+        expect(writtenConfig.agent.keep.model).toBe("test/b")
+      }),
+  ),
+)
+
+it.effect("replaces submitted global agent entries in jsonc", () =>
+  withGlobalConfig(
+    {
+      config: { agent: { enhance: { model: "test/a", temperature: 0.2 }, keep: { model: "test/b" } } },
+      name: "opencode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ agent: { enhance: { temperature: 0.2 } } })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(parsed.agent?.enhance?.model).toBeUndefined()
+        expect(parsed.agent?.enhance?.temperature).toBe(0.2)
+        expect(parsed.agent?.keep?.model).toBe("test/b")
+      }),
+  ),
+)
+
 it.effect("does not restart instances when only compaction strategy changes", () =>
   withGlobalConfig({ config: { compaction: { strategy: "model", auto: true } } }, () =>
     Effect.gen(function* () {

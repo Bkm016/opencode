@@ -701,6 +701,10 @@ const layer = Layer.effect(
         if (patch.mcp !== undefined) {
           merged.mcp = patch.mcp
         }
+        // 智能体按条目替换：提交的那一项整体覆盖，才能去掉其中的字段（例如改回默认模型）
+        for (const [name, agent] of Object.entries(patch.agent ?? {})) {
+          if (agent !== undefined) merged.agent = { ...merged.agent, [name]: agent }
+        }
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
@@ -720,6 +724,19 @@ const layer = Layer.effect(
             updated = applyEdits(updated, edits)
             delete restPatch[key]
           }
+        }
+        if (patch.agent !== undefined) {
+          for (const [name, agent] of Object.entries(patch.agent)) {
+            if (agent === undefined) continue
+            const edits = modify(updated, ["agent", name], agent, {
+              formattingOptions: {
+                insertSpaces: true,
+                tabSize: 2,
+              },
+            })
+            updated = applyEdits(updated, edits)
+          }
+          delete restPatch.agent
         }
         updated = patchJsonc(updated, restPatch)
         next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)

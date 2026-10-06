@@ -18,6 +18,7 @@ import PROMPT_COMPACTION from "../agent/prompt/compaction.txt"
 import PROMPT_EXPLORE from "../agent/prompt/explore.txt"
 import PROMPT_SUMMARY from "../agent/prompt/summary.txt"
 import PROMPT_TITLE from "../agent/prompt/title.txt"
+import PROMPT_ENHANCE from "../agent/prompt/enhance.txt"
 import PROMPT_GENERATE from "../agent/generate.txt"
 
 import PROMPT_INITIALIZE from "../command/template/initialize.txt"
@@ -197,6 +198,13 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "Summary agent",
     description: "Hidden agent that summarizes completed work",
     default: PROMPT_SUMMARY,
+  },
+  {
+    id: "agent.enhance",
+    group: "agent",
+    title: "Prompt enhance agent",
+    description: "Hidden agent that rewrites the draft in the prompt input",
+    default: PROMPT_ENHANCE,
   },
   {
     id: "agent.generate",

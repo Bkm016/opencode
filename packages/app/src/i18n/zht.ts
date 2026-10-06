@@ -1156,6 +1156,10 @@ export const dict = {
   "settings.general.row.compactionStrategy.description": "上下文占满时压缩早期对话历史的方式",
   "settings.general.row.compactionStrategy.model": "模型摘要",
   "settings.general.row.compactionStrategy.chunk": "Chunk 折叠",
+  "settings.general.row.enhanceModel.title": "提示詞優化模型",
+  "settings.general.row.enhanceModel.description":
+    "輸入框 ✨ 按鈕改寫草稿時用的模型。自動：優先用 small_model，沒有就用輸入框目前選的模型。",
+  "settings.general.row.enhanceModel.auto": "自動",
   "settings.general.row.shell.autoDefault": "自動（預設）",
   "settings.general.row.shell.terminalOnly": "僅限終端機",
   "settings.general.row.appearance.title": "外觀",

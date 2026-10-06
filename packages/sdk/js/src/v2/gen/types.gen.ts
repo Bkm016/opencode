@@ -9230,6 +9230,10 @@ export type ExperimentalPromptEnhanceData = {
       providerID: string
       modelID: string
     }
+    answers?: Array<{
+      question: string
+      answer: string
+    }>
   }
   path?: never
   query?: {
@@ -9250,7 +9254,7 @@ export type ExperimentalPromptEnhanceError = ExperimentalPromptEnhanceErrors[key
 
 export type ExperimentalPromptEnhanceResponses = {
   /**
-   * Rewritten prompt, streamed as plain text
+   * Rewritten prompt, or clarifying questions in a <questions> block, streamed as plain text
    */
   200: string
 }

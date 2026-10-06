@@ -1300,6 +1300,10 @@ export class Prompt extends HeyApiClient {
         providerID: string
         modelID: string
       }
+      answers?: Array<{
+        question: string
+        answer: string
+      }>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1313,6 +1317,7 @@ export class Prompt extends HeyApiClient {
             { in: "body", key: "text" },
             { in: "body", key: "sessionID" },
             { in: "body", key: "model" },
+            { in: "body", key: "answers" },
           ],
         },
       ],

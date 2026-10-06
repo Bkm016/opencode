@@ -119,6 +119,32 @@ it.instance(
   { git: true },
 )
 
+it.instance(
+  "ask - interrupting removes the request and publishes rejected",
+  () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2Bridge.Service
+      const rejected = yield* Queue.unbounded<string>()
+      const off = yield* events.listen((event) => {
+        if (event.type === Question.Event.Rejected.type)
+          Queue.offerUnsafe(rejected, (event.data as { requestID: string }).requestID)
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      const fiber = yield* askEffect({
+        sessionID: SessionID.make("ses_test"),
+        questions: [{ question: "Which one?", header: "Pick", options: [] }],
+      }).pipe(Effect.forkScoped)
+
+      const [pending] = yield* waitForPending(1)
+      yield* Fiber.interrupt(fiber)
+      expect(yield* Queue.take(rejected).pipe(Effect.timeout("2 seconds"))).toBe(pending.id)
+      expect(yield* listEffect).toHaveLength(0)
+    }),
+  { git: true },
+)
+
 // reply tests
 
 it.instance(

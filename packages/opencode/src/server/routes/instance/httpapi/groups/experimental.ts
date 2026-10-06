@@ -58,6 +58,42 @@ const ToolListItem = Schema.Struct({
   inputAliases: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }).annotate({ identifier: "ToolListItem" })
 const ToolList = Schema.Array(ToolListItem).annotate({ identifier: "ToolList" })
+const McpToolInfo = Schema.Struct({
+  // 模型看到的工具名（服务器名_工具名）
+  id: Schema.String,
+  name: Schema.String,
+  title: Schema.optionalKey(Schema.String),
+  description: Schema.optionalKey(Schema.String),
+  inputSchema: Schema.Unknown,
+  annotations: Schema.optionalKey(Schema.Unknown),
+}).annotate({ identifier: "McpToolInfo" })
+const McpPromptInfo = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optionalKey(Schema.String),
+  arguments: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        description: Schema.optionalKey(Schema.String),
+        required: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+  ),
+}).annotate({ identifier: "McpPromptInfo" })
+const McpResourceInfo = Schema.Struct({
+  name: Schema.String,
+  uri: Schema.String,
+  description: Schema.optionalKey(Schema.String),
+  mimeType: Schema.optionalKey(Schema.String),
+}).annotate({ identifier: "McpResourceInfo" })
+const McpServerDetail = Schema.Struct({
+  name: Schema.String,
+  status: MCP.Status,
+  instructions: Schema.optionalKey(Schema.String),
+  tools: Schema.Array(McpToolInfo),
+  prompts: Schema.Array(McpPromptInfo),
+  resources: Schema.Array(McpResourceInfo),
+}).annotate({ identifier: "McpServerDetail" })
 const SystemPromptPreview = Schema.Array(Schema.String).annotate({ identifier: "SystemPromptPreview" })
 const ProviderRequestDump = Schema.Struct({
   sessionID: Schema.String,
@@ -232,6 +268,7 @@ export const ExperimentalPaths = {
   sessionProviderResponse: "/experimental/session/:sessionID/provider-response",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
+  mcp: "/experimental/mcp",
   file: "/experimental/file",
   fileRaw: "/experimental/file/raw",
   storage: "/experimental/storage",
@@ -429,6 +466,17 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.resource.list",
             summary: "Get MCP resources",
             description: "Get all available MCP resources from connected servers. Optionally filter by name.",
+          }),
+        ),
+        HttpApiEndpoint.get("mcp", ExperimentalPaths.mcp, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(McpServerDetail), "MCP servers with their tools, prompts and resources"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.mcp.list",
+            summary: "Get MCP server details",
+            description:
+              "List every configured MCP server with its status, instructions, tool schemas, prompts and resources.",
           }),
         ),
         HttpApiEndpoint.get("file", ExperimentalPaths.file, {

@@ -425,6 +425,56 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
+    const mcpList = Effect.fn("ExperimentalHttpApi.mcp")(function* () {
+      const [status, tools, instructions, prompts, resources] = yield* Effect.all(
+        [mcp.status(), mcp.tools(), mcp.instructions(), mcp.prompts(), mcp.resources()],
+        { concurrency: "unbounded" },
+      )
+      return Object.keys(status)
+        .toSorted((a, b) => a.localeCompare(b))
+        .map((name) => {
+          const text = instructions.find((item) => item.name === name)?.instructions
+          return {
+            name,
+            status: status[name],
+            ...(text ? { instructions: text } : {}),
+            tools: Object.entries(tools)
+              .filter(([, tool]) => tool.server === name)
+              .map(([id, { def }]) => ({
+                id,
+                name: def.name,
+                ...(def.title ? { title: def.title } : {}),
+                ...(def.description ? { description: def.description } : {}),
+                inputSchema: def.inputSchema,
+                ...(def.annotations ? { annotations: def.annotations } : {}),
+              })),
+            prompts: Object.values(prompts)
+              .filter((prompt) => prompt.client === name)
+              .map((prompt) => ({
+                name: prompt.name,
+                ...(prompt.description ? { description: prompt.description } : {}),
+                ...(prompt.arguments
+                  ? {
+                      arguments: prompt.arguments.map((arg) => ({
+                        name: arg.name,
+                        ...(arg.description ? { description: arg.description } : {}),
+                        ...(arg.required !== undefined ? { required: arg.required } : {}),
+                      })),
+                    }
+                  : {}),
+              })),
+            resources: Object.values(resources)
+              .filter((item) => item.client === name)
+              .map((item) => ({
+                name: item.name,
+                uri: item.uri,
+                ...(item.description ? { description: item.description } : {}),
+                ...(item.mimeType ? { mimeType: item.mimeType } : {}),
+              })),
+          }
+        })
+    })
+
     const file = Effect.fn("ExperimentalHttpApi.file")(function* (ctx: { query: { path?: string } }) {
       const target = path.resolve(expandBrowsePath(ctx.query.path))
       const entries = yield* Effect.promise(() => listDirectoryEntries(target))
@@ -681,6 +731,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("sessionProviderRequest", sessionProviderRequest)
       .handle("sessionProviderResponse", sessionProviderResponse)
       .handle("resource", resource)
+      .handle("mcp", mcpList)
       .handle("file", file)
       .handle("fileRaw", fileRaw)
       .handle("storage", storageGet)

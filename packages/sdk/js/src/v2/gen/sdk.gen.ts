@@ -51,6 +51,8 @@ import type {
   ExperimentalFileListResponses,
   ExperimentalFileRawErrors,
   ExperimentalFileRawResponses,
+  ExperimentalMcpListErrors,
+  ExperimentalMcpListResponses,
   ExperimentalProjectCopyGenerateNameErrors,
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalPromptEnhanceErrors,
@@ -1090,6 +1092,38 @@ export class Resource extends HeyApiClient {
   }
 }
 
+export class Mcp extends HeyApiClient {
+  /**
+   * Get MCP server details
+   *
+   * List every configured MCP server with its status, instructions, tool schemas, prompts and resources.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ExperimentalMcpListResponses, ExperimentalMcpListErrors, ThrowOnError>({
+      url: "/experimental/mcp",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class File extends HeyApiClient {
   /**
    * List directory entries
@@ -1636,6 +1670,11 @@ export class Experimental extends HeyApiClient {
   private _resource?: Resource
   get resource(): Resource {
     return (this._resource ??= new Resource({ client: this.client }))
+  }
+
+  private _mcp?: Mcp
+  get mcp(): Mcp {
+    return (this._mcp ??= new Mcp({ client: this.client }))
   }
 
   private _file?: File
@@ -2533,7 +2572,7 @@ export class Auth2 extends HeyApiClient {
   }
 }
 
-export class Mcp extends HeyApiClient {
+export class Mcp2 extends HeyApiClient {
   /**
    * Get MCP status
    *
@@ -8141,9 +8180,9 @@ export class OpencodeClient extends HeyApiClient {
     return (this._formatter ??= new Formatter({ client: this.client }))
   }
 
-  private _mcp?: Mcp
-  get mcp(): Mcp {
-    return (this._mcp ??= new Mcp({ client: this.client }))
+  private _mcp?: Mcp2
+  get mcp(): Mcp2 {
+    return (this._mcp ??= new Mcp2({ client: this.client }))
   }
 
   private _project?: Project

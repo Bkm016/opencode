@@ -2380,6 +2380,70 @@ export type McpResource = {
   client: string
 }
 
+export type McpStatusConnected = {
+  status: "connected"
+}
+
+export type McpStatusDisabled = {
+  status: "disabled"
+}
+
+export type McpStatusFailed = {
+  status: "failed"
+  error: string
+}
+
+export type McpStatusNeedsAuth = {
+  status: "needs_auth"
+}
+
+export type McpStatusNeedsClientRegistration = {
+  status: "needs_client_registration"
+  error: string
+}
+
+export type McpStatus =
+  | McpStatusConnected
+  | McpStatusDisabled
+  | McpStatusFailed
+  | McpStatusNeedsAuth
+  | McpStatusNeedsClientRegistration
+
+export type McpToolInfo = {
+  id: string
+  name: string
+  title?: string
+  description?: string
+  inputSchema: unknown
+  annotations?: unknown
+}
+
+export type McpPromptInfo = {
+  name: string
+  description?: string
+  arguments?: Array<{
+    name: string
+    description?: string
+    required?: boolean
+  }>
+}
+
+export type McpResourceInfo = {
+  name: string
+  uri: string
+  description?: string
+  mimeType?: string
+}
+
+export type McpServerDetail = {
+  name: string
+  status: McpStatus
+  instructions?: string
+  tools: Array<McpToolInfo>
+  prompts: Array<McpPromptInfo>
+  resources: Array<McpResourceInfo>
+}
+
 export type DirectoryEntry = {
   name: string
   path: string
@@ -2541,35 +2605,6 @@ export type FormatterStatus = {
   extensions: Array<string>
   enabled: boolean
 }
-
-export type McpStatusConnected = {
-  status: "connected"
-}
-
-export type McpStatusDisabled = {
-  status: "disabled"
-}
-
-export type McpStatusFailed = {
-  status: "failed"
-  error: string
-}
-
-export type McpStatusNeedsAuth = {
-  status: "needs_auth"
-}
-
-export type McpStatusNeedsClientRegistration = {
-  status: "needs_client_registration"
-  error: string
-}
-
-export type McpStatus =
-  | McpStatusConnected
-  | McpStatusDisabled
-  | McpStatusFailed
-  | McpStatusNeedsAuth
-  | McpStatusNeedsClientRegistration
 
 export type McpUnsupportedOAuthError = {
   error: string
@@ -8364,6 +8399,34 @@ export type ExperimentalResourceListResponses = {
 
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
+
+export type ExperimentalMcpListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/mcp"
+}
+
+export type ExperimentalMcpListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalMcpListError = ExperimentalMcpListErrors[keyof ExperimentalMcpListErrors]
+
+export type ExperimentalMcpListResponses = {
+  /**
+   * MCP servers with their tools, prompts and resources
+   */
+  200: Array<McpServerDetail>
+}
+
+export type ExperimentalMcpListResponse = ExperimentalMcpListResponses[keyof ExperimentalMcpListResponses]
 
 export type ExperimentalFileListData = {
   body?: never

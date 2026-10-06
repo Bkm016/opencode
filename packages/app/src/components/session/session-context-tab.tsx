@@ -12,10 +12,12 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
+import { Tabs } from "@opencode-ai/ui/tabs"
+import type { McpServerDetail, Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
+import { useLocal } from "@/context/local"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContext } from "./session-context-metrics"
 import {
@@ -523,7 +525,7 @@ type InjectedTool = {
   inputAliases?: Record<string, string>
 }
 
-function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
+function InjectedToolItem(props: { tool: InjectedTool; opened: boolean; value?: string }) {
   const language = useLanguage()
   const schema = createMemo(() => JSON.stringify(props.tool.inputSchema, null, 2))
   const nameAliases = createMemo(() => props.tool.nameAliases?.filter(Boolean) ?? [])
@@ -531,7 +533,7 @@ function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
   const hasAliases = createMemo(() => nameAliases().length > 0 || inputAliases().length > 0)
 
   return (
-    <Accordion.Item value={props.tool.name}>
+    <Accordion.Item value={props.value ?? props.tool.name}>
       <StickyAccordionHeader>
         <Accordion.Trigger>
           <div class="flex items-center gap-2 w-full min-w-0">
@@ -549,7 +551,7 @@ function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
                 <div class="px-3 py-2">
                   <Markdown
                     text={props.tool.description}
-                    cacheKey={`context-injected-tool-desc:${props.tool.name}`}
+                    cacheKey={`context-injected-tool-desc:${props.value ?? props.tool.name}`}
                     class="text-11-regular text-text-weaker select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_.shiki]:!bg-transparent [&_.shiki]:!p-0 [&_.shiki]:!border-0 [&_[data-slot=markdown-copy-button]]:hidden"
                   />
                 </div>
@@ -578,7 +580,7 @@ function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
               <ScrollView class="max-h-96">
                 <Markdown
                   text={`\`\`\`json\n${schema()}\n\`\`\``}
-                  cacheKey={`context-injected-tool:${props.tool.name}`}
+                  cacheKey={`context-injected-tool:${props.value ?? props.tool.name}`}
                   class="text-11-regular select-text [&_.shiki]:!m-0 [&_.shiki]:!text-[11px] [&_.shiki]:whitespace-pre-wrap [&_.shiki]:break-words [&_.shiki]:!bg-transparent [&_.shiki]:!border-0 [&_.shiki]:!rounded-none [&_[data-slot=markdown-copy-button]]:hidden"
                 />
               </ScrollView>
@@ -590,10 +592,191 @@ function InjectedToolItem(props: { tool: InjectedTool; opened: boolean }) {
   )
 }
 
+const MCP_STATUS_COLOR: Record<McpServerDetail["status"]["status"], string> = {
+  connected: "bg-icon-success-base",
+  failed: "bg-icon-critical-base",
+  disabled: "bg-border-weak-base",
+  needs_auth: "bg-icon-warning-base",
+  needs_client_registration: "bg-icon-warning-base",
+}
+
+// 一个 MCP 服务器：状态、说明、工具 schema（和内置工具同样的展开方式）、提示词与资源
+function McpServerCard(props: { server: McpServerDetail; expanded: string[]; onChange: (value: string[]) => void }) {
+  const language = useLanguage()
+  const status = () => props.server.status
+  const statusLabel = () => {
+    const value = status().status
+    if (value === "needs_client_registration") return language.t("context.mcp.status.needs_client_registration")
+    return language.t(`mcp.status.${value}`)
+  }
+  const key = (kind: string, name = "") => `${props.server.name}:${kind}:${name}`
+  const itemText = "text-11-regular text-text-weaker"
+
+  return (
+    <div class="flex flex-col gap-1 min-w-0" data-component="context-mcp-server" data-name={props.server.name}>
+      <div class="flex items-center gap-2 px-0.5 min-w-0">
+        <div class={`size-1.5 rounded-full shrink-0 ${MCP_STATUS_COLOR[status().status]}`} />
+        <span class="text-12-medium text-text-strong font-mono truncate">{props.server.name}</span>
+        <span class="text-11-regular text-text-weak shrink-0">{statusLabel()}</span>
+        <Show when={status().status === "connected"}>
+          <span class="ml-auto text-11-regular text-text-weaker truncate">
+            {language.t("context.mcp.counts", {
+              tools: String(props.server.tools.length),
+              prompts: String(props.server.prompts.length),
+              resources: String(props.server.resources.length),
+            })}
+          </span>
+        </Show>
+      </div>
+      <Show when={"error" in status() && (status() as { error: string }).error}>
+        {(error) => (
+          <div class="rounded-lg bg-surface-base px-3 py-2 text-11-regular text-icon-critical-base break-words select-text">
+            {error()}
+          </div>
+        )}
+      </Show>
+      <Show
+        when={
+          props.server.instructions ||
+          props.server.tools.length > 0 ||
+          props.server.prompts.length > 0 ||
+          props.server.resources.length > 0
+        }
+      >
+        <Accordion
+          class={ACCORDION_CLASS}
+          multiple
+          value={props.expanded}
+          onChange={(value) => props.onChange(Array.isArray(value) ? value : value ? [value] : [])}
+        >
+          <Show when={props.server.instructions}>
+            {(text) => (
+              <Accordion.Item value={key("instructions")}>
+                <StickyAccordionHeader>
+                  <Accordion.Trigger>
+                    <div class="flex items-center gap-2 w-full min-w-0">
+                      <span class="min-w-0 truncate text-12-regular text-text-base">
+                        {language.t("context.mcp.instructions")}
+                      </span>
+                      <Icon name="chevron-grabber-vertical" size="small" class="ml-auto shrink-0 text-text-weak" />
+                    </div>
+                  </Accordion.Trigger>
+                </StickyAccordionHeader>
+                <Accordion.Content>
+                  <Show when={props.expanded.includes(key("instructions"))}>
+                    <div class="p-3">
+                      <div class="rounded-md bg-background-base px-3 py-2">
+                        <ScrollView class="max-h-60">
+                          <Markdown
+                            text={text()}
+                            cacheKey={`context-mcp-instructions:${props.server.name}`}
+                            class="text-11-regular text-text-weaker select-text"
+                          />
+                        </ScrollView>
+                      </div>
+                    </div>
+                  </Show>
+                </Accordion.Content>
+              </Accordion.Item>
+            )}
+          </Show>
+          <For each={props.server.tools}>
+            {(tool) => (
+              <InjectedToolItem
+                value={key("tool", tool.id)}
+                opened={props.expanded.includes(key("tool", tool.id))}
+                tool={{ name: tool.id, description: tool.description ?? "", inputSchema: tool.inputSchema }}
+              />
+            )}
+          </For>
+          <Show when={props.server.prompts.length > 0}>
+            <Accordion.Item value={key("prompts")}>
+              <StickyAccordionHeader>
+                <Accordion.Trigger>
+                  <div class="flex items-center gap-2 w-full min-w-0">
+                    <span class="min-w-0 truncate text-12-regular text-text-base">
+                      {language.t("context.mcp.prompts")}
+                    </span>
+                    <span class="text-11-regular text-text-weaker tabular-nums">{props.server.prompts.length}</span>
+                    <Icon name="chevron-grabber-vertical" size="small" class="ml-auto shrink-0 text-text-weak" />
+                  </div>
+                </Accordion.Trigger>
+              </StickyAccordionHeader>
+              <Accordion.Content>
+                <div class="p-3 flex flex-col gap-2">
+                  <For each={props.server.prompts}>
+                    {(prompt) => (
+                      <div class="rounded-md bg-background-base px-3 py-2 flex flex-col gap-1 min-w-0 select-text">
+                        <span class="text-11-medium font-mono text-text-strong break-all">{prompt.name}</span>
+                        <Show when={prompt.description}>
+                          <span class={itemText}>{prompt.description}</span>
+                        </Show>
+                        <For each={prompt.arguments ?? []}>
+                          {(arg) => (
+                            <div class="text-11-regular font-mono text-text-weaker">
+                              <span class="text-text-weak">{arg.name}</span>
+                              <Show when={arg.required}>
+                                <span class="text-icon-warning-base"> · {language.t("context.mcp.required")}</span>
+                              </Show>
+                              <Show when={arg.description}>
+                                <span class="font-sans"> — {arg.description}</span>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Accordion.Content>
+            </Accordion.Item>
+          </Show>
+          <Show when={props.server.resources.length > 0}>
+            <Accordion.Item value={key("resources")}>
+              <StickyAccordionHeader>
+                <Accordion.Trigger>
+                  <div class="flex items-center gap-2 w-full min-w-0">
+                    <span class="min-w-0 truncate text-12-regular text-text-base">
+                      {language.t("context.mcp.resources")}
+                    </span>
+                    <span class="text-11-regular text-text-weaker tabular-nums">{props.server.resources.length}</span>
+                    <Icon name="chevron-grabber-vertical" size="small" class="ml-auto shrink-0 text-text-weak" />
+                  </div>
+                </Accordion.Trigger>
+              </StickyAccordionHeader>
+              <Accordion.Content>
+                <div class="p-3 flex flex-col gap-2">
+                  <For each={props.server.resources}>
+                    {(resource) => (
+                      <div class="rounded-md bg-background-base px-3 py-2 flex flex-col gap-0.5 min-w-0 select-text">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="text-11-medium text-text-strong truncate">{resource.name}</span>
+                          <Show when={resource.mimeType}>
+                            <span class="ml-auto shrink-0 text-11-regular text-text-weaker">{resource.mimeType}</span>
+                          </Show>
+                        </div>
+                        <span class="text-11-regular font-mono text-text-weak break-all">{resource.uri}</span>
+                        <Show when={resource.description}>
+                          <span class={itemText}>{resource.description}</span>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Accordion.Content>
+            </Accordion.Item>
+          </Show>
+        </Accordion>
+      </Show>
+    </div>
+  )
+}
+
 export function SessionContextTab() {
   const sync = useSync()
   const language = useLanguage()
   const sdk = useSDK()
+  const local = useLocal()
   const providers = useProviders(() => sdk().directory)
   const { params, view } = useSessionLayout()
 
@@ -643,25 +826,48 @@ export function SessionContextTab() {
     if (message?.role !== "assistant") return
     return message.requestBodyBytes
   })
-  const [injectedTools] = createResource(
-    () => ctx()?.message.id,
-    () => {
-      const message = ctx()?.message
-      if (!message?.providerID || !message.modelID) return
-      return sdk()
-        .client.tool.list({ provider: message.providerID, model: message.modelID })
-        .then((result) =>
-          (result.data ?? []).map((item) => ({
-            name: item.id,
-            description: item.description,
-            inputSchema: item.parameters,
-            nameAliases: item.nameAliases,
-            inputAliases: item.inputAliases,
-          })),
-        )
-        .catch(() => undefined)
-    },
+  // 还没有回复时按输入框当前选中的模型来取
+  const toolModel = createMemo(() => {
+    const message = ctx()?.message
+    if (message?.providerID && message.modelID) return `${message.providerID}/${message.modelID}`
+    const model = local.model.current()
+    if (model) return `${model.provider.id}/${model.id}`
+  })
+  const [injectedTools] = createResource(toolModel, (key) => {
+    const index = key.indexOf("/")
+    return sdk()
+      .client.tool.list({ provider: key.slice(0, index), model: key.slice(index + 1) })
+      .then((result) =>
+        (result.data ?? []).map((item) => ({
+          name: item.id,
+          description: item.description,
+          inputSchema: item.parameters,
+          nameAliases: item.nameAliases,
+          inputAliases: item.inputAliases,
+        })),
+      )
+      .catch(() => undefined)
+  })
+  // MCP 页签打开时才拉：提示词和资源要逐个问服务器；连接状态变了就重新拉
+  const [toolTab, setToolTab] = createSignal<"builtin" | "mcp">("builtin")
+  const mcpConnected = createMemo(
+    () => Object.values(sync().data.mcp ?? {}).filter((item) => item.status === "connected").length,
   )
+  const mcpKey = createMemo(() => {
+    if (toolTab() !== "mcp") return
+    const status = sync().data.mcp ?? {}
+    return Object.keys(status)
+      .toSorted()
+      .map((name) => `${name}:${status[name]?.status}`)
+      .join("|")
+  })
+  const [mcpServers] = createResource(mcpKey, () =>
+    sdk()
+      .client.experimental.mcp.list()
+      .then((result) => result.data)
+      .catch(() => undefined),
+  )
+  const [expandedMcp, setExpandedMcp] = createSignal<string[]>([])
   const fallbackSystemPrompts = createMemo(() => {
     const msg = findLast(visibleUserMessages(), (message) => !!message.system)
     const system = msg?.system
@@ -992,32 +1198,86 @@ export function SessionContextTab() {
 
         <Section
           title={language.t("context.injectedTools.title")}
-          description={injectedTools()?.length ? language.t("context.injectedTools.description") : undefined}
+          description={
+            toolTab() === "mcp"
+              ? language.t("context.mcp.description")
+              : injectedTools()?.length
+                ? language.t("context.injectedTools.description")
+                : undefined
+          }
         >
-          <Show
-            when={injectedTools()}
-            fallback={<SectionEmpty text={language.t("context.injectedTools.unavailable")} />}
-          >
-            {(tools) => (
-              <Show
-                when={tools().length > 0}
-                fallback={<SectionEmpty text={language.t("context.injectedTools.empty")} />}
-              >
-                <Accordion
-                  class={ACCORDION_CLASS}
-                  multiple
-                  value={expandedTools()}
-                  onChange={(value) => setExpandedTools(Array.isArray(value) ? value : value ? [value] : [])}
+          <div data-component="context-tool-tabs" class="min-w-0">
+            <Tabs
+              variant="pill"
+              value={toolTab()}
+              onChange={(value) => setToolTab(value === "mcp" ? "mcp" : "builtin")}
+              class="flex flex-col gap-2 min-w-0"
+            >
+              <Tabs.List>
+                <Tabs.Trigger value="builtin">
+                  {language.t("context.tools.tab.builtin")}
+                  <Show when={injectedTools()?.length}>
+                    {(count) => <span class="ml-1 text-text-weaker tabular-nums">{count()}</span>}
+                  </Show>
+                </Tabs.Trigger>
+                <Tabs.Trigger value="mcp">
+                  {language.t("context.tools.tab.mcp")}
+                  <Show when={mcpConnected()}>
+                    {(count) => <span class="ml-1 text-text-weaker tabular-nums">{count()}</span>}
+                  </Show>
+                </Tabs.Trigger>
+              </Tabs.List>
+              <Tabs.Content value="builtin">
+                <Show
+                  when={injectedTools()}
+                  fallback={<SectionEmpty text={language.t("context.injectedTools.unavailable")} />}
                 >
-                  <For each={tools()}>
-                    {(tool) => (
-                      <InjectedToolItem tool={tool} opened={expandedTools().includes(tool.name)} />
-                    )}
-                  </For>
-                </Accordion>
-              </Show>
-            )}
-          </Show>
+                  {(tools) => (
+                    <Show
+                      when={tools().length > 0}
+                      fallback={<SectionEmpty text={language.t("context.injectedTools.empty")} />}
+                    >
+                      <Accordion
+                        class={ACCORDION_CLASS}
+                        multiple
+                        value={expandedTools()}
+                        onChange={(value) => setExpandedTools(Array.isArray(value) ? value : value ? [value] : [])}
+                      >
+                        <For each={tools()}>
+                          {(tool) => <InjectedToolItem tool={tool} opened={expandedTools().includes(tool.name)} />}
+                        </For>
+                      </Accordion>
+                    </Show>
+                  )}
+                </Show>
+              </Tabs.Content>
+              <Tabs.Content value="mcp">
+                <Show
+                  when={mcpServers()}
+                  fallback={
+                    <SectionEmpty
+                      text={language.t(mcpServers.loading ? "context.mcp.loading" : "context.mcp.unavailable")}
+                    />
+                  }
+                >
+                  {(servers) => (
+                    <Show
+                      when={servers().length > 0}
+                      fallback={<SectionEmpty text={language.t("context.mcp.empty")} />}
+                    >
+                      <div class="flex flex-col gap-4 min-w-0">
+                        <For each={servers()}>
+                          {(server) => (
+                            <McpServerCard server={server} expanded={expandedMcp()} onChange={setExpandedMcp} />
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  )}
+                </Show>
+              </Tabs.Content>
+            </Tabs>
+          </div>
         </Section>
 
         <Section title={language.t("context.rawMessages.title")}>

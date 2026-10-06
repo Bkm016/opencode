@@ -593,6 +593,7 @@ const scenarios: Scenario[] = [
       check(body === false, "background route should be a no-op without running subagents")
     }),
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
+  http.protected.get("/experimental/mcp", "experimental.mcp.list").json(200, array),
   http.protected
     .post("/sync/history", "sync.history.list")
     .at((ctx) => ({ path: "/sync/history", headers: ctx.headers(), body: {} }))

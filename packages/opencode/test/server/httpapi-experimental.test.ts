@@ -195,7 +195,7 @@ describe("experimental HttpApi", () => {
       Effect.gen(function* () {
         const tmp = yield* TestInstance
         const directory = tmp.directory
-        const [consoleState, consoleOrgs, toolList, toolIDs, worktrees, resources] = yield* Effect.all(
+        const [consoleState, consoleOrgs, toolList, toolIDs, worktrees, resources, mcpServers] = yield* Effect.all(
           [
             request(ExperimentalPaths.console, directory),
             request(ExperimentalPaths.consoleOrgs, directory),
@@ -203,6 +203,7 @@ describe("experimental HttpApi", () => {
             request(ExperimentalPaths.toolIDs, directory),
             request(ExperimentalPaths.worktree, directory),
             request(ExperimentalPaths.resource, directory),
+            request(ExperimentalPaths.mcp, directory),
           ],
           { concurrency: "unbounded" },
         )
@@ -233,6 +234,11 @@ describe("experimental HttpApi", () => {
 
         expect(resources.status).toBe(200)
         expect(yield* json(resources)).toEqual({})
+
+        expect(mcpServers.status).toBe(200)
+        expect(yield* json(mcpServers)).toEqual([
+          { name: "demo", status: { status: "disabled" }, tools: [], prompts: [], resources: [] },
+        ])
       }),
     {
       config: {

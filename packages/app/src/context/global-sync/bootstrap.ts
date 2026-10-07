@@ -183,8 +183,54 @@ function warmSessions(input: {
 export const loadAgentsQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
-    queryFn: () => retry(() => sdk.app.agents().then((x) => normalizeAgentList(x.data))),
+    queryFn: () =>
+      retry(
+        () =>
+          // 单次最多等 20 秒：请求挂住（实例启动卡住、连接半断）时也能进入重试
+          sdk.app.agents(undefined, { signal: AbortSignal.timeout(20_000) }).then((x) => {
+            const list = normalizeAgentList(x.data)
+            // 空列表不缓存，下次还会重新拉
+            if (list.length === 0) throw new Error("empty agent list")
+            return list
+          }),
+        { retryIf: () => true },
+      ),
   })
+
+const agentRetries = new Set<string>()
+
+/**
+ * 智能体列表拉不到时在后台一直重试（退避到 1 分钟一次），拿到就写回 store。
+ * 期间输入框用 build 兜底，不阻塞发送。
+ */
+function retryAgentsInBackground(input: {
+  key: string
+  scope: ServerScope
+  sdk: OpencodeClient
+  store: Store<State>
+  setStore: SetStoreFunction<State>
+  queryClient: QueryClient
+}) {
+  const id = `${input.scope}:${input.key}`
+  if (agentRetries.has(id)) return
+  agentRetries.add(id)
+  void (async () => {
+    try {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(2000 * 2 ** attempt, 60_000)))
+        if (input.store.agent.length > 0) return
+        const list = await input.queryClient
+          .fetchQuery(loadAgentsQuery(input.scope, input.key, input.sdk))
+          .catch(() => undefined)
+        if (!list?.length) continue
+        input.setStore("agent", list)
+        return
+      }
+    } finally {
+      agentRetries.delete(id)
+    }
+  })()
+}
 
 export const loadPathQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
   queryOptions<Path>({
@@ -241,10 +287,15 @@ export function bootstrapDirectory(input: {
     // critical：首屏/侧边栏可见性所必需的最小集合（agents、config、session.status、
     // project/path 回退）。这些失败会导致 status 保持 partial，不进入 complete。
     const critical = [
+      // 拿不到不算启动失败：输入框先用 build 兜底，后台继续重试
       () =>
         input.queryClient
           .ensureQueryData(loadAgentsQuery(input.scope, key, input.sdk))
-          .then((data) => input.setStore("agent", data)),
+          .then((data) => input.setStore("agent", data))
+          .catch((error) => {
+            console.warn(`${tag} agents unavailable, retrying in background`, error)
+            retryAgentsInBackground({ ...input, key })
+          }),
       () =>
         retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
       () =>

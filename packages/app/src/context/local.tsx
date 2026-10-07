@@ -6,7 +6,7 @@ import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
-import { resolveAgent } from "./local-agent"
+import { FALLBACK_AGENTS, resolveAgent } from "./local-agent"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
@@ -72,7 +72,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (!session) return undefined
       return assistantMode(session) ? `${session}:assistant` : session
     })
-    const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() => {
+      const items = sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden)
+      return items.length > 0 ? items : FALLBACK_AGENTS
+    })
     const agentsVisible = () => true
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 

@@ -31,7 +31,8 @@ export function createPromptInputController(input: {
       available: sync().data.agent,
       options: local.agent.list().map((agent) => agent.name),
       current: local.agent.current()?.name ?? "",
-      loading: sync().data.agent.length === 0,
+      // 列表没拿到时用 build 兜底，按钮照常显示，不挡发送
+      loading: false,
       visible: local.agent.visible(),
       select: local.agent.set,
     },

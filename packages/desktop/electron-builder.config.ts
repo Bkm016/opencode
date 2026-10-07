@@ -114,8 +114,10 @@ const getBase = (appId: string): Configuration => ({
   nsis: {
     // 差分更新用的 blockmap 只在发布时有意义，本地构建跳过。
     differentialPackage: process.env.GITHUB_ACTIONS === "true",
-    oneClick: true,
+    // 走向导式安装：先确认安装范围与目录再装，不再双击直接装完；自动更新仍是静默安装
+    oneClick: false,
     perMachine: false,
+    allowToChangeInstallationDirectory: true,
     installerIcon: `resources/icons/icon.ico`,
     installerHeaderIcon: `resources/icons/icon.ico`,
     // 装完把 resources\cli 加进用户 PATH，卸载时移除

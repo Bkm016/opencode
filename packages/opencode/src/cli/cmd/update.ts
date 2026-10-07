@@ -10,7 +10,7 @@ const BASE = process.env.OPENCODE_UPDATE_URL ?? "https://github.com/Bkm016/openc
 const ASSET = "opencode-linux-x64-baseline.tar.gz"
 const SERVER_COMMANDS = new Set(["serve", "web"])
 
-// 版本号形如 0.0.0-dev-20261002025428（提交时间），本地构建可能只到分钟，补齐后按数字比较
+// 版本号形如 1.18.3-dev-20261002025428（提交时间），本地构建可能只到分钟，补齐后按数字比较
 function stamp(version: string) {
   const match = /(\d{12,14})$/.exec(version)
   if (!match) return 0

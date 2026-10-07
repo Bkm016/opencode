@@ -26,14 +26,21 @@ const env = {
 const CHANNEL = await (async () => {
   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
   if (env.OPENCODE_BUMP) return "latest"
-  if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.startsWith("0.0.0-")) return "latest"
+  // 带预发布后缀的版本（如 1.18.3-dev-20261007...）是 fork 的开发构建，不算正式渠道
+  if (env.OPENCODE_VERSION && !semver.prerelease(env.OPENCODE_VERSION)) return "latest"
   return await $`git branch --show-current`.text().then((x) => x.trim())
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
 const VERSION = await (async () => {
   if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
-  if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+  if (IS_PREVIEW) {
+    // 用上游基线版本打头，OpenCode Zen 免费模型会按版本号拦截过旧客户端
+    const base = await Bun.file(path.resolve(import.meta.dir, "../../opencode/package.json"))
+      .json()
+      .then((pkg) => pkg.version as string)
+    return `${base}-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+  }
   const version = await fetch("https://registry.npmjs.org/opencode-ai/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)

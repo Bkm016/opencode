@@ -32,15 +32,18 @@ const CHANNEL = await (async () => {
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
+// 上游基线版本，开发构建用它打头：OpenCode Zen 免费模型会按版本号拦截过旧客户端
+const baseVersion = () =>
+  Bun.file(path.resolve(import.meta.dir, "../../opencode/package.json"))
+    .json()
+    .then((pkg) => pkg.version as string)
+
 const VERSION = await (async () => {
+  // CI 传进来的是 0.0.0-dev-<提交时间>，把 0.0.0 换成基线版本
+  if (env.OPENCODE_VERSION?.startsWith("0.0.0-")) return `${await baseVersion()}${env.OPENCODE_VERSION.slice(5)}`
   if (env.OPENCODE_VERSION) return env.OPENCODE_VERSION
-  if (IS_PREVIEW) {
-    // 用上游基线版本打头，OpenCode Zen 免费模型会按版本号拦截过旧客户端
-    const base = await Bun.file(path.resolve(import.meta.dir, "../../opencode/package.json"))
-      .json()
-      .then((pkg) => pkg.version as string)
-    return `${base}-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
-  }
+  if (IS_PREVIEW)
+    return `${await baseVersion()}-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
   const version = await fetch("https://registry.npmjs.org/opencode-ai/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)

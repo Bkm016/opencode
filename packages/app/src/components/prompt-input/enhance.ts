@@ -61,6 +61,8 @@ export function rebuildPrompt(text: string, original: Prompt): Prompt {
 
 type Enhance = {
   running: boolean
+  // 已经收到改写内容（用于区分"等待模型"和"正在输出"两段动画）
+  streaming?: boolean
   // 优化前的原文；改写结果还没被改动时可以撤销
   original?: Prompt
   result: string
@@ -92,7 +94,7 @@ export function createPromptEnhance(input: {
     const controller = new AbortController()
     controllers.set(id, controller)
     const signal = controller.signal
-    update(id, { running: true, original, result: "" })
+    update(id, { running: true, streaming: false, original, result: "" })
     let output = ""
     try {
       const response = await input
@@ -109,6 +111,7 @@ export function createPromptEnhance(input: {
         const chunk = await reader.read()
         if (chunk.done) break
         output += decoder.decode(chunk.value, { stream: true })
+        if (output.trim() && !sessions[id]?.streaming) update(id, { streaming: true })
         input.set(rebuildPrompt(output.trimStart(), original))
       }
       output = output.trim()
@@ -144,6 +147,7 @@ export function createPromptEnhance(input: {
 
   return {
     running: () => state().running,
+    streaming: () => state().running && !!state().streaming,
     canUndo,
     run,
     stop,

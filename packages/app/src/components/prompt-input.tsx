@@ -42,6 +42,7 @@ import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { acceptValue, nextAcceptLevel } from "@/context/permission-auto-respond"
 import { createPromptEnhance } from "./prompt-input/enhance"
+import "./prompt-input/enhance.css"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -400,6 +401,64 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         .join("")
         .trim().length === 0,
   )
+  // 优化成功后新文字的底色保留一会儿再褪掉
+  const [enhanceDone, setEnhanceDone] = createSignal(false)
+  createEffect(
+    on(enhance.running, (running, prev) => {
+      if (running) return setEnhanceDone(false)
+      if (!prev || !enhance.canUndo()) return
+      setEnhanceDone(true)
+      const timer = setTimeout(() => setEnhanceDone(false), 1200)
+      onCleanup(() => clearTimeout(timer))
+    }),
+  )
+  const enhancePhase = () => {
+    if (enhance.running()) return enhance.streaming() ? "streaming" : "waiting"
+    if (enhanceDone()) return "done"
+  }
+  // 等待时原文显示成被选中，完成后新文字标成新增；用 CSS Highlight，不动编辑器的 DOM
+  createEffect(() => {
+    const phase = enhancePhase()
+    const highlights = typeof CSS !== "undefined" ? CSS.highlights : undefined
+    if (!highlights || !editorRef || (phase !== "waiting" && phase !== "done")) return
+    const name = phase === "waiting" ? "prompt-enhance-old" : "prompt-enhance-new"
+    const range = document.createRange()
+    range.selectNodeContents(editorRef)
+    highlights.set(name, new Highlight(range))
+    onCleanup(() => highlights.delete(name))
+  })
+  // 块状光标停在文字末尾，输出时跟着走
+  const [enhanceCaret, setEnhanceCaret] = createSignal<{ left: number; top: number; height: number }>()
+  const measureEnhanceCaret = () => {
+    if (!editorRef || !scrollRef) return setEnhanceCaret(undefined)
+    const walker = document.createTreeWalker(editorRef, NodeFilter.SHOW_TEXT)
+    let last: Text | undefined
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.textContent?.trimEnd()) last = node as Text
+    }
+    const box = scrollRef.getBoundingClientRect()
+    const range = document.createRange()
+    if (last) {
+      const end = last.textContent!.trimEnd().length
+      range.setStart(last, end - 1)
+      range.setEnd(last, end)
+    } else range.selectNodeContents(editorRef)
+    const rects = range.getClientRects()
+    const rect = rects[rects.length - 1] ?? editorRef.getBoundingClientRect()
+    const height = Math.min(rect.height, 20)
+    setEnhanceCaret({
+      left: (last ? rect.right : rect.left + 12) - box.left + scrollRef.scrollLeft + 2,
+      top: rect.top - box.top + scrollRef.scrollTop + (rect.height - height) / 2,
+      height,
+    })
+  }
+  createEffect(() => {
+    const phase = enhancePhase()
+    if (phase !== "waiting" && phase !== "streaming") return setEnhanceCaret(undefined)
+    prompt.current()
+    const frame = requestAnimationFrame(measureEnhanceCaret)
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
   const runEnhance = () => {
     if (store.mode !== "normal") return
     if (enhance.running()) return enhance.stop()
@@ -1510,6 +1569,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               aria-label={placeholder()}
               contenteditable={starting() || enhance.running() ? "false" : "true"}
               aria-busy={starting() || enhance.running()}
+              data-enhance={enhancePhase()}
               autocapitalize={store.mode === "normal" ? "sentences" : "off"}
               autocorrect={store.mode === "normal" ? "on" : "off"}
               spellcheck={store.mode === "normal"}
@@ -1539,6 +1599,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             >
               {placeholder()}
             </div>
+            <Show when={enhanceCaret()}>
+              {(caret) => (
+                <div
+                  data-slot="prompt-enhance-caret"
+                  data-phase={enhancePhase()}
+                  aria-hidden="true"
+                  style={{
+                    left: `${caret().left}px`,
+                    top: `${caret().top}px`,
+                    height: `${caret().height}px`,
+                  }}
+                />
+              )}
+            </Show>
           </div>
 
           <input
@@ -1818,7 +1892,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     icon={enhance.running() ? "stop" : "sparkle"}
                     variant="ghost"
                     class="size-8 rounded-[10px]"
-                    classList={{ "animate-pulse": enhance.running() }}
                     disabled={enhanceBlank() && !enhance.running()}
                     aria-label={language.t("prompt.enhance.title")}
                     onClick={runEnhance}

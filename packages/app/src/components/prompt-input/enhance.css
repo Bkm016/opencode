@@ -1,0 +1,66 @@
+/*
+ * 提示词优化动画，照着编辑器里"选中 → 改写"的样子：
+ * 等待模型时原文像被选中一样，末尾块状光标在闪；输出时光标跟着新文字走；
+ * 完成后新文字带一层新增底色，慢慢褪掉。
+ */
+
+@property --prompt-enhance-fade {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@keyframes prompt-enhance-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes prompt-enhance-fade {
+  0%,
+  30% {
+    --prompt-enhance-fade: 1;
+  }
+  100% {
+    --prompt-enhance-fade: 0;
+  }
+}
+
+::highlight(prompt-enhance-old) {
+  background-color: color-mix(in srgb, var(--icon-info-active) 22%, transparent);
+}
+
+::highlight(prompt-enhance-new) {
+  background-color: color-mix(
+    in srgb,
+    var(--surface-diff-add-strong) calc(var(--prompt-enhance-fade) * 100%),
+    transparent
+  );
+}
+
+[data-component="prompt-input"][data-enhance="done"] {
+  animation: prompt-enhance-fade 1.2s ease-out forwards;
+}
+
+[data-slot="prompt-enhance-caret"] {
+  position: absolute;
+  z-index: 1;
+  width: 0.5em;
+  pointer-events: none;
+  background: var(--text-strong);
+  opacity: 0.75;
+  border-radius: 1px;
+}
+
+[data-slot="prompt-enhance-caret"][data-phase="waiting"] {
+  animation: prompt-enhance-blink 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="prompt-enhance-caret"][data-phase="waiting"] {
+    animation: none;
+  }
+  [data-component="prompt-input"][data-enhance="done"] {
+    animation: none;
+  }
+}

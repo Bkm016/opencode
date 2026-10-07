@@ -118,6 +118,8 @@ const getBase = (appId: string): Configuration => ({
     perMachine: false,
     installerIcon: `resources/icons/icon.ico`,
     installerHeaderIcon: `resources/icons/icon.ico`,
+    // 装完把 resources\cli 加进用户 PATH，卸载时移除
+    include: "installer/windows.nsh",
   },
   linux: {
     icon: `resources/icons`,

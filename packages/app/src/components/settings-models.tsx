@@ -17,6 +17,7 @@ import { DialogFetchModels } from "./dialog-fetch-models"
 import { DialogSettings } from "./dialog-settings"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
+import { ZEN_FREE_MODEL_COUNT, ZEN_PROVIDER_ID, zenFreeProvider } from "./zen-free"
 
 function formatTokenLimit(num: number | undefined): string {
   if (!num) return "—"
@@ -141,6 +142,31 @@ const SettingsModelsContent: Component = () => {
         }}
       />
     ))
+  }
+
+  // 一键启用 OpenCode Zen 免费模型（写入 provider.opencode，并从禁用列表里移除）
+  const [enablingZen, setEnablingZen] = createSignal(false)
+  const enableZen = async () => {
+    if (enablingZen()) return
+    setEnablingZen(true)
+    try {
+      const current = serverSync().data.config
+      await serverSync().updateConfig({
+        provider: { ...(current.provider ?? {}), [ZEN_PROVIDER_ID]: zenFreeProvider() },
+        disabled_providers: (current.disabled_providers ?? []).filter((id) => id !== ZEN_PROVIDER_ID),
+      })
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: "已启用 OpenCode Zen 免费模型",
+        description: `已添加 ${ZEN_FREE_MODEL_COUNT} 个免费模型，可在对话输入框的模型列表中选择。`,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast({ variant: "error", title: "启用失败", description: msg })
+    } finally {
+      setEnablingZen(false)
+    }
   }
 
   // 添加模型
@@ -287,6 +313,26 @@ const SettingsModelsContent: Component = () => {
 
       {/* 主内容区域 */}
       <div class="flex flex-col gap-6 max-w-[800px]">
+        <Show when={!configuredProviders()[ZEN_PROVIDER_ID] && !search()}>
+          <div
+            class="flex flex-wrap items-center justify-between gap-4 px-4 py-3 rounded-xl bg-surface-base border border-border-weak-base"
+            data-component="zen-free-card"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <ProviderIcon id={ZEN_PROVIDER_ID} class="size-5 shrink-0 icon-strong-base" />
+              <div class="flex flex-col min-w-0">
+                <span class="text-14-medium text-text-strong">OpenCode Zen 免费模型</span>
+                <span class="text-12-regular text-text-weak">
+                  无需账号和 API Key，一键添加 {ZEN_FREE_MODEL_COUNT} 个免费模型，可随时删除
+                </span>
+              </div>
+            </div>
+            <Button size="normal" variant="secondary" icon="plus-small" disabled={enablingZen()} onClick={enableZen}>
+              一键启用
+            </Button>
+          </div>
+        </Show>
+
         {/* 本地配置的 Providers */}
         <Show
           when={providerEntries().length > 0}

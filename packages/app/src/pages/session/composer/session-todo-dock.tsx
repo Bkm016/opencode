@@ -10,6 +10,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Index, Show, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
+import { useComposerTabs } from "./session-composer-tabs"
 
 const doneToken = "\u0000done\u0000"
 const totalToken = "\u0000total\u0000"
@@ -217,6 +218,54 @@ export function SessionTodoDock(props: {
   )
 }
 
+/** 状态面板的“待办”标签：标签上显示进度，面板里是完整清单 */
+export function SessionTodoPanel(props: {
+  todos: Todo[]
+  visible: boolean
+  onDismiss?: () => void
+  dismissLabel?: string
+}) {
+  const language = useLanguage()
+  const tabs = useComposerTabs()
+  const total = createMemo(() => props.todos.length)
+  const done = createMemo(() => props.todos.filter((todo) => todo.status === "completed").length)
+  const active = createMemo(
+    () =>
+      props.todos.find((todo) => todo.status === "in_progress") ??
+      props.todos.find((todo) => todo.status === "pending") ??
+      props.todos.filter((todo) => todo.status === "completed").at(-1) ??
+      props.todos[0],
+  )
+
+  tabs.use(() => props.visible, {
+    id: "todo",
+    order: 1,
+    label: () => language.t("session.composerTabs.todo"),
+    meta: () => `${done()}/${total()}`,
+    preview: () => active()?.content,
+  })
+
+  return (
+    <Show when={props.visible && tabs.active("todo")}>
+      {/* 进度已在标签上，面板只放清单；关闭按钮悬浮在右上角 */}
+      <div data-component="session-todo-dock" class="relative">
+        <Show when={props.onDismiss}>
+          <IconButton
+            data-action="session-todo-dismiss"
+            class="absolute top-0 right-0.5 z-10"
+            icon="close-small"
+            size="small"
+            variant="ghost"
+            onClick={() => props.onDismiss?.()}
+            aria-label={props.dismissLabel}
+          />
+        </Show>
+        <TodoList todos={props.todos} />
+      </div>
+    </Show>
+  )
+}
+
 function TodoList(props: { todos: Todo[] }) {
   const [store, setStore] = createStore({
     stuck: false,
@@ -225,7 +274,7 @@ function TodoList(props: { todos: Todo[] }) {
   return (
     <div class="relative">
       <div
-        class="px-3 pb-2.5 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
+        class="pl-2 pr-8 pt-1 pb-1.5 flex flex-col gap-1.5 max-h-48 overflow-y-auto no-scrollbar"
         style={{ "overflow-anchor": "none" }}
         onScroll={(e) => {
           setStore("stuck", e.currentTarget.scrollTop > 0)

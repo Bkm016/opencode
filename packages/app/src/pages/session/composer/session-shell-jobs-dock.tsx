@@ -1,10 +1,9 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
-import { DockTray } from "@opencode-ai/ui/dock-surface"
-import { IconButton } from "@opencode-ai/ui/icon-button"
+import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js"
 import { useShellJobs } from "@opencode-ai/session-ui/context/shell-jobs"
 import { ShellJobControls, useShellJobLive } from "@opencode-ai/session-ui/script-tool-card"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
+import { ComposerPanelBar, useComposerTabs } from "./session-composer-tabs"
 
 type Job = {
   id: string
@@ -12,7 +11,7 @@ type Job = {
   metadata: Record<string, any>
 }
 
-/** 输入框上方的后台任务栏：时间线折叠时也能实时看到仍在运行的后台命令输出。 */
+/** 状态面板的“后台”标签：时间线折叠时也能实时看到仍在运行的后台命令输出。 */
 export function SessionShellJobsDock(props: { sessionID: string }) {
   const sync = useSync()
   const jobs = useShellJobs()
@@ -41,8 +40,8 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
     { equals: (a, b) => a.length === b.length && a.every((job, i) => job.id === b[i]?.id) },
   )
 
-  // 标签页：每个任务一个标签，默认选最新的；收起时只占一行（显示所选任务的最新一行输出），展开看所选任务的完整输出
-  const [expanded, setExpanded] = createSignal(false)
+  const tabs = useComposerTabs()
+  // 多个任务时面板里再分小标签，默认选最新的
   const [picked, setPicked] = createSignal<string>()
   const selected = createMemo(() => {
     const list = running()
@@ -53,14 +52,27 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
     () => true,
   )
   const last = createMemo(() => lastLine(live.text()))
-  const toggleExpanded = () => {
-    setMounted(true)
-    setExpanded((value) => !value)
-  }
+
+  // 有任务时注册到状态面板；新任务出现时把标签切过来（不展开，标签条预览最新输出）
+  tabs.use(() => !!jobs && running().length > 0, {
+    id: "shell",
+    order: 2,
+    label: () => language.t("session.composerTabs.shell"),
+    meta: () => (running().length > 1 ? String(running().length) : undefined),
+    tone: () => "busy",
+    preview: () => last() || language.t("session.shellJobs.waiting"),
+  })
+  createEffect(
+    on(
+      () => running().length,
+      (count, prev) => {
+        if (count > (prev ?? 0)) tabs.notify("shell")
+      },
+    ),
+  )
 
   let box: HTMLPreElement | undefined
-  const [mounted, setMounted] = createSignal(false)
-  // 跟随到底部；用户往上翻时不打扰，切换标签后重新跟随
+  // 跟随到底部；用户往上翻时不打扰，切换任务后重新跟随
   let follow = true
   createEffect(() => {
     selected()
@@ -68,36 +80,18 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
   })
   createEffect(() => {
     live.text()
-    if (!expanded() || !box || !follow) return
+    if (!tabs.expanded("shell") || !box || !follow) return
     box.scrollTop = box.scrollHeight
   })
 
   return (
-    <Show when={jobs && selected()}>
+    <Show when={jobs && tabs.active("shell") && selected()}>
       {(job) => (
-        <DockTray data-component="session-shell-jobs-dock" class="py-1">
-          <div
-            class="pl-3 pr-2 py-1 flex items-center gap-2 cursor-pointer"
-            role="button"
-            tabIndex={0}
-            aria-expanded={expanded()}
-            onClick={toggleExpanded}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget) return
-              if (event.key !== "Enter" && event.key !== " ") return
-              event.preventDefault()
-              toggleExpanded()
-            }}
-          >
-            <span data-slot="shell-jobs-dock-dot" class="shrink-0 size-1.5 rounded-full bg-icon-success-base" />
+        <div data-component="session-shell-jobs-dock">
+          <ComposerPanelBar actions={<ShellJobControls metadata={job().metadata} title={job().title} />}>
             <Show
               when={running().length > 1}
-              fallback={
-                <>
-                  <span class="shrink-0 text-13-medium text-text-strong">{language.t("session.shellJobs.title")}</span>
-                  <span class="min-w-0 shrink truncate text-13-regular text-text-base">{job().title}</span>
-                </>
-              }
+              fallback={<span class="min-w-0 truncate text-text-strong">{job().title}</span>}
             >
               <div role="tablist" class="min-w-0 shrink flex items-center gap-0.5 overflow-x-auto no-scrollbar">
                 <For each={running()}>
@@ -107,15 +101,12 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
                       role="tab"
                       data-slot="shell-jobs-dock-tab"
                       aria-selected={item.id === job().id}
-                      class="shrink-0 max-w-40 truncate px-2 py-0.5 rounded-md text-12-medium"
+                      class="shrink-0 max-w-40 truncate px-2 h-6 rounded-md text-12-medium"
                       classList={{
                         "bg-surface-raised-base text-text-strong": item.id === job().id,
                         "text-text-weak hover:text-text-base": item.id !== job().id,
                       }}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setPicked(item.id)
-                      }}
+                      onClick={() => setPicked(item.id)}
                     >
                       {item.title}
                     </button>
@@ -123,44 +114,19 @@ export function SessionShellJobsDock(props: { sessionID: string }) {
                 </For>
               </div>
             </Show>
-            <span class="min-w-16 flex-1 truncate text-12-regular text-text-weak font-mono">
-              <Show when={!expanded()}>{last() || language.t("session.shellJobs.waiting")}</Show>
-            </span>
-            <div class="flex items-center gap-1 shrink-0">
-              <ShellJobControls metadata={job().metadata} title={job().title} />
-              <IconButton
-                icon="chevron-down"
-                size="normal"
-                variant="ghost"
-                data-slot="dock-chevron"
-                style={{ transform: `rotate(${expanded() ? 0 : 180}deg)` }}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  toggleExpanded()
-                }}
-                aria-label={expanded() ? language.t("session.todo.collapse") : language.t("session.todo.expand")}
-              />
-            </div>
-          </div>
-          <div data-slot="dock-reveal" data-open={expanded() ? "" : undefined} inert={!expanded()}>
-            <div>
-              <Show when={mounted()}>
-                <pre
-                  ref={box}
-                  role="tabpanel"
-                  data-slot="shell-jobs-dock-output"
-                  class="pl-6.5 pr-3 pb-2 max-h-32 overflow-y-auto overscroll-contain no-scrollbar text-12-regular text-text-weak font-mono whitespace-pre-wrap break-all"
-                  onScroll={(event) => {
-                    const el = event.currentTarget
-                    follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-                  }}
-                >
-                  {live.text() || language.t("session.shellJobs.waiting")}
-                </pre>
-              </Show>
-            </div>
-          </div>
-        </DockTray>
+          </ComposerPanelBar>
+          <pre
+            ref={box}
+            data-slot="shell-jobs-dock-output"
+            class="m-0 mt-0.5 px-2.5 py-2 rounded-lg bg-surface-raised-base max-h-40 overflow-y-auto overscroll-contain no-scrollbar text-12-regular text-text-weak font-mono whitespace-pre-wrap break-all"
+            onScroll={(event) => {
+              const el = event.currentTarget
+              follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+            }}
+          >
+            {live.text() || language.t("session.shellJobs.waiting")}
+          </pre>
+        </div>
       )}
     </Show>
   )

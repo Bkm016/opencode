@@ -4,10 +4,15 @@ import { SessionPermissionDock } from "@/pages/session/composer/session-permissi
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
-import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionTodoPanel } from "@/pages/session/composer/session-todo-dock"
 import { SessionGoalDock } from "@/pages/session/composer/session-goal-dock"
 import { SessionShellJobsDock } from "@/pages/session/composer/session-shell-jobs-dock"
 import { SessionAssistantDock } from "@/pages/session/composer/session-assistant-dock"
+import {
+  ComposerTabsProvider,
+  SessionComposerTabs,
+  createComposerTabs,
+} from "@/pages/session/composer/session-composer-tabs"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 export function SessionComposerRegion(props: {
@@ -16,10 +21,12 @@ export function SessionComposerRegion(props: {
 }) {
   const language = useLanguage()
   const controller = props.controller
+  const tabs = createComposerTabs()
   const rolled = () => {
     const revert = controller.revert()
     return revert?.items.length ? revert : undefined
   }
+  const prompt = () => controller.promptReady() && !controller.state.blocked()
 
   // 将编辑器层级限制在页面内，避免子级 z-index 穿透并盖住全局弹窗。
   return (
@@ -59,88 +66,55 @@ export function SessionComposerRegion(props: {
         </Show>
 
         <Show when={controller.showComposer()}>
-          <Show when={controller.sessionID()} keyed>
-            {(sessionID) => (
-              <div class="pb-2 pointer-events-auto flex flex-col gap-2">
-                <SessionAssistantDock sessionID={sessionID} />
-                <SessionShellJobsDock sessionID={sessionID} />
-                <SessionGoalDock sessionID={sessionID} />
+          <Show when={rolled()} keyed>
+            {(revert) => (
+              <div classList={{ "pb-2": !controller.promptReady() }}>
+                <SessionRevertDock
+                  items={revert.items}
+                  restoring={revert.restoring}
+                  disabled={revert.disabled}
+                  onRestore={revert.onRestore}
+                />
               </div>
             )}
           </Show>
-          <Show when={controller.dock()}>
-            <div
-              classList={{
-                "overflow-hidden": true,
-                "pointer-events-none": controller.dockProgress() < 0.98,
-              }}
-              style={{
-                "max-height": `${controller.dockHeight() * controller.dockProgress()}px`,
-              }}
-            >
-              <div ref={controller.setDockBodyRef}>
-                <SessionTodoDock
+          {/* 目标、待办、后台、助手、排队共用一座状态岛，标签切换，浮在输入框上方 */}
+          <div
+            classList={{
+              "relative z-[70]": true,
+            }}
+            style={{
+              "margin-top": `${controller.promptReady() ? -controller.lift() : 0}px`,
+            }}
+          >
+            <ComposerTabsProvider value={tabs}>
+              <SessionComposerTabs attached={prompt()}>
+                <Show when={controller.sessionID()} keyed>
+                  {(sessionID) => (
+                    <>
+                      <SessionGoalDock sessionID={sessionID} />
+                      <SessionShellJobsDock sessionID={sessionID} />
+                      <SessionAssistantDock sessionID={sessionID} />
+                    </>
+                  )}
+                </Show>
+                <SessionTodoPanel
                   todos={controller.state.todos()}
-                  collapsed={controller.todo.collapsed()}
-                  onToggle={controller.todo.onToggle}
+                  visible={controller.dock()}
                   onDismiss={controller.state.dismissTodos}
                   dismissLabel={language.t("common.close")}
-                  collapseLabel={language.t("session.todo.collapse")}
-                  expandLabel={language.t("session.todo.expand")}
-                  dockProgress={controller.dockProgress()}
                 />
-              </div>
-            </div>
-          </Show>
-          <Show
-            when={controller.promptReady()}
-            fallback={
-              <Show when={rolled()} keyed>
-                {(revert) => (
-                  <div class="pb-2">
-                    <SessionRevertDock
-                      items={revert.items}
-                      restoring={revert.restoring}
-                      disabled={revert.disabled}
-                      onRestore={revert.onRestore}
-                    />
-                  </div>
-                )}
-              </Show>
-            }
-          >
-            <Show when={rolled()} keyed>
-              {(revert) => (
-                <div>
-                  <SessionRevertDock
-                    items={revert.items}
-                    restoring={revert.restoring}
-                    disabled={revert.disabled}
-                    onRestore={revert.onRestore}
-                  />
-                </div>
-              )}
-            </Show>
-            <div
-              classList={{
-                "relative z-[70]": true,
-                "[&_[data-component=prompt-input-root]]:rounded-t-none": controller.dock(),
-              }}
-              style={{
-                "margin-top": `${-controller.lift()}px`,
-              }}
-            >
-              <Show when={controller.followup()?.items.length}>
                 <SessionFollowupDock
-                  items={controller.followup()!.items}
-                  sending={controller.followup()!.sending}
-                  onSend={controller.followup()!.onSend}
-                  onEdit={controller.followup()!.onEdit}
+                  items={controller.followup()?.items ?? []}
+                  sending={controller.followup()?.sending}
+                  onSend={(id) => controller.followup()?.onSend(id)}
+                  onEdit={(id) => controller.followup()?.onEdit(id)}
+                  onDelete={(id) => controller.followup()?.onDelete(id)}
                 />
-              </Show>
-              <Show when={!controller.state.blocked()}>{props.promptInput}</Show>
-            </div>
-          </Show>
+              </SessionComposerTabs>
+            </ComposerTabsProvider>
+            <Show when={prompt()}>{props.promptInput}</Show>
+          </div>
         </Show>
       </div>
     </div>

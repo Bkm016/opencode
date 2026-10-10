@@ -424,7 +424,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
-  const handleSubmit = async (event: Event) => {
+  // steer：会话忙时跳过排队，直接作为新消息插入（服务端会引导当前回合）
+  const handleSubmit = async (event: Event, opts?: { steer?: boolean }) => {
     event.preventDefault()
     if (starting()) return
 
@@ -622,7 +623,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const goalCommand = text === "/goal" || text.startsWith(GOAL_PREFIX)
-    if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+    if (!isNewSession && mode === "normal" && !opts?.steer && input.shouldQueue?.()) {
       if (goalCommand) {
         showToast({
           title: language.t("goal.toast.queueBlocked.title"),

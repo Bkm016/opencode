@@ -2,8 +2,6 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX 
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DockTray } from "@opencode-ai/ui/dock-surface"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import type { SessionGoal, SessionGoalLesson } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
@@ -12,6 +10,7 @@ import { useSync } from "@/context/sync"
 import { formatServerError } from "@/utils/server-errors"
 import { showToast } from "@/utils/toast"
 import { getSessionContext } from "@/components/session/session-context-metrics"
+import { ComposerPanelBar, useComposerTabs } from "./session-composer-tabs"
 
 type GoalData = {
   goal: SessionGoal
@@ -25,7 +24,6 @@ export function SessionGoalDock(props: { sessionID: string }) {
   const dialog = useDialog()
   const [data, setData] = createSignal<GoalData | null>()
   const [error, setError] = createSignal<unknown>()
-  const [collapsed, setCollapsed] = createSignal(true)
   let request = 0
 
   const load = () => {
@@ -228,108 +226,97 @@ export function SessionGoalDock(props: { sessionID: string }) {
     })
   }
 
+  const tabs = useComposerTabs()
+  tabs.use(() => !!goal() || (!!error() && !data()), {
+    id: "goal",
+    order: 0,
+    label: () => language.t("goal.dock.title"),
+    meta: () => {
+      const current = goal()
+      return current ? statusLabel(current.status) : language.t("goal.dock.loadFailed")
+    },
+    tone: () => {
+      const status = goal()?.status
+      if (status === "active") return working() ? "busy" : "info"
+      return "idle"
+    },
+    preview: () => goal()?.outcome,
+  })
+
   return (
-    <>
-      <Show when={error() && !data()}>
-        <DockTray data-component="session-goal-dock-error">
-          <div class="px-3 py-2 flex items-center gap-2">
-            <span class="text-13-regular text-text-weak">{language.t("goal.dock.loadFailed")}</span>
-            <Button size="small" variant="ghost" onClick={() => void load()}>
-              {language.t("goal.dock.retry")}
-            </Button>
-          </div>
-        </DockTray>
-      </Show>
-      <Show when={goal()} keyed>
-        {(current) => (
-          <DockTray data-component="session-goal-dock">
-            <div
-              class="pl-3 pr-2 py-2 flex items-center gap-2"
-              role="button"
-              tabIndex={0}
-              onClick={() => setCollapsed((value) => !value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return
-                event.preventDefault()
-                setCollapsed((value) => !value)
-              }}
-            >
-              <span class="shrink-0 text-13-medium text-text-strong">{language.t("goal.dock.title")}</span>
-              <span class="shrink-0 text-12-regular text-text-subtle">{statusLabel(current.status)}</span>
-              <Show when={collapsed()}>
-                <span class="min-w-0 flex-1 truncate text-13-regular text-text-base">{current.outcome}</span>
-              </Show>
-              <div class="ml-auto flex items-center gap-2 shrink-0">
-                <span class="hidden sm:inline text-12-regular text-text-subtle">
-                  {language.t("goal.dock.contextTokens", { tokens: contextTokens() })}
-                </span>
-                <span class="hidden sm:inline text-12-regular text-text-subtle">{tokens()}</span>
-                <span class="hidden sm:inline text-12-regular text-text-subtle">{elapsed()}</span>
-                <Show when={activeLessons().length > 0}>
-                  <span class="text-12-regular text-text-subtle">
-                    {language.t("goal.dock.lessonsCount", { count: activeLessons().length })}
-                  </span>
-                </Show>
-                <IconButton
-                  icon="chevron-down"
-                  size="normal"
-                  variant="ghost"
-                  style={{ transform: `rotate(${collapsed() ? 180 : 0}deg)` }}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setCollapsed((value) => !value)
-                  }}
-                  aria-label={collapsed() ? language.t("session.todo.expand") : language.t("session.todo.collapse")}
-                />
-              </div>
-            </div>
-
-            <div class="px-3 pb-2 flex items-center gap-2 flex-wrap">
-              <Show when={current.status === "active"}>
-                <Button size="small" variant="secondary" onClick={pause}>
-                  {language.t("goal.dock.pause")}
-                </Button>
-              </Show>
-              <Show when={["paused", "blocked", "usage_limited"].includes(current.status)}>
-                <Button size="small" variant="secondary" onClick={resume}>
-                  {language.t("goal.dock.resume")}
-                </Button>
-              </Show>
-              <Show when={current.status === "active" && !working()}>
-                <Button size="small" variant="secondary" onClick={wake}>
-                  {language.t("goal.dock.wake")}
-                </Button>
-              </Show>
-              <Show when={current.status === "budget_limited"}>
-                <span class="text-12-regular text-text-weak">{language.t("goal.dock.budgetHint")}</span>
-              </Show>
-              <Button size="small" variant="ghost" onClick={showBudget}>
-                {language.t("goal.dock.budget")}
-              </Button>
-              <Button size="small" variant="ghost" onClick={showClearConfirm}>
-                {language.t("goal.dock.clear")}
-              </Button>
-            </div>
-
-            <Show when={error()}>
-              <div class="px-3 pb-2 flex items-center gap-2">
-                <span class="text-12-regular text-text-weak">{language.t("goal.dock.refreshFailed")}</span>
+    <Show when={tabs.active("goal")}>
+      <div data-component="session-goal-dock">
+        <Show
+          when={goal()}
+          keyed
+          fallback={
+            <ComposerPanelBar
+              actions={
                 <Button size="small" variant="ghost" onClick={() => void load()}>
                   {language.t("goal.dock.retry")}
                 </Button>
-              </div>
-            </Show>
-
-            <Show when={!collapsed()}>
-              <div class="px-3 pb-4 flex flex-col gap-4 max-h-72 overflow-y-auto no-scrollbar">
+              }
+            >
+              <span class="text-text-weak">{language.t("goal.dock.loadFailed")}</span>
+            </ComposerPanelBar>
+          }
+        >
+          {(current) => (
+            <>
+              <ComposerPanelBar
+                actions={
+                  <>
+                    <Show when={current.status === "active"}>
+                      <Button size="small" variant="ghost" onClick={pause}>
+                        {language.t("goal.dock.pause")}
+                      </Button>
+                    </Show>
+                    <Show when={["paused", "blocked", "usage_limited"].includes(current.status)}>
+                      <Button size="small" variant="ghost" onClick={resume}>
+                        {language.t("goal.dock.resume")}
+                      </Button>
+                    </Show>
+                    <Show when={current.status === "active" && !working()}>
+                      <Button size="small" variant="ghost" onClick={wake}>
+                        {language.t("goal.dock.wake")}
+                      </Button>
+                    </Show>
+                    <Button size="small" variant="ghost" onClick={showBudget}>
+                      {language.t("goal.dock.budget")}
+                    </Button>
+                    <Button size="small" variant="ghost" onClick={showClearConfirm}>
+                      {language.t("goal.dock.clear")}
+                    </Button>
+                  </>
+                }
+              >
+                <span class="min-w-0 truncate text-text-strong">{current.outcome}</span>
+              </ComposerPanelBar>
+              <div class="px-2 pb-1.5 flex flex-col gap-2 max-h-56 overflow-y-auto overscroll-contain no-scrollbar">
+                <div class="flex items-center gap-x-3 gap-y-1 flex-wrap text-12-regular text-text-weak tabular-nums">
+                  <span>{language.t("goal.dock.contextTokens", { tokens: contextTokens() })}</span>
+                  <span>{tokens()}</span>
+                  <span>{elapsed()}</span>
+                  <Show when={activeLessons().length > 0}>
+                    <span>{language.t("goal.dock.lessonsCount", { count: activeLessons().length })}</span>
+                  </Show>
+                  <Show when={current.status === "budget_limited"}>
+                    <span>{language.t("goal.dock.budgetHint")}</span>
+                  </Show>
+                  <Show when={error()}>
+                    <button type="button" class="hover:text-text-base" onClick={() => void load()}>
+                      {language.t("goal.dock.refreshFailed")} · {language.t("goal.dock.retry")}
+                    </button>
+                  </Show>
+                </div>
                 <GoalContract goal={current} />
                 <GoalLessons lessons={lessons()} onDisable={disableLesson} onDelete={deleteLesson} />
               </div>
-            </Show>
-          </DockTray>
-        )}
-      </Show>
-    </>
+            </>
+          )}
+        </Show>
+      </div>
+    </Show>
   )
 }
 
@@ -337,17 +324,15 @@ function GoalContract(props: { goal: SessionGoal }) {
   const language = useLanguage()
   const section = (label: string, items: string[] | undefined): JSX.Element => (
     <Show when={items?.length}>
-      <div class="flex flex-col gap-1">
-        <span class="text-12-medium text-text-subtle">{label}</span>
-        <For each={items}>{(item) => <span class="text-13-regular text-text-base">{item}</span>}</For>
+      <span class="text-12-regular text-text-weak leading-5">{label}</span>
+      <div class="min-w-0 flex flex-col">
+        <For each={items}>{(item) => <span class="text-13-regular text-text-base leading-5">{item}</span>}</For>
       </div>
     </Show>
   )
 
   return (
-    <div class="flex flex-col gap-2">
-      <span class="text-13-medium text-text-strong">{language.t("goal.dock.contract")}</span>
-      {section(language.t("goal.dock.outcome"), [props.goal.outcome])}
+    <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
       {section(language.t("goal.dock.verification"), props.goal.verification)}
       {section(language.t("goal.dock.constraints"), props.goal.constraints)}
       {section(language.t("goal.dock.boundaries"), props.goal.boundaries)}
@@ -369,13 +354,18 @@ function GoalLessons(props: {
   return (
     <Show when={props.lessons.length > 0}>
       <div class="flex flex-col gap-2">
-        <span class="text-13-medium text-text-strong">{language.t("goal.dock.lessons")}</span>
+        <span class="text-12-medium text-text-subtle">{language.t("goal.dock.lessons")}</span>
         <For each={props.lessons}>
           {(lesson) => (
-            <div class="flex flex-col gap-1 border-t border-border-weaker-base pt-2">
+            <div class="px-2.5 py-2 rounded-lg bg-surface-raised-base flex flex-col gap-1">
               <div class="flex items-start gap-2">
                 <span class="min-w-0 flex-1 text-13-regular text-text-base">{lesson.attempt}</span>
-                <Show when={!lesson.disabledAt} fallback={<span class="text-11-regular text-text-weak">{language.t("goal.dock.lesson.disabled")}</span>}>
+                <Show
+                  when={!lesson.disabledAt}
+                  fallback={
+                    <span class="text-11-regular text-text-weak">{language.t("goal.dock.lesson.disabled")}</span>
+                  }
+                >
                   <Button size="small" variant="ghost" onClick={() => props.onDisable(lesson.id)}>
                     {language.t("goal.dock.lesson.disable")}
                   </Button>

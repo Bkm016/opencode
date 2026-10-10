@@ -22,7 +22,8 @@ export interface SoundSettings {
 export interface Settings {
   general: {
     autoSave: boolean
-    followup: "queue" | "steer"
+    /** 旧字段曾被强制写成 steer，改用新键让默认值回到排队 */
+    followupMode: "queue" | "steer"
     showTerminal: boolean
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
@@ -129,7 +130,7 @@ export function terminalFontFamily(font: string | undefined) {
 const defaultSettings: Settings = {
   general: {
     autoSave: true,
-    followup: "steer",
+    followupMode: "queue",
     showTerminal: false,
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
@@ -212,11 +213,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
     })
 
-    createEffect(() => {
-      if (store.general?.followup !== "queue") return
-      setStore("general", "followup", "steer")
-    })
-
     return {
       ready,
       get current() {
@@ -227,12 +223,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setAutoSave(value: boolean) {
           setStore("general", "autoSave", value)
         },
-        followup: withFallback(
-          () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
-          defaultSettings.general.followup,
-        ),
+        followup: withFallback(() => store.general?.followupMode, defaultSettings.general.followupMode),
         setFollowup(value: "queue" | "steer") {
-          setStore("general", "followup", value === "queue" ? "steer" : value)
+          setStore("general", "followupMode", value)
         },
         showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
         setShowTerminal(value: boolean) {

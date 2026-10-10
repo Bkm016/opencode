@@ -31,26 +31,30 @@
   border-radius: 0 0 12px 12px;
 }
 
-/* Todo dock 合体布局：与输入框同用 inset 背景，无边框，作为合体卡片的顶部面板。 */
-[data-component="session-todo-dock"] {
+/* 输入框上方的状态岛（目标、待办、后台、助手、排队）：与输入框同底色同圆角，独立浮在上方，内部不用分割线。 */
+[data-component="session-composer-tabs"] {
   background-color: var(--surface-inset-base);
-  border: 0;
-  border-bottom: 1px solid var(--border-weak-base);
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-radius: 12px;
+  overflow: clip;
 }
 
-/* 后台任务栏、助手栏：与输入框同款底色，无边框无阴影。 */
-[data-component="session-shell-jobs-dock"],
-[data-component="session-assistant-dock"] {
-  background-color: var(--surface-inset-base);
-  border: 0;
+[data-slot="composer-tab-dot"][data-tone="busy"] {
+  background-color: var(--icon-success-base);
+  animation: bash-background-pulse 1.6s ease-in-out infinite;
 }
 
-[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-output"] {
-  mask-image: linear-gradient(to bottom, transparent 0, black 14px);
+[data-slot="composer-tab-dot"][data-tone="info"] {
+  background-color: var(--icon-info-active);
+}
+
+[data-slot="composer-tab-dot"][data-tone="idle"] {
+  background-color: var(--icon-weak-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="composer-tab-dot"][data-tone="busy"] {
+    animation: none;
+  }
 }
 
 /* 任务栏里都是运行中的任务，状态徽标多余，用行首的呼吸点代替 */
@@ -58,19 +62,7 @@
   display: none;
 }
 
-[data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"],
-[data-component="session-assistant-dock"] [data-slot="assistant-dock-dot"][data-busy] {
-  animation: bash-background-pulse 1.6s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-component="session-shell-jobs-dock"] [data-slot="shell-jobs-dock-dot"],
-  [data-component="session-assistant-dock"] [data-slot="assistant-dock-dot"][data-busy] {
-    animation: none;
-  }
-}
-
-/* 助手栏、后台任务栏的展开区：grid 行高过渡，高度随内容，不用写死 max-height 动画。 */
+/* 状态卡片的展开区：grid 行高过渡，高度随内容，不用写死 max-height 动画。 */
 [data-slot="dock-reveal"] {
   display: grid;
   grid-template-rows: 0fr;

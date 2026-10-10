@@ -1175,6 +1175,14 @@ export default function Page() {
     })
   }
 
+  const deleteFollowup = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    if (sendingFollowup() === id) return
+    setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
+    setFollowup("failed", sessionID, (value) => (value === id ? undefined : value))
+  }
+
   const clearFollowupEdit = () => {
     const id = params.id
     if (!id) return
@@ -1337,6 +1345,23 @@ export default function Page() {
 
   const actions = { revert, replay, openAttachment }
 
+  // 最近一条正常收尾的 assistant（不是要继续调工具、不是压缩摘要、没出错）。
+  // 事件会合批到达，Goal 续跑时下一轮的 assistant 可能同批建出，所以不要求它是最后一条，只看有没有新的收尾。
+  const turnBoundary = createMemo(() => {
+    const last = sessionMessages().findLast(
+      (message) =>
+        message.role === "assistant" &&
+        !!message.time.completed &&
+        !!message.finish &&
+        message.finish !== "tool-calls" &&
+        !message.summary &&
+        !message.error,
+    )
+    return last?.id
+  })
+  // 每个回合边界只放出一条，后面的等下一个边界或会话空闲
+  const drained = new Map<string, string>()
+
   createEffect(() => {
     const sessionID = params.id
     if (!sessionID) return
@@ -1348,7 +1373,14 @@ export default function Page() {
     if (followup.paused[sessionID]) return
     if (isChildSession()) return
     if (composer.blocked()) return
-    if (busy(sessionID)) return
+    if (busy(sessionID)) {
+      // Goal 会连续自动续跑，会话一直不空闲；每当一轮回复正常结束就放出一条，避免排队消息饿死。
+      const boundary = turnBoundary()
+      if (!boundary || drained.get(sessionID) === boundary) return
+    }
+    // 空闲时发出也记下当前边界：新回合的 assistant 建出来之前，上一轮的旧边界不能再放出下一条
+    const boundary = turnBoundary()
+    if (boundary) drained.set(sessionID, boundary)
 
     void sendFollowup(sessionID, item.id)
   })
@@ -1509,6 +1541,7 @@ export default function Page() {
                   sending: sendingFollowup(),
                   onSend: (id) => void sendFollowup(params.id!, id, { manual: true }),
                   onEdit: editFollowup,
+                  onDelete: deleteFollowup,
                 }
               : undefined,
           revert: () =>

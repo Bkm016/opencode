@@ -11,6 +11,7 @@ import {
   createUniqueId,
   type JSX,
 } from "solid-js"
+import { Portal } from "solid-js/web"
 import { selectionFromLines, type SelectedLineRange } from "@/context/file"
 import {
   ContentPart,
@@ -222,6 +223,28 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
   const stopping = createMemo(() => working() && blank() && !assisting())
+  // 会话忙且为排队模式时，发送进入队列；悬停发送键可改为直接引导
+  const queueing = createMemo(
+    () => store.mode === "normal" && !blank() && !assisting() && !!props.shouldQueue?.(),
+  )
+  // 发送键悬停菜单：输入框托盘会裁切溢出内容，菜单挂到 body 上按发送键位置定位
+  const [sendMenu, setSendMenu] = createSignal<{ right: number; bottom: number }>()
+  let sendMenuTimer: ReturnType<typeof setTimeout> | undefined
+  const openSendMenu = (el: HTMLElement) => {
+    clearTimeout(sendMenuTimer)
+    if (!queueing()) return
+    const rect = el.getBoundingClientRect()
+    setSendMenu({ right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.top })
+  }
+  const closeSendMenu = (delay = 120) => {
+    clearTimeout(sendMenuTimer)
+    sendMenuTimer = setTimeout(() => setSendMenu(undefined), delay)
+  }
+  createEffect(() => {
+    if (!queueing()) closeSendMenu(0)
+  })
+  onCleanup(() => clearTimeout(sendMenuTimer))
+  const steerKey = typeof navigator === "object" && /(Mac|iPhone|iPad)/.test(navigator.platform) ? "⌘↵" : "Ctrl ↵"
   const tip = () => {
     if (stopping()) {
       return (
@@ -1449,7 +1472,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         return
       }
       if (enhance.running()) return
-      void handleSubmit(event)
+      void handleSubmit(event, { steer: queueing() && (event.ctrlKey || event.metaKey) })
     }
   }
 
@@ -1909,7 +1932,47 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                 }
               >
-                <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+                <div onMouseEnter={(event) => openSendMenu(event.currentTarget)} onMouseLeave={() => closeSendMenu()}>
+                  <Show when={queueing() && sendMenu()}>
+                    {(pos) => (
+                      <Portal>
+                        <div
+                          data-slot="prompt-send-menu"
+                          class="fixed z-50 pb-1.5 animate-in fade-in slide-in-from-bottom-1 duration-150"
+                          style={{ right: `${pos().right}px`, bottom: `${pos().bottom}px` }}
+                          onMouseEnter={() => clearTimeout(sendMenuTimer)}
+                          onMouseLeave={() => closeSendMenu()}
+                        >
+                          <div class="w-40 p-1 rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha shadow-md">
+                            <button
+                              data-action="prompt-queue"
+                              type="submit"
+                              form={formId}
+                              class="w-full h-7 px-2 flex items-center gap-2 rounded-sm text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                              onClick={() => closeSendMenu(0)}
+                            >
+                              <span>{language.t("prompt.action.queue")}</span>
+                              <span class="ml-auto text-12-regular text-text-weak">↵</span>
+                            </button>
+                            <button
+                              data-action="prompt-steer"
+                              type="button"
+                              class="w-full h-7 px-2 flex items-center gap-2 rounded-sm text-13-regular text-text-strong hover:bg-surface-raised-base-hover"
+                              onClick={(event) => {
+                                closeSendMenu(0)
+                                if (enhance.running()) return
+                                void handleSubmit(event, { steer: true })
+                              }}
+                            >
+                              <span>{language.t("prompt.action.steer")}</span>
+                              <span class="ml-auto text-12-regular text-text-weak">{steerKey}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </Portal>
+                    )}
+                  </Show>
+                <Tooltip placement="top" inactive={(!working() && blank()) || queueing()} value={tip()}>
                   <IconButton
                     data-action="prompt-submit"
                     type="submit"
@@ -1928,6 +1991,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     }}
                   />
                 </Tooltip>
+                </div>
               </Show>
             </div>
           </div>

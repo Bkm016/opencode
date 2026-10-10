@@ -2,7 +2,6 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on } 
 import type { Part, Session } from "@opencode-ai/sdk/v2/client"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { DockTray } from "@opencode-ai/ui/dock-surface"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
@@ -11,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { findAssistant, setAssistantMode } from "@/components/prompt-input/assistant"
+import { ComposerPanelBar, useComposerTabs } from "./session-composer-tabs"
 
 type Line = { id: string; role: "user" | "assistant" | "tool"; text: string }
 
@@ -110,7 +110,7 @@ export function SessionAssistantDock(props: { sessionID: string }) {
     const id = helper()?.id
     if (!id) return
     setRemoved((prev) => new Set(prev).add(id))
-    setExpanded(false)
+    tabs.close()
     setAssistantMode(props.sessionID, false)
     // 服务端删除时会先停掉仍在进行的回复
     await sdk()
@@ -129,13 +129,15 @@ export function SessionAssistantDock(props: { sessionID: string }) {
       })
   }
 
-  const [expanded, setExpanded] = createSignal(false)
-  // 首次展开后才挂载内容（markdown 渲染有开销），之后保留，收起时也能播放动画
-  const [mounted, setMounted] = createSignal(false)
-  const toggleExpanded = () => {
-    setMounted(true)
-    setExpanded((value) => !value)
-  }
+  const tabs = useComposerTabs()
+  const expanded = () => tabs.expanded("assistant")
+  tabs.use(visible, {
+    id: "assistant",
+    order: 3,
+    label: () => language.t("assistant.title"),
+    tone: () => (busy() ? "busy" : "idle"),
+    preview: summary,
+  })
 
   // 跟随到底部；用户往上翻时不打扰。markdown 异步渲染会改变高度，所以按内容尺寸变化来跟随
   const [box, setBox] = createSignal<HTMLDivElement>()
@@ -161,113 +163,71 @@ export function SessionAssistantDock(props: { sessionID: string }) {
   }
 
   return (
-    <Show when={visible()}>
-      <DockTray data-component="session-assistant-dock" class="py-1">
+    <Show when={visible() && tabs.active("assistant")}>
+      <div data-component="session-assistant-dock">
+        <ComposerPanelBar
+          actions={
+            <>
+              <IconButton
+                icon="square-arrow-top-right"
+                size="small"
+                variant="ghost"
+                onClick={open}
+                aria-label={language.t("assistant.open")}
+              />
+              <IconButton
+                icon="close-small"
+                size="small"
+                variant="ghost"
+                onClick={() => void remove()}
+                aria-label={language.t("common.close")}
+              />
+            </>
+          }
+        >
+          <span class="min-w-0 truncate text-text-weak">{busy() ? language.t("assistant.working") : summary()}</span>
+        </ComposerPanelBar>
         <div
-          class="pl-3 pr-2 py-1 flex items-center gap-2 cursor-pointer"
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded()}
-          onClick={toggleExpanded}
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return
-            if (event.key !== "Enter" && event.key !== " ") return
-            event.preventDefault()
-            toggleExpanded()
+          ref={setBox}
+          data-slot="assistant-dock-body"
+          class="px-2 pt-0.5 pb-1.5 max-h-[min(20rem,40vh)] overflow-y-auto overscroll-contain no-scrollbar"
+          onScroll={(event) => {
+            const el = event.currentTarget
+            follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
           }}
         >
-          <span
-            data-slot="assistant-dock-dot"
-            data-busy={busy() ? "" : undefined}
-            class="shrink-0 size-1.5 rounded-full"
-            classList={{ "bg-icon-info-active": busy(), "bg-icon-weak-base": !busy() }}
-          />
-          <span class="shrink-0 text-13-medium text-text-strong">{language.t("assistant.title")}</span>
-          <span class="min-w-16 flex-1 truncate text-12-regular text-text-weak">
-            <Show when={!expanded()}>{summary()}</Show>
-          </span>
-          <div class="flex items-center gap-1 shrink-0">
-            <IconButton
-              icon="square-arrow-top-right"
-              size="normal"
-              variant="ghost"
-              onClick={(event) => {
-                event.stopPropagation()
-                open()
-              }}
-              aria-label={language.t("assistant.open")}
-            />
-            <IconButton
-              icon="close-small"
-              size="normal"
-              variant="ghost"
-              onClick={(event) => {
-                event.stopPropagation()
-                void remove()
-              }}
-              aria-label={language.t("common.close")}
-            />
-            <IconButton
-              icon="chevron-down"
-              size="normal"
-              variant="ghost"
-              data-slot="dock-chevron"
-              style={{ transform: `rotate(${expanded() ? 0 : 180}deg)` }}
-              onClick={(event) => {
-                event.stopPropagation()
-                toggleExpanded()
-              }}
-              aria-label={expanded() ? language.t("session.todo.collapse") : language.t("session.todo.expand")}
-            />
+          <div ref={setContent} class="flex flex-col gap-1.5">
+            <For each={lines()}>
+              {(line) => (
+                <Switch>
+                  <Match when={line.role === "assistant"}>
+                    <Markdown
+                      data-role="assistant"
+                      class="shrink-0 min-w-0 text-13-regular text-text-base"
+                      text={line.text}
+                      cacheKey={line.id}
+                      streaming={busy() && line.id === latest()?.id}
+                    />
+                  </Match>
+                  <Match when={line.role === "user"}>
+                    <div
+                      data-role="user"
+                      class="shrink-0 whitespace-pre-wrap break-words text-13-medium text-text-strong"
+                    >
+                      {line.text}
+                    </div>
+                  </Match>
+                  <Match when={line.role === "tool"}>
+                    <div data-role="tool" class="shrink-0 truncate text-12-regular text-text-weak font-mono">
+                      {line.text}
+                    </div>
+                  </Match>
+                </Switch>
+              )}
+            </For>
           </div>
         </div>
-        <div data-slot="dock-reveal" data-open={expanded() ? "" : undefined} inert={!expanded()}>
-          <div>
-            <Show when={mounted()}>
-              <div
-                ref={setBox}
-                data-slot="assistant-dock-body"
-                class="pl-6.5 pr-3 pb-2 max-h-[min(24rem,45vh)] overflow-y-auto overscroll-contain no-scrollbar"
-                onScroll={(event) => {
-                  const el = event.currentTarget
-                  follow = el.scrollHeight - el.scrollTop - el.clientHeight < 8
-                }}
-              >
-                <div ref={setContent} class="flex flex-col gap-1.5">
-                  <For each={lines()}>
-                    {(line) => (
-                      <Switch>
-                        <Match when={line.role === "assistant"}>
-                          <Markdown
-                            data-role="assistant"
-                            class="shrink-0 min-w-0 text-13-regular text-text-base"
-                            text={line.text}
-                            cacheKey={line.id}
-                            streaming={busy() && line.id === latest()?.id}
-                          />
-                        </Match>
-                        <Match when={line.role === "user"}>
-                          <div
-                            data-role="user"
-                            class="shrink-0 whitespace-pre-wrap break-words text-13-medium text-text-strong"
-                          >
-                            {line.text}
-                          </div>
-                        </Match>
-                        <Match when={line.role === "tool"}>
-                          <div data-role="tool" class="shrink-0 truncate text-12-regular text-text-weak font-mono">
-                            {line.text}
-                          </div>
-                        </Match>
-                      </Switch>
-                    )}
-                  </For>
-                </div>
-              </div>
-            </Show>
-          </div>
-        </div>
-      </DockTray>
+      </div>
     </Show>
   )
 }

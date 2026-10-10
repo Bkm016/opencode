@@ -97,6 +97,10 @@ Response must include:
 
 Any attempt to use tools is a critical violation. Respond with text ONLY.`
 
+const BATCH_QUERIES_PROMPT = `<system-reminder>
+Your last several steps each ran a single read-only query. Plan the remaining lookups you need now and issue the independent ones together: call several tools in one response, or combine them into one command (e.g. one grep with alternation, one read of a larger range). Only run queries one per step when each depends on the previous result.
+</system-reminder>`
+
 const BUILD_SYSTEM =
   "You are an AI coding agent. Help the user accomplish software engineering tasks by inspecting the workspace, making targeted changes, and using tools according to the configured permissions."
 
@@ -429,6 +433,13 @@ export const ENTRIES: readonly PromptEntry[] = [
     title: "Max steps reached",
     description: "Message injected when an agent hits its step limit",
     default: MAX_STEPS_PROMPT,
+  },
+  {
+    id: "runtime.batch_queries",
+    group: "runtime",
+    title: "Batch queries reminder",
+    description: "Reminder injected after consecutive steps that each ran a single read-only query",
+    default: BATCH_QUERIES_PROMPT,
   },
 ]
 

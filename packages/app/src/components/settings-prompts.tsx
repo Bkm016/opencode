@@ -235,6 +235,12 @@ const LOCAL_CATALOG: PromptCatalogItem[] = [
     title: "Max steps reached",
     description: "Message injected when an agent hits its step limit",
   },
+  {
+    id: "runtime.batch_queries",
+    group: "runtime",
+    title: "Batch queries reminder",
+    description: "Reminder injected after consecutive steps that each ran a single read-only query",
+  },
 ]
 
 function isPromptGroup(value: string): value is PromptGroup {

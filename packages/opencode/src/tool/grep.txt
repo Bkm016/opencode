@@ -1,2 +1,3 @@
 Search file contents by regex; returns matching lines with paths and line numbers. Filter filenames with include, e.g. `*.{ts,tsx}`.
+Batch independent searches: combine related terms with alternation (`a|b|c`) in one pattern, or issue unrelated searches in parallel, instead of one search per step.
 For match counts, use shell with `rg`, not `grep`. For broad exploration, delegate only when task's delegation criteria are met.

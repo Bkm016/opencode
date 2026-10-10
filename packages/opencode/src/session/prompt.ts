@@ -11,7 +11,7 @@ import { Session } from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
 
-import { type Tool as AITool, tool, jsonSchema } from "ai"
+import { type Tool as AITool, type ModelMessage, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
@@ -58,6 +58,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionChunk } from "./chunk"
 import { usable } from "./overflow"
 import { SessionReminders } from "./reminders"
+import { QueryBatch } from "./query-batch"
 import { SessionAssistant } from "./assistant"
 import { SessionTools } from "./tools"
 import { Goal } from "./goal"
@@ -1910,9 +1911,12 @@ const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes }),
             ])
             let modelMsgs = initialModelMsgs
-            const suffix = isLastStep
-              ? [{ role: "assistant" as const, content: PromptCatalog.resolve("runtime.max_steps", cfg.prompts) }]
-              : []
+            // 合并查询提醒只随本轮请求发送、不落库：下一轮自然消失，已缓存的前缀不受影响。
+            const suffix: ModelMessage[] = isLastStep
+              ? [{ role: "assistant", content: PromptCatalog.resolve("runtime.max_steps", cfg.prompts) }]
+              : !isFinalizing && QueryBatch.shouldRemind(msgs)
+                ? [{ role: "user", content: PromptCatalog.resolve("runtime.batch_queries", cfg.prompts) }]
+                : []
             if (cfg.compaction?.strategy === "chunk") {
               const maxInputTokens = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
               if (maxInputTokens > 0) {

@@ -38,7 +38,7 @@ jobs:
           echo "version: $VERSION"
 
       - name: Build
-        run: bun ./script/build.ts --single --baseline --skip-embed-web-ui
+        run: bun ./script/build.ts --single --baseline
         working-directory: packages/opencode
         env:
           NODE_OPTIONS: --max-old-space-size=4096

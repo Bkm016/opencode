@@ -78,7 +78,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             metadata: { ...prevMeta, ...val.metadata },
             status: "running",
             input: args,
-            time: { start: Date.now() },
+            // 工具执行中会多次上报 metadata（如 shell 流式输出），保留首次开始时间，否则耗时只剩最后一段
+            time: match.state.status === "running" ? match.state.time : { start: Date.now() },
           },
         }
       }),

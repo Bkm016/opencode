@@ -87,18 +87,24 @@ class ToolGroupRegistryImpl {
 /** 连续工具聚合注册表 */
 export const ToolGroupRegistry = new ToolGroupRegistryImpl()
 
-/** 累加计算工具组内所有已完成部件的实际执行耗时总和 */
+/** 工具组内已完成部件的实际耗时：按时间区间取并集，并行执行的调用不重复累加 */
 export function computeToolGroupDuration(parts: ToolPart[]): string | undefined {
-  let totalMs = 0
-  let validCount = 0
+  const spans: [number, number][] = []
   for (const part of parts) {
     const time = part.state && "time" in part.state ? (part.state as any).time : undefined
-    if (time && typeof time.start === "number" && typeof time.end === "number") {
-      totalMs += Math.max(0, time.end - time.start)
-      validCount++
+    if (time && typeof time.start === "number" && typeof time.end === "number" && time.end >= time.start) {
+      spans.push([time.start, time.end])
     }
   }
-  if (validCount === 0 || totalMs <= 0) return undefined
+  spans.sort((a, b) => a[0] - b[0])
+  let totalMs = 0
+  let cursor = -Infinity
+  for (const [start, end] of spans) {
+    const from = Math.max(start, cursor)
+    if (end > from) totalMs += end - from
+    cursor = Math.max(cursor, end)
+  }
+  if (totalMs <= 0) return undefined
   if (totalMs < 1000) return `${totalMs}ms`
   if (totalMs < 60000) return `${(totalMs / 1000).toFixed(totalMs < 10000 ? 2 : 1)}s`
   const mins = Math.floor(totalMs / 60000)

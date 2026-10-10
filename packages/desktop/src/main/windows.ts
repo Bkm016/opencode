@@ -186,19 +186,23 @@ export function setDockIcon() {
   if (!icon.isEmpty()) app.dock?.setIcon(icon)
 }
 
-export function createMainWindow(id: string = randomUUID()) {
-  const state = windowState({
-    file: windowStateFile(id),
-    defaultWidth: 1280,
-    defaultHeight: 800,
-  })
+// popout：会话独立窗口，只显示 route 指向的会话；不恢复、不记窗口尺寸。
+export function createMainWindow(id: string = randomUUID(), options?: { popout?: { route: string } }) {
+  const popout = options?.popout
+  const state = popout
+    ? undefined
+    : windowState({
+        file: windowStateFile(id),
+        defaultWidth: 1280,
+        defaultHeight: 800,
+      })
 
   const mode = tone()
   const win = new BrowserWindow({
-    x: state.x,
-    y: state.y,
-    width: state.width,
-    height: state.height,
+    x: state?.x,
+    y: state?.y,
+    width: state?.width ?? 960,
+    height: state?.height ?? 800,
     minWidth: 480,
     show: false,
     autoHideMenuBar: true,
@@ -249,9 +253,9 @@ export function createMainWindow(id: string = randomUUID()) {
     callback({ responseHeaders })
   })
 
-  state.manage(win)
-  registerWindow(win, id)
-  loadWindow(win, "index.html")
+  state?.manage(win)
+  registerWindow(win, id, !!popout)
+  loadWindow(win, popout ? `index.html?${new URLSearchParams({ popout: "1", route: popout.route })}` : "index.html")
   wireZoom(win)
 
   win.once("ready-to-show", () => {
@@ -261,9 +265,9 @@ export function createMainWindow(id: string = randomUUID()) {
   return win
 }
 
-function registerWindow(win: BrowserWindow, id: string) {
+function registerWindow(win: BrowserWindow, id: string, transient: boolean) {
   windowIDs.set(win, id)
-  registry.register(id, win)
+  registry.register(id, win, { transient })
 
   win.on("focus", () => registry.focused(id))
   // Windows never emits before-quit on OS shutdown/logoff, but each window

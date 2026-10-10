@@ -6,6 +6,9 @@ export function createWindowRegistry<W>(persistence: {
   cleanup: (id: string) => void
 }) {
   const windows = new Map<string, W>()
+  // 会话独立窗口：只活在本次运行，不写进恢复列表，也不算"最后一个窗口"
+  const transient = new Set<string>()
+  const persistentCount = () => [...windows.keys()].filter((id) => !transient.has(id)).length
   let quitting = false
   let lastFocusedID: string | undefined
 
@@ -20,8 +23,12 @@ export function createWindowRegistry<W>(persistence: {
     setQuitting(value = true) {
       quitting = value
     },
-    register(id: string, window: W) {
+    register(id: string, window: W, options?: { transient?: boolean }) {
       windows.set(id, window)
+      if (options?.transient) {
+        transient.add(id)
+        return
+      }
       const ids = persisted()
       if (!ids.includes(id)) persistence.write([...ids, id])
     },
@@ -35,11 +42,15 @@ export function createWindowRegistry<W>(persistence: {
     closed(id: string) {
       windows.delete(id)
       if (lastFocusedID === id) lastFocusedID = windows.keys().next().value
+      if (transient.delete(id)) {
+        persistence.cleanup(id)
+        return
+      }
       // Only a deliberate close (app keeps running with other windows open)
       // forgets a window. Closing the last window quits the app and fires
       // `closed` before `before-quit`, so treat it as a quit and keep the id
       // for restore on next launch.
-      if (quitting || windows.size === 0) return
+      if (quitting || persistentCount() === 0) return
       persistence.write(persisted().filter((item) => item !== id))
       persistence.cleanup(id)
     },

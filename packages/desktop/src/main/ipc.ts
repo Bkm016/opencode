@@ -11,7 +11,7 @@ import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
-import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setServerRequestHeaders, setTitlebar, updateTitlebar } from "./windows"
+import { createMainWindow, getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setServerRequestHeaders, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createFetchProxy, type FetchProxyInit } from "./fetch-proxy"
@@ -285,6 +285,12 @@ export function registerIpcHandlers(deps: Deps) {
     const id = getWindowID(win)
     if (!id) throw new Error("Window ID not found")
     return id
+  })
+
+  ipcMain.handle("open-session-window", (_event: IpcMainInvokeEvent, route: string) => {
+    // 只接受应用内路由，避免拼出别的 URL
+    if (typeof route !== "string" || !route.startsWith("/") || route.startsWith("//")) return
+    createMainWindow(undefined, { popout: { route } })
   })
 
   ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {

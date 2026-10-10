@@ -12,6 +12,8 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { isSessionPinned, setSessionPinned } from "@/utils/session-pin"
 import { useServerSDK } from "@/context/server-sdk"
+import { usePlatform } from "@/context/platform"
+import { openSessionWindow } from "@/utils/popout"
 import { showToast } from "@/utils/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { reconcile } from "solid-js/store"
@@ -149,6 +151,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const permission = usePermission()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
+  const platform = usePlatform()
   const [sessionStore, setSessionStore] = serverSync().child(props.session.directory)
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(
@@ -297,6 +300,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <ContextMenu.ItemLabel>
                   {pinned() ? language.t("common.unpin") : language.t("common.pin")}
                 </ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                onSelect={() => openSessionWindow(platform, `/${props.slug}/session/${props.session.id}`)}
+              >
+                <ContextMenu.ItemLabel>{language.t("session.openInWindow")}</ContextMenu.ItemLabel>
               </ContextMenu.Item>
               <ContextMenu.Item onSelect={() => void props.archiveSession(props.session)}>
                 <ContextMenu.ItemLabel>{language.t("common.archive")}</ContextMenu.ItemLabel>

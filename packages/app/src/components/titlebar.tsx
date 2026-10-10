@@ -14,6 +14,7 @@ import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
+import { isPopout } from "@/utils/popout"
 import "./titlebar.css"
 
 type TauriDesktopWindow = {
@@ -70,6 +71,7 @@ export function useTitlebarRightMount() {
 }
 
 export function Titlebar(props: { update?: TitlebarUpdate }) {
+  const popout = isPopout()
   const layout = useLayout()
   const platform = usePlatform()
   const command = useCommand()
@@ -260,7 +262,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             <Show when={windows() || linux()}>
               <WindowsAppMenu command={command} platform={platform} />
             </Show>
-            <Show when={!isDesktop() && mac()}>
+            <Show when={!isDesktop() && mac() && !popout}>
               <div class="w-10 shrink-0 flex items-center justify-center">
                 <IconButton
                   icon="menu"
@@ -272,7 +274,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 />
               </div>
             </Show>
-            <Show when={!isDesktop() && !mac()}>
+            <Show when={!isDesktop() && !mac() && !popout}>
               <div class="w-10 shrink-0 flex items-center justify-center">
                 <IconButton
                   icon="menu"
@@ -290,7 +292,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               classList={{ "min-w-0 flex-1 items-center": true, flex: !isDesktop(), hidden: isDesktop() }}
             />
             <div classList={{ "items-center gap-1 shrink-0": true, flex: isDesktop(), hidden: !isDesktop() }}>
-              <Show when={isDesktop()}>
+              <Show when={isDesktop() && !popout}>
                 <TooltipKeybind
                   class="shrink-0 ml-2"
                   placement="bottom"
@@ -315,7 +317,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   flex: isDesktop(),
                 }}
               >
-                <Show when={params.dir}>
+                <Show when={params.dir && !popout}>
                   <div
                     class="flex items-center shrink-0 w-8 mr-1"
                     aria-hidden={layout.sidebar.opened() ? "true" : undefined}
@@ -354,12 +356,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 <div
                   class="flex items-center shrink-0"
                   classList={{
-                    "-translate-x-[36px]": layout.sidebar.opened() && !!params.dir,
+                    "-translate-x-[36px]": layout.sidebar.opened() && !!params.dir && !popout,
                     "duration-180 ease-out": !layout.sidebar.opened(),
                     "duration-180 ease-in": layout.sidebar.opened(),
                   }}
                 >
-                  <Show when={hasProjects() && nav()}>
+                  <Show when={hasProjects() && nav() && !popout}>
                     <div class="flex items-center gap-0 transition-transform">
                       <Tooltip placement="bottom" value={language.t("common.goBack")} openDelay={800}>
                         <Button

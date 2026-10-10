@@ -127,6 +127,9 @@ type PlatformBase = {
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /** Open a session route in a standalone popout window (desktop only; web falls back to window.open) */
+  openSessionWindow?(href: string): Promise<void> | void
 }
 
 export type Platform = PlatformBase &

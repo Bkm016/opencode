@@ -1050,6 +1050,7 @@ export const dict = {
   "common.rename": "Rename",
   "common.reset": "Reset",
   "common.archive": "Archive",
+  "session.openInWindow": "Open in New Window",
   "common.pin": "Pin",
   "common.unpin": "Unpin",
   "common.delete": "Delete",

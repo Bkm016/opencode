@@ -996,6 +996,7 @@ export const dict = {
   "common.rename": "重命名",
   "common.reset": "重置",
   "common.archive": "归档",
+  "session.openInWindow": "在独立窗口打开",
   "common.pin": "置顶",
   "common.unpin": "取消置顶",
   "common.delete": "删除",

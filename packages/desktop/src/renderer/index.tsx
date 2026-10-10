@@ -83,19 +83,25 @@ function windowLastActiveUrlKey(windowID: string) {
   return `opencode.desktop.window.${windowID}.last-active-url`
 }
 
+// 会话独立窗口由主进程带 ?popout=1&route=... 打开：初始路由取 route，
+// 之后的位置只记在 sessionStorage（刷新保留），窗口关掉就丢，不在 localStorage 里堆积。
+const popoutRoute = new URLSearchParams(window.location.search).get("route")
+const routeStorage = () => (popoutRoute ? sessionStorage : localStorage)
+const isAppRoute = (value: string | null | undefined): value is string =>
+  !!value?.startsWith("/") && !value.startsWith("//")
+
 function getLastActiveUrl(windowID: string) {
-  if (typeof localStorage !== "object") return "/"
   try {
-    const value = localStorage.getItem(windowLastActiveUrlKey(windowID))
-    if (value?.startsWith("/") && !value.startsWith("//")) return value
+    const value = routeStorage().getItem(windowLastActiveUrlKey(windowID))
+    if (isAppRoute(value)) return value
   } catch {}
+  if (isAppRoute(popoutRoute)) return popoutRoute
   return "/"
 }
 
 function setLastActiveUrl(windowID: string, value: string) {
-  if (typeof localStorage !== "object") return
   try {
-    localStorage.setItem(windowLastActiveUrlKey(windowID), value)
+    routeStorage().setItem(windowLastActiveUrlKey(windowID), value)
   } catch {}
 }
 
@@ -172,6 +178,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
     os,
     version: pkg.version,
     windowID: windowState.id,
+    openSessionWindow: (href: string) => window.api.openSessionWindow(href),
     updater: {
       state: updaterState,
       check: () => window.api.updater.check(),

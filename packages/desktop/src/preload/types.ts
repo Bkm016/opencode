@@ -84,6 +84,7 @@ export type ElectronAPI = {
 
   getWindowCount: () => Promise<number>
   getWindowID: () => Promise<string>
+  openSessionWindow: (route: string) => Promise<void>
   onMenuCommand: (cb: (id: string) => void) => () => void
   onDeepLink: (cb: (urls: string[]) => void) => () => void
   onServerReconnect: (cb: (data: ServerReadyData) => void) => () => void

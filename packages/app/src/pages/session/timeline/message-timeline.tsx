@@ -13,7 +13,7 @@
 } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { useMutation } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
 import { Accordion } from "@opencode-ai/ui/accordion"
@@ -74,6 +74,7 @@ import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useSDK } from "@/context/sdk"
+import { isPopout, openSessionWindow } from "@/utils/popout"
 import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
@@ -333,6 +334,7 @@ export function MessageTimeline(props: {
   const initialMeasurements = cached?.measurements
   const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
   const platform = usePlatform()
+  const location = useLocation()
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
@@ -1785,6 +1787,11 @@ export function MessageTimeline(props: {
                   <DropdownMenu.Item onSelect={() => void simulateOverflow()} disabled={title.simulatingOverflow}>
                     <DropdownMenu.ItemLabel>{language.t("session.overflowTest.action")}</DropdownMenu.ItemLabel>
                   </DropdownMenu.Item>
+                  <Show when={!isPopout()}>
+                    <DropdownMenu.Item onSelect={() => openSessionWindow(platform, location.pathname)}>
+                      <DropdownMenu.ItemLabel>{language.t("session.openInWindow")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </Show>
                   <Show when={!parentID()}>
                     <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
                       <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>

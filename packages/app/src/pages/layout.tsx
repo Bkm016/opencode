@@ -86,9 +86,12 @@ import {
   type TiledWorkspaceDrag,
 } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
+import { isPopout } from "@/utils/popout"
 import { DialogSessionSearch } from "@/components/dialog-session-search"
 
 export default function LegacyLayout(props: ParentProps) {
+  // 独立窗口只显示当前会话，不挂侧栏
+  const popout = isPopout()
   const serverSDK = useServerSDK()
   const [store, setStore, , ready] = persisted(
     Persist.serverGlobal(serverSDK().scope, "layout.page", ["layout.page.v1"]),
@@ -1054,6 +1057,7 @@ export default function LegacyLayout(props: ParentProps) {
         title: language.t("command.sidebar.toggle"),
         category: language.t("command.category.view"),
         keybind: "alt+1",
+        disabled: popout,
         onSelect: () => layout.sidebar.toggle(),
       },
       {
@@ -1861,7 +1865,7 @@ export default function LegacyLayout(props: ParentProps) {
   createEffect(() => {
     document.documentElement.style.setProperty(
       "--dialog-left-margin",
-      `${layout.sidebar.opened() ? layout.sidebar.width() : 0}px`,
+      `${layout.sidebar.opened() && !popout ? layout.sidebar.width() : 0}px`,
     )
   })
 
@@ -2213,7 +2217,7 @@ export default function LegacyLayout(props: ParentProps) {
       <div class="flex-1 min-h-0 min-w-0 flex">
         <div class="flex-1 min-h-0 relative">
           <div class="size-full relative overflow-x-hidden">
-            <Show when={isDesktop()}>
+            <Show when={isDesktop() && !popout}>
               <nav
                 aria-label={language.t("sidebar.nav.projectsAndSessions")}
                 data-component="sidebar-nav-desktop"
@@ -2255,7 +2259,7 @@ export default function LegacyLayout(props: ParentProps) {
               </Show>
             </Show>
 
-            <Show when={!isDesktop()}>
+            <Show when={!isDesktop() && !popout}>
               {/* 手机抽屉：盖住整屏（含标题栏），右侧留出遮罩，点遮罩收起。 */}
               <div
                 classList={{
@@ -2295,7 +2299,7 @@ export default function LegacyLayout(props: ParentProps) {
                   !state.sizing,
               }}
               style={{
-                left: isDesktop() ? (layout.sidebar.opened() ? `${side()}px` : "0px") : undefined,
+                left: isDesktop() ? (layout.sidebar.opened() && !popout ? `${side()}px` : "0px") : undefined,
               }}
             >
               <main

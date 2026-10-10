@@ -15,6 +15,25 @@ function setup(initial: unknown = []) {
 }
 
 describe("window registry", () => {
+  test("never persists transient popout windows and cleans them up on close", () => {
+    const app = setup()
+    app.registry.register("a", { name: "a" })
+    app.registry.register("p", { name: "p" }, { transient: true })
+    expect(app.state.stored).toEqual(["a"])
+    app.registry.closed("p")
+    expect(app.state.stored).toEqual(["a"])
+    expect(app.cleaned).toEqual(["p"])
+  })
+
+  test("keeps the last persistent window for restore even when popouts remain open", () => {
+    const app = setup()
+    app.registry.register("a", { name: "a" })
+    app.registry.register("p", { name: "p" }, { transient: true })
+    app.registry.closed("a")
+    expect(app.state.stored).toEqual(["a"])
+    expect(app.cleaned).toEqual([])
+  })
+
   test("restores persisted ids and ignores malformed entries", () => {
     expect(setup(["a", "", 42, "b"]).registry.persisted()).toEqual(["a", "b"])
     expect(setup("junk").registry.persisted()).toEqual([])

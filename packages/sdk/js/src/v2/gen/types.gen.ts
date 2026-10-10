@@ -2549,6 +2549,7 @@ export type DatabaseInfo = {
 
 export type Path = {
   home: string
+  chat?: string
   state: string
   config: string
   worktree: string

@@ -34,6 +34,8 @@ const DatabaseInfo = Schema.Struct({
 
 const PathInfo = Schema.Struct({
   home: Schema.String,
+  // 聊天目录；空串表示没有任何可写目录，旧服务端不返回该字段。
+  chat: Schema.optional(Schema.String),
   state: Schema.String,
   config: Schema.String,
   worktree: Schema.String,

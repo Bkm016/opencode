@@ -1016,6 +1016,7 @@ export const dict = {
   "sidebar.projects": "專案",
   "sidebar.chat": "聊天",
   "sidebar.chat.new": "新增聊天",
+  "sidebar.chat.unavailable": "桌面、主目錄和暫存目錄都沒有寫入權限，無法聊天",
   "sidebar.empty.title": "未開啟任何專案",
   "sidebar.empty.description": "開啟專案以開始使用",
   "debugBar.ariaLabel": "開發效能診斷",

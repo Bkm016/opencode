@@ -1092,6 +1092,7 @@ export const dict = {
   "sidebar.projects": "Projects",
   "sidebar.chat": "Chat",
   "sidebar.chat.new": "New chat",
+  "sidebar.chat.unavailable": "No writable directory (Desktop, home or temp), chat is unavailable",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",
 

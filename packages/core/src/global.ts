@@ -36,7 +36,8 @@ await Promise.all([
   fs.mkdir(Path.data, { recursive: true }),
   fs.mkdir(Path.config, { recursive: true }),
   fs.mkdir(Path.state, { recursive: true }),
-  fs.mkdir(Path.tmp, { recursive: true }),
+  // 临时目录写不了不影响启动，聊天目录选择会跳过它
+  fs.mkdir(Path.tmp, { recursive: true }).catch(() => undefined),
   fs.mkdir(Path.log, { recursive: true }),
   fs.mkdir(Path.bin, { recursive: true }),
   fs.mkdir(Path.repos, { recursive: true }),

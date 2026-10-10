@@ -519,12 +519,37 @@ export default function LegacyLayout(props: ParentProps) {
   })
 
   // 聊天区会话落在桌面目录，独立于任何项目，关闭项目后仍在。
+  // 服务端按 Desktop → 主目录 → 临时目录 挑一个可写的放在 path.chat；空串表示都写不了，聊天不可用。
+  // 旧服务端没有 path.chat：有桌面目录用桌面，没有就退回主目录。
+  const [hasDesktop] = createResource(
+    () => {
+      const p = serverSync().data.path
+      if (!p.home || p.chat !== undefined) return
+      return p.home
+    },
+    async (home) => {
+      const result = await serverSDK()
+        .client.experimental.file.list({ path: home })
+        .catch(() => undefined)
+      // 列不出来就按原来的桌面目录走
+      if (!result?.data || !Array.isArray(result.data.entries)) return true
+      return result.data.entries.some((entry) => entry.kind === "directory" && entry.name === "Desktop")
+    },
+  )
   const chatDirectory = createMemo(() => {
-    const home = serverSync().data.path.home
+    const p = serverSync().data.path
+    if (p.chat !== undefined) return p.chat
+    const home = p.home
     if (!home) return ""
+    const desktop = hasDesktop.latest
+    if (desktop === undefined) return ""
+    const root = home.replace(/[\\/]+$/, "")
+    if (!desktop) return root || home
     const sep = home.includes("\\") ? "\\" : "/"
-    return home.replace(/[\\/]+$/, "") + sep + "Desktop"
+    return root + sep + "Desktop"
   })
+  // 服务端明确告知没有可写目录
+  const chatUnavailable = createMemo(() => serverSync().data.path.chat === "")
   const chatSlug = createMemo(() => base64Encode(chatDirectory()))
 
   // 会话数据在 memo 里同步挂上（bootstrap: true 激活加载），跟项目分区同一个模式，展开时数据已在。
@@ -575,7 +600,8 @@ export default function LegacyLayout(props: ParentProps) {
           role="button"
           tabIndex={0}
           aria-expanded={hasSessions() ? chatExpanded() : undefined}
-          title={chatDirectory()}
+          aria-disabled={chatUnavailable() ? true : undefined}
+          title={chatUnavailable() ? language.t("sidebar.chat.unavailable") : chatDirectory()}
           onClick={handleClick}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -584,6 +610,7 @@ export default function LegacyLayout(props: ParentProps) {
             }
           }}
           class="group/chat relative flex min-w-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-raised-base-hover focus-visible:outline-none"
+          classList={{ "opacity-50 !cursor-not-allowed": chatUnavailable() }}
         >
           <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
           <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{language.t("sidebar.chat")}</span>

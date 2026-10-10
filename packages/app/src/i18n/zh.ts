@@ -1018,6 +1018,7 @@ export const dict = {
   "sidebar.projects": "项目",
   "sidebar.chat": "聊天",
   "sidebar.chat.new": "新建聊天",
+  "sidebar.chat.unavailable": "桌面、主目录和临时目录都没有写权限，无法聊天",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 

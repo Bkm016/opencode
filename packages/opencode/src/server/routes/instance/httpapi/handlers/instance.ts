@@ -12,12 +12,30 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import fs from "fs/promises"
+import os from "os"
 import path from "path"
 import { InstanceHttpApi } from "../api"
 import { ApiRunScriptError } from "../groups/instance"
 import { RunScript } from "@opencode-ai/core/run-script"
 import { markInstanceForDisposal, markInstanceForReload } from "../lifecycle"
 import { Location } from "@opencode-ai/schema/location"
+
+// 聊天目录：Desktop（不存在就建）→ home → 系统临时目录，都写不了返回空串，前端据此禁止发送。
+async function chatDirectory() {
+  const writable = (dir: string) =>
+    fs
+      .mkdir(dir, { recursive: true })
+      .then(() => fs.access(dir, fs.constants.W_OK))
+      .then(
+        () => true,
+        () => false,
+      )
+  const home = Global.Path.home
+  for (const dir of [path.join(home, "Desktop"), home, os.tmpdir()]) {
+    if (dir && (await writable(dir))) return dir
+  }
+  return ""
+}
 
 function runFilePath(ctx: InstanceContext) {
   const directory = ctx.project.vcs ? ctx.worktree : ctx.directory
@@ -109,8 +127,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
           }),
         { concurrency: 1 },
       ).pipe(Effect.map((rows) => rows.sort((a, b) => (b.rows ?? 0) - (a.rows ?? 0))))
+      const chat = yield* Effect.promise(chatDirectory)
       return {
         home: Global.Path.home,
+        chat,
         state: Global.Path.state,
         config: Global.Path.config,
         worktree: ctx.worktree,

@@ -10,7 +10,6 @@ const MODELS: Array<[id: string, name: string]> = [
   ["ling-3.1-flash-free", "Ling 3.1 Flash"],
   ["longcat-2.5-preview-free", "LongCat 2.5 Preview"],
   ["space-bunny-free", "Space Bunny"],
-  ["fledge-alpha-free", "Fledge Alpha"],
 ]
 
 export const ZEN_FREE_MODEL_COUNT = MODELS.length

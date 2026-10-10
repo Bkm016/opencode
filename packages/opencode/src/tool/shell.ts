@@ -1,7 +1,7 @@
 import { Deferred, Effect, Fiber, Option, Stream } from "effect"
 import os from "os"
-import { createWriteStream } from "node:fs"
-import { mkdir } from "node:fs/promises"
+import { constants, createWriteStream } from "node:fs"
+import { access, mkdir } from "node:fs/promises"
 import * as Tool from "./tool"
 import { InputAlias } from "./input-aliases"
 import path from "path"
@@ -838,12 +838,20 @@ export const ShellTool = Tool.define(
         const limits = yield* trunc.limits()
         const instanceCtx = yield* InstanceState.context
         // 项目临时目录跟随项目保存，避免 Bash 把中间文件散落到全局系统临时目录。
-        const tmp = path.join(
+        // 目录没写权限时退到系统临时目录：建不了临时目录不该让整个会话发不出消息。
+        const local = path.join(
           instanceCtx.project.vcs ? instanceCtx.worktree : instanceCtx.directory,
           ".opencode",
           "tmp",
         )
-        yield* Effect.promise(() => mkdir(tmp, { recursive: true })).pipe(Effect.orDie)
+        const tmp = yield* Effect.promise(() =>
+          mkdir(local, { recursive: true })
+            .then(() => access(local, constants.W_OK))
+            .then(
+              () => local,
+              () => os.tmpdir(),
+            ),
+        )
         const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs, tmp)
         yield* Effect.logInfo("shell tool using shell", { shell })
 

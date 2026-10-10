@@ -1,4 +1,4 @@
-import { Deferred, Effect, Fiber, Option, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, Option, Scope, Stream } from "effect"
 import os from "os"
 import { constants, createWriteStream } from "node:fs"
 import { access, mkdir } from "node:fs/promises"
@@ -23,17 +23,21 @@ import { Plugin } from "@/plugin"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
 import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcessSpawner, type ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 import { SessionRunState } from "@/session/run-state"
 import { ShellJobs } from "./shell/jobs"
 import { LocationServiceMap } from "@opencode-ai/core/location-services"
+import type { Pty } from "@opencode-ai/core/pty"
 import type { TaskPromptOps } from "./task"
 
 export { Parameters } from "./shell/prompt"
 
 const MAX_METADATA_LENGTH = 30_000
+// 前台命令超时后转入后台继续运行而不是被杀；上限避免模型设很大的 timeout 把整轮卡住。
+export const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000
+export const MAX_FOREGROUND_TIMEOUT_MS = 10 * 60 * 1000
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
 const FILES = new Set([
   ...CWD,
@@ -443,7 +447,42 @@ export const ShellTool = Tool.define(
     const runState = yield* SessionRunState.Service
     // 可选依赖：测试等精简环境没有 location 服务时后台模式不可用，前台执行不受影响
     const locations = yield* Effect.serviceOption(LocationServiceMap.Service)
-    const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
+    const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? DEFAULT_TIMEOUT_MS
+
+    // 后台作业自行退出时写入一条 synthetic 用户消息：会话忙时下一步即可见，空闲时随下一条用户消息进入上下文
+    const exitNote = Effect.fnUntraced(function* (ctx: Tool.Context) {
+      const context = yield* Effect.context<never>()
+      const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
+      const limits = yield* trunc.limits()
+      const note: ShellJobs.Note = (info, output) => {
+        if (!ops) return
+        const code = info.exitCode ?? "unknown"
+        Effect.runForkWith(context)(
+          ops
+            .prompt({
+              sessionID: ctx.sessionID as never,
+              agent: ctx.agent,
+              noReply: true,
+              parts: [
+                {
+                  type: "text",
+                  synthetic: true,
+                  text: [
+                    `<bash_job id="${info.id}" state="exited" exit_code="${code}">`,
+                    `<summary>Background command exited (code ${code}): ${info.description || info.command.split("\n")[0]}</summary>`,
+                    "<output>",
+                    tail(output, 40, limits.maxBytes).text || "(no new output)",
+                    "</output>",
+                    "</bash_job>",
+                  ].join("\n"),
+                },
+              ],
+            })
+            .pipe(Effect.ignore),
+        )
+      }
+      return note
+    })
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
       const lines = yield* spawner
@@ -545,6 +584,8 @@ export const ShellTool = Tool.define(
         host?: string
         /** 本地命令里通过 shell 写入的文件，用于提醒改用文件工具 */
         writes?: string[]
+        /** 可用时，超时的命令转为后台作业继续运行 */
+        adopt?: { directory: string; logDir: string; description?: string }
       },
       ctx: Tool.Context,
     ) {
@@ -561,6 +602,10 @@ export const ShellTool = Tool.define(
       let expired = false
       let aborted = false
       let released = false
+      // 超时转后台后，输出改为转发给 PTY 会话；进程作用域交由作业管理
+      let relay: ((chunk: string) => void) | undefined
+      let moved: ShellJobs.Handle | undefined
+      const procScope = yield* Scope.make()
 
       const closeSink = Effect.fnUntraced(function* () {
         const stream = sink
@@ -593,10 +638,71 @@ export const ShellTool = Tool.define(
         },
       })
 
+      // 超时后接管进程：包装成 Pty.Process 交给 Pty.Service，输出、退出与终止都经由同一个子进程句柄。
+      const toBackground = Effect.fnUntraced(function* (
+        handle: ChildProcessHandle,
+        output: Fiber.Fiber<void, unknown>,
+        run: { shell: string; command: string; cwd: string },
+        target: { directory: string; logDir: string; description?: string },
+        ctx: Tool.Context,
+      ) {
+        const data = new Set<(chunk: string) => void>()
+        const exits = new Set<(event: { exitCode: number }) => void>()
+        // 普通管道输出只有 \n，终端渲染需要 \r\n 才会回到行首
+        const term = (text: string) => text.replace(/\r?\n/g, "\r\n")
+        const proc: Pty.Process = {
+          pid: handle.pid,
+          onData: (listener) => {
+            data.add(listener)
+            return { dispose: () => data.delete(listener) }
+          },
+          onExit: (listener) => {
+            exits.add(listener)
+            return { dispose: () => exits.delete(listener) }
+          },
+          write: () => {},
+          resize: () => {},
+          kill: () => {
+            Effect.runFork(handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.ignore))
+          },
+        }
+        const job = yield* ShellJobs.adopt({
+          sessionID: ctx.sessionID,
+          directory: target.directory,
+          shell: run.shell,
+          command: run.command,
+          description: target.description,
+          cwd: run.cwd,
+          logDir: target.logDir,
+          process: proc,
+          replay: term(list.map((item) => item.text).join("")),
+          note: yield* exitNote(ctx),
+        }).pipe(
+          Effect.provideService(
+            LocationServiceMap.Service,
+            Option.getOrThrowWith(locations, () => new Error("background shell jobs are unavailable in this environment")),
+          ),
+        )
+        relay = (chunk) => {
+          const text = term(chunk)
+          for (const listener of data) listener(text)
+        }
+        yield* closeSink()
+        // 进程退出时先排空输出再通知，最后释放进程作用域
+        yield* Effect.gen(function* () {
+          const code = yield* handle.exitCode.pipe(Effect.catch(() => Effect.succeed(1)))
+          yield* Fiber.await(output)
+          for (const listener of exits) listener({ exitCode: Math.max(0, Number(code)) })
+        }).pipe(
+          Effect.ensuring(Effect.sync(() => Effect.runFork(Scope.close(procScope, Exit.void)))),
+          Effect.forkDetach,
+        )
+        return job
+      })
+
       // 先注册再启动进程：同 callID 的 sticky 可覆盖工具进入 running 到实际等待之间的窗口。
       const registration = yield* runState.registerWait(ctx.sessionID, ctx.callID)
-      const code: number | null = yield* Effect.scoped(
-        Effect.gen(function* () {
+      const code: number | null = yield* Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(
             input.host
@@ -606,6 +712,10 @@ export const ShellTool = Tool.define(
 
           const output = yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
+              if (relay) {
+                relay(chunk)
+                return Effect.void
+              }
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })
               used += size
@@ -674,6 +784,19 @@ export const ShellTool = Tool.define(
             aborted = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
           }
+          if (exit.kind === "timeout" && input.adopt && ShellJobs.hasCapacity(ctx.sessionID)) {
+            const job = yield* toBackground(handle, output, input, input.adopt, ctx).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("failed to move timed-out command to background", { cause }).pipe(
+                  Effect.as(undefined),
+                ),
+              ),
+            )
+            if (job) {
+              moved = job
+              return null
+            }
+          }
           if (exit.kind === "timeout") {
             expired = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
@@ -686,11 +809,39 @@ export const ShellTool = Tool.define(
           yield* Fiber.await(output)
 
           return exit.kind === "exit" ? exit.code : null
-        }),
-      ).pipe(
+        }).pipe(
+        Scope.provide(procScope),
         Effect.orDie,
         Effect.ensuring(runState.unregisterWait(ctx.sessionID, registration.token)),
+        Effect.ensuring(Effect.suspend(() => (moved ? Effect.void : Scope.close(procScope, Exit.void)))),
       )
+
+      if (moved) {
+        const state = ShellJobs.view(moved)
+        const first = yield* ShellJobs.read(moved, { waitMs: 0 })
+        const shown = tail(first.text.replace(/\n+$/, ""), limits.maxLines, limits.maxBytes)
+        const output = [
+          `Command exceeded the ${input.timeout} ms foreground timeout and was moved to background job ${state.id} (pid ${state.pid}); it is still running, not killed.`,
+          `Full log: ${state.log}` + (file ? `\nEarlier output: ${file}` : ""),
+          "Output so far:\n" + (shown.cut ? `...(earlier output omitted, see log)\n${shown.text}` : shown.text || "(no output yet)"),
+          `Continue with bash_job id="${state.id}": wait (for completion), read (optionally with until=<regex>), kill. You are notified when it exits.`,
+        ].join("\n\n")
+        return {
+          title: input.command,
+          metadata: {
+            output: preview(Shell.plain(first.text)),
+            exit: null as number | null,
+            truncated: shown.cut,
+            host: "localhost",
+            ...(input.cwd ? { workdir: input.cwd } : {}),
+            background: true,
+            jobId: state.id,
+            status: "running",
+            outputPath: state.log,
+          },
+          output,
+        }
+      }
 
       const meta: string[] = []
       if (expired) {
@@ -748,37 +899,8 @@ export const ShellTool = Tool.define(
       },
       ctx: Tool.Context,
     ) {
-      const context = yield* Effect.context<never>()
-      const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
       const limits = yield* trunc.limits()
-      // 后台作业自行退出时写入一条 synthetic 用户消息：会话忙时下一步即可见，空闲时随下一条用户消息进入上下文
-      const note: ShellJobs.Note = (info, output) => {
-        if (!ops) return
-        const code = info.exitCode ?? "unknown"
-        Effect.runForkWith(context)(
-          ops
-            .prompt({
-              sessionID: ctx.sessionID as never,
-              agent: ctx.agent,
-              noReply: true,
-              parts: [
-                {
-                  type: "text",
-                  synthetic: true,
-                  text: [
-                    `<bash_job id="${info.id}" state="exited" exit_code="${code}">`,
-                    `<summary>Background command exited (code ${code}): ${info.description || info.command.split("\n")[0]}</summary>`,
-                    "<output>",
-                    tail(output, 40, limits.maxBytes).text || "(no new output)",
-                    "</output>",
-                    "</bash_job>",
-                  ].join("\n"),
-                },
-              ],
-            })
-            .pipe(Effect.ignore),
-        )
-      }
+      const note = yield* exitNote(ctx)
       const job = yield* ShellJobs.start({
         sessionID: ctx.sessionID,
         directory: input.directory,
@@ -852,7 +974,7 @@ export const ShellTool = Tool.define(
               () => os.tmpdir(),
             ),
         )
-        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs, tmp)
+        const prompt = ShellPrompt.render(name, process.platform, limits, defaultTimeoutMs, tmp, MAX_FOREGROUND_TIMEOUT_MS)
         yield* Effect.logInfo("shell tool using shell", { shell })
 
         return {
@@ -948,8 +1070,12 @@ export const ShellTool = Tool.define(
                   command: params.command,
                   cwd,
                   env: yield* shellEnv(ctx, cwd),
-                  timeout,
+                  // 超时只是转入后台，前台最多等待上限时长
+                  timeout: Option.isSome(locations) ? Math.min(timeout, MAX_FOREGROUND_TIMEOUT_MS) : timeout,
                   writes,
+                  adopt: Option.isSome(locations)
+                    ? { directory: instanceCtx.directory, logDir: path.join(tmp, "shell") }
+                    : undefined,
                 },
                 ctx,
               )

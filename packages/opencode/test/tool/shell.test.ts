@@ -24,6 +24,8 @@ import { Tool } from "@/tool/tool"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
 import { SessionRunState } from "@/session/run-state"
+import { ShellJobs } from "@/tool/shell/jobs"
+import { locationServiceMapLayer } from "@opencode-ai/core/location-services"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -1199,6 +1201,46 @@ describe("tool.shell abort", () => {
       ),
     15_000,
   )
+
+  if (process.platform !== "win32") {
+    it.live(
+      "moves a timed-out command to a background job instead of killing it",
+      () =>
+        runIn(
+          projectRoot,
+          Effect.gen(function* () {
+            const result = yield* run({ command: `echo start; sleep 1; echo done`, timeout: 300 })
+            expect(result.output).toContain("moved to background job")
+            expect(result.output).toContain("start")
+            expect(result.metadata.background).toBe(true)
+            const job = ShellJobs.get(String(result.metadata.jobId), ctx.sessionID)
+            const rest = yield* ShellJobs.read(job, { waitMs: 10_000, exit: true })
+            expect(job.info.status).toBe("exited")
+            expect(job.info.exitCode).toBe(0)
+            expect(rest.text).toContain("done")
+            expect(() => ShellJobs.write(job, { text: "x", submit: true })).toThrow()
+          }),
+        ).pipe(Effect.provide(locationServiceMapLayer)),
+      15_000,
+    )
+
+    it.live(
+      "kills a moved background job through the pty registry",
+      () =>
+        runIn(
+          projectRoot,
+          Effect.gen(function* () {
+            const result = yield* run({ command: `sleep 30`, timeout: 300 })
+            const job = ShellJobs.get(String(result.metadata.jobId), ctx.sessionID)
+            const pid = job.info.pid
+            expect(yield* ShellJobs.kill(job)).toBe(true)
+            yield* Effect.sleep("2 seconds")
+            expect(() => process.kill(pid, 0)).toThrow()
+          }),
+        ).pipe(Effect.provide(locationServiceMapLayer)),
+      15_000,
+    )
+  }
 
   it.live(
     "uses RuntimeFlags bashDefaultTimeoutMs when timeout is omitted",

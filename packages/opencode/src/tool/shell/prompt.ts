@@ -52,7 +52,7 @@ function shellNotes(name: string) {
   return "- Chain dependent commands with &&; use ; only when later commands need not depend on success. Verify parent paths with ls."
 }
 
-export function render(name: string, platform: NodeJS.Platform, limits: Limits, defaultTimeoutMs: number, tmp: string) {
+export function render(name: string, platform: NodeJS.Platform, limits: Limits, defaultTimeoutMs: number, tmp: string, maxTimeoutMs = defaultTimeoutMs) {
   return {
     description: renderPrompt(DESCRIPTION, {
       os: platform,
@@ -60,6 +60,7 @@ export function render(name: string, platform: NodeJS.Platform, limits: Limits, 
       tmp,
       shellNotes: shellNotes(name),
       defaultTimeoutMs: String(defaultTimeoutMs),
+      maxTimeoutMs: String(Math.max(maxTimeoutMs, defaultTimeoutMs)),
       maxLines: String(limits.maxLines),
       maxBytes: String(limits.maxBytes),
     }),

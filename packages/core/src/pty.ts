@@ -113,6 +113,20 @@ export type Attachment = {
   readonly detach: () => void
 }
 
+// 接管一个已在运行的普通子进程（非 PTY），如超时转后台的前台命令；输出与退出由调用方通过 Proc 接口转发。
+export type Process = Proc
+export type Disposable = Disp
+
+export type AdoptInput = {
+  readonly process: Proc
+  readonly title: string
+  readonly command: string
+  readonly args: string[]
+  readonly cwd: string
+  // 接管前已产生的输出，作为可回放缓冲的开头
+  readonly replay?: string
+}
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Pty.NotFoundError", {
   ptyID: PtyID,
 }) {}
@@ -125,6 +139,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: PtyID) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
+  readonly adopt: (input: AdoptInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
   readonly write: (id: PtyID, data: string) => Effect.Effect<void, NotFoundError>
@@ -227,7 +242,7 @@ const layer = Layer.effect(
         // 在 PTY 建立后注入输入，复用用户配置的 shell，避免把整行脚本误当成可执行文件路径。
         proc.write(input.initialInput + "\r")
       }
-      const info: Info = {
+      return yield* register(id, proc, {
         id,
         title: input.title || `Terminal ${id.slice(-4)}`,
         command,
@@ -235,13 +250,35 @@ const layer = Layer.effect(
         cwd,
         status: "running",
         pid: proc.pid,
-      }
+      })
+    })
+
+    const adopt = Effect.fn("Pty.adopt")(function* (input: AdoptInput) {
+      const id = PtyID.ascending()
+      yield* Effect.logInfo("adopting process", { id, pid: input.process.pid, cwd: input.cwd })
+      return yield* register(
+        id,
+        input.process,
+        {
+          id,
+          title: input.title,
+          command: input.command,
+          args: [...input.args],
+          cwd: input.cwd,
+          status: "running",
+          pid: input.process.pid,
+        },
+        input.replay,
+      )
+    })
+
+    const register = Effect.fnUntraced(function* (id: PtyID, proc: Proc, info: Info, replay = "") {
       const session: Active = {
         info,
         process: proc,
-        buffer: "",
-        bufferCursor: 0,
-        cursor: 0,
+        buffer: replay.slice(-BUFFER_LIMIT),
+        bufferCursor: Math.max(0, replay.length - BUFFER_LIMIT),
+        cursor: replay.length,
         subscribers: new Map(),
         listeners: [],
       }
@@ -355,7 +392,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, write, attach })
+    return Service.of({ list, get, create, adopt, update, remove, write, attach })
   }),
 )
 

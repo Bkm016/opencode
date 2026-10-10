@@ -65,6 +65,8 @@ type Job = {
   waiters: Set<Waiter>
   // 模型已通过 wait/read 感知退出，或主动 kill 时不再注入退出通知
   reported: boolean
+  // 超时转后台的前台命令没有终端，也不接收输入
+  input: boolean
   note?: Note
   exited: Promise<void>
   markExited: () => void
@@ -223,19 +225,8 @@ export const start = Effect.fn("ShellJobs.start")(function* (input: {
   logDir: string
   note?: Note
 }) {
-  if (running(input.sessionID).length >= MAX_RUNNING) {
-    throw new Error(
-      `Too many background jobs running in this session (max ${MAX_RUNNING}). Kill finished or unneeded jobs with bash_job first.`,
-    )
-  }
-  const locations = yield* LocationServiceMap.Service
-  // 作业存活期间持有 location 服务引用，避免 LayerMap 空闲回收时连带杀掉 PTY
-  const scope = yield* Scope.make()
-  const services = yield* Layer.buildWithScope(
-    locations.get(Location.Ref.make({ directory: AbsolutePath.make(input.directory) })),
-    scope,
-  )
-  const pty = Context.get(services, Pty.Service)
+  checkCapacity(input.sessionID)
+  const { pty, scope } = yield* acquire(input.directory)
   const launch = Shell.launch(input.shell, input.command, input.cwd, { interactive: true })
   const env = Object.fromEntries(
     Object.entries(input.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -247,6 +238,71 @@ export const start = Effect.fn("ShellJobs.start")(function* (input: {
     env: { ...env, OPENCODE_BACKGROUND_JOB: "1" },
     title: input.description || input.command.split("\n")[0]!.slice(0, 60),
   })
+  return yield* track({ ...input, pty, scope, created, input: true })
+})
+
+function checkCapacity(sessionID: string) {
+  if (running(sessionID).length >= MAX_RUNNING) {
+    throw new Error(
+      `Too many background jobs running in this session (max ${MAX_RUNNING}). Kill finished or unneeded jobs with bash_job first.`,
+    )
+  }
+}
+
+export function hasCapacity(sessionID: string) {
+  return running(sessionID).length < MAX_RUNNING
+}
+
+const acquire = Effect.fnUntraced(function* (directory: string) {
+  const locations = yield* LocationServiceMap.Service
+  // 作业存活期间持有 location 服务引用，避免 LayerMap 空闲回收时连带杀掉 PTY
+  const scope = yield* Scope.make()
+  const services = yield* Layer.buildWithScope(
+    locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) })),
+    scope,
+  )
+  return { pty: Context.get(services, Pty.Service), scope }
+})
+
+/** 把已在运行的前台进程接管为后台作业：登记到 Pty.Service，终端面板与只读订阅照常可用。 */
+export const adopt = Effect.fn("ShellJobs.adopt")(function* (input: {
+  sessionID: string
+  directory: string
+  shell: string
+  command: string
+  description?: string
+  cwd: string
+  logDir: string
+  process: Pty.Process
+  replay: string
+  note?: Note
+}) {
+  checkCapacity(input.sessionID)
+  const { pty, scope } = yield* acquire(input.directory)
+  const created = yield* pty.adopt({
+    process: input.process,
+    title: input.description || input.command.split("\n")[0]!.slice(0, 60),
+    command: input.shell,
+    args: ["-c", input.command],
+    cwd: input.cwd,
+    replay: input.replay,
+  })
+  return yield* track({ ...input, pty, scope, created, input: false })
+})
+
+const track = Effect.fnUntraced(function* (input: {
+  sessionID: string
+  command: string
+  description?: string
+  cwd: string
+  logDir: string
+  note?: Note
+  pty: Pty.Interface
+  scope: Scope.Closeable
+  created: Pty.Info
+  input: boolean
+}) {
+  const { pty, scope, created } = input
   yield* Effect.promise(() => mkdir(input.logDir, { recursive: true })).pipe(Effect.ignore)
   const log = path.join(input.logDir, `${created.id}.log`)
   let markExited = () => {}
@@ -274,6 +330,7 @@ export const start = Effect.fn("ShellJobs.start")(function* (input: {
     sink: createWriteStream(log, { flags: "a" }),
     waiters: new Set(),
     reported: false,
+    input: input.input,
     note: input.note,
     exited,
     markExited,
@@ -375,6 +432,9 @@ export function keyNames() {
 
 export function write(job: Job, input: { text?: string; submit: boolean; keys?: readonly string[] }) {
   if (job.info.status !== "running") throw new Error(`Job ${job.info.id} is not running (status: ${job.info.status})`)
+  if (!job.input) {
+    throw new Error(`Job ${job.info.id} was moved to the background after a foreground timeout and has no stdin; it cannot receive input`)
+  }
   let data = (input.text ?? "").replace(/\r?\n/g, "\r")
   for (const key of input.keys ?? []) {
     const seq = KEYS[key.toLowerCase()]

@@ -14,7 +14,7 @@ import { Config } from "@/config/config"
 import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
-import { SessionProcessor } from "../../src/session/processor"
+import { DISCARD_RETRY_LIMIT, SessionProcessor } from "../../src/session/processor"
 import { SessionRetry } from "../../src/session/retry"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
@@ -693,7 +693,7 @@ for (const scenario of [
   )
 }
 
-it.live("session.processor preserves truncated text without restarting the request", () =>
+it.live("session.processor discards truncated text and reruns the step", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -732,10 +732,11 @@ it.live("session.processor preserves truncated text without restarting the reque
 
         const parts = yield* MessageV2.parts(msg.id)
 
-        expect(value).toBe("stop")
-        expect(yield* llm.calls).toBe(1)
-        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["partial"])
-        expect(handle.message.error).toMatchObject({ name: "APIError", data: { isRetryable: false } })
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["recovered"])
+        expect(parts.filter((part) => part.type === "step-start")).toHaveLength(1)
+        expect(handle.message.error).toBeUndefined()
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -1578,7 +1579,7 @@ function repeatingToolReply() {
   })
 }
 
-it.live("session.processor stops repeated output and keeps the partial without restarting", () =>
+it.live("session.processor discards repeated output and resamples the step", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -1616,20 +1617,16 @@ it.live("session.processor stops repeated output and keeps the partial without r
 
         const parts = yield* MessageV2.parts(msg.id)
         const texts = parts.filter((part): part is SessionV1.TextPart => part.type === "text")
-        expect(value).toBe("stop")
-        expect(yield* llm.calls).toBe(1)
-        const textContents = texts.map((part) => part.text)
-        expect(textContents).toEqual([REPEAT_SENTENCE.repeat(2)])
-        expect(handle.message.error).toMatchObject({
-          name: "APIError",
-          data: { message: "Model output entered a repetition loop", isRetryable: false },
-        })
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        expect(texts.map((part) => part.text)).toEqual(["recovered answer"])
+        expect(handle.message.error).toBeUndefined()
       }),
     { config: (url) => providerCfg(url) },
   ),
 )
 
-it.live("session.processor does not replay a retryable provider error after text delivery", () =>
+it.live("session.processor discards partial text and replays a retryable provider error", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -1679,13 +1676,62 @@ it.live("session.processor does not replay a retryable provider error after text
 
         const parts = yield* MessageV2.parts(msg.id)
 
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["replayed answer"])
+        expect(handle.message.error).toBeUndefined()
+        expect(retries).toEqual([1])
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+  15_000,
+)
+
+it.live("session.processor stops resampling repeated output after the retry limit", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        for (let i = 0; i <= DISCARD_RETRY_LIMIT; i++) yield* llm.push(repeatingReply())
+        yield* llm.text("never reached")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "loop")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "loop" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
         expect(value).toBe("stop")
-        expect(yield* llm.calls).toBe(1)
-        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["partial"])
-        expect(handle.message.error).toBeDefined()
-        if (!handle.message.error) throw new Error("expected provider error")
-        expect(SessionRetry.retryable(handle.message.error, ref.providerID)).toBeDefined()
-        expect(retries).toEqual([])
+        expect(yield* llm.calls).toBe(DISCARD_RETRY_LIMIT + 1)
+        // 只保留最后一次的部分输出，之前被丢弃的尝试不残留。
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual([REPEAT_SENTENCE.repeat(2)])
+        expect(handle.message.error).toMatchObject({
+          name: "APIError",
+          data: { message: "Model output entered a repetition loop", isRetryable: false },
+        })
       }),
     { config: (url) => providerCfg(url) },
   ),

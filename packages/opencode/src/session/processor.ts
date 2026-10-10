@@ -33,6 +33,13 @@ import path from "node:path"
 const DOOM_LOOP_THRESHOLD = 3
 // 交替空转（如 true → echo done → true ...）绕过连续相同检测；窗口内签名不超过两种即视为循环。
 const DOOM_LOOP_WINDOW = 6
+// 输出复读或流中途失败、且本次尚未发起工具调用时，丢弃已流出的文本/思考并重跑这一步的上限。
+export const DISCARD_RETRY_LIMIT = 3
+
+function messageOf(error: SessionRetry.Err) {
+  const message = isRecord(error.data) ? error.data.message : undefined
+  return typeof message === "string" ? message : undefined
+}
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -116,6 +123,11 @@ const layer = Layer.effect(
       // True once this attempt produced any assistant text, reasoning, or tool work.
       // 已输出内容的请求不能透明重放，否则会重复回答或重复执行工具。
       let hasOutput = false
+      // 本次尝试是否已开始工具调用；工具可能已执行，此时不能丢弃输出重跑。
+      let toolStarted = false
+      // 本次尝试写入的文本、思考与 step-start 分片，丢弃重跑时一并删除。
+      let attemptParts: PartID[] = []
+      let discardRetries = 0
       // Tools map for the active stream (includes non-enumerable nameAliases).
       let activeTools: Record<string, unknown> = {}
       const repetitionBuffers = new Map<string, string>()
@@ -422,6 +434,7 @@ const layer = Layer.effect(
               time: { start: Date.now() },
               metadata: value.providerMetadata,
             }
+            attemptParts.push(ctx.reasoningMap[value.id].id)
             yield* session.updatePart(ctx.reasoningMap[value.id])
             return
 
@@ -452,6 +465,7 @@ const layer = Layer.effect(
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
             hasOutput = true
+            toolStarted = true
             // Canonicalize call-site tool names (case + nameAliases) before transcript write.
             yield* ensureToolCall({
               ...value,
@@ -485,6 +499,7 @@ const layer = Layer.effect(
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
             hasOutput = true
+            toolStarted = true
             const toolName =
               ToolNameAlias.resolveToolName(
                 Object.keys(activeTools),
@@ -625,8 +640,10 @@ const layer = Layer.effect(
               ctx.assistantMessage.requestBodyBytes = value.requestBodyBytes
               yield* session.updateMessage(ctx.assistantMessage)
             }
+            const stepStart = PartID.ascending()
+            attemptParts.push(stepStart)
             yield* session.updatePart({
-              id: PartID.ascending(),
+              id: stepStart,
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
               type: "step-start",
@@ -688,6 +705,7 @@ const layer = Layer.effect(
             ctx.currentText.text += value.text
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             if (isFirstText) {
+              attemptParts.push(ctx.currentText.id)
               yield* session.updatePart(ctx.currentText)
               // 首片已随完整 part 发布，不能再追加同一 delta 导致界面文字重复。
               return
@@ -812,6 +830,41 @@ const layer = Layer.effect(
         yield* status.set(ctx.sessionID, { type: "idle" })
       })
 
+      // 本步只流出了文本/思考就失败（复读、断流、网关中途报错）：删除这些分片后重跑，等价于干净地重新请求这一步。
+      // 已发起工具调用的尝试保持原语义，避免重复执行工具。
+      const discardForRetry = Effect.fnUntraced(function* (error: unknown) {
+        if (aborted || !hasOutput || toolStarted || ctx.assistantMessage.finish) return yield* Effect.fail(error)
+        const parsed = parse(error)
+        const api = SessionV1.APIError.isInstance(parsed) ? parsed : undefined
+        const reason = api?.data.metadata?.reason
+        const replayable = reason === "output_repetition" || reason === "incomplete_stream"
+        if (!replayable && !SessionRetry.retryable(parsed, input.model.providerID)) return yield* Effect.fail(error)
+        if (discardRetries >= DISCARD_RETRY_LIMIT) {
+          if (replayable) return yield* Effect.fail(error)
+          // 超过上限后改为终止，保留已流出的内容供用户查看。
+          return yield* Effect.fail(
+            new SessionV1.APIError({ message: messageOf(parsed) ?? errorMessage(error), isRetryable: false }),
+          )
+        }
+        discardRetries++
+        const parts = attemptParts
+        attemptParts = []
+        hasOutput = false
+        yield* Effect.forEach(parts, (partID) =>
+          session.removePart({ sessionID: ctx.sessionID, messageID: ctx.assistantMessage.id, partID }),
+        )
+        yield* Effect.logWarning("discarding partial step output for retry", {
+          "session.id": input.sessionID,
+          messageID: input.assistantMessage.id,
+          reason: reason ?? messageOf(parsed),
+          attempt: discardRetries,
+        })
+        if (!replayable) return yield* Effect.fail(error)
+        return yield* Effect.fail(
+          new SessionV1.APIError({ ...api!.data, isRetryable: true }),
+        )
+      })
+
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
         ctx.needsCompaction = false
         yield* Effect.logInfo("process", {
@@ -827,6 +880,8 @@ const layer = Layer.effect(
             ctx.currentText = undefined
             ctx.reasoningMap = {}
             hasOutput = false
+            toolStarted = false
+            attemptParts = []
             repetitionBuffers.clear()
             // Drop stale finish from a previous incomplete attempt so retries start clean.
             ctx.assistantMessage.finish = undefined
@@ -876,6 +931,7 @@ const layer = Layer.effect(
                 // 无完成标记是失败，不猜测供应商意图或注入继续指令重新生成。
                 // 零输出空流可安全重放；已输出内容仍终止，避免重复回答或工具调用。
                 isRetryable: !hasOutput,
+                metadata: { reason: "incomplete_stream" },
               }),
             )
           }).pipe(
@@ -891,6 +947,7 @@ const layer = Layer.effect(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => Effect.fail(Cause.squash(cause)),
             ),
+            Effect.catch(discardForRetry),
             Effect.retry(
               SessionRetry.policy({
                 provider: input.model.providerID,

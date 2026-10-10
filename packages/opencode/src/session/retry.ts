@@ -35,6 +35,8 @@ function cap(ms: number) {
 }
 
 export function delay(attempt: number, error?: SessionV1.APIError) {
+  // 复读是采样问题而非上游故障，丢弃后立即重采样即可。
+  if (error?.data.metadata?.reason === "output_repetition") return 0
   if (error) {
     const headers = error.data.responseHeaders
     if (headers) {
@@ -116,7 +118,9 @@ function isTransientMessage(msg: string) {
     lower.includes("bad gateway") ||
     lower.includes("gateway timeout") ||
     lower.includes("internal server error") ||
-    lower.includes("provider unavailable")
+    lower.includes("provider unavailable") ||
+    // 中转网关转发上游失败时的通用提示，与 502 同类。
+    lower.includes("upstream request failed")
   ) {
     return true
   }

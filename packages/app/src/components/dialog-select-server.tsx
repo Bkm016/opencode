@@ -410,6 +410,8 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   async function select(conn: ServerConnection.Any, persist?: boolean) {
     if (!persist && global.servers.health[ServerConnection.key(conn)]?.healthy === false) return
     options.onSelect?.()
+    // 点的就是当前服务器：只关弹窗，不回首页
+    if (!persist && ServerConnection.key(conn) === server.key) return
     if (persist && conn.type === "http") {
       server.add(conn)
       navigate("/")

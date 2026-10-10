@@ -128,6 +128,8 @@ function useServerStatusState(): ServerStatusState {
         blocked: global.servers.health[key]?.healthy === false,
         active: !!server.current && key === ServerConnection.key(server.current),
         onSelect: () => {
+          // 点的就是当前服务器：什么都不做，别把人踢回首页
+          if (server.key === key) return
           navigate("/")
           queueMicrotask(() => server.setActive(key))
         },

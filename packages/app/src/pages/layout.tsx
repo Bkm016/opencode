@@ -94,6 +94,8 @@ export default function LegacyLayout(props: ParentProps) {
     Persist.serverGlobal(serverSDK().scope, "layout.page", ["layout.page.v1"]),
     createStore({
       lastProjectSession: {} as { [directory: string]: { directory: string; id: string; at: number } },
+      // 最后停在聊天区时记下会话，切服务器/重新打开时回到它，而不是回退到项目会话
+      lastChat: undefined as { directory: string; id?: string } | undefined,
       activeProject: undefined as string | undefined,
       activeWorkspace: undefined as string | undefined,
       workspaceOrder: {} as Record<string, string[]>,
@@ -480,6 +482,28 @@ export default function LegacyLayout(props: ParentProps) {
     await ready.promise
     await layout.ready.promise
     if (!untrack(() => state.autoselect)) return
+
+    const chat = store.lastChat
+    if (chat) {
+      const slug = base64Encode(chat.directory)
+      const id = chat.id
+      if (!id) {
+        navigate(`/${slug}/session`)
+        return
+      }
+      const session = serverSync().session
+      const found =
+        session.get(id) ??
+        (await session
+          .sync(id)
+          .then(() => session.get(id))
+          .catch(() => undefined))
+      if (found && !found.time?.archived) {
+        navigate(`/${slug}/session/${id}`)
+        return
+      }
+      setStore("lastChat", undefined)
+    }
 
     const list = layout.projects.list()
     const last = server.projects.last()
@@ -1752,15 +1776,27 @@ export default function LegacyLayout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), route().slug, params.id, currentProject()?.worktree, currentDir()] as const
+        return [
+          pageReady(),
+          route().slug,
+          params.id,
+          currentProject()?.worktree,
+          currentDir(),
+          chatDirectory(),
+        ] as const
       },
-      ([ready, slug, id, root, dir]) => {
+      ([ready, slug, id, root, dir, chat]) => {
         if (!ready || !slug || !dir) {
           activeRoute.session = ""
           activeRoute.sessionProject = ""
           activeRoute.directory = ""
           return
         }
+
+        if (chat && pathKey(dir) === pathKey(chat)) {
+          const last = store.lastChat
+          if (last?.id !== id || last?.directory !== dir) setStore("lastChat", { directory: dir, id })
+        } else if (root && store.lastChat) setStore("lastChat", undefined)
 
         if (!id) {
           activeRoute.session = ""

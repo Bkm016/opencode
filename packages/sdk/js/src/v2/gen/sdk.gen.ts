@@ -239,6 +239,8 @@ import type {
   SessionDiffResponses,
   SessionExportErrors,
   SessionExportResponses,
+  SessionFindErrors,
+  SessionFindResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGetErrors,
@@ -3977,6 +3979,46 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Find in session
+   *
+   * Full-text search across the entire session history, including compacted messages.
+   */
+  public find<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      query: string
+      caseSensitive?: "true" | "false"
+      regex?: "true" | "false"
+      word?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "query" },
+            { in: "query", key: "caseSensitive" },
+            { in: "query", key: "regex" },
+            { in: "query", key: "word" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionFindResponses, SessionFindErrors, ThrowOnError>({
+      url: "/session/{sessionID}/find",
+      ...options,
+      ...params,
     })
   }
 

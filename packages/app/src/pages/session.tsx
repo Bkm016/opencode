@@ -60,8 +60,16 @@ import {
 import { createSizing } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
-import { collectSessionFindMatches } from "@/pages/session/session-find"
+import {
+  filterFindHits,
+  findHitKey,
+  orderFindHits,
+  type FindFilter,
+  type SessionFindHit,
+} from "@/pages/session/session-find"
 import { SessionFindBar } from "@/pages/session/session-find-bar"
+import { SessionFindDialog, type SessionFindOptions } from "@/pages/session/session-find-dialog"
+import { createFindMatcher } from "@opencode-ai/core/util/session-find-text"
 import { clearSessionFindHighlights, scheduleSessionFindHighlights } from "@/pages/session/session-find-highlight"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -598,10 +606,31 @@ export default function Page() {
   let scrollMark = 0
   let messageMark = 0
 
+  // 查找：大弹窗负责搜和挑结果；跳到对话后顶部留一个小胶囊继续上下翻，并保留高亮
   const [findOpen, setFindOpen] = createSignal(false)
+  const [findPinned, setFindPinned] = createSignal(false)
   const [findQuery, setFindQuery] = createSignal("")
-  const [findIndex, setFindIndex] = createSignal(0)
   const [findFocus, setFindFocus] = createSignal(0)
+  const [findOptions, setFindOptions] = createSignal<SessionFindOptions>({
+    caseSensitive: false,
+    word: false,
+    regex: false,
+  })
+  const [findFilter, setFindFilter] = createSignal<FindFilter>("all")
+  const [findHideCompacted, setFindHideCompacted] = createSignal(false)
+  const [findSelected, setFindSelected] = createSignal<string>()
+  const [findPending, setFindPending] = createSignal(false)
+  const [findRefresh, setFindRefresh] = createSignal(0)
+  // 结果连同它对应的查询一起存，查询刚变、新结果未到时不会拿旧结果去高亮新词
+  const [findResult, setFindResult] = createSignal<{
+    sessionID: string
+    query: string
+    options: SessionFindOptions
+    hits: SessionFindHit[]
+    total: number
+    truncated: boolean
+    error?: string
+  }>()
 
   const sessionMessages = createMemo(() => {
     const id = params.id
@@ -609,25 +638,31 @@ export default function Page() {
     return sync().data.message[id] ?? []
   })
 
-  const findMatches = createMemo(() => {
-    if (!findOpen()) return []
-    const query = findQuery()
-    if (!query.trim()) return []
-    return collectSessionFindMatches({
-      messages: sessionMessages(),
-      parts: (messageID) => sync().data.part[messageID],
-      query,
-    })
+  const findHits = createMemo(() => {
+    const result = findResult()
+    if (!result || result.sessionID !== params.id) return [] as SessionFindHit[]
+    return orderFindHits(result.hits, revertMessageID())
+  })
+  const findVisible = createMemo(() => filterFindHits(findHits(), findFilter(), findHideCompacted()))
+  const findIndex = createMemo(() => {
+    const key = findSelected()
+    const index = key ? findVisible().findIndex((hit) => findHitKey(hit) === key) : -1
+    return Math.max(0, index)
   })
 
   const closeFind = () => {
     setFindOpen(false)
+  }
+
+  const clearFind = () => {
+    setFindOpen(false)
+    setFindPinned(false)
     clearSessionFindHighlights()
   }
 
   const openFind = () => {
     if (!params.id) return
-    // Second Ctrl+F collapses the bar.
+    // 再按一次 Ctrl+F 关闭弹窗
     if (findOpen()) {
       closeFind()
       return
@@ -641,8 +676,10 @@ export default function Page() {
       () => params.id,
       () => {
         setFindOpen(false)
+        setFindPinned(false)
         setFindQuery("")
-        setFindIndex(0)
+        setFindSelected(undefined)
+        setFindResult(undefined)
         clearSessionFindHighlights()
       },
     ),
@@ -811,62 +848,132 @@ export default function Page() {
     ),
   )
 
-  const jumpFind = (index: number) => {
-    const matches = findMatches()
-    if (matches.length === 0) {
-      setFindIndex(0)
-      return
+  // 命中可能在还没加载的早期历史里：按页往前加载，直到目标轮次出现或没有更多
+  const ensureFindLoaded = async (sessionID: string, messageID: string) => {
+    const loaded = () => (sync().data.message[sessionID] ?? []).some((message) => message.id === messageID)
+    for (let attempt = 0; attempt < 200 && !loaded(); attempt++) {
+      if (params.id !== sessionID) return false
+      if (historyLoading()) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        continue
+      }
+      if (!historyMore()) break
+      await loadOlder().catch(() => {})
     }
-    const next = ((index % matches.length) + matches.length) % matches.length
-    setFindIndex(next)
-    const match = matches[next]
-    if (!match) return
+    return loaded()
+  }
+
+  let findJump = 0
+  const revealFindHit = async (hit: SessionFindHit) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    const token = ++findJump
     autoScroll.pause()
-    revealMessage(match.userMessageID, match.messageID, match.partID)
+    if (!(await ensureFindLoaded(sessionID, hit.userMessageID))) return
+    if (token !== findJump || params.id !== sessionID) return
+    revealMessage(hit.userMessageID, hit.messageID, hit.partID)
   }
 
-  const findNext = () => {
-    if (findMatches().length === 0) return
-    jumpFind(findIndex() + 1)
+  const jumpFind = (hit: SessionFindHit) => {
+    setFindSelected(findHitKey(hit))
+    setFindOpen(false)
+    setFindPinned(true)
+    void revealFindHit(hit)
   }
 
-  const findPrev = () => {
-    if (findMatches().length === 0) return
-    jumpFind(findIndex() - 1)
+  // 列表从新到旧：胶囊的 ↓ 走向更新的消息（列表上一项），↑ 走向更早的
+  const stepFind = (delta: number) => {
+    const hits = findVisible()
+    if (hits.length === 0) return
+    const next = (((findIndex() + delta) % hits.length) + hits.length) % hits.length
+    jumpFind(hits[next]!)
   }
+  const findNext = () => stepFind(-1)
+  const findPrev = () => stepFind(1)
 
+  // 输入防抖后请求服务端；会话跑完一轮后用同一查询静默刷新
   createEffect(
-    on(findQuery, () => {
-      if (!findOpen()) return
-      setFindIndex(0)
-      if (findMatches().length === 0) return
-      jumpFind(0)
-    }),
+    on(
+      () => [findOpen() || findPinned(), findQuery(), findOptions(), params.id, findRefresh()] as const,
+      ([active, query, options, sessionID]) => {
+        const text = options.regex ? query : query.trim()
+        if (!active || !text || !sessionID) {
+          setFindPending(false)
+          if (!text) setFindResult(undefined)
+          return
+        }
+        setFindPending(true)
+        const controller = new AbortController()
+        const client = sdk().client
+        const flag = (value: boolean) => (value ? ("true" as const) : undefined)
+        const timer = setTimeout(() => {
+          client.session
+            .find(
+              {
+                sessionID,
+                query: text,
+                caseSensitive: flag(options.caseSensitive),
+                word: flag(options.word),
+                regex: flag(options.regex),
+              },
+              { signal: controller.signal },
+            )
+            .then((response) => {
+              if (controller.signal.aborted) return
+              setFindPending(false)
+              const data = response.data
+              if (!data) return
+              setFindResult({ sessionID, query: text, options, ...data, hits: [...data.hits] })
+            })
+            .catch(() => {
+              if (!controller.signal.aborted) setFindPending(false)
+            })
+        }, 180)
+        onCleanup(() => {
+          clearTimeout(timer)
+          controller.abort()
+        })
+      },
+    ),
   )
 
   createEffect(
-    on(findMatches, (matches) => {
-      if (!findOpen()) return
-      if (matches.length === 0) {
-        setFindIndex(0)
-        return
-      }
-      if (findIndex() >= matches.length) setFindIndex(0)
+    on(
+      () => (params.id ? (sync().data.session_status[params.id]?.type ?? "idle") : "idle"),
+      (status, previous) => {
+        if (status === "idle" && previous && previous !== "idle" && (findOpen() || findPinned())) {
+          setFindRefresh((n) => n + 1)
+        }
+      },
+    ),
+  )
+
+  // 新结果：选中项还在就保持，否则选最新的一条
+  createEffect(
+    on(findVisible, (hits) => {
+      const key = findSelected()
+      if (key && hits.some((hit) => findHitKey(hit) === key)) return
+      setFindSelected(hits[0] ? findHitKey(hits[0]) : undefined)
     }),
   )
 
   createEffect(
     on(
-      () => [findOpen(), findQuery(), findIndex(), findMatches()] as const,
-      ([open, query, index, matches]) => {
-        if (!open) {
+      () => [findPinned() && !findOpen(), findResult(), findIndex(), findVisible()] as const,
+      ([show, result, index, hits]) => {
+        if (!show || !result || result.error) {
+          clearSessionFindHighlights()
+          return
+        }
+        const matcher = createFindMatcher(result.query, result.options)
+        if (!matcher || "error" in matcher) {
           clearSessionFindHighlights()
           return
         }
         const stop = scheduleSessionFindHighlights({
           host: scroller,
-          query,
-          matches,
+          match: matcher.match,
+          matches: hits,
           activeIndex: index,
         })
         onCleanup(stop)
@@ -1459,15 +1566,37 @@ export default function Page() {
     <>
       <div class="relative flex-1 min-h-0 overflow-hidden">
         <SessionFindBar
-          open={findOpen()}
-          focusToken={findFocus()}
-          query={findQuery()}
+          open={findPinned() && !findOpen() && !!findResult()}
+          query={findResult()?.query ?? findQuery()}
           matchIndex={findIndex()}
-          matchCount={findMatches().length}
-          onQuery={setFindQuery}
-          onClose={closeFind}
+          matchCount={findVisible().length}
+          onReopen={openFind}
+          onClose={clearFind}
           onNext={findNext}
           onPrev={findPrev}
+        />
+        <SessionFindDialog
+          open={findOpen()}
+          focusToken={findFocus()}
+          sessionID={params.id}
+          client={sdk().client}
+          query={findQuery()}
+          options={findOptions()}
+          filter={findFilter()}
+          hideCompacted={findHideCompacted()}
+          hits={findHits()}
+          total={findResult()?.total ?? 0}
+          truncated={findResult()?.truncated ?? false}
+          error={findResult()?.error}
+          pending={findPending()}
+          selectedKey={findSelected()}
+          onQuery={setFindQuery}
+          onOptions={setFindOptions}
+          onFilter={setFindFilter}
+          onHideCompacted={setFindHideCompacted}
+          onSelect={setFindSelected}
+          onJump={jumpFind}
+          onClose={closeFind}
         />
         <Switch>
           <Match when={params.id}>

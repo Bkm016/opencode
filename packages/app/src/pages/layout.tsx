@@ -667,6 +667,7 @@ export default function LegacyLayout(props: ParentProps) {
                 loading={chatLoading}
                 sessions={chatSessions}
                 flat
+                limit={5}
                 hideEmpty
               />
             </div>

@@ -16,6 +16,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionRetry } from "@/session/retry"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import { SessionFind } from "@/session/find"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Fiber, Option, Schema, Scope } from "effect"
@@ -31,6 +32,7 @@ import {
   InitPayload,
   ListQuery,
   MessagesQuery,
+  FindQuery,
   PermissionResponsePayload,
   PromptPayload,
   RevertPayload,
@@ -114,6 +116,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof DiffQuery.Type
     }) {
       return yield* summary.diff({ sessionID: ctx.params.sessionID, messageID: ctx.query.messageID })
+    })
+
+    const find = Effect.fn("SessionHttpApi.find")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof FindQuery.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+      return SessionFind.find({
+        messages,
+        query: ctx.query.query,
+        caseSensitive: ctx.query.caseSensitive,
+        regex: ctx.query.regex,
+        word: ctx.query.word,
+      })
     })
 
     const messages = Effect.fn("SessionHttpApi.messages")(function* (ctx: {
@@ -579,6 +596,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("todo", todo)
       .handle("diff", diff)
       .handle("messages", messages)
+      .handle("find", find)
       .handle("message", message)
       .handleRaw("create", createRaw)
       .handle("remove", remove)

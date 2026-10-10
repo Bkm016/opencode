@@ -1,4 +1,5 @@
-import type { SessionFindMatch } from "./session-find"
+// 只需要定位信息：命中所在 part，以及它是该 part 内的第几处
+export type SessionFindTarget = { partID: string; ordinal: number }
 
 const LAYER_ATTR = "data-session-find-highlight-layer"
 
@@ -92,7 +93,7 @@ function findIndexItem(map: TextIndex["map"], offset: number) {
   return lo
 }
 
-type TextIndex = { text: string; lower: string; map: Array<{ node: Text; start: number; end: number }> }
+type TextIndex = { text: string; map: Array<{ node: Text; start: number; end: number }> }
 
 const indexCache = new WeakMap<Element, { layer: Layer; version: number; index: TextIndex }>()
 
@@ -111,7 +112,7 @@ function buildTextIndex(root: Element, current?: Layer): TextIndex {
     map.push({ node, start, end: length })
   }
   const text = parts.join("")
-  const index = { text, lower: text.toLowerCase(), map }
+  const index = { text, map }
   if (current) indexCache.set(root, { layer: current, version, index })
   return index
 }
@@ -152,19 +153,14 @@ function rangeFromIndex(index: TextIndex, start: number, end: number): Hit | und
   }
 }
 
-function rangesForQuery(root: Element, query: string, caseSensitive: boolean, current?: Layer) {
-  const needle = caseSensitive ? query : query.toLowerCase()
-  if (!needle) return [] as Hit[]
+type Matcher = (text: string) => Array<{ start: number; end: number }>
+
+function rangesForMatcher(root: Element, match: Matcher, current?: Layer) {
   const index = buildTextIndex(root, current)
-  const haystack = caseSensitive ? index.text : index.lower
   const ranges: Hit[] = []
-  let from = 0
-  while (from < haystack.length) {
-    const at = haystack.indexOf(needle, from)
-    if (at < 0) break
-    const range = rangeFromIndex(index, at, at + needle.length)
+  for (const found of match(index.text)) {
+    const range = rangeFromIndex(index, found.start, found.end)
     if (range) ranges.push(range)
-    from = at + Math.max(needle.length, 1)
   }
   return ranges
 }
@@ -183,7 +179,7 @@ function indexPartRoots(scope: ParentNode) {
   return roots
 }
 
-function paintRanges(host: HTMLElement, ranges: Hit[], active: Hit | undefined) {
+function paintRanges(host: HTMLElement, ranges: Hit[], active: Hit | undefined, outline?: Element) {
   const current = ensureLayer(host)
   const viewport = host.getBoundingClientRect()
   const origin = current.root.getBoundingClientRect()
@@ -264,7 +260,7 @@ function paintRanges(host: HTMLElement, ranges: Hit[], active: Hit | undefined) 
         `width:${width}px`,
         `height:${height}px`,
         "border-radius:2px",
-        kind === "active" ? "background:rgba(250,204,21,0.72)" : "background:rgba(250,204,21,0.4)",
+        `background:var(--session-find-overlay-${kind === "active" ? "active" : "hit"})`,
       ].join(";")
       boxes.appendChild(box)
     }
@@ -272,6 +268,29 @@ function paintRanges(host: HTMLElement, ranges: Hit[], active: Hit | undefined) 
 
   for (const range of ranges) add(range, "all")
   if (active) add(active, "active")
+  if (outline) {
+    // 渲染文字和原文对不上（markdown、折叠的工具输出等）时，框出整个 part 作为定位
+    const rect = outline.getBoundingClientRect()
+    const left = Math.max(viewport.left, rect.left) - origin.left
+    const top = Math.max(viewport.top, rect.top) - origin.top
+    const right = Math.min(viewport.right, rect.right) - origin.left
+    const bottom = Math.min(viewport.bottom, rect.bottom) - origin.top
+    if (right - left >= 1 && bottom - top >= 1) {
+      const box = document.createElement("div")
+      box.setAttribute("data-slot", "session-find-outline")
+      box.style.cssText = [
+        "position:absolute",
+        `left:${left - 4}px`,
+        `top:${top - 4}px`,
+        `width:${right - left + 8}px`,
+        `height:${bottom - top + 8}px`,
+        "border-radius:8px",
+        "box-shadow:0 0 0 2px var(--border-interactive-selected)",
+        "background:var(--surface-base-interactive-active)",
+      ].join(";")
+      boxes.appendChild(box)
+    }
+  }
   current.root.replaceChildren(boxes)
 }
 
@@ -323,10 +342,10 @@ function bindRepaint(host: HTMLElement, repaint: () => void) {
 
 export function applySessionFindHighlights(input: {
   host: HTMLElement | null | undefined
-  query: string
-  matches: readonly SessionFindMatch[]
+  match: Matcher
+  matches: readonly SessionFindTarget[]
   activeIndex: number
-  caseSensitive?: boolean
+  fallback?: boolean
 }) {
   const host = input.host
   if (!host) {
@@ -334,13 +353,11 @@ export function applySessionFindHighlights(input: {
     return false
   }
 
-  const query = input.query.trim()
-  if (!query || input.matches.length === 0) {
+  if (input.matches.length === 0) {
     clearSessionFindHighlights()
     return true
   }
 
-  const caseSensitive = input.caseSensitive === true
   const active = input.matches[input.activeIndex]
 
   const collect = () => {
@@ -352,45 +369,50 @@ export function applySessionFindHighlights(input: {
       const root = roots.get(match.partID)
       if (!root) continue
       if (byRoot.has(root)) continue
-      const hits = rangesForQuery(root, query, caseSensitive, current)
+      const hits = rangesForMatcher(root, input.match, current)
       byRoot.set(root, hits)
       nextAll.push(...hits)
     }
     let nextActive: Hit | undefined
+    let outline: Element | undefined
     if (active) {
       const root = roots.get(active.partID)
       if (root) {
-        const local = byRoot.get(root) ?? rangesForQuery(root, query, caseSensitive, current)
-        const localIndex = input.matches
-          .slice(0, input.activeIndex)
-          .filter((item) => roots.get(item.partID) === root).length
-        nextActive = local[localIndex] ?? local[0]
+        const local = byRoot.get(root) ?? rangesForMatcher(root, input.match, current)
+        // 服务端按原文计数，渲染后文字可能少几处，取不到时退到最后一处
+        nextActive = local[active.ordinal] ?? local.at(-1)
+        if (!nextActive && input.fallback) outline = root
       }
     }
-    return { nextAll, nextActive }
+    return { nextAll, nextActive, outline }
   }
 
   const paint = () => {
     const next = collect()
-    paintRanges(host, next.nextAll, next.nextActive)
+    paintRanges(host, next.nextAll, next.nextActive, next.outline)
     return next
   }
   const first = paint()
   bindRepaint(host, paint)
 
   if (!active) return first.nextAll.length > 0
-  if (!first.nextActive) return false
-  scrollRangeIntoView(first.nextActive, host)
-  return true
+  if (first.nextActive) {
+    scrollRangeIntoView(first.nextActive, host)
+    return true
+  }
+  if (first.outline) {
+    first.outline.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" })
+    return true
+  }
+  return false
 }
 
 export function scheduleSessionFindHighlights(
   input: {
     host: HTMLElement | null | undefined
-    query: string
-    matches: readonly SessionFindMatch[]
+    match: Matcher
+    matches: readonly SessionFindTarget[]
     activeIndex: number
-    caseSensitive?: boolean
   },
   attempts = 24,
 ) {
@@ -401,7 +423,8 @@ export function scheduleSessionFindHighlights(
 
   const run = () => {
     if (cancelled) return
-    const ok = applySessionFindHighlights(input)
+    // 前几次重试等展开/渲染完成；之后仍找不到文字就退到框出整个 part
+    const ok = applySessionFindHighlights({ ...input, fallback: attempts - left >= 8 || left <= 1 })
     left -= 1
     if (ok || left <= 0) return
     frame = requestAnimationFrame(() => {

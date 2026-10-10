@@ -254,6 +254,8 @@ export const WorkspaceSessionList = (props: {
   flat?: boolean
   /** 聊天区专用：不显示空态 placeholder。 */
   hideEmpty?: boolean
+  /** 平铺时最多先显示几条，其余收进“显示更多”；置顶会话总是显示。 */
+  limit?: number
 }): JSX.Element => {
   const params = useParams()
   const language = useLanguage()
@@ -270,7 +272,7 @@ export const WorkspaceSessionList = (props: {
 
   const groups = createMemo(() => {
     const groups: SessionGroup[] = []
-    // 置顶会话集中在最前、默认展开可折叠，下方以分隔线与时间分区隔开，行尾带图钉标记。
+    // 置顶会话集中在最前、默认展开可折叠，下方留白与时间分区隔开（不画分隔线），行尾带图钉标记。
     const pinned = props.sessions().filter((session) => isSessionPinned(session))
     if (pinned.length > 0) {
       groups.push({
@@ -342,6 +344,25 @@ export const WorkspaceSessionList = (props: {
     if (!group) return
     if (!isGroupOpen(group)) setSessionGroupOpen(props.slug(), group.key, true)
   })
+  // 平铺列表的“显示更多”：展开状态跟分组折叠一样按 scope 持久化
+  const headCount = createMemo(() => {
+    const limit = props.limit
+    if (!limit) return Infinity
+    return Math.max(limit, props.sessions().filter((session) => isSessionPinned(session)).length)
+  })
+  const head = createMemo(() => props.sessions().slice(0, headCount()))
+  const rest = createMemo(() => props.sessions().slice(headCount()))
+  const moreOpen = () => sessionGroupOpen(props.slug(), "more") ?? false
+  // 当前会话被收在“更多”里时自动展开，跟分组的自动展开一致（只在路由变化时执行一次）
+  let lastRevealedSession: string | undefined
+  createEffect(() => {
+    const sessionID = params.id
+    if (!sessionID || sessionID === lastRevealedSession) return
+    if (!rest().some((session) => session.id === sessionID)) return
+    lastRevealedSession = sessionID
+    if (!moreOpen()) setSessionGroupOpen(props.slug(), "more", true)
+  })
+
   const item = (session: Session) => (
     <SessionItem
       session={session}
@@ -406,7 +427,7 @@ export const WorkspaceSessionList = (props: {
             <Show when={group.collapsible} fallback={sessionItems(group.sessions)}>
               <div
                 class="mt-0.5 flex flex-col gap-0.5 first:mt-0"
-                classList={{ "pb-1 mb-1 border-b border-border-weak-base": group.key === "pinned" }}
+                classList={{ "mb-3": group.key === "pinned" }}
               >
                 <div
                   role="button"
@@ -442,7 +463,31 @@ export const WorkspaceSessionList = (props: {
           )}
         </For>
       }>
-        {sessionItems(props.sessions())}
+        {sessionItems(head())}
+        <Show when={rest().length > 0}>
+          <div class="sidebar-reveal" data-open={moreOpen() ? "" : undefined}>
+            <div class="sidebar-reveal-inner">{sessionItems(rest())}</div>
+          </div>
+          <button
+            type="button"
+            data-action="sidebar-sessions-more"
+            aria-expanded={moreOpen()}
+            onClick={() => setSessionGroupOpen(props.slug(), "more", !moreOpen())}
+            class="flex h-7 items-center gap-1 rounded-md pl-10 pr-2 text-12-regular text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base focus-visible:outline-none focus-visible:bg-surface-raised-base-hover"
+          >
+            <span>
+              {moreOpen()
+                ? language.t("sidebar.sessions.less")
+                : language.t("sidebar.sessions.more", { count: rest().length })}
+            </span>
+            <Icon
+              name="chevron-down"
+              size="small"
+              class="shrink-0 text-icon-weaker transition-transform duration-150"
+              classList={{ "rotate-180": moreOpen() }}
+            />
+          </button>
+        </Show>
       </Show>
     </nav>
   )

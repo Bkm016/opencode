@@ -10,6 +10,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { SessionTransfer } from "@/session/transfer"
 import { Todo } from "@/session/todo"
+import { SessionFind } from "@/session/find"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { FileDiff } from "@opencode-ai/schema/file-diff"
 import { Schema, Struct } from "effect"
@@ -45,6 +46,13 @@ export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
+})
+export const FindQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  query: Schema.String,
+  caseSensitive: Schema.optional(QueryBoolean),
+  regex: Schema.optional(QueryBoolean),
+  word: Schema.optional(QueryBoolean),
 })
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const UpdatePayload = Schema.Struct({
@@ -87,6 +95,7 @@ export const SessionPaths = {
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
+  find: `${root}/:sessionID/find`,
   message: `${root}/:sessionID/message/:messageID`,
   create: root,
   remove: `${root}/:sessionID`,
@@ -197,6 +206,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.messages",
             summary: "Get session messages",
             description: "Retrieve all messages in a session, including user prompts and AI responses.",
+          }),
+        ),
+        HttpApiEndpoint.get("find", SessionPaths.find, {
+          params: { sessionID: SessionID },
+          query: FindQuery,
+          success: described(SessionFind.Result, "Search hits"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.find",
+            summary: "Find in session",
+            description: "Full-text search across the entire session history, including compacted messages.",
           }),
         ),
         HttpApiEndpoint.get("message", SessionPaths.message, {

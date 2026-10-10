@@ -968,6 +968,8 @@ export function GenericToolGroup(props: {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   onCompactHere?: (messageID: string) => void
+  // 搜索跳转到组内某条工具时，让这条在挂载时默认展开
+  revealPartID?: string
   renderFallbackItem?: (props: {
     part: ToolPart
     message?: AssistantMessage
@@ -1035,6 +1037,9 @@ export function GenericToolGroup(props: {
           <Index each={props.parts}>
             {(partAccessor, index) => {
               const itemRenderer = definition()?.renderItem
+              const reveal = partAccessor().id === props.revealPartID
+              const shellToolDefaultOpen = reveal || props.shellToolDefaultOpen
+              const editToolDefaultOpen = reveal || props.editToolDefaultOpen
               if (itemRenderer) {
                 return (
                   <div data-slot={`${componentName()}-item`}>
@@ -1046,8 +1051,8 @@ export function GenericToolGroup(props: {
                       message: props.message,
                       showAssistantCopyPartID: props.showAssistantCopyPartID,
                       turnDurationMs: props.turnDurationMs,
-                      shellToolDefaultOpen: props.shellToolDefaultOpen,
-                      editToolDefaultOpen: props.editToolDefaultOpen,
+                      shellToolDefaultOpen,
+                      editToolDefaultOpen,
                       onCompactHere: props.onCompactHere,
                     })}
                   </div>
@@ -1062,8 +1067,8 @@ export function GenericToolGroup(props: {
                       message: props.message,
                       showAssistantCopyPartID: props.showAssistantCopyPartID,
                       turnDurationMs: props.turnDurationMs,
-                      shellToolDefaultOpen: props.shellToolDefaultOpen,
-                      editToolDefaultOpen: props.editToolDefaultOpen,
+                      shellToolDefaultOpen,
+                      editToolDefaultOpen,
                       onCompactHere: props.onCompactHere,
                     })}
                   </div>

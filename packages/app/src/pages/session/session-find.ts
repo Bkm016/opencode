@@ -1,106 +1,80 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { isContextGroupTool } from "@opencode-ai/session-ui/message-part-groups"
+import type { SessionFindHit } from "@opencode-ai/sdk/v2"
 
-export type SessionFindMatch = {
-  messageID: string
-  userMessageID: string
-  partID: string
-  start: number
-  end: number
+export type { SessionFindHit }
+
+// 搜索在服务端扫完整历史；这里只做展示前的整理：
+// 去掉已撤回（revert）之后的轮次，并按从新到旧排列，第一项就是离用户最近的命中。
+export function orderFindHits(hits: readonly SessionFindHit[], revertMessageID?: string) {
+  const kept = revertMessageID ? hits.filter((hit) => hit.userMessageID < revertMessageID) : hits.slice()
+  return kept.reverse()
 }
 
-export function partSearchText(part: Part) {
-  if (part.type === "text" || part.type === "reasoning") {
-    if (typeof part.text === "string" && part.text.length > 0) return part.text
-  }
-  if (part.type === "tool") {
-    const state = part.state
-    const title = "title" in state && typeof state.title === "string" ? state.title : ""
-    const output = "output" in state && typeof state.output === "string" ? state.output : ""
-    const error = "error" in state && typeof state.error === "string" ? state.error : ""
-    if (part.tool === "task" || part.tool === "task_followup") {
-      const input = state.input ?? {}
-      const metadataValue = "metadata" in state ? state.metadata : undefined
-      const metadata =
-        metadataValue && typeof metadataValue === "object" && !Array.isArray(metadataValue)
-          ? (metadataValue as Record<string, unknown>)
-          : {}
-      const chunks = [
-        typeof input.description === "string" ? input.description : "",
-        typeof input.prompt === "string" ? input.prompt : "",
-        typeof input.title === "string" ? input.title : "",
-        typeof input.agent === "string" ? input.agent : "",
-        typeof metadata.description === "string" ? metadata.description : "",
-        typeof metadata.title === "string" ? metadata.title : "",
-        error,
-      ].filter(Boolean)
-      return chunks.join("\n")
+export function findHitKey(hit: Pick<SessionFindHit, "partID" | "ordinal">) {
+  return `${hit.partID}:${hit.ordinal}`
+}
+
+export const FIND_FILTERS = ["all", "user", "assistant", "reasoning", "tool", "summary", "other"] as const
+export type FindFilter = (typeof FIND_FILTERS)[number]
+
+export function findHitFilter(hit: SessionFindHit): Exclude<FindFilter, "all"> {
+  if (hit.kind === "text") return hit.role === "user" ? "user" : "assistant"
+  if (hit.kind === "reasoning" || hit.kind === "tool" || hit.kind === "summary") return hit.kind
+  return "other"
+}
+
+export type FindPreviewSegment = { text: string; mark?: "hit" | "active" }
+export type FindPreviewLine = { no: number; segments: FindPreviewSegment[] }
+
+// 预览只渲染命中附近的若干行；超长工具输出也不会一次塞进上万行
+export function findPreviewLines(
+  text: string,
+  ranges: readonly { start: number; end: number }[],
+  active: { start: number; end: number },
+  radius = 120,
+) {
+  const starts = [0]
+  for (let at = text.indexOf("\n"); at >= 0; at = text.indexOf("\n", at + 1)) starts.push(at + 1)
+  const lineOf = (offset: number) => {
+    let lo = 0
+    let hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (starts[mid]! <= offset) lo = mid
+      else hi = mid - 1
     }
-    if (isContextGroupTool(part)) {
-      const input = part.state.input ?? {}
-      const filePath = typeof input.filePath === "string" ? input.filePath : undefined
-      const path = typeof input.path === "string" ? input.path : undefined
-      const pattern = typeof input.pattern === "string" ? input.pattern : ""
-      const include = typeof input.include === "string" ? input.include : ""
-      const chunks = [
-        part.tool === "read" ? getFilename(filePath) : "",
-        part.tool === "list_dir" ? getDirectory(path) : "",
-        part.tool !== "read" && part.tool !== "list_dir" ? getDirectory(path) : "",
-        pattern,
-        include,
-        part.tool === "read" && typeof input.offset === "number" ? `offset=${input.offset}` : "",
-        part.tool === "read" && typeof input.limit === "number" ? `limit=${input.limit}` : "",
-      ].filter(Boolean)
-      return chunks.join("\n")
-    }
-    const chunks = [title, output, error].filter(Boolean)
-    if (chunks.length > 0) return chunks.join("\n")
+    return lo
   }
-  return ""
-}
-
-export function messageUserAnchor(message: Message) {
-  if (message.role === "user") return message.id
-  if (message.role === "assistant" && typeof message.parentID === "string") return message.parentID
-  return message.id
-}
-
-export function collectSessionFindMatches(input: {
-  messages: readonly Message[]
-  parts: (messageID: string) => readonly Part[] | undefined
-  query: string
-  caseSensitive?: boolean
-}) {
-  const raw = input.query.trim()
-  if (!raw) return [] as SessionFindMatch[]
-
-  const caseSensitive = input.caseSensitive === true
-  const needle = caseSensitive ? raw : raw.toLowerCase()
-  if (!needle) return [] as SessionFindMatch[]
-
-  const matches: SessionFindMatch[] = []
-  for (const message of input.messages) {
-    const userMessageID = messageUserAnchor(message)
-    const list = input.parts(message.id) ?? []
-    for (const part of list) {
-      const text = partSearchText(part)
-      if (!text) continue
-      const haystack = caseSensitive ? text : text.toLowerCase()
-      let from = 0
-      while (from < haystack.length) {
-        const at = haystack.indexOf(needle, from)
-        if (at < 0) break
-        matches.push({
-          messageID: message.id,
-          userMessageID,
-          partID: part.id,
-          start: at,
-          end: at + needle.length,
-        })
-        from = at + Math.max(needle.length, 1)
+  const activeLine = lineOf(active.start)
+  const first = Math.max(0, activeLine - radius)
+  const last = Math.min(starts.length - 1, activeLine + radius)
+  const sorted = ranges.slice().sort((a, b) => a.start - b.start)
+  const lines: FindPreviewLine[] = []
+  let cursor = 0
+  for (let index = first; index <= last; index++) {
+    const lineStart = starts[index]!
+    const lineEnd = index + 1 < starts.length ? starts[index + 1]! - 1 : text.length
+    const segments: FindPreviewSegment[] = []
+    let at = lineStart
+    while (cursor < sorted.length && sorted[cursor]!.end <= lineStart) cursor++
+    for (let scan = cursor; scan < sorted.length && sorted[scan]!.start < lineEnd; scan++) {
+      const range = sorted[scan]!
+      const from = Math.max(range.start, lineStart)
+      const to = Math.min(range.end, lineEnd)
+      if (from > at) segments.push({ text: text.slice(at, from) })
+      if (to > from) {
+        const isActive = range.start === active.start && range.end === active.end
+        segments.push({ text: text.slice(from, to), mark: isActive ? "active" : "hit" })
       }
+      at = Math.max(at, to)
     }
+    if (at < lineEnd) segments.push({ text: text.slice(at, lineEnd) })
+    lines.push({ no: index + 1, segments })
   }
-  return matches
+  return { lines, activeLine: activeLine + 1, clippedStart: first > 0, clippedEnd: last < starts.length - 1 }
+}
+
+export function filterFindHits(hits: readonly SessionFindHit[], filter: FindFilter, hideCompacted: boolean) {
+  return hits.filter(
+    (hit) => (!hideCompacted || !hit.compacted) && (filter === "all" || findHitFilter(hit) === filter),
+  )
 }

@@ -471,6 +471,20 @@
   pointer-events: none;
 }
 
+/* 会话查找的命中色：与主题强调色无关，固定用查找习惯的黄色，明暗各一套 */
+:root {
+  --session-find-hit: #fde68a;
+  --session-find-active: #f59e0b;
+  --session-find-overlay-hit: rgba(250, 204, 21, 0.4);
+  --session-find-overlay-active: rgba(245, 158, 11, 0.55);
+}
+html[data-color-scheme="dark"] {
+  --session-find-hit: rgba(250, 204, 21, 0.24);
+  --session-find-active: #facc15;
+  --session-find-overlay-hit: rgba(250, 204, 21, 0.24);
+  --session-find-overlay-active: rgba(250, 204, 21, 0.55);
+}
+
 /* 手机输入栏：代理 / 模型 / 变体等选择器放不下时横向滑动，右缘渐隐提示还有内容，不再挤压发送按钮。 */
 @media (max-width: 767px) {
   [data-slot="prompt-controls"] {

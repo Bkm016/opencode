@@ -2736,6 +2736,32 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type SessionFindHit = {
+  messageID: string
+  partID: string
+  userMessageID: string
+  turn: number
+  role: "user" | "assistant"
+  kind: "text" | "reasoning" | "tool" | "file" | "subtask" | "summary"
+  tool?: string
+  ordinal: number
+  start: number
+  end: number
+  line: number
+  before: string
+  match: string
+  after: string
+  compacted: boolean
+  time: number
+}
+
+export type SessionFindResult = {
+  hits: Array<SessionFindHit>
+  total: number
+  truncated: boolean
+  error?: string
+}
+
 export type SessionTransferBundle = {
   version?: 1
   info: Session
@@ -10281,6 +10307,44 @@ export type SessionPromptResponses = {
 }
 
 export type SessionPromptResponse = SessionPromptResponses[keyof SessionPromptResponses]
+
+export type SessionFindData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    directory?: string
+    workspace?: string
+    query: string
+    caseSensitive?: "true" | "false"
+    regex?: "true" | "false"
+    word?: "true" | "false"
+  }
+  url: "/session/{sessionID}/find"
+}
+
+export type SessionFindErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionFindError = SessionFindErrors[keyof SessionFindErrors]
+
+export type SessionFindResponses = {
+  /**
+   * Search hits
+   */
+  200: SessionFindResult
+}
+
+export type SessionFindResponse = SessionFindResponses[keyof SessionFindResponses]
 
 export type SessionDeleteMessageData = {
   body?: never

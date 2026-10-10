@@ -1191,6 +1191,7 @@ export function GenericToolGroup(props: {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   onCompactHere?: (messageID: string) => void
+  revealPartID?: string
 }) {
   return (
     <BaseGenericToolGroup

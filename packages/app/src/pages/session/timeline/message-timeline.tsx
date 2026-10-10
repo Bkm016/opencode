@@ -76,6 +76,7 @@ import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/sessio
 import { useSDK } from "@/context/sdk"
 import { isPopout, openSessionWindow } from "@/utils/popout"
 import { useSync } from "@/context/sync"
+import { useModels } from "@/context/models"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
 import { directChildSessions } from "@/pages/layout/helpers"
@@ -327,6 +328,7 @@ export function MessageTimeline(props: {
   const tabs = useTabs()
   const dialog = useDialog()
   const language = useLanguage()
+  const models = useModels()
   const server = useServer()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
@@ -443,6 +445,20 @@ export function MessageTimeline(props: {
   const assistantMessagesByParent = projection.assistantMessagesByParent
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
   const messageByID = projection.messageByID
+  // 相邻两条用户消息的模型不同，就在后一条前面画一条分割线；纯前端推导，不进模型上下文
+  const modelSwitches = createMemo(() => {
+    const result = new Map<string, string>()
+    let prev: UserMessage["model"] | undefined
+    for (const message of props.userMessages) {
+      const model = message.model
+      if (!model) continue
+      if (prev && (prev.providerID !== model.providerID || prev.modelID !== model.modelID)) {
+        result.set(message.id, models.find(model)?.name ?? model.modelID)
+      }
+      prev = model
+    }
+    return result
+  })
   const messageLastRowIndex = projection.messageLastRowIndex
   const messageRowIndex = projection.messageRowIndex
   const projectedRows = projection.rows
@@ -507,6 +523,7 @@ export function MessageTimeline(props: {
     prependAnchorFrame = requestAnimationFrame(apply)
   }
 
+  const [revealPart, setRevealPart] = createSignal<string>()
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   // ProcessSummary is one virtual row; open only expands content inside that row.
   const [processOpen, setProcessOpen] = createStore<Record<string, boolean | undefined>>({})
@@ -604,43 +621,44 @@ export function MessageTimeline(props: {
   const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
   createEffect(() => {
     props.setRevealMessage?.((id, messageID, partID) => {
-      const target = partID
-        ? timelineRows().find((row) => {
-            if (row.userMessageID !== id) return false
-            if (row._tag === "AssistantPart") {
-              return (
-                row.group.type === "part" && row.group.ref.messageID === messageID && row.group.ref.partID === partID
-              )
-            }
-            if (row._tag !== "ProcessSummary") return false
-            return row.groups.some((group) => {
-              if (group.type === "part") {
-                return group.ref.messageID === messageID && group.ref.partID === partID
-              }
-              return group.refs.some((ref) => ref.messageID === messageID && ref.partID === partID)
-            })
-          })
-        : undefined
+      const hasRef = (group: PartGroup, match: (ref: { messageID: string; partID: string }) => boolean) =>
+        group.type === "part" ? match(group.ref) : group.refs.some(match)
+      const exact = (ref: { messageID: string; partID: string }) => ref.messageID === messageID && ref.partID === partID
+      // 命中的 part 可能没渲染（例如隐藏了思考过程）：退到同一条助手消息所在的行
+      const sameMessage = (ref: { messageID: string }) => ref.messageID === messageID
+      const findRow = (match: typeof exact) =>
+        timelineRows().find((row) => {
+          if (row.userMessageID !== id) return false
+          if (row._tag === "AssistantPart") return hasRef(row.group, match)
+          if (row._tag === "ProcessSummary") return row.groups.some((group) => hasRef(group, match))
+          return false
+        })
+      const target = partID ? (findRow(exact) ?? (messageID ? findRow(sameMessage) : undefined)) : undefined
       const index = target ? timelineRows().findIndex((row) => row === target) : messageRowIndex().get(id)
       if (index === undefined) return
 
-      if (target?._tag === "ProcessSummary") {
-        // 搜索命中处理区时先展开对应虚拟行，隐藏的 part 才能参与精确定位和高亮。
-        setProcessOpen(id, true)
-        for (const group of target.groups) {
-          if (group.type === "part") {
-            if (group.ref.messageID === messageID && group.ref.partID === partID) setToolOpen(group.ref.partID, true)
-            continue
-          }
-          if (group.refs.some((ref) => ref.messageID === messageID && ref.partID === partID)) {
-            setToolOpen(`context:${group.key}`, true)
-          }
+      // 展开命中所在的处理区和工具组，隐藏的 part 才能参与精确定位和高亮
+      const openGroup = (group: PartGroup) => {
+        if (!hasRef(group, exact)) return
+        if (group.type === "part") {
+          setToolOpen(group.ref.partID, true)
+          return
         }
+        const key = `${group.type}:${group.key}`
+        setRevealPart(partID)
+        if (toolOpen[key] !== true) {
+          setToolOpen(key, true)
+          return
+        }
+        // 组已展开时组内条目早已挂载，收起再展开一次让目标条目按展开状态重新挂载
+        setToolOpen(key, false)
+        requestAnimationFrame(() => setToolOpen(key, true))
       }
-
-      if (target?._tag === "AssistantPart" && target.group.type === "part") {
-        setToolOpen(target.group.ref.partID, true)
+      if (target?._tag === "ProcessSummary") {
+        setProcessOpen(id, true)
+        for (const group of target.groups) openGroup(group)
       }
+      if (target?._tag === "AssistantPart") openGroup(target.group)
       virtualizer.scrollToIndex(index, { align: "center" })
       if (partID) {
         // 展开会改变虚拟行高度，下一帧再把具体 part 调整到视口中央。
@@ -1179,6 +1197,7 @@ export function MessageTimeline(props: {
           message={firstMessage()}
           open={toolOpen[openKey] === true}
           onOpenChange={(value) => setToolOpen(openKey, value)}
+          revealPartID={revealPart()}
           busy={
             workingTurn(input.userMessageID) && lastAssistantGroupKey().get(input.userMessageID) === input.group.key
           }
@@ -1342,6 +1361,13 @@ export function MessageTimeline(props: {
             <Show when={message()}>
               {(message) => (
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+                  <Show when={modelSwitches().get(message().id)}>
+                    {(name) => (
+                      <div data-slot="session-turn-model-switch" class="w-full min-w-0 self-stretch pb-4">
+                        <MessageDivider label={language.t("session.modelSwitch", { model: name() })} />
+                      </div>
+                    )}
+                  </Show>
                   <div data-slot="session-turn-message-content" aria-live="off">
                     <Message
                       message={message()}
@@ -1700,6 +1726,14 @@ export function MessageTimeline(props: {
             <Show when={!layout.isDesktop()}>
               <div class="flex items-center">
                 <StatusPopover />
+                <IconButton
+                  icon="magnifying-glass"
+                  variant="ghost"
+                  class="w-8 h-6 rounded-md"
+                  data-action="session-find-open"
+                  aria-label={language.t("command.session.find")}
+                  onClick={() => command.trigger("session.find")}
+                />
                 <IconButton
                   icon={layout.view(sessionKey).terminal.opened() ? "terminal-active" : "terminal"}
                   variant="ghost"

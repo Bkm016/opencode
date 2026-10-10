@@ -48,6 +48,12 @@ async function copyServerDist() {
         fs.stat(from),
         fs.stat(to).catch(() => undefined),
       ])
+      // web/ 是内置 Web UI，文件名带哈希，整目录替换，免得留下旧版本的资源。
+      if (src.isDirectory()) {
+        await fs.rm(to, { recursive: true, force: true })
+        await fs.cp(from, to, { recursive: true })
+        return
+      }
       if (dst && dst.size === src.size && dst.mtimeMs >= src.mtimeMs) return
       await fs.copyFile(from, to)
     }),

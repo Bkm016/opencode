@@ -25,7 +25,8 @@ if (process.platform === "win32" && cliChannel === channel && isFresh(cliDest)) 
 } else if (process.platform === "win32") {
   // --skip-install：build.ts 默认每次跑 bun install --os="*" --cpu="*" 拉全平台依赖，
   // 本地反复构建时 ghostty-web 等 github tarball 常因网络/EPERM 挂掉；node_modules 已在就直接复用。
-  await $`cd ../opencode && bun script/build.ts --os=win32 --arch=x64 --skip-embed-web-ui --skip-install`
+  // 内置 Web UI：在终端里跑 opencode web/serve 时给的是本仓库前端，不转发官方线上版。
+  await $`cd ../opencode && bun script/build.ts --os=win32 --arch=x64 --skip-install`
   const src = "../opencode/dist/opencode-windows-x64/bin/opencode.exe"
   const dest = cliDest
   await $`mkdir -p resources/cli`

@@ -8,7 +8,8 @@ const roots = [
   path.join(dir, "src"),
   path.join(dir, "script"),
   path.join(dir, "package.json"),
-  ...["core", "protocol", "schema", "server", "llm", "codemode", "plugin", "sdk/js"].map((name) =>
+  // app/ui 是内置 Web UI 的源码
+  ...["core", "protocol", "schema", "server", "llm", "codemode", "plugin", "sdk/js", "app", "ui"].map((name) =>
     path.resolve(dir, "..", name, "src"),
   ),
 ]

@@ -201,6 +201,18 @@ describe("HttpApi authorization middleware", () => {
       expect(response.headers["retry-after"]).toBe("60")
     }),
   )
+
+  itSecret.live("does not count credential-less challenges as failures", () =>
+    Effect.gen(function* () {
+      for (let i = 0; i < 40; i++) {
+        const response = yield* getProbe()
+        expect(response.status).toBe(401)
+      }
+      const response = yield* getProbe({ authorization: basic("opencode", "secret") })
+      expect(response.status).not.toBe(429)
+      expect(response.status).not.toBe(401)
+    }),
+  )
 })
 
 describe("createAuthFailureTracker", () => {

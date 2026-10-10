@@ -4,6 +4,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 const FAILURE_LIMIT = 30
 const FAILURE_WINDOW_MS = 60_000
 const TRACKED_ADDRESSES = 1024
+const BASIC = /^Basic\s+\S/i
 
 export function createAuthFailureTracker(
   input: { limit?: number; window?: number; capacity?: number; now?: () => number } = {},
@@ -58,7 +59,9 @@ export const authRateLimit = HttpRouter.middleware(
           return HttpServerResponse.empty({ status: 429, headers: { "retry-after": String(FAILURE_WINDOW_MS / 1000) } })
         }
         const response = yield* effect
-        if (response.status === 401) tracker.record(address)
+        // 只有带着 Basic 凭据却被拒才算一次猜密码。浏览器首个请求、EventSource、WebSocket
+        // 等不带凭据的 401 是正常握手，计入的话本机客户端很快就会把自己锁在 429 外面。
+        if (response.status === 401 && BASIC.test(request.headers.authorization ?? "")) tracker.record(address)
         return response
       })
   }),

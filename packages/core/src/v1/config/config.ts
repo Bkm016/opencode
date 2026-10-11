@@ -146,7 +146,7 @@ export const Info = Schema.Struct({
     ]),
   ).annotate({
     description:
-      "Web search tool. Set false to disable; setting a provider also enables web search for models outside OpenCode Zen",
+      "Web search tool, enabled for all models by default. Set false to disable",
   }),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",

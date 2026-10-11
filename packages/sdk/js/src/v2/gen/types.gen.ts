@@ -2075,7 +2075,7 @@ export type Config = {
     [key: string]: boolean
   }
   /**
-   * Web search tool. Set false to disable; setting a provider also enables web search for models outside OpenCode Zen
+   * Web search tool, enabled for all models by default. Set false to disable
    */
   websearch?:
     | false

@@ -76,13 +76,9 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
 import { PromptCatalog } from "@/session/prompt-catalog"
 
-export function webSearchEnabled(
-  providerID: ProviderV2.ID,
-  flags = { exa: false, parallel: false },
-  websearch?: false | { provider?: string },
-) {
-  if (websearch === false) return false
-  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel || !!websearch?.provider
+// 默认对所有模型开放；只有配置 websearch: false 时关闭
+export function webSearchEnabled(websearch?: false | { provider?: string }) {
+  return websearch !== false
 }
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
@@ -357,13 +353,7 @@ const layer = Layer.effect(
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const websearch = (yield* config.get()).websearch
       const filtered = (yield* all()).filter((tool) => {
-        if (tool.id === WebSearchTool.id) {
-          return webSearchEnabled(
-            input.providerID,
-            { exa: flags.enableExa, parallel: flags.enableParallel },
-            websearch,
-          )
-        }
+        if (tool.id === WebSearchTool.id) return webSearchEnabled(websearch)
 
         const usePatch =
           input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")

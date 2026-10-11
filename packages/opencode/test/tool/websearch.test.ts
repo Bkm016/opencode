@@ -15,7 +15,6 @@ import { format, parseExa, parseFirecrawl, parseParallel, parseTinyFish, search 
 
 import { webSearchEnabled } from "../../src/tool/registry"
 import { it } from "../lib/effect"
-import { ProviderV2 } from "@opencode-ai/core/provider"
 
 const SESSION_ID = "ses_0196aabbccddeeff001122334455"
 
@@ -63,15 +62,11 @@ describe("websearch provider choice", () => {
     withOverride("bogus", () => expect(resolveWebSearchChoice({ provider: "exa" })).toBe("exa"))
   })
 
-  test("is enabled for opencode, legacy flags, or a configured provider", () => {
-    const off = { exa: false, parallel: false }
-    expect(webSearchEnabled(ProviderV2.ID.opencode, off)).toBe(true)
-    expect(webSearchEnabled(ProviderV2.ID.openai, off)).toBe(false)
-    expect(webSearchEnabled(ProviderV2.ID.openai, { exa: true, parallel: false })).toBe(true)
-    expect(webSearchEnabled(ProviderV2.ID.openai, { exa: false, parallel: true })).toBe(true)
-    expect(webSearchEnabled(ProviderV2.ID.openai, off, { provider: "random" })).toBe(true)
-    expect(webSearchEnabled(ProviderV2.ID.openai, off, {})).toBe(false)
-    expect(webSearchEnabled(ProviderV2.ID.opencode, { exa: true, parallel: true }, false)).toBe(false)
+  test("is enabled by default unless explicitly disabled", () => {
+    expect(webSearchEnabled()).toBe(true)
+    expect(webSearchEnabled({})).toBe(true)
+    expect(webSearchEnabled({ provider: "random" })).toBe(true)
+    expect(webSearchEnabled(false)).toBe(false)
   })
 
   test("uses branded labels", () => {

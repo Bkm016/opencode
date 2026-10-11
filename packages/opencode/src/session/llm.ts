@@ -112,7 +112,8 @@ const live: Layer.Layer<
         plugin,
         flags,
         isWorkflow,
-      })
+        // 用本层注入的 Config，调用方的运行环境未必提供它。
+      }).pipe(Effect.provideService(Config.Service, config))
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
       // and results sent back over the WebSocket.

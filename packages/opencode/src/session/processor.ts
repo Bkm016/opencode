@@ -23,6 +23,7 @@ import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { EffectBridge } from "@/effect/bridge"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Tool } from "@/tool/tool"
 import { InputAlias } from "@/tool/input-aliases"
@@ -147,6 +148,70 @@ const layer = Layer.effect(
           ...input,
           edits: input.edits.map((entry) => Tool.applyInputAliases(entry, InputAlias.multiEditEntry)),
         }
+      }
+
+      // 跨 provider turn 汇总最近工具调用，避免每轮新建消息重置 doom-loop 计数。
+      const checkDoomLoop = Effect.fn("SessionProcessor.checkDoomLoop")(function* (
+        toolName: string,
+        args: unknown,
+        callID: string,
+      ) {
+        const input = toolInput(toolName, args)
+        const current = JSON.stringify([toolName, input])
+        // 本次调用的 part 可能已由 tool-call 事件写入，也可能尚未写入；统一排除后再追加，计数不受时序影响。
+        const signatures = [
+          ...(yield* session.messages({ sessionID: ctx.sessionID, limit: DOOM_LOOP_WINDOW }))
+            .flatMap((message) => message.parts)
+            .filter(
+              (part): part is SessionV1.ToolPart =>
+                part.type === "tool" && part.state.status !== "pending" && part.callID !== callID,
+            )
+            .slice(-(DOOM_LOOP_WINDOW - 1))
+            .map((part) => JSON.stringify([part.tool, part.state.input])),
+          current,
+        ]
+        const repeated =
+          signatures.length >= DOOM_LOOP_THRESHOLD &&
+          signatures.slice(-DOOM_LOOP_THRESHOLD).every((signature) => signature === current)
+        const cycling = signatures.length === DOOM_LOOP_WINDOW && new Set(signatures).size <= 2
+        if (!repeated && !cycling) return
+
+        const agent = yield* agents.get(ctx.assistantMessage.agent)
+        yield* permission
+          .ask({
+            permission: "doom_loop",
+            patterns: [toolName],
+            sessionID: ctx.assistantMessage.sessionID,
+            metadata: { tool: toolName, input },
+            always: [toolName],
+            ruleset: agent.permission,
+          })
+          .pipe(
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                // 拒绝（含配置 deny）即终止本轮，否则模型拿到错误后多半原样重试。
+                if (error instanceof PermissionV1.RejectedError || error instanceof PermissionV1.DeniedError)
+                  ctx.blocked = ctx.shouldBreak
+              }),
+            ),
+          )
+      })
+
+      // 工具执行前先过 doom-loop 检查；保留 tools 上不可枚举的 nameAliases 等属性。
+      const guardTools = (tools: LLM.StreamInput["tools"], bridge: EffectBridge.Shape) => {
+        const guarded = Object.defineProperties({}, Object.getOwnPropertyDescriptors(tools)) as typeof tools
+        for (const [name, item] of Object.entries(tools)) {
+          const execute = item.execute
+          if (!execute) continue
+          guarded[name] = {
+            ...item,
+            execute: async (args: any, options: any) => {
+              await bridge.promise(checkDoomLoop(name, args, options.toolCallId))
+              return execute(args, options)
+            },
+          } as typeof item
+        }
+        return guarded
       }
 
       const publishToolInput = Effect.fnUntraced(function* (id: string, force = false) {
@@ -526,32 +591,7 @@ const layer = Layer.effect(
             }))
 
             if (ctx.toolcalls[value.id]) delete ctx.toolcalls[value.id].preview
-
-            // 跨 provider turn 汇总最近 assistant parts，避免每轮新建消息重置 doom-loop 计数。
-            const signatures = (yield* session.messages({
-              sessionID: ctx.sessionID,
-              limit: DOOM_LOOP_WINDOW,
-            }))
-              .flatMap((message) => message.parts)
-              .filter((part): part is SessionV1.ToolPart => part.type === "tool" && part.state.status !== "pending")
-              .slice(-DOOM_LOOP_WINDOW)
-              .map((part) => JSON.stringify([part.tool, part.state.input]))
-            const current = JSON.stringify([toolName, input])
-            const repeated =
-              signatures.length >= DOOM_LOOP_THRESHOLD &&
-              signatures.slice(-DOOM_LOOP_THRESHOLD).every((signature) => signature === current)
-            const cycling = signatures.length === DOOM_LOOP_WINDOW && new Set(signatures).size <= 2
-            if (!repeated && !cycling) return
-
-            const agent = yield* agents.get(ctx.assistantMessage.agent)
-            yield* permission.ask({
-              permission: "doom_loop",
-              patterns: [toolName],
-              sessionID: ctx.assistantMessage.sessionID,
-              metadata: { tool: toolName, input },
-              always: [toolName],
-              ruleset: agent.permission,
-            })
+            // doom-loop 检查在工具 execute 前进行（见 guardTools）：AI SDK 收到 tool-call 即并发执行工具，在这里询问已来不及拦截。
             return
           }
 
@@ -874,6 +914,7 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
         activeTools = streamInput.tools
+        streamInput = { ...streamInput, tools: guardTools(streamInput.tools, yield* EffectBridge.make()) }
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {

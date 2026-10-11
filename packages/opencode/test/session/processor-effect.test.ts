@@ -249,7 +249,8 @@ const fragmentFailureLLM = Layer.succeed(
         LLMEvent.reasoningDelta({ id: "reasoning-1", text: "thinking" }),
         LLMEvent.textStart({ id: "text-1" }),
         LLMEvent.textDelta({ id: "text-1", text: "partial" }),
-        LLMEvent.providerError({ message: "provider boom" }),
+        // 可重试错误会丢弃本步输出重采样（另有用例覆盖）；这里验证不可重试失败保留已流出的分片。
+        LLMEvent.providerError({ message: "provider boom", retryable: false }),
       ),
   }),
 )

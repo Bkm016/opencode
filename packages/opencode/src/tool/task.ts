@@ -363,6 +363,8 @@ function makeTaskExecutor(input: {
     if (projectDirectory) metadata.directory = projectDirectory
     if (!wait) metadata.background = true
     if (batchId) metadata.batchId = batchId
+    // 单任务在子会话创建后立即带上 sessionId/model，运行中与失败后都能定位子会话；批次由外层统一汇总。
+    if (!batchId) yield* ctx.metadata({ title: entry.description, metadata })
 
     registerTask(nextSession.id, {
       title: entry.description,
@@ -418,11 +420,17 @@ function makeTaskExecutor(input: {
     // 完成通知仍回到来源项目，不能随子代理上下文写入目标项目会话。
     const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (state: "completed" | "error", text: string) {
       const currentParent = yield* sessions.get(ctx.sessionID)
+      // 沿用父会话最近一条用户消息的 agent/模型；ctx.agent 在 subtask 路径下是子代理，不能拿来驱动父会话。
+      const latestUser = (yield* sessions.messages({ sessionID: ctx.sessionID }).pipe(Effect.orDie)).findLast(
+        (message) => message.info.role === "user",
+      )?.info
+      const parentUser = latestUser?.role === "user" ? latestUser : undefined
       yield* ops
         .prompt({
           sessionID: ctx.sessionID,
-          agent: currentParent.agent ?? ctx.agent,
-          variant,
+          agent: parentUser?.agent ?? currentParent.agent ?? ctx.agent,
+          ...(parentUser ? { model: parentUser.model } : {}),
+          variant: parentUser ? parentUser.model.variant : variant,
           parts: [
             {
               type: "text",

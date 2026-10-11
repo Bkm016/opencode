@@ -21,6 +21,22 @@ export const OUTPUT_TOKEN_MAX = 32_000
 // branch that requests it stays in lockstep.
 const INCLUDE_ENCRYPTED_REASONING = ["reasoning.encrypted_content"] as const
 
+// 任一 provider 命名空间下带 reasoningEncryptedContent（AI SDK 用 providerOptions，原生运行时用 providerMetadata）。
+function hasEncryptedReasoning(part: object) {
+  const record = part as { providerOptions?: unknown; providerMetadata?: unknown }
+  return [record.providerOptions, record.providerMetadata].some(
+    (meta) =>
+      typeof meta === "object" &&
+      meta !== null &&
+      Object.values(meta).some(
+        (value) =>
+          typeof value === "object" &&
+          value !== null &&
+          typeof (value as { reasoningEncryptedContent?: unknown }).reasoningEncryptedContent === "string",
+      ),
+  )
+}
+
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
 }
@@ -178,7 +194,8 @@ function normalizeMessages(
         }
         const filtered = msg.content.filter((part) => {
           if (part.type === "text") return part.text !== ""
-          if (part.type === "reasoning") return part.text.trim().length > 0
+          // Responses API 的推理项摘要常为空，但 encrypted_content 是续跑必需的推理状态，不能当空段删掉。
+          if (part.type === "reasoning") return part.text.trim().length > 0 || hasEncryptedReasoning(part)
           return true
         })
         if (filtered.length === 0) return undefined

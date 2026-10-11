@@ -730,6 +730,18 @@ function configModel(model: Record<string, any> & { id: string }) {
   }
 }
 
+// models.dev 目录已移除，模型元数据只来自配置：测试从快照里取出 provider 与模型写进配置。
+function fixtureProvider(fixture: { providerID: string; modelID: string }) {
+  const { provider, model } = loadFixture(fixture.providerID, fixture.modelID)
+  return {
+    name: provider.name,
+    env: provider.env,
+    npm: provider.npm,
+    api: provider.api,
+    models: { [model.id]: configModel(model) as ConfigModel },
+  }
+}
+
 function createEventStream(chunks: unknown[], includeDone = false) {
   const lines = chunks.map((chunk) => `data: ${typeof chunk === "string" ? chunk : JSON.stringify(chunk)}`)
   if (includeDone) {
@@ -826,6 +838,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [vivgridFixture.providerID],
         provider: {
           [vivgridFixture.providerID]: {
+            ...fixtureProvider(vivgridFixture),
             options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
           },
         },
@@ -900,6 +913,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [cerebrasFixture.providerID],
         provider: {
           [cerebrasFixture.providerID]: {
+            ...fixtureProvider(cerebrasFixture),
             options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
           },
         },
@@ -963,6 +977,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [alibabaQwenFixture.providerID],
         provider: {
           [alibabaQwenFixture.providerID]: {
+            ...fixtureProvider(alibabaQwenFixture),
             options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
           },
         },
@@ -1031,6 +1046,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [alibabaQwenFixture.providerID],
         provider: {
           [alibabaQwenFixture.providerID]: {
+            ...fixtureProvider(alibabaQwenFixture),
             options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
           },
         },
@@ -1779,6 +1795,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [minimaxFixture.providerID],
         provider: {
           [minimaxFixture.providerID]: {
+            ...fixtureProvider(minimaxFixture),
             options: { apiKey: "test-anthropic-key", baseURL: `${state.server!.url.origin}/v1` },
           },
         },
@@ -2081,6 +2098,7 @@ describe("session.llm.stream", () => {
         enabled_providers: [geminiFixture.providerID],
         provider: {
           [geminiFixture.providerID]: {
+            ...fixtureProvider(geminiFixture),
             options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
           },
         },

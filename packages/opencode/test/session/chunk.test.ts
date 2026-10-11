@@ -302,6 +302,17 @@ describe("closeChunk", () => {
     expect(SessionChunk.closeChunk({ messages: [u1, a1, holder, summary], chunks: [first] })).toBeUndefined()
   })
 
+  test("does not re-chunk from the start when the previous boundary is outside the region", () => {
+    const u1 = user("a")
+    const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
+    const u2 = user("b")
+    const a2 = assistant(u2.info.id, "b2", { finish: "stop" })
+    const first = SessionChunk.closeChunk({ messages: [u1, a1], chunks: [] })!
+    const second = SessionChunk.closeChunk({ messages: [u1, a1, u2, a2], chunks: [first] })!
+    // compactAt 截断到 second 之前时，已关闭的区间不能被重新切出重叠 chunk。
+    expect(SessionChunk.closeChunk({ messages: [u1, a1], chunks: [first, second] })).toBeUndefined()
+  })
+
   test("trailing /compact command does not swallow prior stop boundary", () => {
     const u1 = user("hello")
     const a1 = assistant(u1.info.id, "world", { finish: "stop" })
@@ -420,6 +431,31 @@ describe("selectVisible", () => {
     expect(SessionChunk.selectVisible({ messages, chunks, targetTokens: 250, hardTokens: 300 }).visible).toHaveLength(0)
   })
 
+  test("older chunks degrade to excerpts instead of being archived once full text no longer fits", () => {
+    const messages: SessionV1.WithParts[] = []
+    const chunks: SessionChunk.Chunk[] = []
+    const olderFinal = `older start\n${"汉".repeat(5_000)}\nolder end`
+    const newerFinal = `newer start\n${"汉".repeat(17_000)}\nnewer end`
+    for (const final of [olderFinal, newerFinal]) {
+      const u = user("request")
+      messages.push(u, assistant(u.info.id, final, { finish: "stop" }))
+      chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
+    }
+
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 20_000, hardTokens: 24_000 })
+    expect(selection.visible).toEqual(chunks)
+    expect(selection.tokens).toBeLessThanOrEqual(24_000)
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const summary = (id: MessageID) =>
+      (projected.find((message) => message.info.id === id)!.parts[0] as SessionV1.TextPart).text
+    const older = summary(chunks[0]!.end_message_id)
+    expect(older).toContain('excerpt="true"')
+    expect(older).toContain("older start")
+    expect(older).toContain("older end")
+    expect(older).not.toContain(olderFinal)
+    expect(summary(chunks[1]!.end_message_id)).toContain(newerFinal)
+  })
+
   test("mixed CJK and ASCII estimation is conservative", () => {
     const ascii = "a".repeat(1000)
     const cjk = "汉".repeat(1000)
@@ -488,6 +524,30 @@ describe("project", () => {
     expect(SessionChunk.projectLongUserText(projected)).toEqual(projected)
   })
 
+  test("completed chunks keep a deduplicated list of changed files", () => {
+    const u = user("refactor the cache")
+    const done = assistant(u.info.id, "Done.", { finish: "stop" })
+    for (const files of [["/repo/cache.ts", "/repo/store.ts"], ["/repo/cache.ts"]]) {
+      done.parts.push({
+        id: PartID.ascending(),
+        messageID: done.info.id,
+        sessionID,
+        type: "patch",
+        hash: `patch-${files.length}`,
+        files,
+      })
+    }
+    const messages = [u, done]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    const selection = SessionChunk.selectVisible({ messages, chunks: [chunk], targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const text = (projected.find((message) => message.info.id === done.info.id)!.parts[0] as SessionV1.TextPart).text
+
+    expect(text).toContain('status="completed"')
+    expect(text).toContain("Recorded file changes:\n/repo/cache.ts\n/repo/store.ts")
+    expect(text.split("/repo/cache.ts")).toHaveLength(2)
+  })
+
   test("active tail is preserved verbatim", () => {
     const u1 = user("q1")
     const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
@@ -535,6 +595,62 @@ describe("project", () => {
     expect(summary.info.error).toBeUndefined()
     expect(failed.info.error).toBeDefined()
     expect(SessionChunk.transcript({ messages, chunks: [chunk] }).some((entry) => entry.text === "汉".repeat(30_000))).toBe(true)
+  })
+
+  test("latest interrupted chunk stays visible as recovery evidence even when over budget", () => {
+    const done = user("earlier request")
+    const u = user("read four files and summarize")
+    const step = assistant(u.info.id, "", { finish: "tool-calls", tool: true })
+    const tool = step.parts.find((part): part is SessionV1.ToolPart => part.type === "tool")!
+    tool.state.input = { path: "/repo/part8.txt" }
+    const messages = [done, assistant(done.info.id, "done", { finish: "stop" }), u, step]
+    const sealed = assistant(u.info.id, "", { finish: SessionChunk.OVERFLOW_FINISH })
+    const chunks: SessionChunk.Chunk[] = [SessionChunk.closeChunk({ messages, chunks: [] })!]
+    messages.push(sealed)
+    chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
+
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 10, hardTokens: 12 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 10, hardTokens: 12 })
+    const text = (projected.find((message) => message.info.id === sealed.info.id)!.parts[0] as SessionV1.TextPart).text
+
+    // 未完成的最新 chunk 不受预算限制，续跑仍能看到已完成的步骤；更早的已完成 chunk 照常归档。
+    expect(selection.visible).toEqual([chunks[1]])
+    expect(selection.archived).toEqual([chunks[0]])
+    expect(text).toContain('read({"path":"/repo/part8.txt"}) [completed')
+
+    // 已完成的最新 chunk 仍严格受硬上限约束。
+    const completed = [...messages.slice(0, -1), assistant(u.info.id, "summary", { finish: "stop" })]
+    const completedChunks: SessionChunk.Chunk[] = [chunks[0]!]
+    completedChunks.push(SessionChunk.closeChunk({ messages: completed, chunks: completedChunks })!)
+    expect(SessionChunk.selectVisible({ messages: completed, chunks: completedChunks, targetTokens: 10, hardTokens: 12 }).visible).toEqual([])
+  })
+
+  test("interrupted chunks fold earlier steps into a bounded chronological work log", () => {
+    const u = user("migrate every module")
+    const steps = Array.from({ length: 200 }, (_, index) => {
+      const step = assistant(u.info.id, `progress note ${index}`, { finish: "tool-calls", tool: true })
+      const tool = step.parts.find((part): part is SessionV1.ToolPart => part.type === "tool")!
+      tool.callID = `call_${index}`
+      tool.state.input = { path: `/repo/module-${index}.ts` }
+      return step
+    })
+    const sealed = assistant(u.info.id, "", { finish: SessionChunk.OVERFLOW_FINISH })
+    const messages = [u, ...steps, sealed]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    const selection = SessionChunk.selectVisible({ messages, chunks: [chunk], targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const text = (projected.find((message) => message.info.id === sealed.info.id)!.parts[0] as SessionV1.TextPart).text
+    const log = text.slice(text.indexOf("Earlier steps, oldest first:"), text.indexOf("ASSISTANT_TOOL:"))
+
+    expect(chunk.status).toBe("interrupted")
+    // 日志保留最早与较晚的步骤，中间按预算省略；最近 3 步以完整结果单独展示，不在日志里重复。
+    expect(log).toContain('- read({"path":"/repo/module-0.ts"}) [completed]')
+    expect(log).toContain("- ASSISTANT: progress note 0")
+    expect(log).toContain('- read({"path":"/repo/module-196.ts"}) [completed]')
+    expect(log).toContain("[... omitted; use history tools for the full text ...]")
+    expect(log).not.toContain("module-197.ts")
+    expect(text).toContain('read({"path":"/repo/module-199.ts"}) [completed, call=call_199]')
+    expect(SessionChunk.estimateTokens(log)).toBeLessThanOrEqual(850)
   })
 
   test("projects a long active user text as a reference without dropping the active message", () => {
@@ -595,7 +711,7 @@ describe("project", () => {
     const messages = [u1, a1, holder, summary, u2, active]
     const projected = SessionChunk.project({
       messages,
-      selection: { visible: [], archived: [chunk], tokens: 0, content: new Map() },
+      selection: { visible: [], archived: [chunk], tokens: 0, content: new Map(), requests: new Map() },
       targetTokens: 20_000,
       hardTokens: 24_000,
     })
@@ -741,5 +857,68 @@ describe("checkpointText", () => {
     expect(text).toContain("visible chunks: 1")
     expect(text).toContain("archived chunks: 0")
     expect(text).toContain("history_grep")
+  })
+
+  test("archived chunks keep a one-line excerpt of their user requests", () => {
+    const messages: SessionV1.WithParts[] = []
+    const chunks: SessionChunk.Chunk[] = []
+    for (const [request, final] of [
+      ["Never touch the billing module.\nIt is owned by another team.", "noted"],
+      ["", "y".repeat(4_000)],
+      ["refactor the cache", "x".repeat(4_000)],
+    ] as const) {
+      const u = user(request || "continue", request === "")
+      messages.push(u, assistant(u.info.id, final, { finish: "stop" }))
+      chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
+    }
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 1_100, hardTokens: 1_100 })
+    const text = SessionChunk.checkpointText({ selection, targetTokens: 1_100, hardTokens: 1_100 })
+
+    expect(selection.visible).toEqual([chunks[2]])
+    expect(text).toContain(
+      `archived requests, oldest first:\n- ${chunks[0]!.display_id} [completed]: Never touch the billing module. It is owned by another team.`,
+    )
+    // synthetic 续跑输入不是用户约束，不占索引
+    expect(text).not.toContain(`- ${chunks[1]!.display_id} [`)
+    expect(text).not.toContain("refactor the cache")
+  })
+
+  test("archived request index stays bounded and keeps the earliest and latest requests", () => {
+    const messages: SessionV1.WithParts[] = []
+    const chunks: SessionChunk.Chunk[] = []
+    for (let index = 0; index < 300; index++) {
+      const u = user(`请求 ${index}：${"保持接口兼容".repeat(20)}`)
+      messages.push(u, assistant(u.info.id, "done", { finish: "stop" }))
+      chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
+    }
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 0, hardTokens: 0 })
+    const text = SessionChunk.checkpointText({ selection, targetTokens: 0, hardTokens: 0 })
+    const index = text.slice(text.indexOf("archived requests, oldest first:"))
+
+    expect(selection.archived).toHaveLength(300)
+    expect(index).toContain(`- ${chunks[0]!.display_id} [completed]: 请求 0：`)
+    expect(index).toContain(`- ${chunks[299]!.display_id} [completed]: 请求 299：`)
+    expect(index).toContain("[... omitted; use history tools for the full text ...]")
+    expect(SessionChunk.estimateTokens(index)).toBeLessThanOrEqual(1_600)
+    // 每条摘录按 token 截断，中文长请求不会占满整个索引；会话首个请求上限更宽，同样长度可完整保留。
+    expect(index.split("\n").find((line) => line.includes("请求 299："))!.endsWith("…")).toBe(true)
+    expect(index).toContain(`请求 0：${"保持接口兼容".repeat(20)}\n`)
+  })
+
+  test("archived first request keeps every item of a multi-constraint list", () => {
+    const constraints =
+      "项目约束（请严格遵守）：1. billing.ts 由支付团队维护，任何情况下都不要修改它；2. 所有新增代码注释必须使用中文；3. 公共接口保持向后兼容。只需回复“已记录”，不要做其他事。"
+    const messages: SessionV1.WithParts[] = []
+    const chunks: SessionChunk.Chunk[] = []
+    for (const request of [constraints, "读取 data/part1.txt，只回复第一行"]) {
+      const u = user(request)
+      messages.push(u, assistant(u.info.id, "ok", { finish: "stop" }))
+      chunks.push(SessionChunk.closeChunk({ messages, chunks })!)
+    }
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 0, hardTokens: 0 })
+    const text = SessionChunk.checkpointText({ selection, targetTokens: 0, hardTokens: 0 })
+
+    // 实测中旧上限把这条截成“2. 所有…”，第二、三条约束随归档一起不可见。
+    expect(text).toContain(`- ${chunks[0]!.display_id} [completed]: ${constraints}\n`)
   })
 })

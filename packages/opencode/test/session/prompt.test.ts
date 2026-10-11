@@ -616,6 +616,10 @@ it.instance("successive chunk overflows persist a new divider before each contin
       expect(summary?.info.role).toBe("assistant")
       if (summary?.info.role !== "assistant") throw new Error("Missing compaction summary")
       expect(summary.info.finish).toBe("stop")
+      // 每条分界线只承载本次新关闭的 chunk，不重复写入之前分界线已展示的历史。
+      const summaryText = summary.parts.find((part): part is SessionV1.TextPart => part.type === "text")?.text
+      expect(summaryText).toContain(`work item ${index}`)
+      if (index > 0) expect(summaryText).not.toContain(`work item ${index - 1}`)
       if (result.info.role !== "assistant") throw new Error("Missing recovered assistant")
       expect(input.info.id < holder.info.id).toBe(true)
       expect(holder.info.id < summary.info.id).toBe(true)
@@ -690,7 +694,10 @@ it.instance("chunk overflow recovery retains tool outcomes when no final answer 
     expect(retry).toContain("check interrupted before completion")
     expect(retry).toContain("This chunk did not complete.")
     expect(retry).toContain("No final assistant response was recorded.")
-    expect(retry).toContain("Last recorded file changes:")
+    // 溢出封存的 turn 是被打断而非失败，已完成的编辑不应被当成失败工作。
+    expect(retry).toContain('status=\\"interrupted\\"')
+    expect(retry).not.toContain('status=\\"failed\\"')
+    expect(retry).toContain("Recorded file changes:\\n/tmp/cache.ts")
     expect(retry).not.toContain('"tool_calls"')
     const persisted = yield* sessions.messages({ sessionID: chat.id })
     expect(persisted.find((message) => message.info.id === active.assistant.id)?.parts).toEqual(
@@ -788,9 +795,88 @@ it.instance("chunk preflight archives assistant-only chunks and reports the fina
     expect(JSON.stringify(hits[0]?.body.messages)).toContain("archived chunks: 2")
     expect(JSON.stringify(hits[0]?.body.messages)).toContain(`archived chunk IDs: ${checkpoint!.chunks!.map((chunk) => chunk.display_id).join(", ")}`)
     expect(JSON.stringify(hits[0]?.body.messages)).toContain("history budget: 0/")
+    // 发送前裁剪归档的 chunk 仍以单行摘录保留用户请求；只有 synthetic 输入的 chunk 不占索引。
+    expect(JSON.stringify(hits[0]?.body.messages)).toContain(`- ${checkpoint!.chunks![0]!.display_id} [completed]: hello`)
+    expect(JSON.stringify(hits[0]?.body.messages)).not.toContain(`- ${checkpoint!.chunks![1]!.display_id} [`)
     expect(JSON.stringify(hits[0]?.body.messages)).toContain("continue safely")
     expect(result.parts).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "text", text: "continued within budget" })]),
+    )
+  }),
+)
+
+it.instance("chunk strategy seals finished turns before sending once the last request neared the limit", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => {
+      const config = providerCfg(url)
+      return {
+        ...config,
+        compaction: { strategy: "chunk" },
+        provider: {
+          ...config.provider,
+          test: {
+            ...config.provider.test,
+            models: {
+              ...config.provider.test.models,
+              "test-model": {
+                ...config.provider.test.models["test-model"],
+                limit: { context: 40_000, output: 10_000 },
+              },
+            },
+          },
+        },
+      }
+    })
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Presend seal" })
+    const earlier = yield* seed(chat.id, { finish: "stop", text: "read the file" })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: earlier.assistant.id,
+      sessionID: chat.id,
+      type: "tool",
+      tool: "read",
+      callID: "earlier-read",
+      state: {
+        status: "completed",
+        input: { filePath: "/tmp/part1.txt" },
+        output: "earlier file body ".repeat(200),
+        title: "read",
+        metadata: {},
+        time: { start: 0, end: 1 },
+      },
+    })
+    // usable = 40K - 10K = 30K，安全线 24K；上一请求 23.5K 本身未越线，加上它之后产生的约 900 token
+    // 工具结果才越线。本地估算的历史正文远小于上限，旧逻辑会把整段 tail 原样发出。
+    yield* sessions.updateMessage({
+      ...earlier.assistant,
+      tokens: { input: 23_500, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    })
+    yield* llm.text("answered with room to spare")
+    const next = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "next request" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const holder = messages.find((message) => message.parts.some((part) => part.type === "compaction"))
+    const part = holder?.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+
+    // 封存不消耗 provider 调用；已结束的上一 turn 折叠为 chunk，当前 turn 留在 active tail 原样发送。
+    expect(hits).toHaveLength(1)
+    expect(part?.chunks?.map((chunk) => [chunk.start_message_id, chunk.status])).toEqual([[earlier.user.id, "completed"]])
+    expect(holder!.info.id < next.info.id).toBe(true)
+    const body = JSON.stringify(hits[0]?.body.messages)
+    expect(body).toContain("conversation-checkpoint")
+    expect(body).toContain("next request")
+    expect(body).not.toContain("earlier file body")
+    expect(result.parts).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "text", text: "answered with room to spare" })]),
     )
   }),
 )

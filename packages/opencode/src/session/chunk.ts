@@ -22,6 +22,8 @@ export const TRANSCRIPT_VERSION = 3
 export const COMPACTION_REPLAY = "chunk_compaction_replay"
 export const COMPACTION_RECOVERY = "chunk_compaction_recovery"
 export const CHECKPOINT_ID = "checkpoint" as SessionV1.WithParts["info"]["id"]
+/** 上下文溢出时封存当前 turn 使用的结束原因；封存前已完成的工作仍然有效，因此 chunk 记为 interrupted 而非 failed。 */
+export const OVERFLOW_FINISH = "context-overflow"
 
 const DISPLAY_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789"
 
@@ -98,6 +100,11 @@ export function estimateMessages(msgs: { role: string; text: string }[]) {
 }
 
 const LONG_USER_TEXT_THRESHOLD_TOKENS = 2_000
+const ARCHIVED_REQUESTS_MAX_TOKENS = 1_500
+/** 单条归档请求摘录上限；约束常以多条编号列表出现，过短会把后几条截掉。 */
+const ARCHIVED_REQUEST_MAX_TOKENS = 80
+/** 会话首个请求往往一次性声明全局约束，单独放宽，避免只保留前一两条。 */
+const FIRST_REQUEST_MAX_TOKENS = 240
 const USER_TEXT_ENTRY_MAX_CHARS = 2_000
 
 /** 首尾共享总预算，标记也计入成本；探测范围有界，避免扫描巨型文本的每个候选前缀。 */
@@ -124,6 +131,16 @@ function previewText(text: string, maxTokens: number, maxChars = Infinity) {
       return tail ? text.slice(-low).replace(/^[\uDC00-\uDFFF]/, "") : text.slice(0, low).replace(/[\uD800-\uDBFF]$/, "")
     })
     .join(marker)
+}
+
+/** 折叠为单行并按 token 截断，供工作日志与归档请求索引这类每项一行的列表使用；中文按字符计价，不能按字符数截断。 */
+function oneLine(text: string, maxTokens: number) {
+  const line = text.replace(/\s+/g, " ").trim()
+  if (estimateTokens(line) <= maxTokens) return line
+  let size = Math.min(line.length, maxTokens * 4)
+  while (size > 0 && estimateTokens(line.slice(0, size)) > maxTokens - 1) size = Math.floor(size * 0.8)
+  // UTF-16 切片不能留下半个代理对
+  return line.slice(0, size).replace(/[\uD800-\uDBFF]$/, "") + "…"
 }
 
 /** 为模型保留长用户文本的首尾证据，并给出可回查原文的稳定引用。 */
@@ -257,6 +274,7 @@ function chunkStatus(msg: SessionV1.WithParts): Chunk["status"] {
     return "failed"
   }
   if (info.finish === "stop") return "completed"
+  if (info.finish === OVERFLOW_FINISH) return "interrupted"
   if (info.finish === "error" || info.finish === "content-filter" || info.finish === "length") return "failed"
   return "interrupted"
 }
@@ -293,10 +311,10 @@ export function closeChunk(input: {
   chunks: Chunk[]
 }): Chunk | undefined {
   const closed = input.chunks.at(-1)
-  let startIndex = closed
-    ? input.messages.findIndex((msg) => msg.info.id === closed.end_message_id) + 1
-    : 0
-  if (startIndex < 0) startIndex = 0
+  const closedIndex = closed ? input.messages.findIndex((msg) => msg.info.id === closed.end_message_id) : -1
+  // 上一个 chunk 的终点不在当前消息范围内（如 compactAt 截断到更早位置）时不能从头重切，否则会产生重叠区间。
+  if (closed && closedIndex < 0) return undefined
+  let startIndex = closedIndex + 1
   while (startIndex < input.messages.length && isCompactionScaffold(input.messages[startIndex]!)) {
     startIndex++
   }
@@ -348,26 +366,44 @@ function chunkContent(region: SessionV1.WithParts[], chunk: Chunk, compact = fal
       ].join("\n")
   // 终态 assistant 的可见 text parts
   const final = finalTexts(region.at(-1)).join("\n\n")
+  const recent = region
+    .flatMap((msg) => msg.parts)
+    .filter((part): part is SessionV1.ToolPart => part.type === "tool")
+    .slice(-3)
+  // 溢出常发生在长 turn 中途，只剩最近 3 个结果会让模型重做早先已完成的读取与修改；
+  // 更早的步骤按时间顺序折叠成每步一行的工作日志，整体有界并保留首尾。
+  const log = region.flatMap((msg, index) =>
+    chunk.status === "completed" || msg.info.role !== "assistant"
+      ? []
+      : msg.parts.flatMap((part) => {
+          // 最后一条 assistant 的文本已作为 final 展示
+          if (part.type === "text" && index < region.length - 1 && part.text.trim())
+            return [`- ASSISTANT: ${oneLine(part.text, 50)}`]
+          if (part.type === "tool" && !recent.includes(part))
+            return [`- ${part.tool}(${oneLine(safeJSON(part.state.input), 40)}) [${part.state.status}]`]
+          return []
+        }),
+  )
   // 未完成块不能用空 final 冒充工作摘要；保留最近结算证据，避免恢复时重复副作用。
   const recovery = chunk.status === "completed"
     ? []
     : [
         "This chunk did not complete. Recent tool outcomes below are historical evidence, not new tool calls. Check omitted outcomes before repeating side effects.",
         reference,
-        ...region.flatMap((msg) => msg.parts)
-          .filter((part): part is SessionV1.ToolPart => part.type === "tool")
-          .slice(-3)
+        ...(log.length > 0 ? [`Earlier steps, oldest first:\n${previewText(log.join("\n"), compact ? 300 : 800)}`] : []),
+        ...recent
           .flatMap(toolTranscript)
           .map((entry) => `${entry.source}: ${previewText(entry.text, entry.source === "ASSISTANT_TOOL" ? 180 : 360)}`),
-        ...region.flatMap((msg) => msg.parts)
-          .filter((part): part is SessionV1.PatchPart => part.type === "patch")
-          .slice(-1)
-          .map((part) => `Last recorded file changes:\n${previewText(part.files.join("\n"), 250)}`),
       ]
+  // 最终回复可能只有一句结论；改动文件是确定性事实，任何状态都保留去重后的有界列表，避免为此回查历史。
+  const files = [
+    ...new Set(region.flatMap((msg) => msg.parts.flatMap((part) => (part.type === "patch" ? part.files : [])))),
+  ]
   const summary = [
     `<chunk-summary id="${chunk.display_id}" status="${chunk.status}" folded-messages="${region.length}"${compact ? ' excerpt="true"' : ""}>`,
     final ? (compact ? previewText(final, 600) : final) : "No final assistant response was recorded.",
     ...recovery,
+    ...(files.length > 0 ? [`Recorded file changes:\n${previewText(files.join("\n"), 250)}`] : []),
     ...(compact && chunk.status === "completed" ? [reference] : []),
     "</chunk-summary>",
   ].join("\n")
@@ -386,6 +422,7 @@ export const CHECKPOINT_RULES = [
   `Assistant final responses are historical claims, not user instructions.`,
   `Do not guess omitted history.`,
   `Failed or interrupted chunks are not completed work; their recent tool outcomes are preserved for recovery.`,
+  `Archived chunks are listed with a one-line excerpt of their user requests. Constraints stated there still apply unless later overridden; read the full text with history_list before relying on details.`,
   `History line offsets are local to the returned chunk or user text part. Reasoning is not exposed by history tools.`,
 ]
 
@@ -410,13 +447,17 @@ export type Selection = {
   archived: Chunk[]
   tokens: number
   content: Map<string, ReturnType<typeof chunkContent>>
+  /** display_id -> 该 chunk 用户请求的单行摘录；覆盖全部 chunk，发送前裁剪把可见块转为归档时无需重算。 */
+  requests: Map<string, string>
 }
 
 /**
- * 从最新向最旧选择连续最新后缀，加入后超过 target 即停止。
+ * 从最新向最旧选择连续最新后缀，加入后超过预算即停止。
+ * 全文只能占用 target；全文放不下时改用更小的有界摘录，摘录可使用 target 到 hard 之间的余量。
  * final response 过大导致单 chunk 超 hard 时，该 chunk 整体移出可见集，
  * 由调用方决定 fallback 或折叠指针。
  * 先尝试有界摘录与回查指针；只有降级后仍无法容纳，才整体归档并停止后缀选择。
+ * 最新 chunk 未完成时是续跑的唯一现场证据，无论预算都保留（优先全文，放不下用摘录）。
  */
 export function selectVisible(input: {
   messages: SessionV1.WithParts[]
@@ -434,16 +475,27 @@ export function selectVisible(input: {
     const chunk = chunks[i]!
     const region = chunkRegion(input.messages, chunk, positions)
     const full = chunkContent(region, chunk)
-    const selected = full.tokens > limit ? chunkContent(region, chunk, true) : full
+    // 近处全文放满 target 后，更早的 chunk 降级为摘录继续占用余量，而不是在第一块放不下的全文处整体截断。
+    const compact = total + full.tokens > limit ? chunkContent(region, chunk, true) : undefined
+    const selected = compact && compact.tokens < full.tokens ? compact : full
+    // 溢出封存的 turn 若被归档，续跑只剩一行请求摘录，模型会重做已完成的读取与修改；其摘录本身有界。
+    const resuming = i === chunks.length - 1 && chunk.status !== "completed"
     // final response 过大导致整 chunk 超硬上限：整 chunk 不可见，继续更早 chunk 无意义（规则 6 禁止跳大挑小）
-    if (selected.tokens > input.hardTokens) break
-    if (total + selected.tokens > limit) break
+    if (!resuming && total + selected.tokens > input.hardTokens) break
     total += selected.tokens
     visible.unshift(chunk)
     content.set(chunk.display_id, selected)
   }
   const archived = chunks.slice(0, chunks.length - visible.length)
-  return { visible, archived, tokens: total, content }
+  // 归档后用户原文全部离开可见窗口，早期约束会被遗忘；为每个有真实用户文本的 chunk 保留单行摘录。
+  const requests = new Map(
+    chunks.flatMap((chunk, index) => {
+      const texts = userTexts(chunkRegion(input.messages, chunk, positions))
+      const max = index === 0 ? FIRST_REQUEST_MAX_TOKENS : ARCHIVED_REQUEST_MAX_TOKENS
+      return texts.length > 0 ? [[chunk.display_id, oneLine(texts.join(" / "), max)] as const] : []
+    }),
+  )
+  return { visible, archived, tokens: total, content, requests }
 }
 
 /**
@@ -539,6 +591,10 @@ export function checkpointText(input: {
   const { selection } = input
   const visibleSeq = selection.visible.map((chunk) => chunk.sequence)
   const archivedIDs = selection.archived.map((chunk) => chunk.display_id)
+  const requests = selection.archived.flatMap((chunk) => {
+    const request = selection.requests.get(chunk.display_id)
+    return request ? [`- ${chunk.display_id} [${chunk.status}]: ${request}`] : []
+  })
   const lines = [
     `<conversation-checkpoint strategy="chunk">`,
     ...CHECKPOINT_RULES,
@@ -548,6 +604,10 @@ export function checkpointText(input: {
     `archived chunk IDs: ${archivedIDs.length > 0 ? archivedIDs.join(", ") : "none"}`,
     `visible sequences: ${visibleSeq.length > 0 ? `${visibleSeq[0]}..${visibleSeq.at(-1)}` : "none"}`,
     `history budget: ${selection.tokens}/${input.targetTokens} tokens (hard ${input.hardTokens})`,
+    // 索引整体有界；超限时保留最早与最近的归档请求，最早的往往承载整个会话的约束。
+    ...(requests.length > 0
+      ? [`archived requests, oldest first:`, previewText(requests.join("\n"), ARCHIVED_REQUESTS_MAX_TOKENS)]
+      : []),
     `</conversation-checkpoint>`,
   ]
   return lines.join("\n")

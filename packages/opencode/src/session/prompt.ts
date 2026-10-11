@@ -36,6 +36,7 @@ import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
+import { LLMRequestPrep } from "./llm/request"
 import { Shell } from "@opencode-ai/core/shell"
 import { ShellID } from "@/tool/shell/id"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -56,7 +57,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionChunk } from "./chunk"
-import { usable } from "./overflow"
+import { usable, usedTokens } from "./overflow"
 import { SessionReminders } from "./reminders"
 import { QueryBatch } from "./query-batch"
 import { SessionAssistant } from "./assistant"
@@ -71,6 +72,8 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
+/** chunk 策略整包请求的安全上限（占 usable 的比例），为估算误差与本轮新增输出留余量；发送前封存与发送前裁剪共用。 */
+const CHUNK_REQUEST_RATIO = 0.8
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -1428,8 +1431,8 @@ const layer = Layer.effect(
       // 无新边界且非 /compact 命令：无需落库。有 /compact 命令时仍要写回，
       // 否则命令消息永远无 chunks，UI 会多出一条空的「Context compacted」。
       // 强制压缩即使没有边界也要密封，否则会话会一直停留在未完成的压缩任务上。
-      if (added === 0 && !compactCmdMsg && !options?.force) return
-      if (!compactionMsgWithChunks && !options?.force && !compactCmdMsg) return
+      // 非强制调用（发送前封存）只在关闭出新边界时落库，返回值供调用方判断是否需要重新投影历史。
+      if (added === 0 && !compactCmdMsg && !options?.force) return 0
 
       const lastChunk = allChunks.at(-1)
       // tail 从 raw 全量里找最后一个 chunk end 之后的下一条真实消息（含新 /compact 之后的用户输入）
@@ -1462,17 +1465,9 @@ const layer = Layer.effect(
           chunks: allChunks,
           tail_start_id: tailStart,
         })
-      } else if (compactionMsgWithChunks && compactionPartWithChunks && !options?.force) {
-        // 原位更新仅用于非强制的边界维护；实际压缩必须新建 holder，保留本次压缩的时间线标记。
-        // 自动 chunk checkpoint 始终原位更新，避免每次 overflow 都在 Timeline
-        // 追加一组「会话已压缩」holder / summary。
-        holderID = compactionMsgWithChunks.info.id
-        yield* sessions.updatePart({
-          ...compactionPartWithChunks,
-          chunks: allChunks,
-          tail_start_id: tailStart,
-        })
       } else if (added > 0 || options?.force) {
+        // 实际压缩（含发送前封存）都新建 holder，保留本次压缩的时间线标记；原位更新旧 holder
+        // 会把新封存的 chunk 挂到更早的分界线下，时间线位置与压缩内容不符。
         // 从中间压缩时分界线必须落在 endBefore 之前：用 position-2 作为 holder 的
         // id 时间戳（summary 用 position-1，保证 holder < summary < endBefore），
         // 让按 id 字典序（即时间序）排序的时间线把它显示在正确位置。
@@ -1499,12 +1494,20 @@ const layer = Layer.effect(
           tail_start_id: tailStart,
         })
       } else {
-        return
+        return 0
       }
 
       // 立刻持久化 summary assistant（含无新边界的密封场景），使 filterCompacted
       // 与 latest() 把本次 /compact 标为已完成，避免空转再拾取 compaction task。
-      const summaryText = SessionChunk.summaryText({ messages: raw, chunks: allChunks })
+      // 每条分界线只展示自上一条分界线以来新关闭的 chunk；更早的 chunk 已由之前的分界线承载，
+      // 累积全文会让每次压缩都重写全部历史，存储随压缩次数平方增长。完整元数据仍写在 holder 的 chunks 上。
+      const previousChunks =
+        raw
+          .filter((msg) => msg.info.id !== holderID)
+          .flatMap((msg) => msg.parts)
+          .findLast((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined)
+          ?.chunks ?? []
+      const summaryText = SessionChunk.summaryText({ messages: raw, chunks: allChunks.slice(previousChunks.length) })
       const existingSummary = raw.findLast(
         (message) =>
           message.info.role === "assistant" && message.info.summary === true && message.info.parentID === holderID,
@@ -1525,7 +1528,7 @@ const layer = Layer.effect(
           text: summaryText,
           time: { start: existingSummaryText.time?.start ?? now, end: now },
         })
-        return
+        return added
       }
       const ctx = yield* InstanceState.context
       // summary assistant 跟随 holder 的排序位置，保持「分界线」整体落在 endBefore 之前
@@ -1557,6 +1560,7 @@ const layer = Layer.effect(
         text: summaryText,
         time: { start: summaryCreated, end: summaryCreated },
       })
+      return added
     })
 
     const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
@@ -1782,6 +1786,37 @@ const layer = Layer.effect(
             continue
           }
 
+          // chunk 策略不做模型摘要，但上一次请求已接近上限时，先把 active tail 中已结束的 turn 封成 chunk；
+          // 否则发送前只能截断 tail 的 tool output，模型看到的是不完整的本轮结果。
+          // 当前 turn 从 lastUser 起原样保留，分界线落在它之前；没有可封存的 turn 时不落库，交由发送前裁剪处理。
+          if (
+            !mainSession &&
+            cfgForProjection.compaction?.strategy === "chunk" &&
+            cfgForProjection.compaction.auto !== false &&
+            lastFinished &&
+            lastFinished.summary !== true
+          ) {
+            const limit = usable({ cfg: cfgForProjection, model, outputTokenMax: flags.outputTokenMax })
+            // 上一请求的用量不含它发起的工具结果；单次大读取会让本次请求从安全线下直接越过上限，
+            // 因此加上之后新增的工具输出与输入估算本次规模，宁可稍早封存已结束的 turn。
+            const finishedIndex = msgs.findIndex((message) => message.info.id === lastFinished.id)
+            const growth = SessionChunk.estimateTokens(
+              JSON.stringify([
+                ...(msgs[finishedIndex]?.parts ?? []).flatMap((part) =>
+                  part.type === "tool" && part.state.status === "completed" ? [part.state.output] : [],
+                ),
+                ...msgs.slice(finishedIndex + 1).flatMap((message) => message.parts),
+              ]),
+            )
+            if (limit > 0 && usedTokens(lastFinished.tokens) + growth >= Math.floor(limit * CHUNK_REQUEST_RATIO)) {
+              const sealed = yield* persistChunkBoundary(sessionID, {
+                endBefore: lastUser.id,
+                position: Identifier.timestamp(lastUser.id),
+              })
+              if (sealed > 0) continue
+            }
+          }
+
           const agent = yield* agents.get(lastUser.agent)
           if (!agent) {
             const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -1923,7 +1958,7 @@ const layer = Layer.effect(
                 // chunk 的 target 只约束历史正文；provider 实际还会收到完整 system、
                 // tools 与 active tail。发送前按整包估算逐级移除最旧可见 chunk，
                 // 避免把可预测的 overflow 交给 provider 后再补救。
-                const requestLimit = Math.floor(maxInputTokens * 0.8)
+                const requestLimit = Math.floor(maxInputTokens * CHUNK_REQUEST_RATIO)
                 const fullSystem = SystemPrompt.assemble({
                   model,
                   agent,
@@ -1931,8 +1966,11 @@ const layer = Layer.effect(
                   userSystem: lastUser.system,
                   prompts: cfg.prompts,
                 }).join("\n")
+                // 只计实际下发的工具；被权限禁用的工具仍在 resolve 结果里，计入会把固定开销高估数倍，
+                // 导致远未超限时就截断本轮 tool output。
+                const sentTools = LLMRequestPrep.resolveTools({ tools, agent, permission: scoped.permission, user: lastUser })
                 const toolDefinitions = Object.fromEntries(
-                  Object.entries(tools).map(([name, item]) => [
+                  Object.entries(sentTools).map(([name, item]) => [
                     name,
                     { description: item.description, inputSchema: item.inputSchema },
                   ]),
@@ -1944,18 +1982,31 @@ const layer = Layer.effect(
                 let requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 let selection = history.chunk?.selection
                 while (requestTokens > requestLimit) {
-                  const chunk = selection?.visible[0]
-                  if (!chunk || !selection || !history.chunk) break
+                  // 可见集是连续最新后缀，末尾即最新 chunk；它未完成时是续跑现场，只能移除更早的块。
+                  const droppable = selection?.visible.at(-1)?.status === "completed"
+                    ? selection.visible
+                    : (selection?.visible.slice(0, -1) ?? [])
+                  if (!selection || !droppable.length || !history.chunk) break
+                  // 按各 chunk 已知的投影估算一次移除足够多的最旧块，再整包重估；
+                  // 避免每移除一块就重新转换并序列化整个请求。估算偏小时由外层循环继续移除。
+                  const dropped: SessionChunk.Chunk[] = []
+                  let freed = 0
+                  for (const chunk of droppable) {
+                    dropped.push(chunk)
+                    freed += selection.content.get(chunk.display_id)!.tokens
+                    if (freed >= requestTokens - requestLimit) break
+                  }
                   // 投影沿用持久化边界 ID，只有 assistant 的块也能整体裁剪；插件修改的其余消息保持不变。
+                  const boundaries = new Set(dropped.flatMap((chunk) => [chunk.start_message_id, chunk.end_message_id]))
                   selection = {
                     ...selection,
-                    visible: selection.visible.slice(1),
-                    archived: [...selection.archived, chunk],
-                    tokens: selection.tokens - selection.content.get(chunk.display_id)!.tokens,
+                    visible: selection.visible.slice(dropped.length),
+                    archived: [...selection.archived, ...dropped],
+                    tokens: selection.tokens - freed,
                   }
                   const checkpoint = SessionChunk.checkpointText({ ...history.chunk, selection })
                   providerMsgs = providerMsgs
-                    .filter((message) => message.info.id !== chunk.start_message_id && message.info.id !== chunk.end_message_id)
+                    .filter((message) => !boundaries.has(message.info.id))
                     .map((message) => message.info.id !== SessionChunk.CHECKPOINT_ID ? message : {
                       ...message,
                       parts: message.parts.map((part) => part.type === "text" ? { ...part, text: checkpoint } : part),
@@ -2140,7 +2191,8 @@ const layer = Layer.effect(
                 if (interrupted) {
                   // 第一次 overflow 就关闭并封存完整 active turn，不能把可能包含数百个
                   // assistant/tool step 的 tail 原样重放到下一次 provider 请求。
-                  handle.message.finish = "error"
+                  // 使用独立结束原因，让 chunk 记为 interrupted，避免模型把已完成的部分当成失败而重做。
+                  handle.message.finish = SessionChunk.OVERFLOW_FINISH
                   yield* sessions.updateMessage(handle.message)
                 }
                 const persisted = yield* persistChunkBoundary(sessionID, { force: true }).pipe(
@@ -2228,7 +2280,7 @@ const layer = Layer.effect(
       if (currentAssistant.info.error && SessionV1.AbortedError.isInstance(currentAssistant.info.error)) {
         yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined })
       }
-      yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined, finish: "error" })
+      yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined, finish: SessionChunk.OVERFLOW_FINISH })
       yield* persistChunkBoundary(sessionID, { force: true }).pipe(Effect.orDie)
       yield* createChunkContinuation(sessionID, currentUser.info, true)
       yield* loop({ sessionID }).pipe(Effect.forkIn(scope, { startImmediately: true }))

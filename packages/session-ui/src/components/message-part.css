@@ -1217,6 +1217,11 @@
   padding: 10px 0 4px;
 }
 
+/* MCP 工具返回的图片：与 Read 读图同样的网格，左侧与调用行对齐 */
+[data-slot="mcp-images"] {
+  padding: 6px 6px 4px;
+}
+
 [data-slot="read-tool-image"] {
   position: relative;
   display: block;
@@ -1586,6 +1591,14 @@
     font-family: var(--font-family-mono, monospace);
     color: var(--v2-text-text-faint, var(--text-weak));
     white-space: nowrap;
+  }
+
+  /* 网页搜索的渠道/切换说明可能较长，窄屏下省略 */
+  [data-slot="context-tool-detail"][data-tool="websearch"] {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   [data-slot="context-tool-path"] {

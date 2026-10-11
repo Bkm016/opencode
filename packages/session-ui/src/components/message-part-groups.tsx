@@ -57,6 +57,8 @@ export interface ToolGroupDefinition {
   renderItem?: (props: ToolGroupItemProps) => JSX.Element
   /** CSS data-component 前缀名，默认使用 `${id}-group` */
   componentName?: string
+  /** 组内容需要直接展示时（如工具返回了图片）默认展开；用户手动折叠后不再自动打开 */
+  defaultOpen?: (parts: ToolPart[]) => boolean
 }
 
 class ToolGroupRegistryImpl {

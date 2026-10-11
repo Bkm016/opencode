@@ -76,8 +76,13 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
 import { PromptCatalog } from "@/session/prompt-catalog"
 
-export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
-  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
+export function webSearchEnabled(
+  providerID: ProviderV2.ID,
+  flags = { exa: false, parallel: false },
+  websearch?: false | { provider?: string },
+) {
+  if (websearch === false) return false
+  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel || !!websearch?.provider
 }
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
@@ -350,9 +355,14 @@ const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const websearch = (yield* config.get()).websearch
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
-          return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
+          return webSearchEnabled(
+            input.providerID,
+            { exa: flags.enableExa, parallel: flags.enableParallel },
+            websearch,
+          )
         }
 
         const usePatch =

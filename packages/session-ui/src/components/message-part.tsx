@@ -81,7 +81,13 @@ import {
   type ToolGroupDefinition,
   type ToolGroupItemProps,
 } from "./message-part-groups"
-import { GenericToolGroup as BaseGenericToolGroup, ContextToolGroup, PythonToolGroup } from "./tool-group"
+import {
+  GenericToolGroup as BaseGenericToolGroup,
+  ContextToolGroup,
+  PythonToolGroup,
+  WEB_SEARCH_PROVIDERS,
+  webSearchFallback,
+} from "./tool-group"
 import { McpGroupItem, McpGroupSummary, mcpInfo } from "./mcp-tool"
 import { ImageGenerationTool } from "./image-generation-tool"
 import { EditToolCard, MultiEditToolCard, type MultiEditFileItem } from "./edit-tool-card"
@@ -542,9 +548,8 @@ function agentColor(value: string | undefined, themeColors: Record<string, strin
 }
 
 function webSearchProviderLabel(provider: unknown) {
-  if (provider === "parallel") return "Parallel Web Search"
-  if (provider === "exa") return "Exa Web Search"
-  return "Web Search"
+  const name = typeof provider === "string" ? WEB_SEARCH_PROVIDERS[provider] : undefined
+  return name ? `${name} Web Search` : "Web Search"
 }
 
 function shortId(value: string) {
@@ -1568,6 +1573,12 @@ ToolGroupRegistry.register({
     done: (i18n) => i18n.t("ui.sessionTurn.status.calledMcp"),
   },
   renderSummary: ({ parts }) => <McpGroupSummary parts={parts} known={knownTool} />,
+  // 和 Read 读图一样，MCP 返回图片时直接展开给用户看
+  defaultOpen: (parts) =>
+    parts.some(
+      (part) =>
+        part.state.status === "completed" && (part.state.attachments ?? []).some((a) => a.mime.startsWith("image/")),
+    ),
   renderItem: (itemProps) => (
     <McpGroupItem
       part={itemProps.part}
@@ -3052,7 +3063,13 @@ ToolRegistry.register({
       if (typeof value !== "string") return ""
       return value
     })
+    const i18n = useI18n()
     const title = createMemo(() => webSearchProviderLabel(props.metadata.provider))
+    // random 模式下前面的渠道失败（限流、额度用尽等）后自动换了渠道
+    const fallback = createMemo(() => {
+      const names = webSearchFallback(props.metadata)
+      return names.length ? [i18n.t("ui.tool.websearch.fallback", { from: names.join(", ") })] : undefined
+    })
 
     return (
       <BasicTool
@@ -3062,6 +3079,7 @@ ToolRegistry.register({
           title: title(),
           subtitle: query(),
           subtitleClass: "exa-tool-query",
+          args: fallback(),
         }}
       >
         <ExaOutput output={props.output} />

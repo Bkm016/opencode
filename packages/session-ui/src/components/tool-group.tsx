@@ -55,6 +55,25 @@ export function formatToolDuration(part: ToolPart): string | undefined {
   return `${mins}m ${secs}s`
 }
 
+export const WEB_SEARCH_PROVIDERS: Record<string, string> = {
+  exa: "Exa",
+  parallel: "Parallel",
+  tavily: "Tavily",
+  tinyfish: "TinyFish",
+  firecrawl: "Firecrawl",
+}
+
+const webSearchName = (provider: unknown) => (typeof provider === "string" ? WEB_SEARCH_PROVIDERS[provider] : undefined)
+
+/** random 模式下失败后被换掉的渠道名 */
+export function webSearchFallback(metadata: Record<string, unknown> | undefined) {
+  const failed: unknown[] = Array.isArray(metadata?.failed) ? metadata.failed : []
+  return failed.flatMap((item) => {
+    const name = webSearchName(item && typeof item === "object" && "provider" in item ? item.provider : undefined)
+    return name ? [name] : []
+  })
+}
+
 export function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>, directory?: string) {
   const input = (part.state.input ?? {}) as Record<string, unknown>
   const path = typeof input.path === "string" ? input.path : "/"
@@ -216,12 +235,19 @@ export function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI1
     }
     case "websearch": {
       const query = typeof input.query === "string" ? input.query : ""
+      const metadata = "metadata" in part.state ? part.state.metadata : undefined
+      const fallback = webSearchFallback(metadata)
+      const name = webSearchName(metadata?.provider)
       return {
         tag: "SEARCH",
         title: i18n.t("ui.tool.websearch"),
         target: query,
         targetTooltip: query,
-        detail: undefined,
+        detail: name
+          ? fallback.length
+            ? `${name} · ${i18n.t("ui.tool.websearch.fallback", { from: fallback.join(", ") })}`
+            : name
+          : undefined,
         path: undefined,
         subtitle: query,
         args: [],
@@ -288,7 +314,9 @@ function ContextToolRow(props: { part: ToolPart }) {
           </Show>
         </span>
         <Show when={!running() && trigger().detail}>
-          <span data-slot="context-tool-detail">{trigger().detail}</span>
+          <span data-slot="context-tool-detail" data-tool={props.part.tool} title={trigger().detail}>
+            {trigger().detail}
+          </span>
         </Show>
         <Show when={!running() && trigger().path}>
           <span data-slot="context-tool-path" title={trigger().fullPath || trigger().path}>
@@ -991,7 +1019,19 @@ export function GenericToolGroup(props: {
   const totalDuration = createMemo(() => computeToolGroupDuration(props.parts))
   const componentName = createMemo(() => definition()?.componentName ?? `${props.group.type}-tool-group`)
 
+  // 组内容需要直接展示时自动展开一次（流式过程中结果到达也算），之后交给用户控制
+  let autoOpened = false
+  createEffect(() => {
+    if (autoOpened || props.open !== undefined) return
+    if (!definition()?.defaultOpen?.(props.parts)) return
+    autoOpened = true
+    setLocalOpen(true)
+    props.onOpenChange?.(true)
+    props.onSizeChange?.()
+  })
+
   const handleOpenChange = (value: boolean) => {
+    autoOpened = true
     if (props.open === undefined) setLocalOpen(value)
     props.onOpenChange?.(value)
     props.onSizeChange?.()

@@ -1195,7 +1195,8 @@ export function MessageTimeline(props: {
           group={input.group}
           parts={parts()}
           message={firstMessage()}
-          open={toolOpen[openKey] === true}
+          // 未操作过时交给组件自己决定默认展开（如 MCP 返回图片）
+          open={toolOpen[openKey]}
           onOpenChange={(value) => setToolOpen(openKey, value)}
           revealPartID={revealPart()}
           busy={

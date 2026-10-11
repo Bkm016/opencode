@@ -132,6 +132,22 @@ export const Info = Schema.Struct({
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  websearch: Schema.optional(
+    Schema.Union([
+      Schema.Literal(false),
+      Schema.Struct({
+        provider: Schema.optional(
+          Schema.Literals(["random", "exa", "parallel", "tavily", "tinyfish", "firecrawl"]),
+        ).annotate({
+          description:
+            "Web search provider. 'random' (default) sticks to one provider per session and switches when it is rate limited or unavailable",
+        }),
+      }),
+    ]),
+  ).annotate({
+    description:
+      "Web search tool. Set false to disable; setting a provider also enables web search for models outside OpenCode Zen",
+  }),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",
   }),

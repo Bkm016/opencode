@@ -7,6 +7,8 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { formatToolDuration } from "./tool-group"
 
 export type McpInfo = { server: string; tool: string }
@@ -98,6 +100,13 @@ export function McpGroupItem(props: { part: ToolPart; known: (tool: string) => b
     return String(state.error ?? "").replace(/^Error:\s*/, "").trim()
   })
   const duration = createMemo(() => formatToolDuration(props.part))
+  // MCP 返回的图片（image 内容或图片 resource）已作为附件发给模型，这里平铺给用户看，不用展开
+  const dialog = useDialog()
+  const images = createMemo(() => {
+    const state = props.part.state
+    if (state.status !== "completed") return []
+    return (state.attachments ?? []).filter((file) => file.mime.startsWith("image/"))
+  })
 
   const copy = async () => {
     const text = output() || error()
@@ -154,6 +163,26 @@ export function McpGroupItem(props: { part: ToolPart; known: (tool: string) => b
           </span>
         </div>
       </div>
+
+      <Show when={images().length > 0}>
+        <div data-component="read-tool-images" data-slot="mcp-images">
+          <For each={images()}>
+            {(file) => (
+              <button
+                type="button"
+                data-slot="read-tool-image"
+                title={file.filename}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  dialog.show(() => <ImagePreview src={file.url} alt={file.filename ?? info().tool} />)
+                }}
+              >
+                <img src={file.url} alt={file.filename ?? "image"} loading="lazy" />
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
 
       <div class="edit-tool-card-body-wrapper" data-open={open() ? "true" : "false"}>
         <div class="edit-tool-card-body-inner">

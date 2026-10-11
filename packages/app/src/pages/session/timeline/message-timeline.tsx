@@ -1523,13 +1523,20 @@ export function MessageTimeline(props: {
                   class="flex flex-col pt-4"
                 >
                   <For each={summaryViewProps.row().groups}>
-                    {(group) =>
-                      renderPartGroup({
-                        userMessageID: summaryViewProps.row().userMessageID,
-                        group,
-                        onSizeChange: summaryViewProps.onSizeChange,
-                      })
-                    }
+                    {(group) => (
+                      <>
+                        <Show when={summaryViewProps.row().folds?.includes(group.key)}>
+                          <div data-slot="session-turn-compaction">
+                            <MessageDivider label={language.t("ui.messagePart.compaction")} />
+                          </div>
+                        </Show>
+                        {renderPartGroup({
+                          userMessageID: summaryViewProps.row().userMessageID,
+                          group,
+                          onSizeChange: summaryViewProps.onSizeChange,
+                        })}
+                      </>
+                    )}
                   </For>
                 </div>
               </Collapsible.Content>

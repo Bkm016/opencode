@@ -29,7 +29,35 @@ export function createTimelineProjection(input: {
     })
     return result
   })
-  const activeMessageID = createMemo(() => {
+  // 进行中 turn 被折叠时，压缩消息落在该 turn 的步骤之间：并入所属 turn 内联显示，不另起一轮排到末尾。
+  const inlineFolds = createMemo(() => {
+    const owners = new Map<string, string>()
+    const byOwner = new Map<string, string[]>()
+    const users = new Set(input.userMessages().map((message) => message.id))
+    for (const message of input.userMessages()) {
+      const part = input.parts(message.id).find((item) => item.type === "compaction")
+      if (part?.type !== "compaction") continue
+      const chunk = part.chunks?.at(-1)
+      if (chunk?.status !== "partial") continue
+      const owner = owners.get(chunk.start_message_id) ?? chunk.start_message_id
+      if (owner >= message.id || !users.has(owner)) continue
+      owners.set(message.id, owner)
+      const folds = byOwner.get(owner)
+      if (folds) folds.push(message.id)
+      else byOwner.set(owner, [message.id])
+    }
+    return { owners, byOwner }
+  })
+  const turnMessages = createMemo(
+    () => {
+      const { owners } = inlineFolds()
+      if (owners.size === 0) return input.userMessages()
+      return input.userMessages().filter((message) => !owners.has(message.id))
+    },
+    undefined,
+    { equals: (a, b) => a.length === b.length && a.every((item, index) => item === b[index]) },
+  )
+  const activeTurnID = createMemo(() => {
     const parentID = input
       .messages()
       .findLast(
@@ -46,8 +74,12 @@ export function createTimelineProjection(input: {
     if (input.status().type === "idle") return
     return input.messages().findLast((message) => message.role === "user")?.id
   })
+  const activeMessageID = createMemo(() => {
+    const id = activeTurnID()
+    return id ? (inlineFolds().owners.get(id) ?? id) : id
+  })
   const messageRowMemos = createMemo(
-    mapArray(input.userMessages, (userMessage, indexAccessor) =>
+    mapArray(turnMessages, (userMessage, indexAccessor) =>
       createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>
         reuseTimelineRows(
           previous,
@@ -59,6 +91,7 @@ export function createTimelineProjection(input: {
             input.showReasoningSummaries(),
             input.status().type,
             activeMessageID() === userMessage.id,
+            inlineFolds().byOwner.get(userMessage.id),
           ),
         ),
       ),

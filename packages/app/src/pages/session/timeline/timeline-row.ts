@@ -19,6 +19,8 @@ export namespace TimelineRow {
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
     label: "compaction" | "interrupted"
+    /** 同一 turn 内出现多条分隔线（进行中折叠）时区分 key：折叠所在的压缩消息 ID。 */
+    id?: string
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
@@ -33,6 +35,8 @@ export namespace TimelineRow {
     groups: PartGroup[]
     /** Compaction turns fold the whole summary, not only intermediate process. */
     kind?: "process" | "compaction"
+    /** 进行中折叠的位置：这些 group 之前画「会话已压缩」分隔线。 */
+    folds?: string[]
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
@@ -78,7 +82,7 @@ export namespace TimelineRow {
       case "UserMessage":
         return `user-message:${row.userMessageID}`
       case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
+        return `turn-divider:${row.userMessageID}:${row.label}${row.id ? `:${row.id}` : ""}`
       case "AssistantPart":
         return `assistant-part:${row.userMessageID}:${row.group.key}`
       case "ProcessSummary":

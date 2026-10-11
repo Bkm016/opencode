@@ -19,6 +19,7 @@ export type TimelineRowMap = {
   TurnDivider: {
     userMessageID: string
     label: "compaction" | "interrupted"
+    id?: string
   }
   AssistantPart: {
     userMessageID: string
@@ -31,6 +32,7 @@ export type TimelineRowMap = {
     durationMs?: number
     groups: PartGroup[]
     kind?: "process" | "compaction"
+    folds?: string[]
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -38,6 +40,8 @@ export type TimelineRowMap = {
   CanvasSummary: { userMessageID: string; sessionID: string; canvases: CanvasReference[] }
   Error: { userMessageID: string; text: string }
 }
+
+type AssistantItem = { type: "part"; group: PartGroup } | { type: "interrupted" } | { type: "fold"; id: string }
 
 export namespace Timeline {
   export function constructMessageRows(
@@ -48,6 +52,8 @@ export namespace Timeline {
     showReasoning: boolean,
     status: SessionStatus["type"],
     isActive: boolean,
+    /** 本 turn 进行中被折叠时写入的压缩消息 ID（升序），在对应步骤之间显示分隔线。 */
+    folds: string[] = [],
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -67,24 +73,31 @@ export namespace Timeline {
         .filter((part) => renderable(part, showReasoning))
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
-    const assistantItems =
-      interrupted && !compaction
-        ? [
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
-              (group) => ({
-                type: "part" as const,
-                group,
-              }),
-            ),
-            { type: "interrupted" as const },
-            ...groupParts(assistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
-              (group) => ({
-                type: "part" as const,
-                group,
-              }),
-            ),
-          ]
-        : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
+    // 中断与进行中折叠都把步骤切成段分别分组，避免一个工具组跨过分界。
+    const assistantItems: AssistantItem[] = []
+    let pending: typeof assistantPartRefs = []
+    const flush = () => {
+      assistantItems.push(...groupParts(pending).map((group) => ({ type: "part" as const, group })))
+      pending = []
+    }
+    let interruptedPending = interrupted && !compaction
+    let foldIndex = 0
+    for (const ref of assistantPartRefs) {
+      if (interruptedPending && ref.messageIndex > interruptedMessageIndex) {
+        flush()
+        assistantItems.push({ type: "interrupted" })
+        interruptedPending = false
+      }
+      while (foldIndex < folds.length && folds[foldIndex]! < ref.messageID) {
+        flush()
+        assistantItems.push({ type: "fold", id: folds[foldIndex]! })
+        foldIndex += 1
+      }
+      pending.push(ref)
+    }
+    flush()
+    if (interruptedPending) assistantItems.push({ type: "interrupted" })
+    for (const id of folds.slice(foldIndex)) assistantItems.push({ type: "fold", id })
 
     if (comments.length > 0)
       rows.push(
@@ -127,7 +140,7 @@ export namespace Timeline {
     }
 
     let assistantGroupIndex = 0
-    const pushProcess = (groups: PartGroup[], kind: "process" | "compaction" = "process") => {
+    const pushProcess = (groups: PartGroup[], kind: "process" | "compaction" = "process", foldKeys?: string[]) => {
       if (groups.length === 0) return
       // Single virtual row owns all process UI so collapse never leaves ghost heights.
       // Intermediate status text is folded too; only the trailing final answer stays out.
@@ -138,10 +151,13 @@ export namespace Timeline {
           durationMs: turnDurationMs,
           groups,
           kind,
+          ...(foldKeys?.length ? { folds: foldKeys } : {}),
         }),
       )
       assistantGroupIndex += 1
     }
+    const pushFold = (id: string) =>
+      rows.push(new TimelineRow.TurnDivider({ userMessageID: userMessage.id, label: "compaction", id }))
     const pushPart = (group: PartGroup) => {
       rows.push(
         new TimelineRow.AssistantPart({
@@ -152,8 +168,8 @@ export namespace Timeline {
       )
       assistantGroupIndex += 1
     }
-    const pushCompletedSegment = (groups: PartGroup[]) => {
-      if (groups.length === 0) return
+    const pushCompletedSegment = (items: AssistantItem[]) => {
+      const groups = items.flatMap((item) => (item.type === "part" ? [item.group] : []))
       if (compaction) {
         pushProcess(groups, "compaction")
         return
@@ -163,8 +179,25 @@ export namespace Timeline {
       while (finalStart > 0 && !isProcessGroup(groups[finalStart - 1]!, resolvePart)) {
         finalStart -= 1
       }
-      pushProcess(groups.slice(0, finalStart))
-      for (const group of groups.slice(finalStart)) pushPart(group)
+      // 折在过程内部的分隔线随「已处理」一起收起，落在最终回答前后的保持独立一行。
+      const foldKeys: string[] = []
+      const outside: { before: number; id: string }[] = []
+      let index = 0
+      for (const item of items) {
+        if (item.type === "part") index += 1
+        else if (item.type === "fold") {
+          if (index > 0 && index < finalStart) foldKeys.push(groups[index]!.key)
+          else outside.push({ before: index, id: item.id })
+        }
+      }
+      for (const fold of outside) if (fold.before === 0) pushFold(fold.id)
+      pushProcess(groups.slice(0, finalStart), "process", foldKeys)
+      groups.forEach((group, i) => {
+        if (i < finalStart) return
+        for (const fold of outside) if (fold.before === i && i > 0) pushFold(fold.id)
+        pushPart(group)
+      })
+      for (const fold of outside) if (fold.before === groups.length && groups.length > 0) pushFold(fold.id)
     }
 
     if (!turnComplete) {
@@ -178,10 +211,14 @@ export namespace Timeline {
           )
           continue
         }
+        if (item.type === "fold") {
+          pushFold(item.id)
+          continue
+        }
         pushPart(item.group)
       }
     } else {
-      let segment: PartGroup[] = []
+      let segment: AssistantItem[] = []
       for (const item of assistantItems) {
         if (item.type === "interrupted") {
           pushCompletedSegment(segment)
@@ -194,7 +231,7 @@ export namespace Timeline {
           )
           continue
         }
-        segment.push(item.group)
+        segment.push(item)
       }
       pushCompletedSegment(segment)
       // Compaction with no assistant output still needs a compact marker.

@@ -200,7 +200,10 @@ export const ChunkMeta = Schema.Struct({
   sequence: NonNegativeInt,
   start_message_id: MessageID,
   end_message_id: MessageID,
-  status: Schema.Literals(["completed", "failed", "interrupted"]),
+  // partial：仍在进行中的 turn 因上下文接近上限，把较早步骤折叠成状态索引；turn 结束时并入同一 chunk
+  status: Schema.Literals(["completed", "failed", "interrupted", "partial"]),
+  // partial chunk 状态索引的 token 上限（折叠时按模型可用上下文确定）
+  index_tokens: Schema.optional(NonNegativeInt),
 }).annotate({ identifier: "ChunkMeta" })
 export type ChunkMeta = Types.DeepMutable<Schema.Schema.Type<typeof ChunkMeta>>
 

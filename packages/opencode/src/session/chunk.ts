@@ -266,7 +266,7 @@ function hasOpenToolCalls(msg: SessionV1.WithParts) {
   )
 }
 
-function chunkStatus(msg: SessionV1.WithParts): Chunk["status"] {
+function chunkStatus(msg: SessionV1.WithParts): Exclude<Chunk["status"], "partial"> {
   const info = msg.info
   if (info.role !== "assistant") return "interrupted"
   if (info.error) {
@@ -327,6 +327,11 @@ export function closeChunk(input: {
   }
   if (endIndex < 0) return undefined
   const end = input.messages[endIndex]!
+  // 进行中折叠出的 partial chunk 与它所在 turn 的结束合并为同一个 chunk：区间起点与 ID 不变，只延长终点。
+  if (closed?.status === "partial") {
+    const { index_tokens: _, ...rest } = closed
+    return { ...rest, end_message_id: end.info.id, status: chunkStatus(end) }
+  }
   const sequence = (closed?.sequence ?? 0) + 1
   return {
     chunk_key: ulid(),
@@ -336,6 +341,331 @@ export function closeChunk(input: {
     end_message_id: end.info.id,
     status: chunkStatus(end),
   }
+}
+
+/** 把 closeChunk / foldChunk 的结果并入列表：同一 chunk_key 视为延长最后一个 chunk，否则追加。 */
+export function appendChunk(chunks: Chunk[], next: Chunk) {
+  if (chunks.at(-1)?.chunk_key === next.chunk_key) chunks[chunks.length - 1] = next
+  else chunks.push(next)
+  return chunks
+}
+
+/** 已有一步完整结果的 assistant：工具调用与结果都已结算，可以作为折叠的步边界。 */
+function isStep(msg: SessionV1.WithParts) {
+  return msg.info.role === "assistant" && !msg.info.summary && msg.parts.some((part) => part.type !== "step-start")
+}
+
+/**
+ * provider 请求中一条消息的近似成本：只计会下发的正文（文本、推理、工具入参与结果、图片），
+ * 不计 UI 元数据（edit 的 filediff 等可能比正文大数倍）。
+ */
+export function estimateMessage(msg: SessionV1.WithParts) {
+  let images = 0
+  const body = msg.parts.flatMap((part) => {
+    if (part.type === "text" || part.type === "reasoning") return [part.text]
+    if (part.type === "tool") {
+      const state = part.state
+      const output = state.status === "completed" ? state.output : state.status === "error" ? state.error : ""
+      return [part.tool, safeJSON(state.input), output]
+    }
+    if (part.type === "file") {
+      if (part.mime.startsWith("image/")) images++
+      return [part.filename ?? ""]
+    }
+    return []
+  })
+  return estimateTokens(body.join("\n")) + 16 + images * 8192
+}
+
+/** 最后一个已关闭 chunk 之后的开放区间（跳过压缩脚手架）；上一个 chunk 终点不在消息中时没有可折叠区间。 */
+export function openRegion(messages: SessionV1.WithParts[], chunks: Chunk[]) {
+  const closed = chunks.at(-1)
+  const closedIndex = closed ? messages.findIndex((msg) => msg.info.id === closed.end_message_id) : -1
+  if (closed && closedIndex < 0) return [] as SessionV1.WithParts[]
+  return messages.slice(closedIndex + 1).filter((msg) => !isCompactionScaffold(msg))
+}
+
+/**
+ * 进行中 turn 的折叠终点：从最新一步往前累加原文，直到保留部分超出 budget；只在 assistant 步边界切，
+ * 最新一步永远保留原文。最新一步本身就超出预算时尽量多折（只留最新一步）。没有可折叠的步时返回 undefined。
+ */
+export function foldPoint(input: {
+  messages: SessionV1.WithParts[]
+  chunks: Chunk[]
+  budget: number
+  estimate?: (msg: SessionV1.WithParts) => number
+}) {
+  const region = openRegion(input.messages, input.chunks)
+  const latest = region.findLastIndex(isStep)
+  const estimate = input.estimate ?? estimateMessage
+  let kept = 0
+  let cut: SessionV1.WithParts | undefined
+  for (let i = region.length - 1; i >= 0; i--) {
+    const msg = region[i]!
+    // 切在 i 之后：i 是更早的完整步，且 i 之后（含最新一步）的原文放得下，或者还没有任何切点
+    if (i < latest && isStep(msg) && !hasOpenToolCalls(msg) && (kept <= input.budget || !cut)) cut = msg
+    kept += estimate(msg)
+    if (kept > input.budget && cut) break
+  }
+  // 整个开放区间都放得下：超限来自区间之外（system、tools、更早 chunk），折叠本轮无济于事
+  if (kept <= input.budget) return undefined
+  return cut?.info.id
+}
+
+/**
+ * 把开放区间折叠到 endMessageID（含）：最后一个 chunk 已是 partial（同一 turn 再次折叠）时延长它，
+ * 状态索引随之合并；否则新建 partial chunk。
+ */
+export function foldChunk(input: {
+  messages: SessionV1.WithParts[]
+  chunks: Chunk[]
+  endMessageID: SessionV1.WithParts["info"]["id"]
+  indexTokens: number
+}): Chunk | undefined {
+  const closed = input.chunks.at(-1)
+  if (closed?.status === "partial")
+    return { ...closed, end_message_id: input.endMessageID, index_tokens: input.indexTokens }
+  const region = openRegion(input.messages, input.chunks)
+  const endIndex = region.findIndex((msg) => msg.info.id === input.endMessageID)
+  if (endIndex < 0) return undefined
+  return {
+    chunk_key: ulid(),
+    display_id: displayID(input.chunks),
+    sequence: (closed?.sequence ?? 0) + 1,
+    start_message_id: region[0]!.info.id,
+    end_message_id: input.endMessageID,
+    status: "partial",
+    index_tokens: input.indexTokens,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 进行中 turn 的状态索引：确定性地从折叠步骤提取，不经过模型
+// ---------------------------------------------------------------------------
+
+const FILE_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"])
+const SEARCH_TOOLS = new Set(["grep", "glob", "list", "list_dir"])
+const DEFAULT_INDEX_TOKENS = 8_000
+
+type WorkIndex = {
+  steps: number
+  files: Map<string, { count: number; first: number; last: number; diffs: { step: number; lines: string[] }[] }>
+  errors: { step: number; key: string; what: string; detail: string; resolved?: number }[]
+  narration: { step: number; text: string }[]
+  reads: Map<string, number[]>
+  searches: Map<string, { steps: number[]; head: string }>
+  commands: { step: number; command: string; exit: unknown; lines: number; tail: string[] }[]
+  other: Map<string, number[]>
+}
+
+function relative(file: string, cwd: string | undefined) {
+  if (!cwd) return file
+  const root = cwd.endsWith("/") ? cwd : cwd + "/"
+  return file.startsWith(root) ? file.slice(root.length) : file
+}
+
+/** 行级增删：只给出改动行，纯插入时附一行定位上下文。 */
+function editLines(before: string, after: string) {
+  const old = before.split("\n")
+  const next = after.split("\n")
+  const lines = [
+    ...old.filter((line) => line.trim() && !next.includes(line)).map((line) => `- ${oneLine(line, 40)}`),
+    ...next.filter((line) => line.trim() && !old.includes(line)).map((line) => `+ ${oneLine(line, 40)}`),
+  ]
+  const anchor = old.find((line) => line.trim() && next.includes(line))
+  return [
+    ...lines.slice(0, 6),
+    ...(lines.length > 6 ? [`… ${lines.length - 6} more changed lines`] : []),
+    ...(anchor && lines.every((line) => line.startsWith("+")) ? [`@ ${oneLine(anchor, 40)}`] : []),
+  ]
+}
+
+function patchLines(patch: string) {
+  return editLines(
+    patch.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).map((line) => line.slice(1)).join("\n"),
+    patch.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).map((line) => line.slice(1)).join("\n"),
+  )
+}
+
+function fileChanges(part: SessionV1.ToolPart, cwd: string | undefined): { file: string; lines: string[] }[] {
+  if (part.state.status !== "completed") return []
+  const input = part.state.input ?? {}
+  if (part.tool === "edit")
+    return [{ file: relative(String(input.filePath ?? ""), cwd), lines: editLines(String(input.oldString ?? ""), String(input.newString ?? "")) }]
+  if (part.tool === "write")
+    return [{ file: relative(String(input.filePath ?? ""), cwd), lines: editLines("", String(input.content ?? "")) }]
+  if (part.tool === "multiedit") {
+    const edits = Array.isArray(input.edits) ? input.edits : []
+    return edits.map((edit: any) => ({
+      file: relative(String(edit?.filePath ?? input.filePath ?? ""), cwd),
+      lines: editLines(String(edit?.oldString ?? ""), String(edit?.newString ?? "")),
+    }))
+  }
+  const files = part.state.metadata?.files
+  if (!Array.isArray(files)) return []
+  return files.flatMap((file) => {
+    const name = file?.movePath ?? file?.filePath ?? file?.relativePath
+    if (typeof name !== "string") return []
+    return [{ file: relative(name, cwd), lines: typeof file?.patch === "string" ? patchLines(file.patch) : [] }]
+  })
+}
+
+function failedTool(part: SessionV1.ToolPart) {
+  if (part.state.status === "error") return true
+  if (part.state.status !== "completed") return false
+  const exit = part.state.metadata?.exit
+  return typeof exit === "number" && exit !== 0
+}
+
+/** 同一目标后续成功即视为该错误已解决：文件写入按文件，命令按命令文本，其余按工具与入参。 */
+function errorKey(part: SessionV1.ToolPart, cwd: string | undefined) {
+  const input = part.state.input ?? {}
+  if (FILE_TOOLS.has(part.tool) && typeof input.filePath === "string") return `file:${relative(input.filePath, cwd)}`
+  if (typeof input.command === "string") return `command:${input.command}`
+  return `${part.tool}:${safeJSON(input)}`
+}
+
+function workIndex(region: SessionV1.WithParts[]): WorkIndex {
+  const index: WorkIndex = {
+    steps: 0,
+    files: new Map(),
+    errors: [],
+    narration: [],
+    reads: new Map(),
+    searches: new Map(),
+    commands: [],
+    other: new Map(),
+  }
+  for (const msg of region) {
+    if (!isStep(msg)) continue
+    const step = ++index.steps
+    const cwd = msg.info.role === "assistant" ? msg.info.path?.cwd : undefined
+    const text = msg.parts.flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text] : [])).join(" ")
+    if (text) index.narration.push({ step, text: oneLine(text, 60) })
+    for (const part of msg.parts) {
+      if (part.type !== "tool") continue
+      const input = part.state.input ?? {}
+      const key = errorKey(part, cwd)
+      if (failedTool(part)) {
+        const what = typeof input.command === "string"
+          ? `${part.tool} \`${oneLine(input.command, 40)}\``
+          : `${part.tool} ${key.startsWith("file:") ? key.slice(5) : oneLine(safeJSON(input), 40)}`
+        const raw = part.state.status === "error" ? part.state.error : part.state.status === "completed" ? part.state.output : ""
+        const detail = previewText(String(raw ?? "").trim().split("\n").slice(0, 8).join("\n"), 200)
+        index.errors.push({ step, key, what, detail })
+        continue
+      }
+      if (part.state.status !== "completed") continue
+      for (const error of index.errors) if (!error.resolved && error.key === key) error.resolved = step
+      if (FILE_TOOLS.has(part.tool)) {
+        for (const change of fileChanges(part, cwd)) {
+          if (!change.file) continue
+          const entry = index.files.get(change.file) ?? { count: 0, first: step, last: step, diffs: [] }
+          entry.count++
+          entry.last = step
+          entry.diffs.push({ step, lines: change.lines })
+          if (entry.diffs.length > 3) entry.diffs.shift()
+          index.files.set(change.file, entry)
+        }
+        continue
+      }
+      if (part.tool === "read" && typeof input.filePath === "string") {
+        const file = relative(input.filePath, cwd)
+        index.reads.set(file, [...(index.reads.get(file) ?? []), step])
+        continue
+      }
+      if (SEARCH_TOOLS.has(part.tool)) {
+        const target = typeof input.path === "string" ? ` in ${relative(input.path, cwd)}` : ""
+        const include = typeof input.include === "string" ? ` (${input.include})` : ""
+        const searchKey = `${part.tool} ${typeof input.pattern === "string" ? input.pattern : ""}${target}${include}`.replace(/\s+/g, " ")
+        const entry = index.searches.get(searchKey) ?? { steps: [], head: "" }
+        entry.steps.push(step)
+        entry.head = oneLine(part.state.output.trim().split("\n")[0] ?? "", 25)
+        index.searches.set(searchKey, entry)
+        continue
+      }
+      if (typeof input.command === "string") {
+        const lines = part.state.output.trim().split("\n")
+        index.commands.push({
+          step,
+          command: oneLine(input.command, 40),
+          exit: part.state.metadata?.exit,
+          lines: lines.length,
+          tail: lines.slice(-3).map((line) => oneLine(line, 40)),
+        })
+        continue
+      }
+      const otherKey = `${part.tool} ${oneLine(safeJSON(input), 40)}`
+      index.other.set(otherKey, [...(index.other.get(otherKey) ?? []), step])
+    }
+  }
+  return index
+}
+
+function stepList(steps: number[]) {
+  return `step${steps.length > 1 ? "s" : ""} ${steps.join(",")}${steps.length > 1 ? `; ${steps.length} times` : ""}`
+}
+
+function renderWorkState(
+  index: WorkIndex,
+  chunk: Chunk,
+  budget: { narration?: number; diffFiles: number; lists?: number },
+) {
+  const fit = (lines: string[], tokens: number | undefined) =>
+    tokens === undefined || lines.length === 0 ? lines : previewLines(lines, tokens).split("\n")
+  const out = [
+    `<work-state chunk="${chunk.display_id}" status="partial" folded-steps="1-${index.steps}">`,
+    // 真模型实测：只说“可用 history 工具取回”时，模型会凭印象回答已折叠文件的内容，必须明确原文已不在上下文
+    `This turn is still in progress. Steps 1-${index.steps} were folded to free context: their tool outputs (file contents, search hits, command output) are no longer in your context, only this index is. The messages after it are the later steps, verbatim. Continue the current task from the latest step and do not redo folded steps. Do not answer from memory about folded output: when you need its exact text, call history_grep or history_list with chunk_id="${chunk.display_id}", or run the tool again.`,
+  ]
+  const files = [...index.files]
+  out.push("", `## Modified files (${files.length})`)
+  files.forEach(([file, entry], i) => {
+    out.push(`- ${file}: ${entry.count} change${entry.count > 1 ? "s" : ""} (step ${entry.first}${entry.last !== entry.first ? `-${entry.last}` : ""})`)
+    // 预算紧时只给最近修改的文件保留 diff；文件列表本身永不省略
+    if (i < files.length - budget.diffFiles) return
+    for (const diff of entry.diffs) out.push(`  step ${diff.step}:`, ...diff.lines.map((line) => `    ${line}`))
+  })
+  const errors = index.errors.map((error) =>
+    error.resolved
+      ? `- step ${error.step} ${error.what} (resolved at step ${error.resolved})${budget.lists === undefined ? `: ${error.detail.replace(/\n/g, "\n    ")}` : ""}`
+      : `- step ${error.step} ${error.what} (UNRESOLVED): ${error.detail.replace(/\n/g, "\n    ")}`,
+  )
+  out.push("", `## Errors (${index.errors.length})`, ...errors)
+  out.push("", `## Steps`, ...fit(index.narration.map((item) => `- ${item.step}. ${item.text}`), budget.narration))
+  const reads = [...index.reads].map(([file, steps]) => `- ${file} @ ${steps.join(",")}`)
+  out.push("", `## Files read (${reads.length}; contents folded, re-read or history_grep before relying on them)`, ...fit(reads, budget.lists))
+  const searches = [...index.searches].map(([key, entry]) => `- ${key} → ${entry.head || "(no output)"} (${stepList(entry.steps)})`)
+  out.push("", `## Searches (${searches.length})`, ...fit(searches, budget.lists))
+  const commands = index.commands.map((command) =>
+    [`- ${command.step}. \`${command.command}\` exit=${command.exit ?? "?"}, ${command.lines} output lines, last ${command.tail.length}:`, ...command.tail.map((line) => `    ${line}`)].join("\n"),
+  )
+  out.push("", `## Commands (${commands.length})`, ...fit(commands, budget.lists))
+  if (index.other.size > 0) {
+    const other = [...index.other].map(([key, steps]) => `- ${key} (${stepList(steps)})`)
+    out.push("", `## Other tool calls (${other.length})`, ...fit(other, budget.lists))
+  }
+  out.push(`</work-state>`)
+  return out.join("\n")
+}
+
+/**
+ * 进行中 turn 被折叠部分的状态索引，整体不超过 maxTokens：
+ * 先压缩每步说明，再只给最近 20/10/5 个文件保留 diff，最后压缩读取、搜索与命令列表；修改文件列表永不省略。
+ */
+export function workState(region: SessionV1.WithParts[], chunk: Chunk, maxTokens = chunk.index_tokens ?? DEFAULT_INDEX_TOKENS) {
+  const index = workIndex(region)
+  const full = renderWorkState(index, chunk, { diffFiles: Infinity })
+  if (estimateTokens(full) <= maxTokens) return full
+  const empty = { ...index, narration: [] }
+  for (const diffFiles of [Infinity, 20, 10, 5]) {
+    const fixed = estimateTokens(renderWorkState(empty, chunk, { diffFiles }))
+    if (fixed > maxTokens * 0.7) continue
+    return renderWorkState(index, chunk, { narration: Math.max(500, maxTokens - fixed), diffFiles })
+  }
+  const lists = Math.max(300, Math.floor(maxTokens * 0.1))
+  const fixed = estimateTokens(renderWorkState(empty, chunk, { diffFiles: 0, lists }))
+  return renderWorkState(index, chunk, { narration: Math.max(500, maxTokens - fixed), diffFiles: 0, lists })
 }
 
 function chunkRegion(messages: SessionV1.WithParts[], chunk: Chunk, positions: Map<SessionV1.WithParts["info"]["id"], number>) {
@@ -356,6 +686,15 @@ function chunkContent(region: SessionV1.WithParts[], chunk: Chunk, compact = fal
       .map((part) => `<user-message sequence="${++seq}">\n${projectUserText(String(msg.info.id), String(part.id), part.text)}\n</user-message>`)
   })
   const reference = `Use history_list with chunk_id="${chunk.display_id}" or history_grep to recover omitted details.`
+  // 进行中 turn：用户原文完整保留，折叠步骤换成状态索引；后续步骤作为 active tail 原样跟在后面。
+  if (chunk.status === "partial") {
+    const input = userBlocks.length === 0
+      ? ""
+      : [`<chunk-input id="${chunk.display_id}" status="partial">`, ...userBlocks, "</chunk-input>"].join("\n")
+    const summary = workState(region, chunk)
+    const tokens = estimateMessages([...(input ? [{ role: "user", text: input }] : []), { role: "assistant", text: summary }])
+    return { input, summary, tokens }
+  }
   const input = userBlocks.length === 0
     ? ""
     : [
@@ -437,6 +776,13 @@ export const CHECKPOINT_RULES = [
   `History line offsets are local to the returned chunk or user text part. Reasoning is not exposed by history tools.`,
 ]
 
+// 只在存在进行中折叠时追加，普通会话的 checkpoint 不为它付出 token
+const PARTIAL_RULE = `A partial chunk is the current turn, still in progress: its earlier steps are folded into a work-state index and the later steps follow verbatim.`
+
+function checkpointRules(chunks: Chunk[]) {
+  return chunks.some((chunk) => chunk.status === "partial") ? [...CHECKPOINT_RULES, PARTIAL_RULE] : CHECKPOINT_RULES
+}
+
 /**
  * 生成写入 DB 的 summary assistant 正文（对齐 model 压缩：一条 assistant 消息承载折叠结果）。
  * 格式与模型投影一致：checkpoint 控制说明 + 每个 chunk 的 input/summary。
@@ -444,7 +790,7 @@ export const CHECKPOINT_RULES = [
 export function summaryText(input: { messages: SessionV1.WithParts[]; chunks: Chunk[] }) {
   const chunks = [...input.chunks].sort((a, b) => a.sequence - b.sequence)
   const positions = new Map(input.messages.map((msg, index) => [msg.info.id, index]))
-  const lines = [`<conversation-checkpoint strategy="chunk">`, ...CHECKPOINT_RULES, `</conversation-checkpoint>`]
+  const lines = [`<conversation-checkpoint strategy="chunk">`, ...checkpointRules(chunks), `</conversation-checkpoint>`]
   for (const chunk of chunks) {
     const content = chunkContent(chunkRegion(input.messages, chunk, positions), chunk)
     if (content.input) lines.push("", content.input)
@@ -493,7 +839,8 @@ export function selectVisible(input: {
     const resuming = i === chunks.length - 1 && chunk.status !== "completed"
     // final response 过大导致整 chunk 超硬上限：整 chunk 不可见，继续更早 chunk 无意义（规则 6 禁止跳大挑小）
     if (!resuming && total + selected.tokens > input.hardTokens) break
-    total += selected.tokens
+    // 进行中 turn 的状态索引有自己的上限（按模型上下文确定），不挤占更早 chunk 的历史预算。
+    if (chunk.status !== "partial") total += selected.tokens
     visible.unshift(chunk)
     content.set(chunk.display_id, selected)
   }
@@ -539,7 +886,10 @@ export function project(input: {
 
   for (const chunk of selection.visible) {
     const content = selection.content.get(chunk.display_id)!
-    const chunkUser = chunkRegion(messages, chunk, positions).findLast((msg) => msg.info.role === "user")
+    // 进行中折叠会把 holder（agent=compaction）放进本 chunk 区间，不能让它决定投影 user 的 agent/model
+    const chunkUser = chunkRegion(messages, chunk, positions).findLast(
+      (msg) => msg.info.role === "user" && !msg.parts.some((part) => part.type === "compaction"),
+    )
     if (content.input) {
       result.push({
         info: { ...(chunkUser?.info.role === "user" ? chunkUser.info : user.info), id: chunk.start_message_id },
@@ -608,7 +958,7 @@ export function checkpointText(input: {
   })
   const lines = [
     `<conversation-checkpoint strategy="chunk">`,
-    ...CHECKPOINT_RULES,
+    ...checkpointRules(selection.visible),
     ``,
     `visible chunks: ${selection.visible.length}`,
     `archived chunks: ${selection.archived.length}`,

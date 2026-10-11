@@ -624,7 +624,8 @@ export type ChunkMeta = {
   sequence: number
   start_message_id: string
   end_message_id: string
-  status: "completed" | "failed" | "interrupted"
+  status: "completed" | "failed" | "interrupted" | "partial"
+  index_tokens?: number
 }
 
 export type CompactionPart = {
@@ -2073,6 +2074,14 @@ export type Config = {
   tools?: {
     [key: string]: boolean
   }
+  /**
+   * Web search tool. Set false to disable; setting a provider also enables web search for models outside OpenCode Zen
+   */
+  websearch?:
+    | false
+    | {
+        provider?: "random" | "exa" | "parallel" | "tavily" | "tinyfish" | "firecrawl"
+      }
   attachment?: AttachmentConfig
   enterprise?: {
     url?: string

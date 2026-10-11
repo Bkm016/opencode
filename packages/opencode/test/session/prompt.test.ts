@@ -1163,7 +1163,9 @@ withMcpInstructions.instance(
       const body = JSON.stringify(hits[0]?.body)
       expect(body).toContain('<server name=\\"guide-server\\">')
       expect(body).toContain("Use lookup before mutate.")
-      yield* Fiber.interrupt(fiber)
+      // 只中断调用方 fiber 不会停掉脱离运行的 Runner，挂起的模型请求会拖住收尾。
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
     }),
   15_000,
 )
@@ -1679,10 +1681,12 @@ it.instance("failed subtask preserves metadata on error tool state", () =>
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const chat = yield* sessions.create({ title: "Pinned" })
+    // 模型发起的 task 默认异步，这里显式等待以覆盖同步失败路径。
     yield* llm.tool("task", {
       description: "inspect bug",
       prompt: "look into the cache key path",
       subagent_type: "general",
+      wait: true,
     })
     yield* llm.text("done")
     const msg = yield* user(chat.id, "hello")
@@ -1746,6 +1750,7 @@ noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
     yield* prompt.prompt({
       sessionID: session.id,
       agent: "build",
+      model: ref,
       noReply: true,
       tools: { bash: false },
       parts: [{ type: "text", text: "first" }],
@@ -1753,6 +1758,7 @@ noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
     yield* prompt.prompt({
       sessionID: session.id,
       agent: "build",
+      model: ref,
       noReply: true,
       tools: { read: true },
       parts: [{ type: "text", text: "second" }],
@@ -1814,6 +1820,7 @@ it.instance(
         description: "inspect bug",
         prompt: "look into the cache key path",
         subagent_type: "general",
+        wait: true,
       })
       yield* llm.hang
       yield* user(chat.id, "hello")
@@ -1962,6 +1969,8 @@ it.instance(
       )
       expect(taskPart?.state.status).toBe("completed")
       if (taskMessage?.info.role === "assistant") expect(taskMessage.info.error?.name).not.toBe("MessageAbortedError")
+      // 子任务的模型流一直挂起，结束前显式取消，避免实例销毁时等待它。
+      yield* background.cancel(child.id)
     }),
   10_000,
 )
@@ -3637,4 +3646,106 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+const foldRequest = (body: unknown) => JSON.stringify((body as { messages?: unknown })?.messages ?? [])
+
+it.instance("chunk overflow in a multi-step turn folds earlier steps into a state index without a continuation", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    for (const name of ["one", "two", "three"]) yield* writeText(path.join(dir, `${name}.txt`), `contents of ${name}\n`)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "In-turn fold" })
+    yield* llm.push(
+      reply().text("Reading one.").tool("read", { filePath: path.join(dir, "one.txt") }).item(),
+      reply().text("Reading two.").tool("read", { filePath: path.join(dir, "two.txt") }).item(),
+      reply().text("Reading three.").tool("read", { filePath: path.join(dir, "three.txt") }).item(),
+    )
+    yield* llm.error(413, { error: { message: "request entity too large" } })
+    yield* llm.text("all three read")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "read the three files; do not modify anything" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(5)
+    const retry = foldRequest(hits[4]?.body)
+    // 较早的两步折成状态索引，最新一步与工具结果原样保留，用户原文完整保留
+    expect(retry).toContain('folded-steps=\\"1-2\\"')
+    expect(retry).toContain("one.txt @ 1")
+    expect(retry).toContain("contents of three")
+    expect(retry).not.toContain("contents of one")
+    expect(retry).toContain("read the three files; do not modify anything")
+    expect(retry).not.toContain("Continue the interrupted work")
+
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const chunks = messages
+      .flatMap((message) => message.parts)
+      .findLast((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined)?.chunks
+    expect(chunks?.at(-1)?.status).toBe("partial")
+    // 被拒绝的空请求不留在时间线上，也没有合成的续跑 user
+    expect(messages.filter((message) => message.info.role === "assistant" && !message.info.summary)).toHaveLength(4)
+    expect(
+      messages.some((message) => message.parts.some((part) => part.type === "text" && part.metadata?.chunk_compaction_replay === true)),
+    ).toBe(false)
+    expect(result.parts).toEqual(expect.arrayContaining([expect.objectContaining({ type: "text", text: "all three read" })]))
+  }),
+)
+
+it.instance("chunk strategy folds the active turn before sending once real usage nears the limit", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { strategy: "chunk" },
+    }))
+    for (const name of ["one", "two", "three"]) yield* writeText(path.join(dir, `${name}.txt`), `contents of ${name}\n`)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pre-send fold" })
+    yield* llm.push(
+      reply().tool("read", { filePath: path.join(dir, "one.txt") }).usage({ input: 1_000, output: 10 }).item(),
+      reply().tool("read", { filePath: path.join(dir, "two.txt") }).usage({ input: 1_000, output: 10 }).item(),
+      // usable = 90k；下一次请求预计超过 97% 时在发送前折叠，而不是等 provider 拒绝
+      reply().tool("read", { filePath: path.join(dir, "three.txt") }).usage({ input: 88_000, output: 10 }).item(),
+    )
+    yield* llm.text("done")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "read the three files" }],
+    })
+
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(4)
+    expect(foldRequest(hits[2]?.body)).not.toContain("work-state")
+    const folded = foldRequest(hits[3]?.body)
+    expect(folded).toContain('folded-steps=\\"1-2\\"')
+    expect(folded).toContain("contents of three")
+    expect(folded).not.toContain("contents of one")
+    expect(folded).not.toContain("Continue the interrupted work")
+
+    // 下一条用户消息到来时，即使用量很低，折过的 turn 也要封存成普通 chunk，不再声称“仍在进行中”
+    yield* llm.text("next answer")
+    yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "anything else?" }] })
+    yield* prompt.loop({ sessionID: chat.id })
+    const next = foldRequest((yield* llm.hits)[4]?.body)
+    expect(next).not.toContain("<work-state")
+    expect(next).not.toContain("A partial chunk")
+    expect(next).toContain("read the three files")
+    expect(next).toContain("anything else?")
+    const chunks = (yield* sessions.messages({ sessionID: chat.id }))
+      .flatMap((message) => message.parts)
+      .findLast((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined)?.chunks
+    expect(chunks?.map((chunk) => chunk.status)).toEqual(["completed"])
+  }),
 )

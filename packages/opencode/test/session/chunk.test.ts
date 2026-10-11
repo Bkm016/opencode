@@ -959,3 +959,185 @@ describe("checkpointText", () => {
     expect(text).toContain(`- ${chunks[0]!.display_id} [completed]: ${constraints}\n`)
   })
 })
+
+describe("in-turn fold", () => {
+  let call = 0
+  function step(
+    parentID: MessageID,
+    text: string,
+    tool: string,
+    input: Record<string, unknown>,
+    result: { output?: string; error?: string; metadata?: Record<string, unknown> } = {},
+  ): SessionV1.WithParts {
+    const msg = assistant(parentID, text, { finish: "tool-calls" })
+    msg.info.role === "assistant" && (msg.info.path = { cwd: "/repo", root: "/repo" })
+    msg.parts.unshift({
+      id: PartID.ascending(),
+      messageID: msg.info.id,
+      sessionID,
+      type: "tool",
+      callID: `call_${++call}`,
+      tool,
+      state: result.error !== undefined
+        ? { status: "error", input, error: result.error, time: { start: 0, end: 1 } }
+        : {
+            status: "completed",
+            input,
+            output: result.output ?? "ok",
+            title: tool,
+            metadata: result.metadata ?? {},
+            time: { start: 0, end: 1 },
+          },
+    } as SessionV1.ToolPart)
+    return msg
+  }
+
+  function turn(count: number, size = 400) {
+    const u = user("audit every module; keep public APIs unchanged")
+    const steps = Array.from({ length: count }, (_, i) =>
+      step(u.info.id, `reading module ${i + 1}`, "read", { filePath: `/repo/src/m${i + 1}.ts` }, { output: "x".repeat(size * 4) }),
+    )
+    return { u, steps, messages: [u, ...steps] }
+  }
+
+  const text = (msg: SessionV1.WithParts) =>
+    msg.parts.filter((part): part is SessionV1.TextPart => part.type === "text").map((part) => part.text).join("\n")
+
+  test("foldPoint cuts at a step boundary, keeps the newest steps within budget and always keeps the latest step", () => {
+    const { steps, messages } = turn(10)
+    const cost = SessionChunk.estimateMessage(steps[0]!)
+    // 预算放得下 3 步原文：折到第 7 步，第 8-10 步保留
+    expect(SessionChunk.foldPoint({ messages, chunks: [], budget: cost * 3 + 1 })).toBe(steps[6]!.info.id)
+    // 预算连最新一步都放不下：只保留最新一步
+    expect(SessionChunk.foldPoint({ messages, chunks: [], budget: 1 })).toBe(steps[8]!.info.id)
+    // 整个开放区间都放得下：折叠本轮无济于事
+    expect(SessionChunk.foldPoint({ messages, chunks: [], budget: cost * 100 })).toBeUndefined()
+    // 只有一步时没有可折叠的步骤
+    expect(SessionChunk.foldPoint({ messages: messages.slice(0, 2), chunks: [], budget: 1 })).toBeUndefined()
+  })
+
+  test("foldPoint never cuts after a step with open tool calls", () => {
+    const { steps, messages } = turn(4)
+    const tool = steps[2]!.parts.find((part): part is SessionV1.ToolPart => part.type === "tool")!
+    tool.state = { status: "running", input: tool.state.input, time: { start: 0 } } as SessionV1.ToolPart["state"]
+    expect(SessionChunk.foldPoint({ messages, chunks: [], budget: 1 })).toBe(steps[1]!.info.id)
+  })
+
+  test("repeated folds in one turn extend the same partial chunk, and the turn end closes it", () => {
+    const { u, steps, messages } = turn(6)
+    const first = SessionChunk.foldChunk({ messages, chunks: [], endMessageID: steps[1]!.info.id, indexTokens: 4_000 })!
+    expect(first).toMatchObject({ status: "partial", start_message_id: u.info.id, end_message_id: steps[1]!.info.id, index_tokens: 4_000 })
+
+    // 第二次折叠：同一 chunk 延长，display_id 不变，状态索引覆盖全部已折叠步骤
+    const second = SessionChunk.foldChunk({ messages, chunks: [first], endMessageID: steps[3]!.info.id, indexTokens: 4_000 })!
+    expect(second.chunk_key).toBe(first.chunk_key)
+    expect(second.display_id).toBe(first.display_id)
+    expect(second.end_message_id).toBe(steps[3]!.info.id)
+    const chunks = SessionChunk.appendChunk([first], second)
+    expect(chunks).toHaveLength(1)
+    expect(SessionChunk.foldPoint({ messages, chunks, budget: 1 })).toBe(steps[4]!.info.id)
+
+    // turn 结束：partial chunk 延长到最终回复并转为普通 chunk
+    const done = assistant(u.info.id, "All modules audited.", { finish: "stop" })
+    const closed = SessionChunk.closeChunk({ messages: [...messages, done], chunks })!
+    expect(closed).toMatchObject({ chunk_key: first.chunk_key, start_message_id: u.info.id, end_message_id: done.info.id, status: "completed" })
+    expect(closed.index_tokens).toBeUndefined()
+  })
+
+  test("state index records files with recent diffs, errors with resolution, deduped searches, reads and commands", () => {
+    const u = user("rename getUser to fetchUser")
+    const steps = [
+      step(u.info.id, "Searching callers.", "grep", { pattern: "getUser", path: "/repo/src", include: "*.ts" }, { output: "Found 3 matches" }),
+      step(u.info.id, "Reading the service.", "read", { filePath: "/repo/src/user.ts" }, { output: "export function getUser() {}" }),
+      step(u.info.id, "First attempt.", "edit", { filePath: "/repo/src/user.ts", oldString: "getUsr", newString: "fetchUser" }, { error: "oldString not found in content" }),
+      step(u.info.id, "Retry with the exact text.", "edit", { filePath: "/repo/src/user.ts", oldString: "export function getUser() {}", newString: "export function fetchUser() {}" }),
+      step(u.info.id, "Searching again.", "grep", { pattern: "getUser", path: "/repo/src", include: "*.ts" }, { output: "Found 2 matches" }),
+      step(u.info.id, "Type check.", "bash", { command: "bun typecheck" }, { output: "src/api.ts(3,1): error TS2304: Cannot find name 'getUser'.", metadata: { exit: 2 } }),
+      step(u.info.id, "Run the tests.", "bash", { command: "bun test" }, { output: "12 pass\n0 fail", metadata: { exit: 0 } }),
+    ]
+    const messages = [u, ...steps]
+    const chunk = SessionChunk.foldChunk({ messages, chunks: [], endMessageID: steps.at(-1)!.info.id, indexTokens: 4_000 })!
+    const index = SessionChunk.workState(messages, chunk)
+
+    expect(index).toContain(`<work-state chunk="${chunk.display_id}" status="partial" folded-steps="1-7">`)
+    expect(index).toContain("- src/user.ts: 1 change (step 4)")
+    expect(index).toContain("- export function getUser() {}")
+    expect(index).toContain("+ export function fetchUser() {}")
+    expect(index).toContain("step 3 edit src/user.ts (resolved at step 4)")
+    expect(index).toContain("step 6 bash `bun typecheck` (UNRESOLVED): src/api.ts(3,1): error TS2304")
+    expect(index).toContain("- grep getUser in src (*.ts) → Found 2 matches (steps 1,5; 2 times)")
+    expect(index).toContain("- src/user.ts @ 2")
+    expect(index).toContain("- 7. `bun test` exit=0, 2 output lines")
+    expect(index).toContain("- 4. Retry with the exact text.")
+  })
+
+  test("state index stays within its budget and never drops the modified file list", () => {
+    const u = user("rewrite everything")
+    const steps = Array.from({ length: 120 }, (_, i) =>
+      step(
+        u.info.id,
+        `Rewriting module ${i} because the previous implementation mixed concerns and leaked state across requests.`,
+        "edit",
+        { filePath: `/repo/src/module-${i}.ts`, oldString: `const value${i} = old()\nconst keep = 1`, newString: `const value${i} = next()\nconst keep = 1` },
+      ),
+    )
+    const messages = [u, ...steps]
+    const chunk = SessionChunk.foldChunk({ messages, chunks: [], endMessageID: steps.at(-1)!.info.id, indexTokens: 3_000 })!
+    const index = SessionChunk.workState(messages, chunk)
+    expect(SessionChunk.estimateTokens(index)).toBeLessThanOrEqual(3_000)
+    for (let i = 0; i < 120; i++) expect(index).toContain(`- src/module-${i}.ts: 1 change`)
+    // 预算紧时只给最近修改的文件保留 diff
+    expect(index).toContain("+ const value119 = next()")
+    expect(index).not.toContain("+ const value0 = next()")
+  })
+
+  test("projection lays out older chunks, the turn's user text, the state index and the verbatim tail without a continuation", () => {
+    const earlier = user("earlier request")
+    const earlierDone = assistant(earlier.info.id, "earlier answer", { finish: "stop" })
+    const { u, steps } = turn(6)
+    const messages = [earlier, earlierDone, u, ...steps]
+    const chunks: SessionChunk.Chunk[] = [SessionChunk.closeChunk({ messages, chunks: [] })!]
+    SessionChunk.appendChunk(chunks, SessionChunk.foldChunk({ messages, chunks, endMessageID: steps[3]!.info.id, indexTokens: 4_000 })!)
+
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+
+    expect(projected.map((msg) => msg.info.role)).toEqual(["user", "user", "assistant", "user", "assistant", "assistant", "assistant"])
+    expect(text(projected[1]!)).toContain("earlier request")
+    expect(text(projected[2]!)).toContain("earlier answer")
+    expect(text(projected[3]!)).toContain("audit every module; keep public APIs unchanged")
+    expect(text(projected[4]!)).toContain('folded-steps="1-4"')
+    // 最近步骤原样保留：工具输出不截断，也没有合成的续跑消息
+    expect(projected.slice(5)).toEqual([steps[4]!, steps[5]!])
+    expect(projected.some((msg) => text(msg).includes("Continue the interrupted work"))).toBe(false)
+    // 状态索引不占用更早 chunk 的历史预算
+    expect(selection.tokens).toBe(selection.content.get(chunks[0]!.display_id)!.tokens)
+  })
+
+  test("a second fold over the first fold's holder still projects the turn's own user agent", () => {
+    const u = user("audit every module")
+    const before = [1, 2].map((i) => step(u.info.id, `reading module ${i}`, "read", { filePath: `/repo/src/m${i}.ts` }))
+    // 第一次折叠的 holder 落在第 3 步之前，第二次折叠的区间会把它包含进来
+    const holder = user("")
+    holder.info.role === "user" && (holder.info.agent = "compaction")
+    holder.parts = [{ id: PartID.ascending(), messageID: holder.info.id, sessionID, type: "compaction", auto: true, chunks: [] } as SessionV1.CompactionPart]
+    const after = [3, 4, 5].map((i) => step(u.info.id, `reading module ${i}`, "read", { filePath: `/repo/src/m${i}.ts` }))
+    const messages = [u, ...before, holder, ...after]
+    const first = SessionChunk.foldChunk({ messages, chunks: [], endMessageID: before[1]!.info.id, indexTokens: 4_000 })!
+    const chunks = SessionChunk.appendChunk([first], SessionChunk.foldChunk({ messages, chunks: [first], endMessageID: after[1]!.info.id, indexTokens: 4_000 })!)
+
+    const selection = SessionChunk.selectVisible({ messages, chunks, targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const input = projected.find((msg) => msg.info.id === u.info.id)!
+    expect(input.info.role === "user" && input.info.agent).toBe("build")
+  })
+
+  test("summaryText renders the partial chunk as its state index", () => {
+    const { steps, messages } = turn(3)
+    const chunk = SessionChunk.foldChunk({ messages, chunks: [], endMessageID: steps[1]!.info.id, indexTokens: 4_000 })!
+    const summary = SessionChunk.summaryText({ messages, chunks: [chunk] })
+    expect(summary).toContain('<chunk-input id="' + chunk.display_id + '" status="partial">')
+    expect(summary).toContain('folded-steps="1-2"')
+    expect(summary).toContain("- src/m1.ts @ 1")
+  })
+})

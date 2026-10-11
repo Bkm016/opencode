@@ -236,7 +236,10 @@ describe("session.retry.retryable", () => {
       }).toObject(),
     )
 
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Internal server error" })
+    // 重试信息附带完整响应体，便于排查（见 "appends the complete responseBody to a retry message"）
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({
+      message: 'Internal server error: {"type":"api_error","message":"Internal server error"}',
+    })
   })
 
   test("retries 502 bad gateway errors", () => {
@@ -547,7 +550,7 @@ describe("session.message-v2.fromError", () => {
     if (!SessionV1.APIError.isInstance(result)) throw new Error("expected APIError")
     expect(result.data.isRetryable).toBe(true)
     expect(SessionRetry.retryable(result, retryProvider)).toEqual({
-      message: "An error occurred while processing your request.",
+      message: `An error occurred while processing your request.: ${result.data.responseBody}`,
     })
   })
 })

@@ -72,8 +72,14 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
-/** chunk 策略整包请求的安全上限（占 usable 的比例），为估算误差与本轮新增输出留余量；发送前封存与发送前裁剪共用。 */
+/** chunk 策略下发送前封存已结束 turn、并从请求中移除最旧可见 chunk 的阈值（占 usable 的比例）。 */
 const CHUNK_REQUEST_RATIO = 0.8
+/** 下一次请求预计超过 usable 的这个比例时折叠进行中的 turn；provider 400 / 用量超限只是兜底。 */
+const FOLD_TRIGGER_RATIO = 0.97
+/** 折叠后整包请求的目标占比：腾出一半上下文，避免长 turn 频繁折叠。 */
+const FOLD_TARGET_RATIO = 0.5
+/** 状态索引占 usable 的上限。 */
+const FOLD_INDEX_RATIO = 0.05
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
   "image/gif",
@@ -325,11 +331,13 @@ const layer = Layer.effect(
           time: { start: Date.now() },
         },
       })
+      // 用户显式发起的 subtask 需等结果写回历史再续跑，不走 task 工具默认的异步后台。
       const taskArgs = {
         prompt: task.prompt,
         description: task.description,
         subagent_type: task.agent,
         command: task.command,
+        wait: true,
       }
       yield* plugin.trigger(
         "tool.execute.before",
@@ -1397,7 +1405,13 @@ const layer = Layer.effect(
     // tail_start_id。投影走 filterCompacted，模型从持久化的 assistant 消息读到折叠内容。
     const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
       sessionID: SessionID,
-      options?: { force?: boolean; endBefore?: MessageID; position?: { id: number; created: number } },
+      options?: {
+        force?: boolean
+        endBefore?: MessageID
+        position?: { id: number; created: number }
+        /** 进行中 turn 的折叠：把开放区间折到 end（含），状态索引上限 indexTokens。 */
+        fold?: { end: MessageID; indexTokens: number }
+      },
     ) {
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const compactionMsgWithChunks = raw.findLast((msg) =>
@@ -1418,16 +1432,28 @@ const layer = Layer.effect(
       const region = raw.filter(
         (msg) =>
           msg.info.id !== compactCmdMsg?.info.id &&
-          (!options?.endBefore || msg.info.id < options.endBefore),
+          (!options?.endBefore || msg.info.id < options.endBefore) &&
+          (!options?.fold || msg.info.id <= options.fold.end),
       )
       // 循环关闭所有可终止边界，避免长历史一次 compact 压成单个大 chunk。
+      // 进行中折叠出的 partial chunk 在 turn 结束时被延长而不是追加，因此按对象是否变化计数。
       const allChunks = [...existing]
       while (true) {
         const next = SessionChunk.closeChunk({ messages: region, chunks: allChunks })
         if (!next) break
-        allChunks.push(next)
+        SessionChunk.appendChunk(allChunks, next)
       }
-      const added = allChunks.length - existing.length
+      if (options?.fold) {
+        const partial = SessionChunk.foldChunk({
+          messages: region,
+          chunks: allChunks,
+          endMessageID: options.fold.end,
+          indexTokens: options.fold.indexTokens,
+        })
+        if (!partial) return 0
+        SessionChunk.appendChunk(allChunks, partial)
+      }
+      const added = allChunks.filter((chunk, index) => chunk !== existing[index]).length
       // 无新边界且非 /compact 命令：无需落库。有 /compact 命令时仍要写回，
       // 否则命令消息永远无 chunks，UI 会多出一条空的「Context compacted」。
       // 强制压缩即使没有边界也要密封，否则会话会一直停留在未完成的压缩任务上。
@@ -1509,7 +1535,19 @@ const layer = Layer.effect(
           .flatMap((msg) => msg.parts)
           .findLast((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined)
           ?.chunks ?? []
-      const summaryText = SessionChunk.summaryText({ messages: raw, chunks: allChunks.slice(previousChunks.length) })
+      const summaryText = SessionChunk.summaryText({
+        messages: raw,
+        // 同一 turn 再次折叠或 turn 结束时 partial chunk 会被延长，也要随本条分界线重新展示
+        chunks: allChunks.filter(
+          (chunk) =>
+            !previousChunks.some(
+              (previous) =>
+                previous.chunk_key === chunk.chunk_key &&
+                previous.end_message_id === chunk.end_message_id &&
+                previous.status === chunk.status,
+            ),
+        ),
+      })
       const existingSummary = raw.findLast(
         (message) =>
           message.info.role === "assistant" && message.info.summary === true && message.info.parentID === holderID,
@@ -1565,6 +1603,45 @@ const layer = Layer.effect(
       return added
     })
 
+    /**
+     * 进行中 turn 的折叠：从最新一步往前保留原文直到整包降到 target，较早步骤折成确定性状态索引，
+     * 写成 partial chunk；分界线落在第一条保留消息之前。不创建续跑消息，模型直接从保留的最新步骤继续。
+     * next 是下一次请求的预计真实 token，ratio 是真实 token 与本地估算之比。
+     */
+    const foldTurn = Effect.fn("SessionPrompt.foldTurn")(function* (
+      sessionID: SessionID,
+      input: { limit: number; next: number; ratio: number },
+    ) {
+      const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const chunks =
+        raw
+          .flatMap((msg) => msg.parts)
+          .findLast((part): part is SessionV1.CompactionPart => part.type === "compaction" && part.chunks !== undefined)
+          ?.chunks ?? []
+      const indexTokens = Math.floor(input.limit * FOLD_INDEX_RATIO)
+      const open = SessionChunk.openRegion(raw, chunks).reduce((total, msg) => total + SessionChunk.estimateMessage(msg), 0)
+      // 开放区间之外（system、tools、更早 chunk、旧索引）的真实成本保持不变，剩余预算留给原文尾部与新索引。
+      const rest = input.next - open * input.ratio
+      const budget = Math.floor((input.limit * FOLD_TARGET_RATIO - rest - indexTokens) / input.ratio)
+      const end = SessionChunk.foldPoint({ messages: raw, chunks, budget })
+      if (!end) return false
+      const endIndex = raw.findIndex((msg) => msg.info.id === end)
+      const next = raw
+        .slice(endIndex + 1)
+        .find(
+          (msg) =>
+            !(msg.info.role === "assistant" && msg.info.summary) &&
+            !(msg.info.role === "user" && msg.parts.some((part) => part.type === "compaction")),
+        )
+      const folded = yield* persistChunkBoundary(sessionID, {
+        fold: { end, indexTokens },
+        position: next ? { id: Identifier.timestamp(next.info.id), created: next.info.time.created } : undefined,
+      })
+      if (folded > 0)
+        yield* Effect.logInfo("folded active turn", { "session.id": sessionID, end, budget, next: input.next, limit: input.limit })
+      return folded > 0
+    })
+
     const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
@@ -1588,6 +1665,12 @@ const layer = Layer.effect(
           const busy = (yield* status.get(mainID)).type !== "idle"
           return { main: main.messages, busy }
         })
+
+        // 本地估算与 provider 真实用量之比：每次响应后用实际 prompt token 校准，折叠阈值与切点都按它换算。
+        let tokenRatio = 1
+        let sentEstimate: { id: MessageID; tokens: number } | undefined
+        // 封存或折叠后，上一请求的真实用量不再代表当前布局，不能拿来校准下一次请求。
+        let reshapedAfter: MessageID | undefined
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1810,12 +1893,23 @@ const layer = Layer.effect(
                 ...msgs.slice(finishedIndex + 1).flatMap((message) => message.parts),
               ]),
             )
-            if (limit > 0 && usedTokens(lastFinished.tokens) + growth >= Math.floor(limit * CHUNK_REQUEST_RATIO)) {
+            // 上一 turn 有过进行中折叠且已结束：不论用量都要封存，否则它的状态索引会一直声称“仍在进行中”
+            const foldedTurnEnded =
+              lastFinished.finish !== "tool-calls" &&
+              lastUser.id > lastFinished.id &&
+              (history.chunk?.selection.visible.some((chunk) => chunk.status === "partial") ?? false)
+            if (
+              (limit > 0 && usedTokens(lastFinished.tokens) + growth >= Math.floor(limit * CHUNK_REQUEST_RATIO)) ||
+              foldedTurnEnded
+            ) {
               const sealed = yield* persistChunkBoundary(sessionID, {
                 endBefore: lastUser.id,
                 position: { id: Identifier.timestamp(lastUser.id), created: lastUser.time.created },
               })
-              if (sealed > 0) continue
+              if (sealed > 0) {
+                reshapedAfter = lastFinished.id
+                continue
+              }
             }
           }
 
@@ -1960,7 +2054,9 @@ const layer = Layer.effect(
                 // chunk 的 target 只约束历史正文；provider 实际还会收到完整 system、
                 // tools 与 active tail。发送前按整包估算逐级移除最旧可见 chunk，
                 // 避免把可预测的 overflow 交给 provider 后再补救。
-                const requestLimit = Math.floor(maxInputTokens * CHUNK_REQUEST_RATIO)
+                // 更早的历史先让位（80%），进行中的 turn 到 97% 才折叠，最后手段同样只在 97% 之上启用
+                const dropLimit = Math.floor((maxInputTokens * CHUNK_REQUEST_RATIO) / tokenRatio)
+                const requestLimit = Math.floor((maxInputTokens * FOLD_TRIGGER_RATIO) / tokenRatio)
                 const fullSystem = SystemPrompt.assemble({
                   model,
                   agent,
@@ -1982,8 +2078,29 @@ const layer = Layer.effect(
                   JSON.stringify({ system: fullSystem, messages: [], tools: toolDefinitions }),
                 )
                 let requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
+                // 下一次请求的预计真实 token：上一请求的真实用量加之后新增的内容最准；布局变过时退回校准后的整包估算。
+                const finishedIndex = lastFinished ? msgs.findIndex((message) => message.info.id === lastFinished.id) : -1
+                const calibrated =
+                  !mainSession &&
+                  lastFinished &&
+                  lastFinished.summary !== true &&
+                  lastFinished.id !== reshapedAfter &&
+                  finishedIndex >= 0 &&
+                  usedTokens(lastFinished.tokens) > 0
+                    ? usedTokens(lastFinished.tokens) +
+                      Math.round(
+                        tokenRatio *
+                          (SessionChunk.estimateTokens(
+                            msgs[finishedIndex]!.parts
+                              .flatMap((part) => (part.type === "tool" && part.state.status === "completed" ? [part.state.output] : []))
+                              .join("\n"),
+                          ) +
+                            msgs.slice(finishedIndex + 1).reduce((total, message) => total + SessionChunk.estimateMessage(message), 0)),
+                      )
+                    : undefined
+                const estimated = requestTokens
                 let selection = history.chunk?.selection
-                while (requestTokens > requestLimit) {
+                while (requestTokens > dropLimit) {
                   // 可见集是连续最新后缀，末尾即最新 chunk；它未完成时是续跑现场，只能移除更早的块。
                   const droppable = selection?.visible.at(-1)?.status === "completed"
                     ? selection.visible
@@ -1996,7 +2113,7 @@ const layer = Layer.effect(
                   for (const chunk of droppable) {
                     dropped.push(chunk)
                     freed += selection.content.get(chunk.display_id)!.tokens
-                    if (freed >= requestTokens - requestLimit) break
+                    if (freed >= requestTokens - dropLimit) break
                   }
                   // 投影沿用持久化边界 ID，只有 assistant 的块也能整体裁剪；插件修改的其余消息保持不变。
                   const boundaries = new Set(dropped.flatMap((chunk) => [chunk.start_message_id, chunk.end_message_id]))
@@ -2016,19 +2133,38 @@ const layer = Layer.effect(
                   modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, { mediaBudgetBytes })
                   requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 }
+                // 先让更早的历史让位，再判断进行中的 turn 是否仍需折叠；移除的历史按校准比例从预计用量中扣除
+                const nextTokens = (calibrated ?? Math.round(estimated * tokenRatio)) - Math.round((estimated - requestTokens) * tokenRatio)
+                if (!mainSession && cfg.compaction?.auto !== false && nextTokens > maxInputTokens * FOLD_TRIGGER_RATIO) {
+                  const folded = yield* foldTurn(sessionID, { limit: maxInputTokens, next: nextTokens, ratio: tokenRatio }).pipe(
+                    // 只兜住失败与缺陷，中断必须照常传播
+                    Effect.catch((error) =>
+                      Effect.logWarning("active turn fold failed", { error: String(error) }).pipe(Effect.as(false)),
+                    ),
+                    Effect.catchDefect((defect) =>
+                      Effect.logWarning("active turn fold failed", { error: String(defect) }).pipe(Effect.as(false)),
+                    ),
+                  )
+                  if (folded) {
+                    // 本次请求尚未发出：丢弃空 assistant，回到循环按新的分界线重新投影
+                    reshapedAfter = lastFinished?.id
+                    yield* sessions.removeMessage({ sessionID, messageID: msg.id })
+                    return "continue" as const
+                  }
+                }
                 if (requestTokens > requestLimit) {
-                  // 没有可见历史可移除时，再压低 active tail 的媒体与 tool output；
-                  // 完整内容仍在 Session 数据库和 managed output 中。
+                  // 折叠与移除可见历史后仍超限，只剩最新一步本身过大：替换长用户文本并移除历史媒体，
+                  // 工具输出保持原文（截断会让模型误判结果）；仍超限时由 provider 溢出兜底。
                   // 本轮用户媒体必须保留，否则长 Session 会静默丢弃刚上传的图片。
                   providerMsgs = SessionChunk.projectLongUserText(providerMsgs)
                   modelMsgs = yield* MessageV2.toModelMessagesEffect(providerMsgs, model, {
                     stripMedia: true,
                     preserveMediaForMessageID: lastUser.id,
-                    toolOutputMaxChars: 4_000,
                     mediaBudgetBytes,
                   })
                   requestTokens = fixedTokens + SessionChunk.estimateModelTokens([...modelMsgs, ...suffix])
                 }
+                sentEstimate = { id: msg.id, tokens: requestTokens }
               }
             }
             const format = lastUser.format ?? { type: "text" as const }
@@ -2045,6 +2181,12 @@ const layer = Layer.effect(
               // final turn 强制无工具
               toolChoice: isFinalizing ? "none" : format.type === "json_schema" ? "required" : undefined,
             })
+            if (sentEstimate?.id === msg.id) {
+              const tokens = handle.message.tokens
+              const prompt = tokens.input + tokens.cache.read + tokens.cache.write
+              if (prompt > 0 && sentEstimate.tokens > 0)
+                tokenRatio = Math.min(2, Math.max(0.5, prompt / sentEstimate.tokens))
+            }
 
             // final turn：结算已发生 usage 后 break，不再 continuation
             if (isFinalizing && finalizingGoalID) {
@@ -2190,6 +2332,32 @@ const layer = Layer.effect(
                   return "break" as const
                 }
                 const interrupted = !handle.message.finish || handle.message.finish === "tool-calls"
+                if (interrupted && cfg.compaction?.auto !== false) {
+                  // 与发送前检查同一种折叠：已完成的步骤折成状态索引，最新步骤原样保留，不插入续跑消息。
+                  // provider 已拒绝本次请求，按上限本身计算，确保折叠后明显低于上限。
+                  const limit = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+                  const folded =
+                    limit > 0 &&
+                    (yield* foldTurn(sessionID, { limit, next: limit, ratio: tokenRatio }).pipe(
+                      // 只兜住失败与缺陷，中断必须照常传播
+                      Effect.catch((error) =>
+                        Effect.logWarning("active turn fold failed", { error: String(error) }).pipe(Effect.as(false)),
+                      ),
+                      Effect.catchDefect((defect) =>
+                        Effect.logWarning("active turn fold failed", { error: String(defect) }).pipe(Effect.as(false)),
+                      ),
+                    ))
+                  if (folded) {
+                    reshapedAfter = lastFinished?.id
+                    // 被拒绝的请求没有产生任何内容，留着只会在时间线上多一条空回复
+                    const rejected = (yield* sessions.messages({ sessionID }).pipe(Effect.orDie)).find(
+                      (message) => message.info.id === handle.message.id,
+                    )
+                    if (!handle.message.finish && rejected?.parts.every((part) => part.type === "step-start"))
+                      yield* sessions.removeMessage({ sessionID, messageID: handle.message.id })
+                    return "continue" as const
+                  }
+                }
                 if (interrupted) {
                   // 第一次 overflow 就关闭并封存完整 active turn，不能把可能包含数百个
                   // assistant/tool step 的 tail 原样重放到下一次 provider 请求。
@@ -2280,6 +2448,19 @@ const layer = Layer.effect(
           message.info.role === "user" && !message.parts.some((part) => part.type === "compaction"),
       )
       if (!currentAssistant || !currentUser) return false
+
+      // 与真实溢出同一种折叠：已完成步骤折成状态索引，最新步骤原样保留，不插入续跑消息。
+      const cfg = yield* config.get()
+      if (cfg.compaction?.strategy === "chunk") {
+        const model = yield* getModel(currentUser.info.model.providerID, currentUser.info.model.modelID, sessionID).pipe(
+          Effect.orElseSucceed(() => undefined),
+        )
+        const limit = model ? usable({ cfg, model, outputTokenMax: flags.outputTokenMax }) : 0
+        if (limit > 0 && (yield* foldTurn(sessionID, { limit, next: limit, ratio: 1 }).pipe(Effect.orDie))) {
+          yield* loop({ sessionID }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+          return true
+        }
+      }
 
       if (currentAssistant.info.error && SessionV1.AbortedError.isInstance(currentAssistant.info.error)) {
         yield* sessions.updateMessage({ ...currentAssistant.info, error: undefined })

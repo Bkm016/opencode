@@ -548,6 +548,37 @@ describe("project", () => {
     expect(text.split("/repo/cache.ts")).toHaveLength(2)
   })
 
+  test("changed files are derived from completed write, edit and apply_patch tool calls", () => {
+    const u = user("update the config")
+    const done = assistant(u.info.id, "Done.", { finish: "stop" })
+    const tool = (name: string, input: Record<string, unknown>, metadata: Record<string, unknown> = {}, status = "completed") =>
+      done.parts.unshift({
+        id: PartID.ascending(),
+        messageID: done.info.id,
+        sessionID,
+        type: "tool",
+        callID: `call_${name}`,
+        tool: name,
+        state:
+          status === "completed"
+            ? { status, input, output: "ok", title: name, metadata, time: { start: 0, end: 1 } }
+            : { status, input, error: "boom", time: { start: 0, end: 1 } },
+      } as SessionV1.ToolPart)
+    tool("write", { filePath: "/repo/a.ts", content: "x" })
+    tool("edit", { filePath: "/repo/a.ts", oldString: "x", newString: "y" })
+    tool("apply_patch", { patchText: "..." }, { files: [{ filePath: "/repo/b.ts" }, { filePath: "/repo/c.ts", movePath: "/repo/d.ts" }] })
+    tool("edit", { filePath: "/repo/failed.ts" }, {}, "error")
+    tool("read", { filePath: "/repo/read.ts" })
+    const messages = [u, done]
+    const chunk = SessionChunk.closeChunk({ messages, chunks: [] })!
+    const selection = SessionChunk.selectVisible({ messages, chunks: [chunk], targetTokens: 20_000, hardTokens: 24_000 })
+    const projected = SessionChunk.project({ messages, selection, targetTokens: 20_000, hardTokens: 24_000 })
+    const text = (projected.find((message) => message.info.id === done.info.id)!.parts[0] as SessionV1.TextPart).text
+    const files = text.slice(text.indexOf("Recorded file changes:\n") + "Recorded file changes:\n".length, text.indexOf("\n</chunk-summary>"))
+
+    expect(files.split("\n").sort()).toEqual(["/repo/a.ts", "/repo/b.ts", "/repo/d.ts"])
+  })
+
   test("active tail is preserved verbatim", () => {
     const u1 = user("q1")
     const a1 = assistant(u1.info.id, "a1", { finish: "stop" })
@@ -647,8 +678,14 @@ describe("project", () => {
     expect(log).toContain('- read({"path":"/repo/module-0.ts"}) [completed]')
     expect(log).toContain("- ASSISTANT: progress note 0")
     expect(log).toContain('- read({"path":"/repo/module-196.ts"}) [completed]')
-    expect(log).toContain("[... omitted; use history tools for the full text ...]")
+    expect(log).toMatch(/- \[\.\.\. \d+ steps omitted; use history tools for the full text \.\.\.\]/)
+    // 中间按整行省略，不能把某一步切成半行
+    for (const line of log.trim().split("\n").slice(1))
+      expect(line).toMatch(/^- (ASSISTANT: progress note \d+|read\(\{"path":"\/repo\/module-\d+\.ts"\}\) \[completed\]|\[\.\.\. \d+ steps omitted.*)$/)
     expect(log).not.toContain("module-197.ts")
+    // 最近步骤的说明文字跟随其工具调用，不留在上方日志里错位
+    expect(log).not.toContain("progress note 197")
+    expect(text).toContain("ASSISTANT: progress note 199")
     expect(text).toContain('read({"path":"/repo/module-199.ts"}) [completed, call=call_199]')
     expect(SessionChunk.estimateTokens(log)).toBeLessThanOrEqual(850)
   })

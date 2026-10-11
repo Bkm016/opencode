@@ -370,19 +370,34 @@ function chunkContent(region: SessionV1.WithParts[], chunk: Chunk, compact = fal
     .flatMap((msg) => msg.parts)
     .filter((part): part is SessionV1.ToolPart => part.type === "tool")
     .slice(-3)
+  // 最近结果所在消息的说明文字跟随工具调用一起展示，不能拆到上方工作日志里与调用错位。
+  const recentMessages = new Set(region.filter((msg) => msg.parts.some((part) => recent.includes(part as SessionV1.ToolPart))))
   // 溢出常发生在长 turn 中途，只剩最近 3 个结果会让模型重做早先已完成的读取与修改；
   // 更早的步骤按时间顺序折叠成每步一行的工作日志，整体有界并保留首尾。
   const log = region.flatMap((msg, index) =>
-    chunk.status === "completed" || msg.info.role !== "assistant"
+    chunk.status === "completed" || msg.info.role !== "assistant" || recentMessages.has(msg)
       ? []
       : msg.parts.flatMap((part) => {
           // 最后一条 assistant 的文本已作为 final 展示
           if (part.type === "text" && index < region.length - 1 && part.text.trim())
             return [`- ASSISTANT: ${oneLine(part.text, 50)}`]
-          if (part.type === "tool" && !recent.includes(part))
+          if (part.type === "tool")
             return [`- ${part.tool}(${oneLine(safeJSON(part.state.input), 40)}) [${part.state.status}]`]
           return []
         }),
+  )
+  const recentEntries = region.flatMap((msg, index) =>
+    recentMessages.has(msg)
+      ? msg.parts.flatMap((part) => {
+          if (part.type === "text" && index < region.length - 1 && part.text.trim())
+            return [`ASSISTANT: ${oneLine(part.text, 50)}`]
+          if (part.type === "tool" && recent.includes(part))
+            return toolTranscript(part).map(
+              (entry) => `${entry.source}: ${previewText(entry.text, entry.source === "ASSISTANT_TOOL" ? 180 : 360)}`,
+            )
+          return []
+        })
+      : [],
   )
   // 未完成块不能用空 final 冒充工作摘要；保留最近结算证据，避免恢复时重复副作用。
   const recovery = chunk.status === "completed"
@@ -390,15 +405,11 @@ function chunkContent(region: SessionV1.WithParts[], chunk: Chunk, compact = fal
     : [
         "This chunk did not complete. Recent tool outcomes below are historical evidence, not new tool calls. Check omitted outcomes before repeating side effects.",
         reference,
-        ...(log.length > 0 ? [`Earlier steps, oldest first:\n${previewText(log.join("\n"), compact ? 300 : 800)}`] : []),
-        ...recent
-          .flatMap(toolTranscript)
-          .map((entry) => `${entry.source}: ${previewText(entry.text, entry.source === "ASSISTANT_TOOL" ? 180 : 360)}`),
+        ...(log.length > 0 ? [`Earlier steps, oldest first:\n${previewLines(log, compact ? 300 : 800)}`] : []),
+        ...recentEntries,
       ]
   // 最终回复可能只有一句结论；改动文件是确定性事实，任何状态都保留去重后的有界列表，避免为此回查历史。
-  const files = [
-    ...new Set(region.flatMap((msg) => msg.parts.flatMap((part) => (part.type === "patch" ? part.files : [])))),
-  ]
+  const files = [...new Set(region.flatMap((msg) => msg.parts.flatMap(changedFiles)))]
   const summary = [
     `<chunk-summary id="${chunk.display_id}" status="${chunk.status}" folded-messages="${region.length}"${compact ? ' excerpt="true"' : ""}>`,
     final ? (compact ? previewText(final, 600) : final) : "No final assistant response was recorded.",
@@ -689,6 +700,48 @@ export function transcript(input: {
 }
 
 /** 恢复摘录与历史检索共用工具事实，失败前已产生的部分输出也必须可回查。 */
+/** 文件改动来自写入类工具的完成结果（patch part 已不再生成，仍兼容旧会话里的记录）。 */
+function changedFiles(part: SessionV1.Part): string[] {
+  if (part.type === "patch") return part.files
+  if (part.type !== "tool" || part.state.status !== "completed") return []
+  if (part.tool === "apply_patch") {
+    const files = part.state.metadata?.files
+    if (!Array.isArray(files)) return []
+    return files.flatMap((file) => {
+      const value = file?.movePath ?? file?.filePath ?? file?.relativePath
+      return typeof value === "string" ? [value] : []
+    })
+  }
+  if (part.tool !== "write" && part.tool !== "edit" && part.tool !== "multiedit") return []
+  const filePath = part.state.input?.filePath
+  return typeof filePath === "string" ? [filePath] : []
+}
+
+/** 按整行保留首尾，中间整行省略；避免字符级截断把某一步切成半行、丢失步骤边界。 */
+function previewLines(lines: string[], maxTokens: number) {
+  const text = lines.join("\n")
+  if (estimateTokens(text) <= maxTokens) return text
+  const marker = (count: number) => `- [... ${count} steps omitted; use history tools for the full text ...]`
+  const budget = maxTokens - estimateTokens(marker(lines.length))
+  const head: string[] = []
+  const tail: string[] = []
+  let used = 0
+  let i = 0
+  let j = lines.length - 1
+  // 首尾交替取整行，保证最早的起点与最近的进展都可见。
+  while (i <= j) {
+    const fromHead = head.length <= tail.length
+    const line = fromHead ? lines[i]! : lines[j]!
+    const cost = estimateTokens(line + "\n")
+    if (used + cost > budget) break
+    used += cost
+    if (fromHead) head.push(lines[i++]!)
+    else tail.unshift(lines[j--]!)
+  }
+  const omitted = j - i + 1
+  return [...head, ...(omitted > 0 ? [marker(omitted)] : []), ...tail].join("\n")
+}
+
 function toolTranscript(part: SessionV1.ToolPart) {
   const entries: { source: TranscriptEntry["source"]; text: string }[] = [{
     source: "ASSISTANT_TOOL",

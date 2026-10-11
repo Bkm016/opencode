@@ -1397,7 +1397,7 @@ const layer = Layer.effect(
     // tail_start_id。投影走 filterCompacted，模型从持久化的 assistant 消息读到折叠内容。
     const persistChunkBoundary = Effect.fn("SessionPrompt.persistChunkBoundary")(function* (
       sessionID: SessionID,
-      options?: { force?: boolean; endBefore?: MessageID; position?: number },
+      options?: { force?: boolean; endBefore?: MessageID; position?: { id: number; created: number } },
     ) {
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const compactionMsgWithChunks = raw.findLast((msg) =>
@@ -1471,11 +1471,13 @@ const layer = Layer.effect(
         // 从中间压缩时分界线必须落在 endBefore 之前：用 position-2 作为 holder 的
         // id 时间戳（summary 用 position-1，保证 holder < summary < endBefore），
         // 让按 id 字典序（即时间序）排序的时间线把它显示在正确位置。
-        const holderCreated = options?.position !== undefined ? options.position - 2 : Date.now()
+        // id 里的时间戳只保留低 48 位，Identifier.timestamp 解出的不是真实毫秒，
+        // time.created 必须取边界消息的真实创建时间，否则按 time_created 排序的消息列表会把分界线排到最前。
+        const holderCreated = options?.position !== undefined ? options.position.created - 2 : Date.now()
         const holder = yield* sessions.updateMessage({
           id:
             options?.position !== undefined
-              ? MessageID.make(Identifier.create("msg", "ascending", holderCreated))
+              ? MessageID.make(Identifier.create("msg", "ascending", options.position.id - 2))
               : MessageID.ascending(),
           role: "user",
           sessionID,
@@ -1532,11 +1534,11 @@ const layer = Layer.effect(
       }
       const ctx = yield* InstanceState.context
       // summary assistant 跟随 holder 的排序位置，保持「分界线」整体落在 endBefore 之前
-      const summaryCreated = options?.position !== undefined ? options.position - 1 : Date.now()
+      const summaryCreated = options?.position !== undefined ? options.position.created - 1 : Date.now()
       const assistant = yield* sessions.updateMessage({
         id:
           options?.position !== undefined
-            ? MessageID.make(Identifier.create("msg", "ascending", summaryCreated))
+            ? MessageID.make(Identifier.create("msg", "ascending", options.position.id - 1))
             : MessageID.ascending(),
         role: "assistant",
         parentID: holderID,
@@ -1811,7 +1813,7 @@ const layer = Layer.effect(
             if (limit > 0 && usedTokens(lastFinished.tokens) + growth >= Math.floor(limit * CHUNK_REQUEST_RATIO)) {
               const sealed = yield* persistChunkBoundary(sessionID, {
                 endBefore: lastUser.id,
-                position: Identifier.timestamp(lastUser.id),
+                position: { id: Identifier.timestamp(lastUser.id), created: lastUser.time.created },
               })
               if (sealed > 0) continue
             }
@@ -2250,7 +2252,9 @@ const layer = Layer.effect(
       // 分界线要落在被压缩区间的末尾（endBefore 之前），取该消息的时间戳作为排序位置
       const raw = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const boundary = raw.find((msg) => msg.info.id === messageID)
-      const position = boundary ? Identifier.timestamp(boundary.info.id) : undefined
+      const position = boundary
+        ? { id: Identifier.timestamp(boundary.info.id), created: boundary.info.time.created }
+        : undefined
       // 只关到 messageID 之前的可终止边界；该消息及之后的工作原样保留为 active tail。
       yield* persistChunkBoundary(sessionID, { force: true, endBefore: messageID, position })
       return true

@@ -34,7 +34,15 @@ function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
 }
 
-export function delay(attempt: number, error?: SessionV1.APIError) {
+// GPT 的 overloaded 是瞬时过载，指数退避只会白等，直接重试；上游明确给出 retry-after 时仍然遵守。
+export function isImmediateRetry(modelID: string | undefined, error: Err) {
+  if (!modelID?.toLowerCase().includes("gpt")) return false
+  const texts = [messageText(error)]
+  if (SessionV1.APIError.isInstance(error)) texts.push(error.data.responseBody)
+  return texts.some((text) => text?.toLowerCase().includes("overloaded"))
+}
+
+export function delay(attempt: number, error?: SessionV1.APIError, immediate = false) {
   // 复读是采样问题而非上游故障，丢弃后立即重采样即可。
   if (error?.data.metadata?.reason === "output_repetition") return 0
   if (error) {
@@ -62,10 +70,12 @@ export function delay(attempt: number, error?: SessionV1.APIError) {
         }
       }
 
+      if (immediate) return 0
       return cap(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1))
     }
   }
 
+  if (immediate) return 0
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
@@ -237,6 +247,7 @@ function parseJSON(value: unknown) {
 
 export function policy(opts: {
   provider: string
+  modelID?: string
   parse: (error: unknown) => Err
   canRetry?: () => boolean
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
@@ -251,7 +262,11 @@ export function policy(opts: {
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        const waitMs = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        const waitMs = delay(
+          meta.attempt,
+          SessionV1.APIError.isInstance(error) ? error : undefined,
+          isImmediateRetry(opts.modelID, error),
+        )
         const now = yield* Clock.currentTimeMillis
         // wait() 已负责休眠和主动唤醒，返回零延迟避免 Effect.retry 再等待一次。
         yield* opts.wait(

@@ -992,6 +992,7 @@ const layer = Layer.effect(
             Effect.retry(
               SessionRetry.policy({
                 provider: input.model.providerID,
+                modelID: input.model.id,
                 parse,
                 // 已写入的工具结果会随历史一并回发，断流重试只是让模型继续，不会重复执行工具。
                 canRetry: () => !ctx.assistantMessage.finish,

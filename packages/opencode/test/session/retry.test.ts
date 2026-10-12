@@ -88,6 +88,55 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY)
   })
 
+  test("retries immediately when a gpt model is overloaded", () => {
+    const overloaded = new SessionV1.APIError({
+      message: "The server is overloaded or not ready yet.",
+      isRetryable: true,
+      responseBody: JSON.stringify({ type: "error", error: { code: "server_is_overloaded" } }),
+    }).toObject()
+    expect(SessionRetry.isImmediateRetry("gpt-5.2", overloaded)).toBe(true)
+    expect(SessionRetry.isImmediateRetry("openai/GPT-5-codex", overloaded)).toBe(true)
+    expect(SessionRetry.isImmediateRetry("claude-sonnet-5-5", overloaded)).toBe(false)
+    expect(SessionRetry.isImmediateRetry(undefined, overloaded)).toBe(false)
+    expect(SessionRetry.isImmediateRetry("gpt-5.2", wrap("Internal server error"))).toBe(false)
+    expect(SessionRetry.isImmediateRetry("gpt-5.2", wrap("Provider is overloaded"))).toBe(true)
+
+    const error = apiError()
+    expect(Array.from({ length: 5 }, (_, i) => SessionRetry.delay(i + 1, error, true))).toStrictEqual([0, 0, 0, 0, 0])
+    const withHeaders = apiError({ "x-request-id": "abc" })
+    expect(SessionRetry.delay(4, withHeaders, true)).toBe(0)
+  })
+
+  test("detects the real OpenAI stream overloaded payload", () => {
+    const payload = JSON.stringify({
+      type: "error",
+      sequence_number: 2,
+      error: {
+        type: "service_unavailable_error",
+        code: "server_is_overloaded",
+        message: "Our servers are currently overloaded. Please try again later.",
+        param: null,
+      },
+    })
+    for (const input of [payload, { message: payload }]) {
+      const parsed = ProviderError.parseStreamError(input)
+      expect(parsed).toMatchObject({ type: "api_error", isRetryable: true })
+      const error = new SessionV1.APIError({
+        message: parsed!.message,
+        isRetryable: true,
+        responseBody: (parsed as { responseBody?: string }).responseBody,
+      })
+      expect(SessionRetry.isImmediateRetry("gpt-5.2", error.toObject())).toBe(true)
+      expect(SessionRetry.delay(1, error, true)).toBe(0)
+    }
+    // 非 GPT 模型仍然走指数退避
+    expect(SessionRetry.isImmediateRetry("claude-sonnet-5-5", wrap(payload))).toBe(false)
+  })
+
+  test("immediate retry still honors an explicit retry-after", () => {
+    expect(SessionRetry.delay(3, apiError({ "retry-after": "7" }), true)).toBe(7000)
+  })
+
   it.instance("policy updates retry status and increments attempts", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.make("session-retry-test")

@@ -386,6 +386,8 @@ export const dict = {
   "ui.toolErrorCard.failed": "失败",
   "ui.toolErrorCard.copyError": "复制错误",
   "ui.taskNotification.title": "后台任务",
+  "ui.peerMessage.title": "来自 @{{name}} 的消息",
+  "ui.peerMessage.open": "打开 @{{name}}",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",
 } satisfies Partial<Record<Keys, string>>

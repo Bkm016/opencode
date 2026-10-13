@@ -4,6 +4,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { animateProcessChevron, animateProcessHide, animateProcessReveal } from "@opencode-ai/ui/hooks/gsap-surface"
 import { Markdown } from "./markdown"
+import { useData } from "../context"
 
 /**
  * 后台子代理任务结束时注入主会话的 <task> 信封解析结果
@@ -11,9 +12,11 @@ import { Markdown } from "./markdown"
  */
 export interface TaskNotification {
   /** 通知来源：子代理任务或后台 shell 作业 */
-  kind?: "task" | "shell"
-  /** 子代理会话 ID */
+  kind?: "task" | "shell" | "peer"
+  /** 子代理会话 ID；peer 时为发送方会话 ID */
   sessionID?: string
+  /** peer 时发送方的 @名字（不含 @） */
+  slug?: string
   /** 任务终态 */
   state: "completed" | "error"
   /** 服务端生成的摘要行（如 "Background task completed: ..."），原样展示 */
@@ -24,6 +27,7 @@ export interface TaskNotification {
 
 const ENVELOPE = /^\s*<task([^>]*)>([\s\S]*?)<\/task>\s*$/
 const SHELL_ENVELOPE = /^\s*<bash_job([^>]*)>([\s\S]*?)<\/bash_job>\s*$/
+const PEER_ENVELOPE = /^\s*<peer-message\s+([^>]*)>([\s\S]*?)<\/peer-message>/
 const SUMMARY = /<summary>([\s\S]*?)<\/summary>/
 
 /**
@@ -34,6 +38,19 @@ const SUMMARY = /<summary>([\s\S]*?)<\/summary>/
  * @return 解析出的任务通知，无法解析时为 undefined
  */
 export function parseTaskNotification(text: string): TaskNotification | undefined {
+  const peer = PEER_ENVELOPE.exec(text)
+  if (peer) {
+    const attrs = peer[1] ?? ""
+    const slug = /\bfrom="@?([^"]+)"/.exec(attrs)?.[1]
+    return {
+      kind: "peer",
+      sessionID: /\bsession="([^"]+)"/.exec(attrs)?.[1],
+      slug,
+      state: "completed",
+      summary: slug ? `@${slug}` : undefined,
+      text: (peer[2] ?? "").trim(),
+    }
+  }
   const shell = SHELL_ENVELOPE.exec(text)
   if (shell) {
     const attrs = shell[1] ?? ""
@@ -75,11 +92,15 @@ export function parseTaskNotification(text: string): TaskNotification | undefine
  */
 export function TaskNotificationCard(props: { notification: TaskNotification }) {
   const i18n = useI18n()
+  const data = useData()
+  const peer = createMemo(() => props.notification.kind === "peer")
   const error = createMemo(() => props.notification.state === "error")
   const shell = createMemo(() => props.notification.kind === "shell")
   const title = createMemo(
     () =>
-      props.notification.summary ||
+      (peer() && props.notification.slug
+        ? i18n.t("ui.peerMessage.title", { name: props.notification.slug })
+        : props.notification.summary) ||
       i18n.t(shell() ? "ui.shellNotification.title" : "ui.taskNotification.title"),
   )
   const [open, setOpen] = createSignal(false)
@@ -123,7 +144,7 @@ export function TaskNotificationCard(props: { notification: TaskNotification }) 
       <button type="button" data-slot="task-notification-trigger" aria-expanded={open()} onClick={toggle}>
         <span data-slot="task-notification-icon">
           <Icon
-            name={shell() ? "console" : error() ? "circle-ban-sign" : "subagent"}
+            name={peer() ? "speech-bubble" : shell() ? "console" : error() ? "circle-ban-sign" : "subagent"}
             size="small"
             style={{ "stroke-width": 1.5 }}
           />
@@ -147,6 +168,15 @@ export function TaskNotificationCard(props: { notification: TaskNotification }) 
           data-slot="task-notification-content"
         >
           <Markdown text={props.notification.text} />
+          <Show when={peer() && props.notification.sessionID && data.navigateToSession}>
+            <button
+              type="button"
+              data-slot="task-notification-open"
+              onClick={() => data.navigateToSession?.(props.notification.sessionID!)}
+            >
+              {i18n.t("ui.peerMessage.open", { name: props.notification.slug ?? "" })}
+            </button>
+          </Show>
         </div>
       </Show>
     </Card>

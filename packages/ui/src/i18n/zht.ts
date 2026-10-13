@@ -293,6 +293,8 @@ export const dict = {
   "ui.toolErrorCard.failed": "失敗",
   "ui.toolErrorCard.copyError": "複製錯誤",
   "ui.taskNotification.title": "背景任務",
+  "ui.peerMessage.title": "來自 @{{name}} 的訊息",
+  "ui.peerMessage.open": "開啟 @{{name}}",
   "ui.common.file.one": "個檔案",
   "ui.common.file.other": "個檔案",
   "ui.common.question.one": "個問題",

@@ -11,6 +11,9 @@ export const ORCHESTRATION_TOOLS = [
   "task_wait",
   "task_abort",
   "task_followup",
+  // 对等会话消息只给 primary 会话，子代理走 task 结果上报。
+  "session_list",
+  "session_message",
 ] as const
 
 /**

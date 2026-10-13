@@ -338,6 +338,8 @@ export const dict: Record<string, string> = {
   "ui.toolErrorCard.failed": "Failed",
   "ui.toolErrorCard.copyError": "Copy error",
   "ui.taskNotification.title": "Background task",
+  "ui.peerMessage.title": "Message from @{{name}}",
+  "ui.peerMessage.open": "Open @{{name}}",
 
   "ui.common.file.one": "file",
   "ui.common.file.other": "files",

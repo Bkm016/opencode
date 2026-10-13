@@ -66,4 +66,19 @@
     -webkit-user-select: text;
     user-select: text;
   }
+
+  [data-slot="task-notification-open"] {
+    margin-top: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-interactive-base);
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }

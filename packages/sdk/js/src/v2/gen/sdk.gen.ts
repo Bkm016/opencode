@@ -57,6 +57,8 @@ import type {
   ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalPromptEnhanceErrors,
   ExperimentalPromptEnhanceResponses,
+  ExperimentalPromptSuggestErrors,
+  ExperimentalPromptSuggestResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
@@ -1364,6 +1366,52 @@ export class Prompt extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/prompt/enhance",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Suggest next message
+   *
+   * Predict the user's most likely next message from the session's recent conversation, to prefill the empty prompt input.
+   */
+  public suggest<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      model?: {
+        providerID: string
+        modelID: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "model" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalPromptSuggestResponses,
+      ExperimentalPromptSuggestErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/suggestion",
       ...options,
       ...params,
       headers: {

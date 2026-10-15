@@ -42,7 +42,9 @@ import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { acceptValue, nextAcceptLevel } from "@/context/permission-auto-respond"
-import { createPromptEnhance } from "./prompt-input/enhance"
+import { useSettings } from "@/context/settings"
+import { createPromptEnhance, rebuildPrompt } from "./prompt-input/enhance"
+import { createPromptSuggestion } from "./prompt-input/suggestion"
 import "./prompt-input/enhance.css"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -113,6 +115,7 @@ const EXAMPLES = [
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
   const server = useServer()
+  const settings = useSettings()
 
   const sync = useSync()
   const prompt = props.state ?? usePrompt()
@@ -416,6 +419,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     onError: () => showToast({ title: language.t("prompt.enhance.failed") }),
   })
+  const suggestion = createPromptSuggestion({
+    sdk,
+    sessionID: () => props.controls.session.id,
+    model: () => {
+      const model = props.controls.model.selection.current()
+      return model ? { providerID: model.provider.id, modelID: model.id } : undefined
+    },
+    enabled: () => settings.general.nextSuggestion() && store.mode === "normal" && !assisting(),
+    busy,
+    empty: () => !prompt.dirty(),
+  })
+  const acceptSuggestion = () => {
+    const value = suggestion.text()
+    if (!value) return false
+    suggestion.clear()
+    const next = rebuildPrompt(value, [])
+    prompt.set(next, promptLength(next))
+    requestAnimationFrame(() => editorRef?.focus())
+    return true
+  }
   const enhanceBlank = createMemo(
     () =>
       prompt
@@ -1376,6 +1399,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
 
+    if (event.key === "Tab" && !event.shiftKey && !store.popover && !isImeComposing(event) && acceptSuggestion()) {
+      event.preventDefault()
+      return
+    }
+
     if (store.mode === "shell") {
       const { collapsed, cursorPosition, textLength } = getCaretState()
       if (event.key === "Backspace" && collapsed && cursorPosition === 0 && textLength === 0) {
@@ -1620,7 +1648,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               classList={{ "font-mono!": store.mode === "shell" }}
               style={{ display: prompt.dirty() ? "none" : undefined }}
             >
-              {placeholder()}
+              <Show when={suggestion.text()} fallback={placeholder()}>
+                {(value) => (
+                  <>
+                    <span data-slot="prompt-suggestion-text">{value()}</span>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-slot="prompt-suggestion-accept"
+                      class="ml-2 pointer-events-auto rounded-md bg-surface-base px-1.5 py-px text-11-regular text-text-weak align-middle opacity-70 hover:opacity-100 transition-opacity"
+                      aria-label={language.t("prompt.suggestion.accept")}
+                      title={language.t("prompt.suggestion.accept")}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={acceptSuggestion}
+                    >
+                      ⇥
+                    </button>
+                  </>
+                )}
+              </Show>
             </div>
             <Show when={enhanceCaret()}>
               {(caret) => (

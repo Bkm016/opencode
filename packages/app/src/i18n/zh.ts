@@ -373,6 +373,7 @@ export const dict = {
   "prompt.enhance.stop": "停止优化",
   "prompt.enhance.undo": "撤销优化",
   "prompt.enhance.failed": "优化失败，已保留原文",
+  "prompt.suggestion.accept": "按 Tab 采纳这条建议",
   "prompt.toast.pasteUnsupported.title": "不支持的附件",
   "prompt.toast.pasteUnsupported.description": "此处仅能附加图片、PDF 或文本文件。",
   "prompt.toast.modelAgentRequired.title": "请选择智能体和模型",
@@ -1214,6 +1215,12 @@ export const dict = {
   "settings.general.row.enhanceModel.description":
     "输入框 ✨ 按钮改写草稿时用的模型。自动：优先用 small_model，没有就用输入框当前选的模型。",
   "settings.general.row.enhanceModel.auto": "自动",
+  "settings.general.row.nextSuggestion.title": "下一步建议",
+  "settings.general.row.nextSuggestion.description":
+    "一轮结束后，在空输入框里显示你最可能接着说的一句话，按 Tab 采纳。",
+  "settings.general.row.suggestModel.title": "建议模型",
+  "settings.general.row.suggestModel.description":
+    "预测下一步的模型。自动：优先用小模型，其次用输入框当前所选模型。",
   "settings.general.row.shell.autoDefault": "自动（默认）",
   "settings.general.row.shell.terminalOnly": "仅终端",
   "settings.general.row.appearance.title": "外观",

@@ -338,6 +338,7 @@ export const dict = {
   "prompt.enhance.stop": "停止優化",
   "prompt.enhance.undo": "撤銷優化",
   "prompt.enhance.failed": "優化失敗，已保留原文",
+  "prompt.suggestion.accept": "按 Tab 採納這條建議",
   "prompt.toast.pasteUnsupported.title": "不支援的附件",
   "prompt.toast.pasteUnsupported.description": "此處僅能附加圖片、PDF 或文字檔案。",
   "prompt.toast.modelAgentRequired.title": "請選擇代理程式和模型",
@@ -1214,6 +1215,12 @@ export const dict = {
   "settings.general.row.enhanceModel.description":
     "輸入框 ✨ 按鈕改寫草稿時用的模型。自動：優先用 small_model，沒有就用輸入框目前選的模型。",
   "settings.general.row.enhanceModel.auto": "自動",
+  "settings.general.row.nextSuggestion.title": "下一步建議",
+  "settings.general.row.nextSuggestion.description":
+    "一輪結束後，在空輸入框裡顯示你最可能接著說的一句話，按 Tab 採納。",
+  "settings.general.row.suggestModel.title": "建議模型",
+  "settings.general.row.suggestModel.description":
+    "預測下一步的模型。自動：優先使用小模型，其次使用輸入框目前所選模型。",
   "settings.general.row.shell.autoDefault": "自動（預設）",
   "settings.general.row.shell.terminalOnly": "僅限終端機",
   "settings.general.row.appearance.title": "外觀",

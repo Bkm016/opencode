@@ -92,6 +92,7 @@ import { permissionHandlers } from "./handlers/permission"
 import { projectHandlers } from "./handlers/project"
 import { projectCopyHandlers } from "./handlers/project-copy"
 import { promptEnhanceHandlers } from "./handlers/prompt-enhance"
+import { promptSuggestHandlers } from "./handlers/prompt-suggest"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
@@ -161,6 +162,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     projectHandlers,
     projectCopyHandlers,
     promptEnhanceHandlers,
+    promptSuggestHandlers,
     ptyHandlers,
     questionHandlers,
     permissionHandlers,

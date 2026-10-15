@@ -174,6 +174,15 @@ export const SettingsGeneral: Component = () => {
     serverSync().updateConfig({ agent: agents } as never)
   }
 
+  // 下一步建议同样写到隐藏智能体 suggest 上，选项与提示词优化相同
+  const currentSuggestModel = createMemo(() => serverSync().data.config.agent?.["suggest"]?.model ?? "")
+  const setSuggestModel = (value: string) => {
+    const agents = { ...serverSync().data.config.agent }
+    const { model: _, ...rest } = agents["suggest"] ?? {}
+    agents["suggest"] = value ? { ...rest, model: value } : rest
+    serverSync().updateConfig({ agent: agents } as never)
+  }
+
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
     const list = shells.latest
     const current = serverSync().data.config.shell
@@ -400,6 +409,46 @@ export const SettingsGeneral: Component = () => {
               if (!option) return
               if (option.value === currentEnhanceModel()) return
               setEnhanceModel(option.value)
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px", "max-width": "240px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.nextSuggestion.title")}
+          description={language.t("settings.general.row.nextSuggestion.description")}
+        >
+          <div data-action="settings-next-suggestion">
+            <Switch
+              checked={settings.general.nextSuggestion()}
+              onChange={(checked) => settings.general.setNextSuggestion(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.suggestModel.title")}
+          description={language.t("settings.general.row.suggestModel.description")}
+        >
+          <Select
+            data-action="settings-suggest-model"
+            options={enhanceModelOptions()}
+            current={
+              enhanceModelOptions().find((o) => o.value === currentSuggestModel()) ?? {
+                id: currentSuggestModel(),
+                value: currentSuggestModel(),
+                label: currentSuggestModel(),
+              }
+            }
+            value={(o) => o.id}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentSuggestModel()) return
+              setSuggestModel(option.value)
             }}
             variant="secondary"
             size="small"

@@ -278,6 +278,21 @@ const layer = Layer.effect(
             ),
             prompt: PromptCatalog.resolve("agent.enhance", cfg.prompts),
           },
+          suggest: {
+            name: "suggest",
+            mode: "primary",
+            options: {},
+            native: true,
+            hidden: true,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+              }),
+              user,
+            ),
+            prompt: PromptCatalog.resolve("agent.suggest", cfg.prompts),
+          },
         }
 
         const buildOverride = cfg.prompts?.["agent.build"]

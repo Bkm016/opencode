@@ -28,6 +28,8 @@ export interface Settings {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
+    /** 一轮结束后在空输入框里给出下一步建议，Tab 采纳 */
+    nextSuggestion: boolean
     mobileTitlebarPosition: "top" | "bottom"
     shouldDisplayTabsToast?: boolean
     /** Desktop: true when this machine already had app state before first-launch onboarding. */
@@ -135,6 +137,7 @@ const defaultSettings: Settings = {
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
+    nextSuggestion: true,
     mobileTitlebarPosition: "top",
   },
   appearance: {
@@ -237,6 +240,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setShowReasoningSummaries(value: boolean) {
           setStore("general", "showReasoningSummaries", value)
+        },
+        nextSuggestion: withFallback(() => store.general?.nextSuggestion, defaultSettings.general.nextSuggestion),
+        setNextSuggestion(value: boolean) {
+          setStore("general", "nextSuggestion", value)
         },
         shellToolPartsExpanded: withFallback(
           () => store.general?.shellToolPartsExpanded,

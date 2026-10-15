@@ -356,6 +356,7 @@ export const dict = {
   "prompt.enhance.stop": "Stop enhancing",
   "prompt.enhance.undo": "Undo enhancement",
   "prompt.enhance.failed": "Could not enhance the prompt",
+  "prompt.suggestion.accept": "Press Tab to use this suggestion",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
@@ -1315,6 +1316,12 @@ export const dict = {
   "settings.general.row.enhanceModel.description":
     "Model used by the ✨ button in the prompt input. Auto uses small_model, then the model selected in the prompt input.",
   "settings.general.row.enhanceModel.auto": "Auto",
+  "settings.general.row.nextSuggestion.title": "Next-message suggestion",
+  "settings.general.row.nextSuggestion.description":
+    "After a turn finishes, show the most likely next message in the empty prompt box. Press Tab to accept it.",
+  "settings.general.row.suggestModel.title": "Suggestion model",
+  "settings.general.row.suggestModel.description":
+    "Model that predicts the next message. Auto uses the small model, then the model selected in the prompt box.",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.appearance.title": "Appearance",

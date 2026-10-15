@@ -9361,6 +9361,44 @@ export type ExperimentalPromptEnhanceResponses = {
 export type ExperimentalPromptEnhanceResponse =
   ExperimentalPromptEnhanceResponses[keyof ExperimentalPromptEnhanceResponses]
 
+export type ExperimentalPromptSuggestData = {
+  body?: {
+    model?: {
+      providerID: string
+      modelID: string
+    }
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/suggestion"
+}
+
+export type ExperimentalPromptSuggestErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalPromptSuggestError = ExperimentalPromptSuggestErrors[keyof ExperimentalPromptSuggestErrors]
+
+export type ExperimentalPromptSuggestResponses = {
+  /**
+   * Suggested next user message, absent when there is no obvious next step
+   */
+  200: {
+    text?: string
+  }
+}
+
+export type ExperimentalPromptSuggestResponse =
+  ExperimentalPromptSuggestResponses[keyof ExperimentalPromptSuggestResponses]
+
 export type PtyShellsData = {
   body?: never
   path?: never

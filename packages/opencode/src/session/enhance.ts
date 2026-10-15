@@ -24,10 +24,18 @@ function describeTool(part: Extract<SessionV1.WithParts["parts"][number], { type
   return target ? `[${part.tool}: ${clip(target, 200)}]` : `[${part.tool}]`
 }
 
-/** 把最近的对话压成纯文本：用户与助手的正文，工具调用只留名字和目标 */
-export function transcript(messages: SessionV1.WithParts[]) {
+const NOTICE = /^\s*<(?:peer-message|task|bash_job)[\s>]/
+const NOTICE_LIMIT = 500
+
+/**
+ * 把最近的对话压成纯文本：用户与助手的正文，工具调用只留名字和目标
+ * notices 为真时保留对端会话消息与后台任务通知（synthetic），建议下一步时它们常常就是由头。
+ */
+export function transcript(messages: SessionV1.WithParts[], options: { notices?: boolean } = {}) {
   const blocks = messages.flatMap((message) => {
     const lines = message.parts.flatMap((part) => {
+      if (part.type === "text" && part.synthetic && options.notices && !part.ignored && NOTICE.test(part.text))
+        return [clip(part.text, NOTICE_LIMIT)]
       if (part.type === "text" && !part.synthetic && !part.ignored) return [clip(part.text, MESSAGE_LIMIT)]
       if (part.type === "file") return [`[file: ${part.filename ?? part.url}]`]
       if (part.type === "tool") return [describeTool(part)]

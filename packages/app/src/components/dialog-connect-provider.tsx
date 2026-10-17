@@ -28,7 +28,7 @@ import { Link } from "@/components/link"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { openaiProviderPreset, popularProviders, syncOpenAILimits, useProviders } from "@/hooks/use-providers"
 import { CustomProviderForm } from "./dialog-custom-provider"
 
 const CUSTOM_ID = "_custom"
@@ -524,7 +524,21 @@ function ProviderConnection(props: {
   })
 
   async function complete() {
+    // The provider catalog comes from the config, so a successful sign-in must
+    // persist the provider block before its models can be used.
+    const current = serverSync().data.config.provider
+    const existing = current?.openai
+    if (props.provider === "openai" && (!existing?.models || Object.keys(existing.models).length === 0)) {
+      const provider = {
+        ...(current ?? {}),
+        openai: { ...openaiProviderPreset, ...existing, models: openaiProviderPreset.models },
+      }
+      await serverSync()
+        .updateConfig({ provider })
+        .catch((error) => console.error("failed to enable OpenAI models", error))
+    }
     await serverSDK().client.global.dispose()
+    if (props.provider === "openai") await syncOpenAILimits(serverSDK, serverSync)
     dialog.close()
     showToast({
       variant: "success",

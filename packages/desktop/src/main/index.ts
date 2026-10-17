@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
@@ -234,6 +234,165 @@ function ensureLoopbackNoProxy() {
   upsert("no_proxy")
 }
 
+// Chromium follows the Windows proxy settings, but the sidecar is a Node
+// process whose fetch only honors proxy env vars (with NODE_USE_ENV_PROXY).
+// Resolve the system proxy so sign-in and API calls use the same route.
+async function applySystemProxy() {
+  if (!process.env.HTTPS_PROXY && !process.env.https_proxy) {
+    try {
+      // Resolve the proxy for the OAuth endpoint. A system-wide proxy returns
+      // the same route for API calls; this runs before the sidecar starts.
+      const resolved = await session.defaultSession.resolveProxy("https://auth.openai.com")
+      const entry = resolved
+        .split(";")
+        .map((item) => item.trim())
+        .find((item) => /^(PROXY|SOCKS5?)\s+/i.test(item))
+      if (entry) {
+        const [kind, address] = entry.split(/\s+/)
+        if (address) {
+          const url = /^SOCKS/i.test(kind) ? `socks5://${address}` : `http://${address}`
+          process.env.HTTP_PROXY = url
+          process.env.HTTPS_PROXY = url
+          logger.log("using system proxy", { url })
+        }
+      }
+    } catch (error) {
+      logger.warn("failed to resolve system proxy", error)
+    }
+  }
+  applyProviderBypassHosts()
+}
+
+function stripJsonc(input: string) {
+  let stripped = ""
+  let string = false
+  let escape = false
+  let line = false
+  let block = false
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]
+    const next = input[i + 1]
+    if (line) {
+      if (char === "\n") {
+        line = false
+        stripped += char
+      }
+      continue
+    }
+    if (block) {
+      if (char === "*" && next === "/") {
+        block = false
+        i++
+      }
+      continue
+    }
+    if (string) {
+      stripped += char
+      if (escape) escape = false
+      else if (char === "\\") escape = true
+      else if (char === '"') string = false
+      continue
+    }
+    if (char === '"') {
+      string = true
+      stripped += char
+      continue
+    }
+    if (char === "/" && next === "/") {
+      line = true
+      i++
+      continue
+    }
+    if (char === "/" && next === "*") {
+      block = true
+      i++
+      continue
+    }
+    stripped += char
+  }
+  // Remove trailing commas without touching commas inside string values.
+  let result = ""
+  let quoted = false
+  let escaped = false
+  for (let i = 0; i < stripped.length; i++) {
+    const char = stripped[i]
+    if (quoted) {
+      result += char
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') quoted = false
+      continue
+    }
+    if (char === '"') {
+      quoted = true
+      result += char
+      continue
+    }
+    if (char === ",") {
+      let next = i + 1
+      while (next < stripped.length && /\s/.test(stripped[next])) next++
+      if (stripped[next] === "}" || stripped[next] === "]") continue
+    }
+    result += char
+  }
+  return result
+}
+
+function providerBypassHosts() {
+  const files: string[] = []
+  const add = (file: string) => {
+    if (!files.includes(file)) files.push(file)
+  }
+  for (const dir of [join(homedir(), ".config", "opencode"), process.env.OPENCODE_CONFIG_DIR]) {
+    if (!dir) continue
+    for (const name of ["config.json", "opencode.json", "opencode.jsonc"]) add(join(dir, name))
+  }
+  if (process.env.OPENCODE_CONFIG) add(process.env.OPENCODE_CONFIG)
+  const providers: Record<string, { options?: { bypassProxy?: boolean; baseURL?: string } }> = {}
+  for (const file of files) {
+    if (!existsSync(file)) continue
+    try {
+      const config = JSON.parse(stripJsonc(readFileSync(file, "utf8")))
+      for (const [id, value] of Object.entries(config.provider ?? {})) {
+        const next = value as { options?: Record<string, unknown> }
+        const previous = providers[id]
+        providers[id] = {
+          ...previous,
+          ...next,
+          options: { ...previous?.options, ...next.options },
+        } as { options?: { bypassProxy?: boolean; baseURL?: string } }
+      }
+    } catch {}
+  }
+  const hosts: string[] = []
+  for (const provider of Object.values(providers)) {
+    if (!provider?.options?.bypassProxy) continue
+    if (typeof provider.options.baseURL !== "string") continue
+    try {
+      const host = new URL(provider.options.baseURL).hostname
+      if (host) hosts.push(host)
+    } catch {}
+  }
+  return hosts
+}
+
+function applyProviderBypassHosts() {
+  const hosts = providerBypassHosts()
+  if (hosts.length === 0) return
+  for (const key of ["NO_PROXY", "no_proxy"] as const) {
+    const items = (process.env[key] ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    for (const host of hosts) {
+      if (items.some((item) => item.toLowerCase() === host.toLowerCase())) continue
+      items.push(host)
+    }
+    process.env[key] = items.join(",")
+  }
+  logger.log("provider proxy bypass", { hosts })
+}
+
 const main = Effect.gen(function* () {
   contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
 
@@ -445,6 +604,7 @@ const main = Effect.gen(function* () {
 
     ensureLoopbackNoProxy()
     useEnvProxy()
+    yield* Effect.promise(() => applySystemProxy())
 
     restartEnabled = true
     const { data, health } = yield* Effect.promise(() => startSidecar(true))

@@ -26,6 +26,13 @@ for (const channel of channels) {
     expect(config.linux?.desktop?.entry?.StartupWMClass).toBe(channel.appId)
     expect(config.deb?.fpm).toContainEqual(expect.stringContaining(`/usr/share/metainfo/${channel.appId}.metainfo.xml`))
     expect(config.rpm?.fpm).toContainEqual(expect.stringContaining(`/usr/share/metainfo/${channel.appId}.metainfo.xml`))
+    expect(config.files).toEqual(["out/**/*", "!**/*.map"])
+    expect(config.extraResources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: "resources/icons/", to: "icons/" }),
+        expect.objectContaining({ from: "resources/cli/", to: "cli/" }),
+      ]),
+    )
   })
 }
 

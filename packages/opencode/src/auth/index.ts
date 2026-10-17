@@ -18,6 +18,11 @@ export class Oauth extends Schema.Class<Oauth>("OAuth")({
   expires: NonNegativeInt,
   accountId: Schema.optional(Schema.String),
   enterpriseUrl: Schema.optional(Schema.String),
+  /**
+   * Provider-specific OAuth bookkeeping. ChatGPT token sharing needs the
+   * OpenAI-issued client ID for refreshes; it is not a secret.
+   */
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }) {}
 
 export class Api extends Schema.Class<Api>("ApiAuth")({

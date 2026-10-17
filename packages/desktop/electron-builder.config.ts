@@ -65,7 +65,8 @@ const getBase = (appId: string): Configuration => ({
   ...(process.env.GITHUB_ACTIONS !== "true" ? { compression: "store" as const } : {}),
   // 原生依赖（node-pty、parcel watcher）都用预编译包，打包时无需按 Electron ABI 重新编译。
   npmRebuild: false,
-  files: ["out/**/*", "resources/**/*"],
+  // Runtime assets ship through extraResources; keep the asar to the app bundle.
+  files: ["out/**/*", "!**/*.map"],
   // Native pty prebuilds must stay outside asar; server loads them from out/main/server/node_modules.
   // browser-helper.js 由独立 node 子进程加载，asar 内文件对子进程不可见，须连同其外部依赖一起 unpack。
   asarUnpack: [
@@ -78,6 +79,10 @@ const getBase = (appId: string): Configuration => ({
       from: "native/",
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
+    },
+    {
+      from: "resources/icons/",
+      to: "icons/",
     },
     // 完整 CLI（含 serve / skill cloud），装完在 resources/cli/opencode.exe 可直接调用。
     {

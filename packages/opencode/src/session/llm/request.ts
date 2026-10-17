@@ -58,6 +58,8 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
+  const isChatGPTSharing =
+    isOpenaiOauth && input.auth?.type === "oauth" && input.auth.metadata?.method === "chatgpt-token-sharing"
   const config = yield* Config.Service
   const cfg = yield* config.get()
   const system = SystemPrompt.assemble({
@@ -68,6 +70,8 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     prompts: cfg.prompts,
   })
   const tools = resolveTools(input)
+  // ChatGPT subscription sharing rejects hosted image generation.
+  if (isChatGPTSharing && tools.image_generation?.type === "provider") delete tools.image_generation
   // Responses 托管工具不接受 description，通过请求指令补充简短能力说明，完整流程留在技能中。
   if (tools.image_generation?.type === "provider") system.push(IMAGE_GENERATION_DESCRIPTION)
 

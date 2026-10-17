@@ -8,6 +8,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServerSync } from "@/context/server-sync"
+import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 
 const REASONING_VARIANT_OPTIONS = ["low", "medium", "high", "max", "xhigh"] as const
@@ -84,15 +85,31 @@ function defaultForm(model: RemoteModel): ModelForm {
   }
 }
 
+function errorMessage(err: unknown) {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === "object") {
+    const data = (err as { data?: { message?: unknown } }).data
+    if (typeof data?.message === "string" && data.message) return data.message
+    const nested = (err as { error?: { message?: unknown } }).error
+    if (typeof nested?.message === "string" && nested.message) return nested.message
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return String(err)
+    }
+  }
+  return typeof err === "string" ? err : String(err)
+}
+
 export function DialogFetchModels(props: {
   providerID: string
   providerName: string
   baseURL?: string
-  apiKey?: string
   existingIDs: string[]
 }) {
   const dialog = useDialog()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
 
   const [status, setStatus] = createSignal<"loading" | "error" | "ready">("loading")
   const [error, setError] = createSignal<string>()
@@ -102,7 +119,8 @@ export function DialogFetchModels(props: {
   const [forms, setForms] = createStore<Record<string, ModelForm>>({})
   const [busy, setBusy] = createSignal(false)
 
-  const endpoint = () => `${(props.baseURL ?? "").replace(/\/+$/, "")}/models`
+  const endpoint = () =>
+    `${(props.baseURL ?? (props.providerID === "openai" ? "https://api.openai.com/v1" : "")).replace(/\/+$/, "")}/models`
   const selectedCount = () => models().filter((model) => selected[model.id]).length
   const form = (id: string) => forms[id] ?? defaultForm({ id })
 
@@ -110,19 +128,13 @@ export function DialogFetchModels(props: {
     setStatus("loading")
     setError(undefined)
     try {
-      const response = await fetch(endpoint(), {
-        headers: props.apiKey
-          ? { accept: "application/json", authorization: `Bearer ${props.apiKey}` }
-          : { accept: "application/json" },
-      })
-      if (!response.ok) {
-        throw new Error(
-          response.status === 401 || response.status === 403
-            ? `HTTP ${response.status}：API Key 无效或缺失，请先在「编辑提供商」中填写密钥`
-            : `HTTP ${response.status} ${response.statusText}`,
-        )
-      }
-      const list = parseModels(await response.json()).filter((model) => !props.existingIDs.includes(model.id))
+      // Fetch from the sidecar: browser CORS does not apply there, and the
+      // server already has the provider's baseURL and API key.
+      const response = await serverSDK().client.provider.fetchModels(
+        { providerID: props.providerID },
+        { throwOnError: true },
+      )
+      const list = parseModels(response.data).filter((model) => !props.existingIDs.includes(model.id))
       setModels(list)
       for (const model of list) {
         if (forms[model.id]) continue
@@ -131,12 +143,7 @@ export function DialogFetchModels(props: {
       }
       setStatus("ready")
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setError(
-        msg.includes("Failed to fetch") || msg.includes("NetworkError")
-          ? "无法访问该地址（可能是跨域限制或网络不通），可改用「添加模型」手动配置。"
-          : msg,
-      )
+      setError(errorMessage(err))
       setStatus("error")
     }
   }

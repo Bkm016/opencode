@@ -1,6 +1,7 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { Provider } from "@/provider/provider"
+import { Auth } from "@/auth"
 
 import { Effect, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -34,6 +35,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const cfg = yield* Config.Service
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
+    const credentials = yield* Auth.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const config = yield* cfg.get()
@@ -108,10 +110,76 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return true
     })
 
+    const fetchModels = Effect.fn("ProviderHttpApi.fetchModels")(function* (ctx: {
+      params: { providerID: ProviderV2.ID }
+    }) {
+      const providerID = ctx.params.providerID
+      const config = yield* cfg.get()
+      const item = config.provider?.[providerID]
+      const stored = yield* credentials.get(providerID).pipe(Effect.orDie)
+      // ChatGPT token sharing has no baseURL in config; use the standard API
+      // resource and the stored OAuth access token.
+      const sharing = stored?.type === "oauth" && stored.metadata?.method === "chatgpt-token-sharing"
+      const baseURL = item?.options?.baseURL ?? (sharing ? "https://api.openai.com/v1" : undefined)
+      if (!baseURL) {
+        return yield* new ProviderAuthApiError({
+          name: "BadRequest",
+          data: { providerID, message: "该提供商没有配置 baseURL" },
+        })
+      }
+      if (!/^https?:\/\//i.test(baseURL)) {
+        return yield* new ProviderAuthApiError({
+          name: "BadRequest",
+          data: { providerID, message: "baseURL 必须以 http:// 或 https:// 开头" },
+        })
+      }
+      const key =
+        item?.options?.apiKey ??
+        (stored?.type === "api" ? stored.key : stored?.type === "wellknown" ? stored.token : undefined)
+      const authorization = sharing && stored?.type === "oauth" ? stored.access : key
+      const accountId = sharing && stored?.type === "oauth" ? stored.accountId : undefined
+      const url = `${baseURL.replace(/\/+$/, "")}/models`
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch(url, {
+            headers: {
+              accept: "application/json",
+              ...(authorization ? { authorization: `Bearer ${authorization}` } : {}),
+              ...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
+            },
+            signal: AbortSignal.timeout(20_000),
+          }),
+        catch: (cause) =>
+          new ProviderAuthApiError({
+            name: "BadRequest",
+            data: { providerID, message: cause instanceof Error ? cause.message : String(cause) },
+          }),
+      })
+      if (!response.ok) {
+        const body = yield* Effect.promise(() => response.text().catch(() => ""))
+        return yield* new ProviderAuthApiError({
+          name: "BadRequest",
+          data: {
+            providerID,
+            message: `HTTP ${response.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
+          },
+        })
+      }
+      return yield* Effect.tryPromise({
+        try: () => response.json() as Promise<unknown>,
+        catch: () =>
+          new ProviderAuthApiError({
+            name: "BadRequest",
+            data: { providerID, message: "模型接口返回的不是 JSON" },
+          }),
+      })
+    })
+
     return handlers
       .handle("list", list)
       .handle("auth", auth)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
+      .handle("fetchModels", fetchModels)
   }),
 )

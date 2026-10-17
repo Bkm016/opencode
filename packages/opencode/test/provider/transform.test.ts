@@ -5,6 +5,7 @@ import { LLMRequestPrep } from "@/session/llm/request"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { jsonSchema } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { TestConfig } from "../fixture/config"
 
 describe("ProviderTransform.options - setCacheKey", () => {
@@ -584,6 +585,56 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.params.options.reasoningSummary).toBeUndefined()
     expect(result.params.options.include).toBeUndefined()
     expect(result.tools.lookup.strict).toBe(false)
+  })
+
+  test("ChatGPT token sharing omits hosted image generation", async () => {
+    const model = createGpt5Model("gpt-6.1-sol")
+    const result = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-test",
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "test",
+          model: { providerID: "openai", modelID: "gpt-6.1-sol" },
+        } as any,
+        sessionID,
+        model,
+        agent: {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [],
+        } as any,
+        system: [],
+        messages: [{ role: "user", content: "Hello" }],
+        tools: {
+          image_generation: openai.tools.imageGeneration({ outputFormat: "png" }) as any,
+          lookup: {
+            description: "Look up a value",
+            inputSchema: jsonSchema({ type: "object", properties: {} }),
+          },
+        },
+        provider: { id: "openai", options: {} } as any,
+        auth: {
+          type: "oauth",
+          access: "access",
+          refresh: "refresh",
+          expires: Date.now() + 3600_000,
+          metadata: { method: "chatgpt-token-sharing" },
+        } as any,
+        plugin: {
+          trigger: (_name: string, _input: unknown, output: unknown) => Effect.succeed(output),
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+      }).pipe(Effect.provide(TestConfig.layer())),
+    )
+    expect(result.tools.image_generation).toBeUndefined()
+    expect(result.tools.lookup).toBeDefined()
   })
 
   test("gpt-5.1 should have textVerbosity set to low", () => {

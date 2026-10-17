@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, onCleanup, Show, For, Switch, Match, type JSX } from "solid-js"
+import { createSignal, createMemo, createEffect, Show, For, Switch, Match, type JSX } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -21,6 +21,20 @@ export function EditToolCard(props: EditToolCardProps) {
   const i18n = useI18n()
   const pending = () => props.status === "pending" || props.status === "running"
   const [open, setOpen] = createSignal(props.defaultOpen ?? pending())
+  let userToggled = false
+
+  // The card starts open while the tool runs; collapse it when the run
+  // finishes unless the user (or the "expand edit tool parts" setting) wants
+  // it open. Without this the initial `pending()` value would stick forever.
+  createEffect(() => {
+    if (userToggled) return
+    setOpen(props.defaultOpen ?? pending())
+  })
+
+  const toggle = () => {
+    userToggled = true
+    setOpen(!open())
+  }
 
   const filename = createMemo(() => getFilename(props.filePath ?? ""))
   const dir = createMemo(() => (props.filePath?.includes("/") ? getDirectory(props.filePath) : ""))
@@ -31,11 +45,11 @@ export function EditToolCard(props: EditToolCardProps) {
         class="edit-tool-card-trigger"
         role="button"
         tabIndex={0}
-        onClick={() => setOpen(!open())}
+        onClick={toggle}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
-            setOpen(!open())
+            toggle()
           }
         }}
       >
@@ -105,6 +119,17 @@ export function MultiEditToolCard(props: MultiEditToolCardProps) {
   const i18n = useI18n()
   const pending = () => props.status === "pending" || props.status === "running"
   const [open, setOpen] = createSignal(props.defaultOpen ?? pending())
+  let userToggled = false
+
+  createEffect(() => {
+    if (userToggled) return
+    setOpen(props.defaultOpen ?? pending())
+  })
+
+  const toggle = () => {
+    userToggled = true
+    setOpen(!open())
+  }
 
   // 子文件折叠状态：默认全部展开
   const [collapsedFiles, setCollapsedFiles] = createSignal<Record<string, boolean>>({})
@@ -127,11 +152,11 @@ export function MultiEditToolCard(props: MultiEditToolCardProps) {
         class="edit-tool-card-trigger"
         role="button"
         tabIndex={0}
-        onClick={() => setOpen(!open())}
+        onClick={toggle}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
-            setOpen(!open())
+            toggle()
           }
         }}
       >

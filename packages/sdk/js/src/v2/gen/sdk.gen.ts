@@ -3586,6 +3586,43 @@ export class Provider extends HeyApiClient {
     })
   }
 
+  /**
+   * Fetch provider model list
+   *
+   * Fetch the OpenAI-compatible /models list for a configured provider from the server (avoids browser CORS).
+   */
+  public fetchModels<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<unknown, ProviderAuthErrors, ThrowOnError>({
+      url: "/provider/{providerID}/models/fetch",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
   private _oauth?: Oauth
   get oauth(): Oauth {
     return (this._oauth ??= new Oauth({ client: this.client }))

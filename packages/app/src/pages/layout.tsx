@@ -32,7 +32,7 @@ import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
-import { useProviders } from "@/hooks/use-providers"
+import { syncOpenAILimits, useProviders } from "@/hooks/use-providers"
 import { toaster } from "@opencode-ai/ui/toast"
 import { setV2Toast, showToast, ToastRegion } from "@/utils/toast"
 import { useUpdaterNotice } from "@/components/updater-action"
@@ -224,6 +224,16 @@ export default function LegacyLayout(props: ParentProps) {
 
   onMount(() => {
     void migrateLegacySessionPins((value) => serverSDK().client.session.update(value))
+  })
+
+  // Refresh ChatGPT context windows once per app launch when the provider is
+  // already configured, so existing logins get the account's real values too.
+  let limitsSynced = false
+  createEffect(() => {
+    if (limitsSynced) return
+    if (!serverSync().data.config.provider?.openai) return
+    limitsSynced = true
+    void syncOpenAILimits(serverSDK, serverSync)
   })
 
   createEffect(() => {

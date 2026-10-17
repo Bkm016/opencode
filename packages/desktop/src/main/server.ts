@@ -213,6 +213,10 @@ function createSidecarEnv(): Record<string, string> {
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
+  // Node 24 fetch ignores proxy env vars unless this flag is set. The sidecar
+  // uses fetch for provider auth/API calls and must follow the same proxy as
+  // the Electron renderer.
+  if (env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy) env.NODE_USE_ENV_PROXY = "1"
   return env
 }
 

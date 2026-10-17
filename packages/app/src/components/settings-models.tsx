@@ -6,6 +6,7 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type Component, createMemo, createSignal, For, Show } from "solid-js"
+import type { ProviderConfig } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { usePlatform } from "@/context/platform"
@@ -14,6 +15,7 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { DialogConfirmAction, DialogModelConfig, DialogProviderConfig } from "./dialog-model-config"
 import { DialogFetchModels } from "./dialog-fetch-models"
+import { DialogConnectProvider, useProviderConnectController } from "./dialog-connect-provider"
 import { DialogSettings } from "./dialog-settings"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
@@ -43,6 +45,40 @@ const SettingsModelsContent: Component = () => {
   const serverSync = useServerSync()
 
   const [search, setSearch] = createSignal("")
+  const providerConnect = useProviderConnectController()
+
+  // 从“模型”页直接连接 ChatGPT 订阅；登录成功后由连接对话框写入 openai provider。
+  const connectChatGPT = () => {
+    providerConnect.select("openai")
+    dialog.show(() => <DialogConnectProvider controller={providerConnect} />)
+  }
+
+  // 强制该提供商直连：把 baseURL 域名写入 sidecar 的 NO_PROXY，重启后生效。
+  const toggleDirect = async (providerID: string, checked: boolean) => {
+    try {
+      const current = serverSync().data.config
+      const providers = { ...current.provider }
+      const target = providers[providerID] as ProviderConfig | undefined
+      if (!target) return
+      const options = { ...target.options } as Record<string, unknown>
+      if (checked) options.bypassProxy = true
+      else delete options.bypassProxy
+      providers[providerID] = { ...target, options } as ProviderConfig
+      await serverSync().updateConfig({ provider: providers })
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: checked ? "已开启直连" : "已关闭直连",
+        description: "重启应用后生效",
+      })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "保存失败",
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
 
   // 从本地配置获取 provider 字典
   const configuredProviders = createMemo(() => {
@@ -181,7 +217,6 @@ const SettingsModelsContent: Component = () => {
         providerID={providerID}
         providerName={provider.name || providerID}
         baseURL={provider.options?.baseURL}
-        apiKey={provider.options?.apiKey}
         existingIDs={Object.keys(provider.models ?? {})}
       />
     ))
@@ -333,6 +368,26 @@ const SettingsModelsContent: Component = () => {
           </div>
         </Show>
 
+        <Show when={!configuredProviders()["openai"] && !search()}>
+          <div
+            class="flex flex-wrap items-center justify-between gap-4 px-4 py-3 rounded-xl bg-surface-base border border-border-weak-base"
+            data-component="chatgpt-subscription-card"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <ProviderIcon id="openai" class="size-5 shrink-0 icon-strong-base" />
+              <div class="flex flex-col min-w-0">
+                <span class="text-14-medium text-text-strong">ChatGPT 订阅</span>
+                <span class="text-12-regular text-text-weak">
+                  使用 ChatGPT Pro/Plus 账号登录，自动导入 GPT-5.5 / 5.6 / 6 模型
+                </span>
+              </div>
+            </div>
+            <Button size="normal" variant="secondary" icon="plus-small" onClick={connectChatGPT}>
+              连接
+            </Button>
+          </div>
+        </Show>
+
         {/* 本地配置的 Providers */}
         <Show
           when={providerEntries().length > 0}
@@ -403,6 +458,19 @@ const SettingsModelsContent: Component = () => {
 
                     <div class="flex items-center gap-0.5 shrink-0">
                       <Show when={provider.options?.baseURL}>
+                        <div
+                          class="flex items-center gap-1.5 text-12-regular text-text-weak mr-1"
+                          title="该提供商不走代理（重启应用后生效）"
+                        >
+                          <Switch
+                            checked={Boolean(provider.options?.bypassProxy)}
+                            onChange={(checked) => void toggleDirect(providerID, checked)}
+                            hideLabel
+                          >
+                            直连
+                          </Switch>
+                          <span>直连</span>
+                        </div>
                         <Button
                           size="small"
                           variant="ghost"

@@ -227,7 +227,7 @@ export function launch(
       args: [
         "/d",
         "/c",
-        `chcp 65001>nul & ${shell} -NoLogo -NoProfile${opts?.interactive ? "" : " -NonInteractive"} -File ${script}`,
+        `chcp 65001>nul & ${shell} -NoLogo -NoProfile${opts?.interactive ? "" : " -NonInteractive"} -ExecutionPolicy Bypass -File ${script}`,
       ],
     }
   }

@@ -81,6 +81,19 @@ export const ProviderApi = HttpApi.make("provider")
             description: "Handle the OAuth callback from a provider after user authorization.",
           }),
         ),
+        HttpApiEndpoint.post("fetchModels", `${root}/:providerID/models/fetch`, {
+          params: { providerID: ProviderV2.ID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Unknown, "Remote model list"),
+          error: ProviderAuthApiError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.models.fetch",
+            summary: "Fetch provider model list",
+            description:
+              "Fetch the OpenAI-compatible /models list for a configured provider from the server (avoids browser CORS).",
+          }),
+        ),
       )
       .annotateMerge(
         OpenApi.annotations({

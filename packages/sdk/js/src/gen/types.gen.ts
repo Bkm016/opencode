@@ -1630,7 +1630,11 @@ export type OAuth = {
   refresh: string
   access: string
   expires: number
+  accountId?: string
   enterpriseUrl?: string
+  metadata?: {
+    [key: string]: string
+  }
 }
 
 export type ApiAuth = {

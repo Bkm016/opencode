@@ -1565,6 +1565,8 @@ const layer = Layer.effect(
       try {
         const provider = s.providers[model.providerID]
         const options = { ...provider.options }
+        // Local UI preference, not an SDK option.
+        delete options.bypassProxy
 
         if (
           model.providerID === "google-vertex" &&
